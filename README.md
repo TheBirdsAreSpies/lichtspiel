@@ -13,6 +13,16 @@ Linux/Windows machine):
   audio track choice, subtitles (embedded and `.srt` /
   `.vtt` / `.ass` side files), hardware conversion (Intel Quick Sync / VAAPI on Synology,
   NVIDIA NVENC).
+- **The player** has its own controls: one seek bar for the whole video (also while converting
+  and for movies split over files) with what is loaded, a yellow mark where the credits start
+  and a **picture preview** when you point at it; back 10 s / forward 30 s, volume, the time
+  played or left and when it ends; a **subtitle menu** (with sizes; the language picked last
+  comes back by itself) and **⚙** for quality, speed, audio track and *Play the next episode by
+  itself*; picture in picture and full screen (double click). During the credits it offers
+  **Skip credits** / **Next episode**; at the end the next episode (or what is queued) starts
+  after a 10-second countdown. Keyboard: Space/K, ←/→ (Shift: 1 min), ↑/↓, M, F, P, C, N, 0–9,
+  < > — **?** lists them all. Media keys and the lock screen work too. `#/play/<id>?t=90` is a
+  link that starts playing.
 - **Playlists** — your own (hand-picked, drag order), **smart playlists** (rules such as
   "genre is Comedy AND year ≥ 2000 AND not watched, newest first, max 50") and six **default
   playlists** the server keeps up to date (Continue Watching, Recently Added Movies, Recently
@@ -84,8 +94,16 @@ Linux/Windows machine):
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Two
-  are included: an `.nfo` file reader and a webhook / Discord notifier.
+  details, react to events (new item, playback, invites …) and add their own API calls. Three
+  are included: an `.nfo` file reader, a webhook / Discord notifier and **Trakt** (below).
+- **Trakt** — switch the *Trakt* plugin on under **Plugins** and give it a Trakt app's Client ID
+  and Client Secret (create one at <https://trakt.tv/oauth/applications/new>, redirect URI
+  `urn:ietf:wg:oauth:2.0:oob`). Then everyone connects their own Trakt account under
+  **Settings → Trakt** (a code to type in at trakt.tv/activate). While a movie or episode plays,
+  Trakt shows "watching now" (paused when paused); once it is watched it goes into the Trakt
+  history, and so does anything marked as watched by hand. **Bring in my Trakt history** marks
+  everything watched on Trakt as watched here too (matched by IMDb / TMDB / TVDB ids, so the
+  details download should be on). The logins are kept in the plugin's folder (`tokens.json`).
 - **English and German** — the web app follows the browser's language; anyone can switch it
   under **Settings → Your account** (kept per browser). Language packs live in `web/lang/`
   (`de.js`); to add another, copy it, translate the texts, and list it in `src/server.rs`
@@ -345,7 +363,26 @@ to its standard input:
 The plugin may print a JSON answer as its last line of output:
 
 - `metadata.lookup` → `{"metadata": {"title": "…", "summary": "…", "year": 1999, "genres": ["…"], "rating": 7.5, "extra": {"any": "field"}}}`
-- `api.call` → any JSON; it is returned to whoever called `POST /api/plugins/<id>/call/<action>`.
+- `api.call` → any JSON; it is returned to whoever called `POST /api/plugins/<id>/call/<action>`
+  (`data` holds `action`, `body`, `params`, `user` and `admin`). An answer with
+  `"mark_watched": [{"id": 42} | {"type": "movie", "ids": {"imdb": "tt…"}} | {"type": "show", "ids": {…}} |
+  {"type": "episode", "show": {"ids": {"tvdb": 123}}, "season": 1, "episode": 2}, …]` (optional
+  `watched_at`, `plays`) marks those as watched for the caller; the caller gets `matched`,
+  `marked` and `not_found` back instead.
+
+Playback events (`playback.started`, `playback.progress` — sent when a player pauses or plays
+on — `playback.stopped`, `playback.watched`) carry `user`, `time` (ms), `progress` (percent),
+`state` and `item`: `{"id", "type", "title", "year", "duration_ms", "ids": {"imdb", "tmdb", "tvdb" …}}`,
+for an episode also `"season"`, `"episode"` and `"show": {"title", "year", "ids"}`. A title
+marked as watched by hand sends `playback.watched` with `"manual": true`.
+
+With `"user_panel": true` in `plugin.json` each person gets a panel of the plugin under
+**Settings**. The page asks the plugin with `api.call` action `panel` and shows
+`{"title", "text", "link", "buttons": [{"label", "action", "primary", "confirm"}]}`; a button
+calls its action. That answer may say `{"message"}` or `{"error"}`, or show a code to type in
+elsewhere — `{"message", "code", "link", "poll": {"action": "poll", "seconds": 5}}` — in which
+case the page calls the `poll` action every few seconds until an answer comes without `poll`.
+The body of these calls includes `lang` (the page's language).
 
 Events: `metadata.lookup`, `library.item.added`, `library.item.removed`,
 `library.scan.finished`, `playback.started`, `playback.progress`, `playback.stopped`,
@@ -362,7 +399,7 @@ Python 3.
 |---|---|
 | `src/` | the server (Rust) |
 | `web/` | the web app (one page, plain HTML + JavaScript, built into the server) |
-| `plugins/` | the two bundled plugins (copied into the data folder on first start) |
+| `plugins/` | the bundled plugins (each copied into the data folder once; one deleted there stays deleted) |
 | `Dockerfile`, `docker-compose.yml` | Synology / Docker install |
 | `shots/` | status-window picture and the last self-test report |
 
@@ -374,7 +411,7 @@ Python 3.
 | `metadata/` | posters, backgrounds and actor photos |
 | `plugins/` | installed plugins |
 | `downloads/` | copies converted for the Downloads page (deleted after *Keep converted downloads* days) |
-| `cache/`, `transcode/` | thumbnails and transcoding work files; safe to delete |
+| `cache/`, `transcode/` | thumbnails, seek-bar previews and transcoding work files; safe to delete |
 
 Older versions kept the library in `library.json`. The first start of this version moves it
 into `lichtspiel.db` and renames the old file to `library.json.migrated`.

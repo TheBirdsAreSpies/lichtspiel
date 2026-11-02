@@ -17,7 +17,12 @@
 //! playback.started, playback.progress, playback.stopped, playback.watched,
 //! item.problem, download.ready, user.invited, user.joined, playlist.created, playlist.updated,
 //! server.started, api.call (answer any JSON; reached through
-//! POST /api/plugins/{id}/call/{action}).
+//! POST /api/plugins/{id}/call/{action}). An api.call answer with
+//! {"mark_watched": [...]} marks those items watched for the caller.
+//!
+//! Playback events carry "item" (kind, title, year, ids, show, season,
+//! episode), "time" (ms) and "progress" (percent); playback.progress is sent
+//! when a player pauses or plays on.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -65,6 +70,10 @@ pub struct Manifest {
     pub timeout_seconds: u64,
     #[serde(default)]
     pub enabled_by_default: bool,
+    /// Each person gets a panel of this plugin in Settings (connect an
+    /// account …); the plugin draws it when asked with api.call "panel".
+    #[serde(default)]
+    pub user_panel: bool,
 }
 
 fn default_timeout() -> u64 {
@@ -214,7 +223,9 @@ fn resolve_program(dir: &Path, prog: &str) -> PathBuf {
 
 /// A tiny plugin built into the server, used as a working example and by
 /// the self-test: `lichtspiel --example-plugin`. It answers metadata
-/// lookups with a tagline and echoes api.call requests.
+/// lookups with a tagline, echoes api.call requests ("mark" answers
+/// mark_watched for body.id, "panel" draws a Settings panel) and writes the
+/// last playback event to last_playback.json in its folder.
 pub fn example_plugin_main() {
     let mut input = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
@@ -226,7 +237,13 @@ pub fn example_plugin_main() {
             let title = v["data"]["title"].as_str().unwrap_or("");
             json!({"metadata": {"tagline": format!("{prefix}: {title}"), "extra": {"example_plugin": true}}})
         }
+        "api.call" if v["data"]["action"] == "mark" => json!({"ok": true, "mark_watched": [{"id": v["data"]["body"]["id"]}]}),
+        "api.call" if v["data"]["action"] == "panel" => json!({"title": "Example", "text": "Hello from the example plugin", "buttons": []}),
         "api.call" => json!({"ok": true, "action": v["data"]["action"], "echo": v["data"]["body"]}),
+        e if e.starts_with("playback.") => {
+            let _ = std::fs::write("last_playback.json", v.to_string());
+            json!({"ok": true})
+        }
         _ => json!({"ok": true}),
     };
     println!("{answer}");

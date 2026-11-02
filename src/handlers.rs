@@ -212,14 +212,19 @@ pub fn timeline(app: &Arc<App>, user: &User, iid: u64, time_ms: u64, state: &str
         app.playing.lock().unwrap().remove(&key);
     } else {
         let mut map = app.playing.lock().unwrap();
-        let first = !map.contains_key(&key);
+        let before = map.get(&key).map(|p| p.state.clone());
         map.insert(key, Playing { user_id: user.id, item_id: iid, offset_ms: time_ms, state: state.into(), method: "player".into(), updated: Instant::now(), client });
         drop(map);
-        if first { app.fire("playback.started", json!({"id": iid, "user": user.username})); }
+        match before {
+            None => app.fire("playback.started", json!({"id": iid, "user": user.username, "time": time_ms, "state": state})),
+            // Paused or playing again (not every 10-second report).
+            Some(b) if b != state => app.fire("playback.progress", json!({"id": iid, "user": user.username, "time": time_ms, "state": state})),
+            _ => {}
+        }
     }
     app.save();
     if state == "stopped" { app.fire("playback.stopped", json!({"id": iid, "user": user.username, "time": time_ms})); }
-    if watched_now { app.fire("playback.watched", json!({"id": iid, "user": user.username})); }
+    if watched_now { app.fire("playback.watched", json!({"id": iid, "user": user.username, "time": time_ms})); }
     ok(json!({"ok": true, "watched": watched_now}))
 }
 
@@ -612,6 +617,40 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str) -> Resp {
     bytes(200, "image/svg+xml", placeholder_svg(&title, kind.as_str(), id).into_bytes())
 }
 
+/// A small still at a moment of a movie or episode, for the player's seek bar
+/// preview: ?t= seconds into the whole video (a split movie counts as one).
+/// Rounded to 10 seconds and kept in cache/frames.
+pub fn frame(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
+    let want = ctx.param("t").and_then(|t| t.parse::<f64>().ok()).unwrap_or(0.0).max(0.0);
+    let step = (want / 10.0).floor() as u64 * 10;
+    let (it, _) = match playable_file(app, user, iid, 0) { Ok(x) => x, Err(r) => return r };
+    // Which file the moment is in, and the time inside that file.
+    let mut at = step as f64;
+    let mut src = None;
+    for f in it.all_files() {
+        let d = f.duration_ms as f64 / 1000.0;
+        if d <= 0.0 || at < d { src = Some(f.path.clone()); break; }
+        at -= d;
+    }
+    let Some(src) = src.or_else(|| it.last_file().map(|f| f.path.clone())) else { return fail(404, "No video file") };
+    let dir = app.data_dir.join("cache").join("frames");
+    let _ = std::fs::create_dir_all(&dir);
+    let out = dir.join(format!("{}-{step}.jpg", it.id));
+    if !std::fs::metadata(&out).map(|m| m.len() > 0).unwrap_or(false) {
+        let ffmpeg = app.settings().ffmpeg;
+        let args: Vec<String> = vec![
+            "-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into(), "-y".into(),
+            "-ss".into(), format!("{at:.2}"), "-i".into(), src, "-frames:v".into(), "1".into(),
+            "-vf".into(), "scale=240:-2".into(), "-q:v".into(), "6".into(), out.to_string_lossy().to_string(),
+        ];
+        let ran = Command::new(&ffmpeg).args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
+        if !ran || !out.exists() { return fail(404, "No picture at that moment"); }
+    }
+    let mut r = serve_file(&out, "image/jpeg", None, false);
+    r.add_header(header("Cache-Control", "private, max-age=86400"));
+    r
+}
+
 pub fn with_cache(mut r: Resp) -> Resp {
     r.add_header(header("Cache-Control", "private, max-age=3600"));
     r
@@ -670,9 +709,92 @@ pub fn plugin_list(app: &Arc<App>) -> Resp {
         }
         json!({"id": pl.manifest.id, "name": pl.manifest.name, "version": pl.manifest.version, "description": pl.manifest.description,
             "author": pl.manifest.author, "hooks": pl.manifest.hooks, "command": pl.manifest.command, "enabled": st.enabled,
-            "settings": settings, "folder": pl.dir.to_string_lossy()})
+            "settings": settings, "folder": pl.dir.to_string_lossy(), "user_panel": pl.manifest.user_panel})
     }).collect();
     ok(json!({"folder": p.dir.to_string_lossy(), "plugins": list, "errors": p.errors, "events": plugins::EVENTS}))
+}
+
+/// The switched-on plugins that offer each person a panel of their own in
+/// Settings (e.g. "Connect Trakt"); the plugin draws it through api.call "panel".
+pub fn plugin_panels(app: &Arc<App>) -> Resp {
+    let p = app.plugins.lock().unwrap();
+    let db = app.db.lock().unwrap();
+    let list: Vec<Value> = p.list.iter()
+        .filter(|pl| pl.manifest.user_panel && db.plugins.get(&pl.manifest.id).is_some_and(|s| s.enabled))
+        .map(|pl| json!({"id": pl.manifest.id, "name": pl.manifest.name, "description": pl.manifest.description}))
+        .collect();
+    ok(json!({"panels": list}))
+}
+
+/// Same id in two spellings (Trakt sends numbers, the details download may keep strings).
+fn id_key(source: &str, v: &Value) -> Option<String> {
+    let s = match v { Value::String(s) => s.trim().to_string(), Value::Number(n) => n.to_string(), _ => return None };
+    (!s.is_empty() && s != "0").then(|| format!("{source}:{}", s.to_ascii_lowercase()))
+}
+
+/// Marks what a plugin found watched elsewhere. Each entry is {"id": n}, or
+/// {"type": "movie"|"show", "ids": {imdb, tmdb, tvdb …}} (a show: every
+/// episode), or {"type": "episode", "show": {"ids": {…}}, "season": s,
+/// "episode": e}; "watched_at" (unix seconds) and "plays" are optional.
+/// Returns (entries found, items newly watched). No playback.watched events:
+/// the plugin would only send them back where they came from.
+pub fn mark_watched_from_plugin(app: &Arc<App>, user: &User, list: &[Value]) -> (usize, usize) {
+    let mut db = app.db.lock().unwrap();
+    let mut by_id: std::collections::HashMap<String, Vec<u64>> = Default::default();
+    for it in db.items.values() {
+        if !matches!(it.kind, ItemKind::Movie | ItemKind::Show) || !db.can_see_section(user, it.section_id) { continue; }
+        if let Some(Value::Object(ids)) = it.extra.get("ids") {
+            for (k, v) in ids {
+                if let Some(key) = id_key(k, v) { by_id.entry(key).or_default().push(it.id); }
+            }
+        }
+    }
+    let find = |ids: &Value, kind: ItemKind, db: &Db| -> Option<u64> {
+        let Value::Object(m) = ids else { return None };
+        m.iter().filter_map(|(k, v)| id_key(k, v)).filter_map(|k| by_id.get(&k)).flatten().copied()
+            .find(|i| db.items.get(i).is_some_and(|x| x.kind == kind))
+    };
+    let (mut found, mut marked) = (0, 0);
+    for e in list {
+        let leaves: Vec<u64> = if let Some(id) = e["id"].as_u64() {
+            match db.items.get(&id) {
+                Some(it) if db.can_see_section(user, it.section_id) => db.leaves(id),
+                _ => vec![],
+            }
+        } else {
+            match e["type"].as_str().unwrap_or("") {
+                "movie" => find(&e["ids"], ItemKind::Movie, &db).into_iter().collect(),
+                "show" => find(&e["ids"], ItemKind::Show, &db).map(|s| db.leaves(s)).unwrap_or_default(),
+                "episode" => {
+                    let show = find(&e["show"]["ids"], ItemKind::Show, &db);
+                    let (s, n) = (e["season"].as_u64(), e["episode"].as_u64());
+                    show.map(|show| db.leaves(show).into_iter().filter(|l| {
+                        let ep = db.items.get(l);
+                        let season = ep.and_then(|x| x.parent_id).and_then(|p| db.items.get(&p));
+                        ep.and_then(|x| x.index).map(u64::from) == n && season.and_then(|x| x.index).map(u64::from) == s
+                    }).collect()).unwrap_or_default()
+                }
+                _ => vec![],
+            }
+        };
+        if leaves.is_empty() { continue; }
+        found += 1;
+        let at = e["watched_at"].as_u64().filter(|t| *t > 0 && *t <= now()).unwrap_or_else(now);
+        let plays = e["plays"].as_u64().unwrap_or(1).clamp(1, 1000) as u32;
+        for leaf in leaves {
+            let v = db.view_mut(user.id, leaf);
+            if v.view_count > 0 { continue; }
+            v.view_count = plays;
+            v.last_viewed_at = v.last_viewed_at.max(at);
+            v.view_offset_ms = 0;
+            v.finished = false;
+            marked += 1;
+            db.record_play_at(user.id, leaf, true, at);
+        }
+    }
+    drop(db);
+    if marked > 0 { app.save(); }
+    (found, marked)
 }
 
 pub fn plugin_call(app: &Arc<App>, ctx: &Ctx, user: &User, pid: &str, action: &str) -> Resp {
@@ -684,8 +806,21 @@ pub fn plugin_call(app: &Arc<App>, ctx: &Ctx, user: &User, pid: &str, action: &s
     }
     let data = json!({"action": action, "body": ctx.body, "params": ctx.params.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>(), "user": user.username, "admin": user.admin});
     match plugins::invoke(&pl, &st.settings, "api.call", &data, &app.server_info()) {
-        Ok(v) => {
-            app.plugins.lock().unwrap().note(pid, "api.call", true, action.to_string());
+        Ok(mut v) => {
+            // {"mark_watched": [...]}: the plugin found these watched elsewhere
+            // (Trakt's history …); they become watched for whoever called.
+            let mut detail = action.to_string();
+            if let Some(list) = v.get("mark_watched").and_then(|l| l.as_array()).cloned() {
+                let (found, marked) = mark_watched_from_plugin(app, user, &list);
+                if let Some(o) = v.as_object_mut() {
+                    o.remove("mark_watched");
+                    o.insert("matched".into(), json!(found));
+                    o.insert("marked".into(), json!(marked));
+                    o.insert("not_found".into(), json!(list.len().saturating_sub(found)));
+                }
+                detail = format!("{action}: {found} of {} found, {marked} newly watched", list.len());
+            }
+            app.plugins.lock().unwrap().note(pid, "api.call", true, detail);
             ok(v)
         }
         Err(e) => {

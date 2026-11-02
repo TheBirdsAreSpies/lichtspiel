@@ -77,6 +77,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/library/metadata/{id}/decision", "How it would play: direct, remux or transcode ?quality=720p-4"),
     ("GET", "/library/parts/{id}/file", "The original file, with seeking (Range requests); ?download=1"),
     ("GET", "/library/parts/{id}/subtitles/{n}", "A subtitle track as WebVTT (n, or xN for side files)"),
+    ("GET", "/library/parts/{id}/frame", "A small still for the player's seek bar ?t=seconds (rounded to 10 s, cached)"),
     ("GET", "/video/transcode/{id}/stream.mp4", "Converted stream for any container ?quality= &offset=seconds &audio=streamIndex &transcode=1 &level=4.1 (H.264 level the player needs)"),
     ("GET", "/video/transcode/{id}/start.m3u8", "HLS (MPEG-TS, H.264/AAC) stream ?quality= &offset= &level=4.1 (redirects to the playlist)"),
     ("GET", "/status/sessions", "What is playing right now"),
@@ -131,7 +132,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/plugins/{id}/disable", "Admin: switch a plugin off"),
     ("PUT", "/api/plugins/{id}/settings", "Admin: plugin settings {..}"),
     ("GET", "/api/plugins/log", "Admin: recent plugin runs"),
-    ("POST", "/api/plugins/{id}/call/{action}", "Run a plugin's own action (any JSON body is passed on)"),
+    ("GET", "/api/plugins/panels", "Switched-on plugins that give each person a panel in Settings (e.g. Connect Trakt)"),
+    ("POST", "/api/plugins/{id}/call/{action}", "Run a plugin's own action (any JSON body is passed on); an answer with mark_watched marks those items watched for you"),
     ("GET", "/api/settings", "Admin: server settings"),
     ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, ffmpeg, ffprobe}"),
     ("GET", "/api/transcoder", "Admin: is ffmpeg there, which hardware encoders"),
@@ -792,6 +794,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["library", "parts", iid, "file"]) | ("GET", ["library", "parts", iid, _, "file"]) | ("GET", ["library", "parts", iid, "file", _]) => direct_file(app, ctx, &user, iid),
         ("GET", ["library", "parts", iid, "subtitles", n]) => subtitles(app, &user, iid, n),
+        ("GET", ["library", "parts", iid, "frame"]) => frame(app, ctx, &user, iid),
 
         // ---------------- streaming
         ("GET", ["video", "transcode", iid, "stream.mp4"]) => progressive(app, ctx, &user, iid),
@@ -1302,6 +1305,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             app.save();
             ok(json!({"ok": true}))
         }
+        ("GET", ["api", "plugins", "panels"]) => plugin_panels(app),
         ("POST", ["api", "plugins", pid, "call", action]) => plugin_call(app, ctx, &user, pid, action),
 
         // ---------------- settings

@@ -207,7 +207,8 @@ pub fn run(out: &Path) -> bool {
     let _ = std::fs::create_dir_all(&pdir);
     let _ = std::fs::write(pdir.join("plugin.json"), json!({
         "id": "example", "name": "Example tagline plugin", "version": "1.0", "description": "Adds a tagline to new items",
-        "command": ["{server}", "--example-plugin"], "hooks": ["metadata.lookup", "api.call"], "enabled_by_default": true,
+        "command": ["{server}", "--example-plugin"], "hooks": ["metadata.lookup", "api.call", "playback.started", "playback.watched"], "enabled_by_default": true,
+        "user_panel": true,
         "settings": {"tagline_prefix": "Added by the example plugin"}
     }).to_string());
 
@@ -484,11 +485,34 @@ pub fn run(out: &Path) -> bool {
     let enabled = pl["plugins"].as_array().map(|a| a.iter().any(|p| p["id"] == "example" && p["enabled"] == true)).unwrap_or(false);
     let tagline = c.get(&format!("/library/metadata/{mp4}")).json()["MediaContainer"]["Metadata"][0]["tagline"].as_str().unwrap_or("").to_string();
     let call = c.post("/api/plugins/example/call/hello", json!({"say": "hi"}));
+    let panels = c.get("/api/plugins/panels").json();
+    let panel = panels["panels"].as_array().is_some_and(|a| a.iter().any(|p| p["id"] == "example"));
+    // Playback events tell plugins what the item is (the example plugin writes the last one down).
+    let seen_file = data.join("plugins").join("example").join("last_playback.json");
+    let mut seen = Value::Null;
+    for _ in 0..60 {
+        if let Some(v) = std::fs::read_to_string(&seen_file).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) { seen = v; break; }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let brief = seen["data"]["item"]["type"] == "movie" && seen["data"]["item"]["title"].is_string() && seen["data"]["progress"].is_number();
+    // An api.call answer with mark_watched marks things watched for the caller.
+    let before = c.get(&format!("/library/metadata/{avi}")).json()["MediaContainer"]["Metadata"][0]["viewCount"].as_u64().unwrap_or(0);
+    let mark = c.post("/api/plugins/example/call/mark", json!({"id": avi})).json();
+    let after = c.get(&format!("/library/metadata/{avi}")).json()["MediaContainer"]["Metadata"][0]["viewCount"].as_u64().unwrap_or(0);
+    let marked = mark["matched"] == 1 && (before > 0 || (mark["marked"] == 1 && after == 1));
+    if before == 0 { c.post(&format!("/:/unscrobble?key={avi}"), json!({})); }
+    let credits = c.get(&format!("/library/metadata/{mkv}")).json()["MediaContainer"]["Metadata"][0]["credits"].as_array().is_some_and(|a| !a.is_empty());
     steps.add(
         "plugins",
-        enabled && tagline.starts_with("Added by the example plugin") && call.status == 200 && call.json()["echo"]["say"] == "hi",
-        format!("example plugin found and on: {enabled}; it filled in the tagline \"{tagline}\"; its own API action answered HTTP {}", call.status),
+        enabled && tagline.starts_with("Added by the example plugin") && call.status == 200 && call.json()["echo"]["say"] == "hi" && panel && brief && marked,
+        format!("example plugin found and on: {enabled}; it filled in the tagline \"{tagline}\"; its own API action answered HTTP {}; offers a Settings panel: {panel}; playback events carry the item and progress: {brief} ({}); mark_watched: {} found, {} marked; the player is told where the credits start: {credits}",
+            call.status, seen["event"].as_str().unwrap_or("no event"), mark["matched"], mark["marked"]),
     );
+    if have_ffmpeg {
+        let fr = c.get(&format!("/library/parts/{mp4}/frame?t=1"));
+        steps.add("seek preview", fr.status == 200 && fr.head.to_lowercase().contains("image/jpeg") && fr.body.len() > 500,
+            format!("a still for the seek bar: HTTP {}, {} bytes", fr.status, fr.body.len()));
+    }
 
     // ---- api: filters, search, hubs
     let filters = c.get("/api/filters").json();
@@ -682,6 +706,7 @@ pub fn run(out: &Path) -> bool {
         ("users", "users".to_string()),
         ("settings", "settings".to_string()),
         ("downloads", "downloads".to_string()),
+        ("player", format!("play/{mp4}?t=2")),
     ];
     match find_browser() {
         _ if started.elapsed() + Duration::from_secs(8 * 4) > BUDGET => steps.add("ui", true, format!(

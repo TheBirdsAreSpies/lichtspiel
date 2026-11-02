@@ -885,7 +885,14 @@ impl Db {
     /// A watched movie or episode leaves the watchlist; a season or show once
     /// every episode of it is watched.
     pub fn record_play(&mut self, user_id: u64, item_id: u64, manual: bool) {
-        self.history.push(PlayEvent { user_id, item_id, at: now(), manual });
+        self.record_play_at(user_id, item_id, manual, now());
+    }
+
+    /// The same for a viewing at another time (imported from elsewhere); the
+    /// history stays in time order.
+    pub fn record_play_at(&mut self, user_id: u64, item_id: u64, manual: bool, at: u64) {
+        let pos = self.history.iter().rposition(|e| e.at <= at).map_or(0, |i| i + 1);
+        self.history.insert(pos, PlayEvent { user_id, item_id, at, manual });
         let mut up = vec![item_id];
         let mut at = self.items.get(&item_id).and_then(|i| i.parent_id);
         while let Some(p) = at {

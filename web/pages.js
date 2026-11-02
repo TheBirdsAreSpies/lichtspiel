@@ -446,9 +446,63 @@ function accountPanel(dataDir) {
     dataDir ? h('p', { class: 'dim' }, t('Data folder on the server: '), h('code', {}, dataDir)) : null);
 }
 
+// Plugins that give each person a panel of their own (e.g. Trakt: connect your account).
+// The plugin draws it: api.call "panel" answers {title, text, link, buttons: [{label, action, primary, confirm}]}.
+// A button's answer may carry {message, code, link, poll: {action, seconds}} (shown in a box that asks
+// again until the answer says done), {error}, and matched/marked counts after a history import.
+function pluginPanels() {
+  const box = h('div');
+  const call = (id, action) => api('POST', `/api/plugins/${id}/call/${action}`, { lang: I18N.lang });
+  const draw = async (id, name, slot) => {
+    let p;
+    try { p = await call(id, 'panel'); } catch (e) { p = { title: name, text: e.message, buttons: [] }; }
+    const run = async b => {
+      if (b.confirm && !(await sure(b.confirm, { danger: b.action === 'disconnect' }))) return;
+      let r;
+      try { r = await call(id, b.action); } catch (e) { return toast(e.message, 6000); }
+      if (r.poll) return pollBox(id, b.label, r, () => draw(id, name, slot));
+      const counts = r.marked !== undefined ? ' ' + t('{found} found in your libraries, {marked} newly marked as watched.', { found: r.matched, marked: r.marked }) : '';
+      if (r.error) toast(r.error, 6000); else if (r.message || counts) toast((r.message || '') + counts, 8000);
+      draw(id, name, slot);
+    };
+    slot.replaceChildren(h('h2', { style: 'margin-top:0' }, p.title || name,
+        p.status === 'on' ? h('span', { class: 'ok', style: 'font-size:14px;margin-left:10px' }, t('connected')) : null),
+      p.text ? h('p', {}, p.text) : null,
+      p.link ? h('p', {}, h('a', { href: p.link, target: '_blank', rel: 'noopener' }, p.link)) : null,
+      (p.buttons || []).length ? h('div', { class: 'actions' }, p.buttons.map(b => h('button', { class: b.primary ? 'primary' : '', onclick: () => run(b) }, b.label))) : null);
+  };
+  // A code to type in somewhere else (a device login): asks the plugin again until it is done.
+  const pollBox = (id, title, first, done) => {
+    let timer = null, stopped = false;
+    const msg = h('p'), code = h('div', { style: 'font-size:32px;font-weight:700;letter-spacing:4px;margin:12px 0;user-select:all' });
+    const link = h('p'), wait = h('p', { class: 'dim' });
+    const show = r => {
+      if (r.message) msg.textContent = r.message;
+      if (r.code) code.textContent = r.code;
+      if (r.link) link.replaceChildren(h('a', { href: r.link, target: '_blank', rel: 'noopener', class: 'primary' }, r.link));
+    };
+    const box = modal(title, [msg, code, link, wait, h('div', { class: 'actions' }, h('button', { onclick: () => box.remove() }, t('Cancel')))],
+      () => { stopped = true; clearTimeout(timer); done(); });
+    const next = r => {
+      show(r);
+      if (stopped) return;
+      if (!r.poll) { box.remove(); if (r.error) toast(r.error, 6000); else if (r.message) toast(r.message, 5000); return; }
+      wait.textContent = t('Waiting until the code is entered…');
+      timer = setTimeout(async () => {
+        try { next(await call(id, r.poll.action)); } catch (e) { box.remove(); toast(e.message, 6000); }
+      }, Math.max(2, r.poll.seconds || 5) * 1000);
+    };
+    next(first);
+  };
+  GET('/api/plugins/panels').then(r => {
+    box.replaceChildren(...r.panels.map(p => { const slot = h('div', { class: 'panel' }, h('p', { class: 'dim' }, t('Loading…'))); draw(p.id, p.name, slot); return slot; }));
+  }).catch(() => {});
+  return box;
+}
+
 async function settingsPage() {
   markNav('settings');
-  if (!S.me.admin) return set(h('h1', {}, t('Settings')), accountPanel());
+  if (!S.me.admin) return set(h('h1', {}, t('Settings')), accountPanel(), pluginPanels());
   const [r, tc] = await Promise.all([GET('/api/settings'), GET('/api/transcoder')]);
   const s = r.settings;
   const f = {};
@@ -503,7 +557,7 @@ async function settingsPage() {
         boot();
       } catch (e) { toast(e.message, 5000); }
     } }, t('Save settings'))),
-    accountPanel(r.data_dir));
+    accountPanel(r.data_dir), pluginPanels());
 }
 
 // ---------- API page
@@ -1131,6 +1185,12 @@ async function render() {
       case undefined: return await homePage();
       case 'section': return await sectionPage(parts[1], qs);
       case 'item': return await itemPage(parts[1]);
+      // A link that starts playing (?t= seconds in); closing the player leaves the title's page.
+      case 'play': {
+        history.replaceState(null, '', '#/item/' + parts[1]);
+        await itemPage(parts[1]);
+        return await play({ id: parts[1] }, Number(new URLSearchParams(qs || '').get('t')) || 0);
+      }
       case 'person': return await personPage(parts[1], qs);
       case 'search': return await searchPage(decodeURIComponent(parts[1] || ''));
       case 'playlists': return await playlistsPage(qs);

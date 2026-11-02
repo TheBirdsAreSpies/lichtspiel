@@ -337,6 +337,33 @@ impl App {
             .collect()
     }
 
+    /// What a plugin needs to know about an item to find it elsewhere: kind,
+    /// title, year, the ids from the details download (imdb, tmdb, tvdb …) and,
+    /// for an episode or season, the show with its ids and the numbers.
+    pub fn item_brief(&self, id: u64) -> Value {
+        let db = self.db.lock().unwrap();
+        let Some(it) = db.items.get(&id) else { return Value::Null };
+        let ids = |i: &Item| i.extra.get("ids").cloned().unwrap_or_else(|| json!({}));
+        let show_of = |s: &Item| json!({"id": s.id, "title": s.title, "year": s.year, "ids": ids(s)});
+        let mut o = json!({"id": it.id, "type": it.kind.as_str(), "title": it.title, "year": it.year, "duration_ms": it.duration_ms, "ids": ids(it)});
+        let parent = it.parent_id.and_then(|p| db.items.get(&p));
+        match it.kind {
+            ItemKind::Episode => {
+                o["episode"] = json!(it.index);
+                if let Some(season) = parent {
+                    o["season"] = json!(season.index);
+                    if let Some(show) = season.parent_id.and_then(|g| db.items.get(&g)) { o["show"] = show_of(show); }
+                }
+            }
+            ItemKind::Season => {
+                o["season"] = json!(it.index);
+                if let Some(show) = parent { o["show"] = show_of(show); }
+            }
+            _ => {}
+        }
+        o
+    }
+
     /// Tells plugins about something, in the background.
     pub fn fire(self: &Arc<Self>, event: &str, data: Value) {
         let listeners = self.listeners(event);
@@ -345,7 +372,20 @@ impl App {
         }
         let app = self.clone();
         let event = event.to_string();
+        let mut data = data;
         std::thread::spawn(move || {
+            // Playback events carry what the item is, so a plugin can look it up
+            // elsewhere (Trakt, Last.fm …) without asking the server.
+            if event.starts_with("playback.") && data.get("item").is_none() {
+                if let Some(id) = data["id"].as_u64() {
+                    let item = app.item_brief(id);
+                    let dur = item["duration_ms"].as_u64().unwrap_or(0);
+                    if let (Some(t), true) = (data["time"].as_u64(), dur > 0) {
+                        data["progress"] = json!(((t as f64 / dur as f64) * 1000.0).round().min(1000.0) / 10.0);
+                    }
+                    data["item"] = item;
+                }
+            }
             let server = app.server_info();
             for (pl, settings) in listeners {
                 let r = plugins::invoke(&pl, &settings, &event, &data, &server);
@@ -960,10 +1000,16 @@ impl App {
 /// On first start, copies the plugins shipped with the server (switched off)
 /// into the data folder, so they appear on the Plugins page.
 fn install_bundled_plugins(dest: &Path) {
+    // The marker lists the bundled plugins copied so far (one per line), so a
+    // plugin bundled by a newer version arrives once and one deleted by hand
+    // stays deleted. Older versions wrote one sentence instead: they had copied
+    // the first two.
     let marker = dest.join(".bundled-installed");
-    if marker.exists() {
-        return;
-    }
+    let mut done: Vec<String> = match std::fs::read_to_string(&marker) {
+        Ok(t) if t.starts_with("bundled example plugins") => vec!["nfo-reader".into(), "webhook-notify".into()],
+        Ok(t) => t.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect(),
+        Err(_) => vec![],
+    };
     let mut sources: Vec<PathBuf> = vec![];
     if let Some(p) = crate::env("BUNDLED_PLUGINS") {
         sources.push(PathBuf::from(p));
@@ -981,8 +1027,11 @@ fn install_bundled_plugins(dest: &Path) {
         if !from.join("plugin.json").exists() {
             continue;
         }
+        let name = e.file_name().to_string_lossy().to_string();
         let to = dest.join(e.file_name());
-        if to.exists() {
+        let seen = done.contains(&name);
+        if !seen { done.push(name); }
+        if seen || to.exists() {
             continue;
         }
         let _ = std::fs::create_dir_all(&to);
@@ -992,7 +1041,8 @@ fn install_bundled_plugins(dest: &Path) {
             }
         }
     }
-    let _ = std::fs::write(marker, "bundled example plugins were copied here once\n");
+    done.sort();
+    let _ = std::fs::write(marker, done.join("\n") + "\n");
 }
 
 pub fn short(s: &str) -> String {
@@ -1533,6 +1583,11 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
             o["grandparentTitle"] = json!(g.title);
             o["grandparentThumb"] = json!(format!("/library/metadata/{}/thumb?v={}", g.id, g.updated_at));
         }
+    }
+    // Where the end credits start (ms), for the player's "Skip credits".
+    if detail && it.kind.playable() {
+        let credits = db.credits_markers(it);
+        if !credits.is_empty() { o["credits"] = json!(credits); }
     }
     if let Some(f) = &it.file {
         let vid = f.video();
