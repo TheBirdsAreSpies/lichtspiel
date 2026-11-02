@@ -33,7 +33,7 @@ pub fn setup(app: &Arc<App>, ctx: &Ctx) -> Resp {
     let mut db = app.db.lock().unwrap();
     if !db.users.is_empty() { return fail(409, "This server is already set up; sign in instead"); }
     let id = db.new_id();
-    db.users.push(User { id, username, email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s, admin: true, created_at: now(), allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new() });
+    db.users.push(User { id, username, email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s, admin: true, created_at: now(), allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false });
     if let Some(name) = ctx.body_or_param("server_name").filter(|n| !n.trim().is_empty()) {
         db.settings.server_name = name;
     }
@@ -156,7 +156,7 @@ pub fn invite_accept(app: &Arc<App>, ctx: &Ctx, code: &str) -> Resp {
     if inv.expires_at < now() { return fail(410, "This invite has expired"); }
     let id = db.new_id();
     let email = ctx.body_or_param("email").filter(|e| !e.is_empty()).unwrap_or(inv.email.clone());
-    db.users.push(User { id, username: username.clone(), email, password_hash: h, salt: s, admin: inv.admin, created_at: now(), allowed_sections: inv.allowed_sections.clone(), invited_by: Some(inv.created_by), allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new() });
+    db.users.push(User { id, username: username.clone(), email, password_hash: h, salt: s, admin: inv.admin, created_at: now(), allowed_sections: inv.allowed_sections.clone(), invited_by: Some(inv.created_by), allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false });
     if let Some(i) = db.invites.iter_mut().find(|i| i.code == code) {
         i.used_by = Some(id);
         i.used_at = Some(now());
@@ -190,7 +190,7 @@ pub fn create_playlist(app: &Arc<App>, ctx: &Ctx, user: &User) -> Resp {
     let mut db = app.db.lock().unwrap();
     let mut items: Vec<u64> = vec![];
     for i in ids.iter().flat_map(|i| db.leaves(*i)) {
-        if db.items.get(&i).is_some_and(|it| db.can_see_section(user, it.section_id)) && !items.contains(&i) {
+        if db.items.get(&i).is_some_and(|it| db.can_see_item(user, it)) && !items.contains(&i) {
             items.push(i);
         }
     }
@@ -257,7 +257,7 @@ pub fn timeline(app: &Arc<App>, user: &User, iid: u64, time_ms: u64, state: &str
     {
         let mut db = app.db.lock().unwrap();
         let Some(it) = db.items.get(&iid) else { return fail(404, "Not found") };
-        if !db.can_see_section(user, it.section_id) { return fail(403, "You don't have access to this library"); }
+        if !db.can_see_item(user, it) { return fail(403, "You don't have access to this library"); }
         let duration = it.duration_ms;
         let watched_at = db::watched_at_ms(db.settings.played_at_behaviour, db.settings.watched_threshold_percent, duration, &db.credits_markers(it));
         let v = db.view_mut(user.id, iid);
@@ -353,7 +353,7 @@ pub fn transcode_request(ctx: &Ctx) -> transcode::Request {
 fn playable_file(app: &Arc<App>, user: &User, iid: &str, part: usize) -> Result<(Item, db::MediaFile), Resp> {
     let db = app.db.lock().unwrap();
     let it = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)).ok_or_else(|| fail(404, "Not found"))?;
-    if !db.can_see_section(user, it.section_id) { return Err(fail(403, "You don't have access to this library")); }
+    if !db.can_see_item(user, it) { return Err(fail(403, "You don't have access to this library")); }
     if it.file.is_none() { return Err(fail(400, "This entry has no video file")); }
     let f = it.part(part).cloned().ok_or_else(|| fail(404, "No such part"))?;
     Ok((it.clone(), f))
@@ -619,7 +619,7 @@ pub fn art(app: &Arc<App>, user: &User, iid: &str) -> Resp {
     let path = {
         let db = app.db.lock().unwrap();
         let Some(it) = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)) else { return fail(404, "Not found") };
-        if !db.can_see_section(user, it.section_id) {
+        if !db.can_see_item(user, it) {
             return fail(403, "No access");
         }
         let top_id = App::top_level(&db, it.id).unwrap_or(it.id);
@@ -660,7 +660,7 @@ pub fn cast_photo(app: &Arc<App>, user: &User, iid: &str, n: &str) -> Resp {
     let top = {
         let db = app.db.lock().unwrap();
         let Some(it) = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)) else { return fail(404, "Not found") };
-        if !db.can_see_section(user, it.section_id) {
+        if !db.can_see_item(user, it) {
             return fail(403, "No access");
         }
         App::top_level(&db, it.id).unwrap_or(it.id)
@@ -675,7 +675,7 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str) -> Resp {
     let (poster, file, duration, title, kind, first_leaf, id) = {
         let db = app.db.lock().unwrap();
         let Some(it) = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)) else { return fail(404, "Not found") };
-        if !db.can_see_section(user, it.section_id) {
+        if !db.can_see_item(user, it) {
             return fail(403, "No access");
         }
         let mut poster = it.poster.clone();
@@ -845,7 +845,7 @@ pub fn mark_watched_from_plugin(app: &Arc<App>, user: &User, list: &[Value]) -> 
     let mut db = app.db.lock().unwrap();
     let mut by_id: std::collections::HashMap<String, Vec<u64>> = Default::default();
     for it in db.items.values() {
-        if !matches!(it.kind, ItemKind::Movie | ItemKind::Show) || !db.can_see_section(user, it.section_id) { continue; }
+        if !matches!(it.kind, ItemKind::Movie | ItemKind::Show) || !db.can_see_item(user, it) { continue; }
         if let Some(Value::Object(ids)) = it.extra.get("ids") {
             for (k, v) in ids {
                 if let Some(key) = id_key(k, v) { by_id.entry(key).or_default().push(it.id); }
@@ -861,7 +861,7 @@ pub fn mark_watched_from_plugin(app: &Arc<App>, user: &User, list: &[Value]) -> 
     for e in list {
         let leaves: Vec<u64> = if let Some(id) = e["id"].as_u64() {
             match db.items.get(&id) {
-                Some(it) if db.can_see_section(user, it.section_id) => db.leaves(id),
+                Some(it) if db.can_see_item(user, it) => db.leaves(id),
                 _ => vec![],
             }
         } else {
@@ -1035,7 +1035,7 @@ pub fn custom_image(app: &Arc<App>, user: &User, iid: &str, slot: &str) -> Resp 
     let path = {
         let db = app.db.lock().unwrap();
         let Some(it) = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)) else { return fail(404, "Not found") };
-        if !db.can_see_section(user, it.section_id) {
+        if !db.can_see_item(user, it) {
             return fail(403, "No access");
         }
         it.extra.get(slot).and_then(|v| v.as_str()).map(String::from)

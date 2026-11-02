@@ -560,7 +560,7 @@ pub fn run_smart(db: &Db, user: &User, q: &SmartQuery) -> Vec<u64> {
     let mut ids: Vec<u64> = db
         .items
         .values()
-        .filter(|i| db.can_see_section(user, i.section_id))
+        .filter(|i| db.can_see_item(user, i))
         .filter(|i| q.sections.is_empty() || q.sections.contains(&i.section_id))
         .filter(|i| (i.kind.playable() || asks_container) && !i.is_extra())
         .filter(|i| matches_all(db, user.id, i, &q.rules, q.match_all))
@@ -581,7 +581,7 @@ pub fn playlist_items(db: &Db, user: &User, p: &Playlist) -> Vec<u64> {
             .items
             .iter()
             .copied()
-            .filter(|id| db.items.get(id).is_some_and(|i| db.can_see_section(user, i.section_id)))
+            .filter(|id| db.items.get(id).is_some_and(|i| db.can_see_item(user, i)))
             .collect(),
     }
 }

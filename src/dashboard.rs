@@ -20,7 +20,7 @@ pub fn watchlist_ids(db: &Db, user: &User, sort: &str, kind: Option<ItemKind>) -
         .iter()
         .filter(|(k, v)| v.watchlist_at > 0 && k.starts_with(&prefix))
         .filter_map(|(k, v)| Some((k[prefix.len()..].parse::<u64>().ok()?, v.watchlist_at)))
-        .filter(|(id, _)| db.items.get(id).is_some_and(|i| db.can_see_section(user, i.section_id) && kind.is_none_or(|k| i.kind == k)))
+        .filter(|(id, _)| db.items.get(id).is_some_and(|i| db.can_see_item(user, i) && kind.is_none_or(|k| i.kind == k)))
         .collect();
     let it = |id: &u64| &db.items[id];
     match sort {
@@ -38,7 +38,7 @@ pub fn watchlist_ids(db: &Db, user: &User, sort: &str, kind: Option<ItemKind>) -
 pub fn set_watchlist(db: &mut Db, user: &User, ids: &[u64], on: bool) -> Result<usize, Resp> {
     for id in ids {
         let Some(it) = db.items.get(id) else { return Err(fail(404, "Not found")) };
-        if !db.can_see_section(user, it.section_id) {
+        if !db.can_see_item(user, it) {
             return Err(fail(403, "You don't have access to this library"));
         }
     }

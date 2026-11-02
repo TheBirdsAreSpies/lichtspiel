@@ -7,6 +7,12 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Parental controls': 'Kindersicherung',
+    'Hides movies and shows rated above this age': 'Blendet Filme und Serien aus, die ab einem höheren Alter freigegeben sind',
+    'No limit': 'Keine Begrenzung',
+    'up to {age}': 'bis {age} Jahre',
+    'Hide unrated': 'Ohne Altersfreigabe ausblenden',
+    'Also hide titles without an age rating': 'Auch Titel ohne Altersfreigabe ausblenden',
     'Language of this app': 'Sprache dieser App',
     'Saved in this browser.': 'Wird in diesem Browser gespeichert.',
     'Loading…': 'Wird geladen …',

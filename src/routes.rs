@@ -124,7 +124,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/playlists/{id}/copy", "Save a playlist's current contents as a new manual playlist"),
     ("GET", "/api/users", "Admin: every user"),
     ("POST", "/api/users", "Admin: add a local user directly, without an invite {username, password, email, admin, allowed_sections: [ids]|null, home, pin} (a home profile needs no password)"),
-    ("PATCH", "/api/users/{id}", "Admin: {admin, allowed_sections: [ids]|null, allow_transcode, allow_delete, allow_download, password, email, home, pin (empty removes it)}"),
+    ("PATCH", "/api/users/{id}", "Admin: {admin, allowed_sections: [ids]|null, allow_transcode, allow_delete, allow_download, max_age (age limit, null = none), block_unrated, password, email, home, pin (empty removes it)}"),
     ("DELETE", "/api/users/{id}", "Admin: remove a user"),
     ("DELETE", "/api/users/{id}/tokens", "Admin: sign a user out everywhere"),
     ("GET", "/api/invites", "Admin: open and used invites"),
@@ -484,7 +484,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             }
             let lname = name.to_lowercase();
             let mut found: Vec<(Option<u32>, Value)> = vec![];
-            for it in db.items.values().filter(|i| matches!(i.kind, ItemKind::Movie | ItemKind::Show) && db.can_see_section(&user, i.section_id)) {
+            for it in db.items.values().filter(|i| matches!(i.kind, ItemKind::Movie | ItemKind::Show) && db.can_see_item(&user, i)) {
                 let cast = cast_of(it);
                 let Some(c) = cast.iter().find(|c| c["key"].as_str() == Some(*key) || crate::server::person_key(c) == *key || (!lname.is_empty() && c["name"].as_str().is_some_and(|n| n.to_lowercase() == lname))) else { continue };
                 if photo.is_null() && c["photo"].is_string() { photo = c["photo"].clone(); }
@@ -832,7 +832,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["library", "metadata", iid, "decision"]) => {
             let Some(iid) = id(iid) else { return fail(404, "Not found") };
             let db = app.db.lock().unwrap();
-            let Some(it) = db.items.get(&iid).filter(|i| db.can_see_section(&user, i.section_id)) else { return fail(404, "Not found") };
+            let Some(it) = db.items.get(&iid).filter(|i| db.can_see_item(&user, i)) else { return fail(404, "Not found") };
             if it.file.is_none() { return fail(400, "This entry has no video file") }
             // ?part=n: one file of a split movie (0 = the first).
             let part = ctx.num("part").map(|n| n as usize).unwrap_or(0);
@@ -1045,7 +1045,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let db = app.db.lock().unwrap();
             if q.is_empty() { return list_resp(&db, &user, &[], "search"); }
             let mut ids: Vec<u64> = db.items.values()
-                .filter(|i| db.can_see_section(&user, i.section_id) && i.kind != ItemKind::Season && !i.is_extra())
+                .filter(|i| db.can_see_item(&user, i) && i.kind != ItemKind::Season && !i.is_extra())
                 .filter(|i| i.title.to_lowercase().contains(&q) || i.genres.iter().any(|g| g.to_lowercase() == q))
                 .map(|i| i.id)
                 .collect();
@@ -1130,7 +1130,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("POST", ["playlists", pid, "items"]) | ("PUT", ["playlists", pid, "items"]) => {
             let ids = ids_from(ctx);
             let mut db = app.db.lock().unwrap();
-            let leaves: Vec<u64> = ids.iter().flat_map(|i| db.leaves(*i)).filter(|i| db.items.get(i).is_some_and(|it| db.can_see_section(&user, it.section_id))).collect();
+            let leaves: Vec<u64> = ids.iter().flat_map(|i| db.leaves(*i)).filter(|i| db.items.get(i).is_some_and(|it| db.can_see_item(&user, it))).collect();
             let Some(p) = id(pid).and_then(|p| db.playlists.iter_mut().find(|x| x.id == p)) else { return fail(404, "No such playlist") };
             if p.kind == PlaylistKind::Smart { return fail(400, "Smart playlists fill themselves; change their rules instead"); }
             if p.owner_id != user.id && !admin { return fail(403, "This playlist belongs to someone else"); }
@@ -1287,7 +1287,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let id = db.new_id();
             db.users.push(db::User { id, username: username.clone(), email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s,
                 admin: as_admin, created_at: now(), allowed_sections: sections, invited_by: Some(user.id),
-                allow_transcode: None, allow_delete: false, allow_download: None, sidebar: Value::Null, home, pin_hash: String::new(), pin_salt: String::new() });
+                allow_transcode: None, allow_delete: false, allow_download: None, sidebar: Value::Null, home, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false });
             let _ = set_pin(db.users.last_mut().unwrap(), &pin);
             let v = user_json(db.user(id).unwrap());
             drop(db);
@@ -1317,6 +1317,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if let Some(v) = ctx.body.get("allow_transcode").and_then(|v| v.as_bool()) { u.allow_transcode = Some(v); }
             if let Some(v) = ctx.body.get("allow_delete").and_then(|v| v.as_bool()) { u.allow_delete = v; }
             if let Some(v) = ctx.body.get("allow_download").and_then(|v| v.as_bool()) { u.allow_download = Some(v); }
+            if let Some(v) = ctx.body.get("max_age") { u.max_age = v.as_u64().map(|n| n.min(99) as u32); }
+            if let Some(v) = ctx.body.get("block_unrated").and_then(|v| v.as_bool()) { u.block_unrated = v; }
             if let Some(e) = ctx.body.get("email").and_then(|v| v.as_str()) { u.email = e.into(); }
             if let Some(p) = new_pin { let _ = set_pin(u, p); }
             u.home = will_home;

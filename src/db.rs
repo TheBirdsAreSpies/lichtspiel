@@ -383,6 +383,29 @@ pub struct User {
     pub pin_hash: String,
     #[serde(default)]
     pub pin_salt: String,
+    /// Parental control: the highest age rating this person may see (None = no limit).
+    #[serde(default)]
+    pub max_age: Option<u32>,
+    /// With a limit: also hide titles that have no age rating.
+    #[serde(default)]
+    pub block_unrated: bool,
+}
+
+/// The minimum age an age rating stands for ("FSK 12", "PG-13", "TV-MA", "de/16" …).
+pub fn rating_age(rating: &str) -> Option<u32> {
+    let r = rating.trim().to_lowercase();
+    let r = r.rsplit('/').next().unwrap_or("").trim().to_string();
+    let r = r.trim_start_matches("fsk").trim_start_matches("ab").trim().trim_end_matches("jahren").trim_end_matches('+').trim().to_string();
+    if let Ok(n) = r.parse::<u32>() { return Some(n); }
+    Some(match r.as_str() {
+        "o.a." | "oa" | "g" | "tv-g" | "tv-y" | "u" | "all" | "tv-y7" => 0,
+        "pg" | "tv-pg" => 8,
+        "pg-13" => 13,
+        "tv-14" => 14,
+        "r" | "tv-ma" | "ma" | "15+" => 17,
+        "nc-17" | "x" | "xxx" | "r18" => 18,
+        _ => return None,
+    })
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -994,6 +1017,25 @@ impl Db {
                 None => true,
                 Some(list) => list.contains(&section),
             }
+    }
+
+    /// Library access plus the person's age limit. Seasons and episodes take the
+    /// rating of the nearest parent that has one.
+    pub fn can_see_item(&self, user: &User, item: &Item) -> bool {
+        if !self.can_see_section(user, item.section_id) { return false; }
+        let Some(max) = user.max_age else { return true };
+        if user.admin { return true; }
+        let mut cur = item;
+        for _ in 0..4 {
+            if !cur.content_rating.trim().is_empty() {
+                return match rating_age(&cur.content_rating) {
+                    Some(a) => a <= max,
+                    None => !user.block_unrated,
+                };
+            }
+            match cur.parent_id.and_then(|p| self.items.get(&p)) { Some(p) => cur = p, None => break }
+        }
+        !user.block_unrated
     }
 
     pub fn children(&self, parent: u64) -> Vec<&Item> {

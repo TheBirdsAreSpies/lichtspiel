@@ -502,7 +502,7 @@ async function usersPage() {
           h('button', { onclick: () => copy(r.url) }, t('Copy link')), ' ', r.email ? h('a', { href: mail }, h('button', {}, t('Open in email'))) : null));
       } }, t('Create invite link'))), result),
     h('h2', {}, t('People')),
-    h('table', {}, h('tr', {}, h('th', {}, t('User')), h('th', {}, t('Libraries')), h('th', {}, t('Admin')), h('th', {}, t('May convert')), h('th', {}, t('May delete files')), h('th', {}, t('May download')), h('th', { title: t('Shown on the sign-in screen') }, t('Home profile')), h('th', {}, '')),
+    h('table', {}, h('tr', {}, h('th', {}, t('User')), h('th', {}, t('Libraries')), h('th', {}, t('Admin')), h('th', {}, t('May convert')), h('th', {}, t('May delete files')), h('th', {}, t('May download')), h('th', { title: t('Hides movies and shows rated above this age') }, t('Parental controls')), h('th', { title: t('Shown on the sign-in screen') }, t('Home profile')), h('th', {}, '')),
       users.users.map(u => h('tr', {},
         h('td', {}, h('b', {}, u.username), h('div', { class: 'dim' }, u.email || ''), h('div', { class: 'dim', style: 'font-size:12px' }, t('joined {date}', { date: fmtDate(u.created_at) }))),
         h('td', {}, u.admin ? t('all (admin)') : u.allowed_sections === null ? t('all') : u.allowed_sections.map(secName).join(', ') || t('none'), ' ',
@@ -515,6 +515,11 @@ async function usersPage() {
         h('td', {}, h('input', { type: 'checkbox', checked: u.allow_download, disabled: u.admin,
           title: u.admin ? t('Admins may always download') : t('May download movies and episodes, as they are or converted to a smaller quality'),
           onchange: async e => { await api('PATCH', '/api/users/' + u.id, { allow_download: e.target.checked }); toast(t('Saved')); } })),
+        h('td', {}, u.admin ? h('span', { class: 'dim' }, '–') : [
+          h('select', { onchange: async e => { await api('PATCH', '/api/users/' + u.id, { max_age: e.target.value === '' ? null : Number(e.target.value) }); toast(t('Saved')); usersPage(); } },
+            h('option', { value: '' }, t('No limit')), [0, 6, 12, 16, 18].map(a => h('option', { value: a, selected: u.max_age === a }, t('up to {age}', { age: a })))),
+          u.max_age === null ? null : h('label', { class: 'dim', style: 'display:block;font-size:12px', title: t('Also hide titles without an age rating') },
+            h('input', { type: 'checkbox', checked: u.block_unrated, onchange: async e => { await api('PATCH', '/api/users/' + u.id, { block_unrated: e.target.checked }); toast(t('Saved')); } }), ' ', t('Hide unrated'))]),
         h('td', {}, h('input', { type: 'checkbox', checked: u.home, title: t('Shown on the sign-in screen'),
           onchange: async e => { try { await api('PATCH', '/api/users/' + u.id, { home: e.target.checked }); toast(t('Saved')); } catch (x) { toast(x.message); e.target.checked = !e.target.checked; } } }),
           ' ', h('button', { class: 'small', title: u.has_pin ? t('PIN is set') : t('No PIN'), onclick: () => pinEditor(u) }, u.has_pin ? t('PIN') + ' 🔒' : t('PIN'))),

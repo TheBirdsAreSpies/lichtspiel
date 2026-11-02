@@ -233,7 +233,7 @@ pub fn occasion_rows(db: &Db, user: &User, day: (u32, u32), count: usize) -> Vec
         let mut list: Vec<(u8, &Item)> = db
             .items
             .values()
-            .filter(|i| db.can_see_section(user, i.section_id))
+            .filter(|i| db.can_see_item(user, i))
             .filter_map(|i| {
                 let fit = o.fit(i);
                 let wanted = match i.kind {

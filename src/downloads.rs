@@ -116,7 +116,7 @@ pub fn add(app: &Arc<App>, user: &User, ids: &[u64], quality: &str) -> Resp {
     let mut leaves = vec![];
     for &id in ids {
         let Some(it) = db.items.get(&id) else { return fail(404, "Not found") };
-        if !db.can_see_section(user, it.section_id) { return fail(404, "Not found"); }
+        if !db.can_see_item(user, it) { return fail(404, "Not found"); }
         for l in db.leaves(id) {
             let ok = db.items.get(&l).is_some_and(|x| x.file.is_some() && !x.extra.contains_key(crate::scanner::MISSING));
             if ok && !leaves.contains(&l) { leaves.push(l); }
@@ -216,7 +216,7 @@ pub fn file(app: &Arc<App>, ctx: &Ctx, user: &User, id: u64) -> Resp {
     let Some(d) = find_own(&db, user, id) else { return fail(404, "No such download") };
     if d.state != "ready" { return fail(409, "This download is not ready yet"); }
     let Some(it) = db.items.get(&d.item_id) else { return fail(404, "The movie or episode is no longer in the library") };
-    if !db.can_see_section(user, it.section_id) { return fail(403, "You don't have access to this library"); }
+    if !db.can_see_item(user, it) { return fail(403, "You don't have access to this library"); }
     if d.original {
         let n = ctx.num("part").unwrap_or(0) as usize;
         let Some(f) = it.part(n) else { return fail(404, "No such part") };

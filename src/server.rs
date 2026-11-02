@@ -2107,7 +2107,7 @@ pub fn page<T: Clone>(ctx: &Ctx, list: &[T]) -> (Vec<T>, usize) {
 pub fn user_json(u: &User) -> Value {
     json!({"id": u.id, "username": u.username, "email": u.email, "admin": u.admin, "created_at": u.created_at,
         "allowed_sections": u.allowed_sections, "allow_transcode": u.allow_transcode.unwrap_or(true), "allow_delete": u.allow_delete, "allow_download": u.admin || u.allow_download.unwrap_or(true), "invited_by": u.invited_by,
-        "home": u.home, "has_pin": !u.pin_hash.is_empty()})
+        "home": u.home, "has_pin": !u.pin_hash.is_empty(), "max_age": u.max_age, "block_unrated": u.block_unrated})
 }
 
 pub fn invite_json(db: &Db, i: &Invite, base: &str) -> Value {
@@ -2156,7 +2156,7 @@ pub fn ids_from(ctx: &Ctx) -> Vec<u64> {
 pub fn with_item(app: &Arc<App>, user: &User, iid: &str, f: impl FnOnce(&Db, &Item) -> Resp) -> Resp {
     let db = app.db.lock().unwrap();
     match iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)) {
-        Some(it) if db.can_see_section(user, it.section_id) => f(&db, it),
+        Some(it) if db.can_see_item(user, it) => f(&db, it),
         Some(_) => fail(403, "You don't have access to this library"),
         None => fail(404, "Not found"),
     }
@@ -2171,7 +2171,7 @@ pub fn recently_added(db: &Db, user: &User, kind: Option<ItemKind>, limit: usize
     let mut v: Vec<&Item> = db
         .items
         .values()
-        .filter(|i| db.can_see_section(user, i.section_id))
+        .filter(|i| db.can_see_item(user, i))
         .filter(|i| match kind {
             Some(k) => i.kind == k,
             None => i.kind.playable(),
@@ -2189,7 +2189,7 @@ pub const WEEK_SECONDS: u64 = 604800;
 pub fn on_deck(db: &Db, user: &User) -> Vec<u64> {
     let window = db.settings.continue_watching_weeks * WEEK_SECONDS;
     let mut shows: Vec<(u64, u64)> = vec![];
-    for show in db.items.values().filter(|i| i.kind == ItemKind::Show && db.can_see_section(user, i.section_id)) {
+    for show in db.items.values().filter(|i| i.kind == ItemKind::Show && db.can_see_item(user, i)) {
         let mut eps = db.leaves(show.id);
         query::sort_items(db, user.id, &mut eps, "episode_order");
         let Some(pos) = eps.iter().rposition(|e| db.view(user.id, *e).view_count > 0) else { continue };
@@ -2222,7 +2222,7 @@ pub fn continue_watching(db: &Db, user: &User) -> Vec<u64> {
     let mut started: Vec<(u64, u64)> = db
         .items
         .values()
-        .filter(|i| i.kind.playable() && !i.is_extra() && db.can_see_section(user, i.section_id))
+        .filter(|i| i.kind.playable() && !i.is_extra() && db.can_see_item(user, i))
         .filter_map(|i| {
             let v = db.view(user.id, i.id);
             (v.view_offset_ms > 0 && now().saturating_sub(v.last_viewed_at) <= window).then_some((i.id, v.last_viewed_at))

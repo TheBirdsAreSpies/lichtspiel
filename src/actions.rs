@@ -36,7 +36,7 @@ pub fn brief(it: Option<&Item>, id: u64, db: &Db) -> Value {
 pub fn history(app: &Arc<App>, user: &User, iid: u64) -> Resp {
     let db = app.db.lock().unwrap();
     let Some(it) = db.items.get(&iid) else { return fail(404, "Not found") };
-    if !db.can_see_section(user, it.section_id) { return fail(403, "You don't have access to this library"); }
+    if !db.can_see_item(user, it) { return fail(403, "You don't have access to this library"); }
     let ids: std::collections::HashSet<u64> = with_leaves(&db, iid).into_iter().collect();
     let list: Vec<Value> = db.history.iter().rev()
         .filter(|e| ids.contains(&e.item_id) && (user.admin || e.user_id == user.id))
@@ -57,7 +57,7 @@ pub fn report_problem(app: &Arc<App>, ctx: &Ctx, user: &User, iid: u64) -> Resp 
     let note: String = ctx.body_or_param("note").unwrap_or_default().trim().chars().take(2000).collect();
     let mut db = app.db.lock().unwrap();
     let Some(it) = db.items.get(&iid) else { return fail(404, "Not found") };
-    if !db.can_see_section(user, it.section_id) { return fail(403, "You don't have access to this library"); }
+    if !db.can_see_item(user, it) { return fail(403, "You don't have access to this library"); }
     let title = it.title.clone();
     let id = db.reports.iter().map(|r| r.id).max().unwrap_or(0) + 1;
     db.reports.push(db::ProblemReport { id, user_id: user.id, item_id: iid, kind: kind.clone(), note: note.clone(), at: now(), resolved: false });
@@ -278,7 +278,7 @@ pub fn delete_media(app: &Arc<App>, user: &User, iid: u64) -> Resp {
     if !db.settings.allow_media_deletion { return fail(403, "Deleting media is switched off in the settings"); }
     if !may_delete(&db, user) { return fail(403, "You may not delete files"); }
     let Some(it) = db.items.get(&iid) else { return fail(404, "Not found") };
-    if !db.can_see_section(user, it.section_id) { return fail(404, "Not found"); }
+    if !db.can_see_item(user, it) { return fail(404, "Not found"); }
     let sid = it.section_id;
     if app.scanning.lock().unwrap().contains(&sid) { return fail(409, "That library is being scanned; try again when it is done"); }
     let roots: Vec<PathBuf> = db.sections.iter().find(|s| s.id == sid).map(|s| s.paths.iter().map(PathBuf::from).collect()).unwrap_or_default();
@@ -358,7 +358,7 @@ pub fn together_create(app: &Arc<App>, ctx: &Ctx, user: &User) -> Resp {
     let Some(iid) = ctx.body_or_param("item").and_then(|v| v.parse::<u64>().ok()) else { return fail(400, "item is needed") };
     let db = app.db.lock().unwrap();
     match db.items.get(&iid) {
-        Some(it) if !db.can_see_section(user, it.section_id) => return fail(403, "You don't have access to this library"),
+        Some(it) if !db.can_see_item(user, it) => return fail(403, "You don't have access to this library"),
         Some(it) if it.file.is_none() => return fail(400, "This entry has no video file"),
         None => return fail(404, "Not found"),
         _ => {}
@@ -383,7 +383,7 @@ pub fn together_get(app: &Arc<App>, user: &User, code: &str) -> Resp {
     let db = app.db.lock().unwrap();
     let mut map = rooms().lock().unwrap();
     let Some(room) = map.get_mut(code) else { return fail(404, "This watch-together link has ended") };
-    if db.items.get(&room.item_id).is_none_or(|it| !db.can_see_section(user, it.section_id)) {
+    if db.items.get(&room.item_id).is_none_or(|it| !db.can_see_item(user, it)) {
         return fail(403, "You don't have access to this library");
     }
     room.members.insert(user.id, (user.username.clone(), Instant::now()));
@@ -397,7 +397,7 @@ pub fn together_update(app: &Arc<App>, ctx: &Ctx, user: &User, code: &str) -> Re
     let Some(room) = map.get_mut(code) else { return fail(404, "This watch-together link has ended") };
     if !room.members.contains_key(&user.id) { return fail(403, "Open the link to join first"); }
     if let Some(iid) = ctx.body.get("item").and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))) {
-        if db.items.get(&iid).is_none_or(|it| !db.can_see_section(user, it.section_id) || it.file.is_none()) { return fail(404, "Not found"); }
+        if db.items.get(&iid).is_none_or(|it| !db.can_see_item(user, it) || it.file.is_none()) { return fail(404, "Not found"); }
         room.item_id = iid;
     }
     if let Some(p) = ctx.body.get("position").and_then(|v| v.as_f64()) { room.position_ms = p.max(0.0) as u64; } else { room.position_ms = room.position(); }
