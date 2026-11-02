@@ -153,6 +153,14 @@ function posterCard(it, opts = {}) {
     e.stopPropagation();
     itemMenu(it, e.currentTarget, () => { const fresh = posterCard(it, opts); card.replaceWith(fresh); if (opts.onReplace) opts.onReplace(fresh); });
   };
+  // The pencil (admins) edits the details right here; the card is redrawn with what was saved.
+  const edit = async e => {
+    e.stopPropagation();
+    editItem(await fullItem(it), async () => {
+      const fresh = posterCard(Object.assign(it, meta(await GET('/library/metadata/' + it.id))[0]), opts);
+      card.replaceWith(fresh); if (opts.onReplace) opts.onReplace(fresh);
+    });
+  };
   const card = h('div', { class: 'card' + (seen ? ' watched' : '') + (it.missing ? ' missing' : ''), onclick: e => { if (!(opts.pick && opts.pick(e, false))) location.hash = '#/item/' + it.id; } },
     h('div', { class: 'poster' }, h('img', { src: withTok(img), loading: 'lazy', alt: '' }),
       it.missing ? h('span', { class: 'gone', title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null,
@@ -160,6 +168,7 @@ function posterCard(it, opts = {}) {
       it.leafCount && unseen > 0 ? h('span', { class: 'badge' }, unseen) : null,
       seen ? h('span', { class: 'seen', title: t('Watched'), 'aria-label': t('Watched') }, icon('check')) : null,
       opts.pick ? h('span', { class: 'pick', title: t('Select'), onclick: e => { e.stopPropagation(); opts.pick(e, true); } }) : null,
+      S.me.admin && it.type !== 'clip' ? h('button', { class: 'edit', title: t('Edit details'), 'aria-label': t('Edit details'), onclick: edit }, icon('edit')) : null,
       it.type === 'clip' ? null : h('button', { class: 'more', title: t('More'), 'aria-label': t('More'), onclick: more }, '⋯')),
     h('div', { class: 't', title }, title), h('div', { class: 's' }, sub));
   return card;
@@ -698,7 +707,8 @@ function fixMatch(it) {
   search();
 }
 
-function editItem(it) {
+// saved() runs after saving; without it the item's page opens.
+function editItem(it, saved) {
   const f = {};
   const field = (k, label, val, area) => formRow(label, (f[k] = h(area ? 'textarea' : 'input', { value: val ?? '', style: 'width:100%' })), null, area);
   const box = modal(t('Edit details'), [
@@ -709,7 +719,7 @@ function editItem(it) {
     h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: async () => {
       const body = {}; for (const [k, el] of Object.entries(f)) body[k] = el.value;
       body.year = body.year ? Number(body.year) : null; body.rating = body.rating ? Number(String(body.rating).replace(',', '.')) : null;
-      await api('PUT', '/library/metadata/' + it.id, body); box.remove(); itemPage(it.id);
+      await api('PUT', '/library/metadata/' + it.id, body); box.remove(); saved ? saved() : itemPage(it.id);
     } }, t('Save')), h('button', { onclick: () => box.remove() }, t('Cancel')))]);
 }
 
@@ -757,6 +767,7 @@ const ICONS = {
   restart: 'M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z',
   down: 'M7 10l5 5 5-5z',
   filter: 'M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z',
+  edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
   more: 'M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
 };
 // A round button with just an icon; the name is in the tooltip. on (true/false) = a toggle and whether it is set.
