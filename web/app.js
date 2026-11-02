@@ -784,8 +784,9 @@ function imagePicker(it, slot, url, has) {
 
 // saved() runs after saving; without it the item's page opens.
 // Tabs: General, Tags, Labels, Info. Lists are typed comma separated.
-function editItem(it, saved) {
+async function editItem(it, saved) {
   const f = {}, x = it.extra || {};
+  const langs = ((await GET('/api/settings').catch(() => null)) || {}).languages || [];
   const list = v => (v || []).join(', ');
   const field = (k, label, val, o = {}) => formRow(label, (f[k] = h(o.area ? 'textarea' : 'input', { value: val ?? '', type: o.type || 'text', style: 'width:100%' })), o.help, o.area);
   const movie = it.type === 'movie' || it.type === 'episode';
@@ -802,6 +803,10 @@ function editItem(it, saved) {
       field('directors', t('Directors'), list(x.directors)), field('countries', t('Countries'), list(x.countries)), field('genres', t('Genres'), list(it.genres)),
       field('writers', t('Writers'), list(x.writers)), field('producers', t('Producers'), list(x.producers)), field('collections', t('Collections'), list(x.collections))]],
     [t('Labels'), [field('labels', t('Labels (comma separated)'), list(x.labels))]],
+    [t('Advanced'), [
+      formRow(t('Language for details'), (f.language_override = h('select', {}, h('option', { value: '' }, t('Library default')), langs.map(l => h('option', { value: l.code, selected: x.language_override === l.code }, l.name)))), t('Applies the next time the details are fetched online (menu "⋯" → refresh).')),
+      formRow(t('Detect credits'), (f.credits_detection = h('select', {}, [['', t('Library default')], ['on', t('Yes')], ['off', t('No')]].map(([v, n]) => h('option', { value: v, selected: (x.credits_detection || '') === v }, n)))), t('Whether the "Skip credits" mark is searched for in this title.')),
+      x.original_title ? formRow(t('Original title'), h('button', { onclick: e => { f.title.value = x.original_title; toast(t('Title replaced with the original — save to keep it')); } }, t('Use the original title as the title'))) : null]],
     ...[['poster', t('Poster'), `/library/metadata/${it.id}/thumb`, true], ['art', t('Background'), `/library/metadata/${it.id}/art`, true], ['logo', t('Logo'), it.clearLogo, !!it.clearLogo], ['square', t('Square poster'), it.squareThumb, !!it.squareThumb]]
       .map(([slot, label, url, has]) => [label, [imagePicker(it, slot, url, has)]]),
     [t('Info'), [h('div', { class: 'kv' },
@@ -810,6 +815,7 @@ function editItem(it, saved) {
       it.addedAt ? [h('div', { class: 'dim' }, t('Added')), h('div', {}, fmtAt(it.addedAt))] : null,
       it.updatedAt ? [h('div', { class: 'dim' }, t('Last updated')), h('div', {}, fmtAt(it.updatedAt))] : null,
       ((it.Media || [])[0] || {}).file ? [h('div', { class: 'dim' }, t('Path')), h('div', { style: 'word-break:break-all' }, it.Media[0].file)] : null)]]];
+  panes.push(panes.splice(panes.findIndex(p => p[0] === t('Advanced')), 1)[0]); // Advanced last
   const bodies = panes.map(([, kids], i) => h('div', { style: i ? 'display:none' : '' }, kids));
   const links = panes.map(([name], i) => h('a', { href: '#', class: i ? '' : 'on', onclick: e => {
     e.preventDefault(); links.forEach((l, j) => { l.classList.toggle('on', j === i); bodies[j].style.display = j === i ? '' : 'none'; });

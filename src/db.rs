@@ -99,6 +99,15 @@ pub const LANGUAGES: &[(&str, &str)] = &[
 ];
 
 impl Db {
+    /// Credits detection for one item: its own choice (on/off), else the library's.
+    pub fn credits_on(&self, it: &Item) -> bool {
+        match it.extra.get("credits_detection").and_then(|v| v.as_str()) {
+            Some("on") => true,
+            Some("off") => false,
+            _ => self.sections.iter().find(|s| s.id == it.section_id).is_none_or(|s| s.credits_detection),
+        }
+    }
+
     /// The language details are fetched in for a library.
     pub fn language_for_section(&self, section_id: u64) -> String {
         self.sections
@@ -739,7 +748,7 @@ impl Db {
         if let Some(a) = it.extra.get("credits_ms").and_then(|v| v.as_array()) {
             return a.iter().filter_map(|v| v.as_u64()).collect();
         }
-        let library_on = self.sections.iter().find(|s| s.id == it.section_id).is_none_or(|s| s.credits_detection);
+        let library_on = self.credits_on(it);
         if self.settings.credits_markers_behaviour == "never" || !library_on {
             return vec![];
         }

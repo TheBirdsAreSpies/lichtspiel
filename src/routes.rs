@@ -45,7 +45,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/library/metadata/{id}/related", "Rows for a movie or show page: Other Editions, Related Movies/Shows, More by <first director>, More with <first two actors> (?count=, default 6)"),
     ("GET", "/library/sections/{id}/filters", "Every filter the library page offers (?type=show|season|episode), with the values found and counts (labels and folders for the owner only; duplicates with ?includeAdvanced=1); use them in /all as field=value (several: a,b)"),
     ("GET", "/library/metadata/{id}", "One movie, show, season or episode with media details"),
-    ("PUT", "/library/metadata/{id}", "Admin: edit {title, sort_title, summary, year, genres, rating, content_rating, tagline, studio, original_title, originally_available, directors, writers, producers, countries, labels, collections, edition}"),
+    ("PUT", "/library/metadata/{id}", "Admin: edit {language_override, credits_detection (on/off/empty = library), title, sort_title, summary, year, genres, rating, content_rating, tagline, studio, original_title, originally_available, directors, writers, producers, countries, labels, collections, edition}"),
     ("GET", "/library/metadata/{id}/children", "Seasons of a show, episodes of a season"),
     ("GET", "/library/metadata/{id}/allLeaves", "Every episode of a show"),
     ("GET", "/library/metadata/{id}/thumb", "Poster picture"),
@@ -662,10 +662,16 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 body["genres"] = json!(g.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>());
             }
             // Labels, collections and edition are kept with the other details.
-            for k in ["labels", "collections", "edition", "directors", "writers", "producers", "countries", "original_title", "originally_available"] {
+            for k in ["labels", "collections", "edition", "directors", "writers", "producers", "countries", "original_title", "originally_available", "language_override", "credits_detection"] {
                 let Some(v) = body.get(k).cloned() else { continue };
                 let v = match (k, v) {
                     ("edition" | "original_title" | "originally_available", v) => json!(v.as_str().unwrap_or("").trim()),
+                    ("language_override", v) => {
+                        let l = v.as_str().unwrap_or("").trim().to_string();
+                        if !l.is_empty() && !db::LANGUAGES.iter().any(|x| x.0 == l) { return fail(400, "Unknown language"); }
+                        json!(l)
+                    }
+                    ("credits_detection", v) => json!(match v.as_str().unwrap_or("") { "on" => "on", "off" => "off", _ => "" }),
                     (_, Value::String(t)) => json!(t.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>()),
                     (_, v) => v,
                 };

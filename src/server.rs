@@ -628,7 +628,7 @@ impl App {
             let files: Vec<(u64, String, u64)> = leaves
                 .iter()
                 .filter_map(|l| db.items.get(l))
-                .filter(|i| db.sections.iter().find(|s| s.id == i.section_id).is_none_or(|s| s.credits_detection))
+                .filter(|i| db.credits_on(i))
                 // A split movie's credits are in its last part.
                 .filter_map(|i| i.last_file().map(|f| (i, f)))
                 .filter(|(_, f)| force || (f.credits_checked < db::CREDITS_DETECTOR_VERSION && f.credits_errors <= db::CREDITS_MAX_ERRORS))
@@ -687,7 +687,7 @@ impl App {
         }
         db.items
             .values()
-            .filter(|i| db.sections.iter().find(|s| s.id == i.section_id).is_none_or(|s| s.credits_detection))
+            .filter(|i| db.credits_on(i))
             .filter(|i| i.last_file().is_some_and(|f| f.credits_checked < db::CREDITS_DETECTOR_VERSION && f.credits_errors <= db::CREDITS_MAX_ERRORS))
             .map(|i| i.id)
             .collect()
@@ -791,6 +791,10 @@ impl App {
             let it = db.items.get(&id).ok_or("No such item")?;
             // The library's own language, else the server's.
             settings.metadata_language = db.language_for_section(it.section_id);
+            // A language chosen for this title wins.
+            if let Some(l) = it.extra.get("language_override").and_then(|v| v.as_str()).filter(|l| db::LANGUAGES.iter().any(|x| x.0 == *l)) {
+                settings.metadata_language = l.to_string();
+            }
             if !matches!(it.kind, ItemKind::Movie | ItemKind::Show) {
                 return Err("Details are looked up for movies and shows".into());
             }
