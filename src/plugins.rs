@@ -35,6 +35,7 @@ pub const EVENTS: &[&str] = &[
     "playback.progress",
     "playback.stopped",
     "playback.watched",
+    "item.problem",
     "user.invited",
     "user.joined",
     "playlist.created",

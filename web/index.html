@@ -76,6 +76,17 @@ h2{font-size:19px;margin:28px 0 12px}
 .card.picked .pick{background:var(--accent);border-color:var(--accent)}
 .card.picked .pick::after{content:"\2713"}
 .card:hover .poster,.card.picked .poster{outline:3px solid var(--accent)}
+.poster .more{position:absolute;right:6px;bottom:10px;width:30px;height:30px;padding:0;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:18px;line-height:28px;opacity:0;transition:opacity .15s}
+.poster .more:hover,.poster .more:focus-visible{background:var(--accent);color:#16120a}
+.card:hover .more,.poster .more:focus-visible{opacity:1}
+@media (hover:none){.poster .more{opacity:1}}
+.menu{position:fixed;z-index:30;min-width:220px;max-width:min(340px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:6px 0;box-shadow:0 8px 28px rgba(0,0,0,.55)}
+.menu .mi{display:flex;justify-content:space-between;gap:16px;width:100%;text-align:left;background:none;border:0;border-radius:0;padding:8px 16px;font-size:14px}
+.menu .mi:hover,.menu .mi:focus{background:var(--line);outline:none}
+.menu .mi.danger{color:var(--red)}
+.menu .mi[disabled]{opacity:.45;cursor:default}
+.menu .sep{height:1px;background:var(--line);margin:5px 0}
+#qchip{white-space:nowrap}
 .pickbar{position:fixed;bottom:22px;left:calc(50% + 110px);transform:translateX(-50%);z-index:15;display:none;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px 14px;box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:calc(100vw - 260px)}
 .pickbar.show{display:flex}
 .pickbar b{margin-right:4px;white-space:nowrap}
@@ -190,6 +201,7 @@ code.m-get{color:#6cb6ff}code.m-post{color:var(--green)}code.m-put,code.m-patch{
   <a class="admin" href="#/libraries" data-nav="libraries" data-t="Libraries">Libraries</a>
   <a class="admin" href="#/users" data-nav="users" data-t="Users &amp; invites">Users &amp; invites</a>
   <a class="admin" href="#/plugins" data-nav="plugins" data-t="Plugins">Plugins</a>
+  <a class="admin" href="#/reports" data-nav="reports" data-t="Reported problems">Reported problems</a>
   <a href="#/settings" data-nav="settings" data-t="Settings">Settings</a>
   <a href="#/api" data-nav="api">API</a>
 </nav>
@@ -198,7 +210,7 @@ code.m-get{color:#6cb6ff}code.m-post{color:var(--green)}code.m-put,code.m-patch{
   <video id="video" controls playsinline crossorigin="anonymous"></video>
   <div class="pbar">
     <button id="pclose" data-t="✕ Close">✕ Close</button>
-    <b id="ptitle"></b><span class="dim" id="pmethod"></span>
+    <b id="ptitle"></b><span class="dim" id="pmethod"></span><span class="dim" id="ptogether"></span>
     <span class="grow"></span>
     <span id="pjump" style="display:none;align-items:center;gap:8px;flex:1"><span class="dim" data-t="Jump">Jump</span><input id="pseek" type="range" min="0" max="100" value="0"><span id="ptime" class="dim"></span></span>
     <select id="pspeed" title="Playback speed" data-t-title="Playback speed"></select>

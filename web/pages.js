@@ -562,6 +562,349 @@ async function personPage(key, qs) {
       : h('div', { class: 'empty' }, t('Nothing in your libraries.')));
 }
 
+// ---------- the "…" menu on posters and on a movie's page
+// The item menu: watch together, share, queue, add to …, watched,
+// and for the owner refresh, analyze, fix match, optimize, access; then
+// download, play history, report a problem and media info.
+const PLAYABLE = ['movie', 'episode', 'video', 'clip'];
+const isPlayable = it => PLAYABLE.includes(it.type);
+// The whole item (lists leave out the streams and the online details).
+const fullItem = async it => (it.Media && it.Media[0].streams) || it._full ? it : Object.assign(meta(await GET('/library/metadata/' + it.id))[0], { _full: true });
+// Episodes of a show or season, or the video itself.
+const leavesOf = async it => isPlayable(it) ? [it] : meta(await GET(`/library/metadata/${it.id}/allLeaves`));
+
+function closeMenus() { document.querySelectorAll('.menu').forEach(m => m.remove()); }
+document.addEventListener('mousedown', e => { if (!e.target.closest('.menu')) closeMenus(); }, true);
+window.addEventListener('hashchange', closeMenus);
+window.addEventListener('resize', closeMenus);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.menu')) { e.stopImmediatePropagation(); closeMenus(); } }, true);
+
+// A list of entries next to `anchor`. Entries: {label, run, sub: async () => entries, danger} or '-' (a line).
+function openMenu(anchor, entries, parent) {
+  if (!parent) closeMenus();
+  const box = h('div', { class: 'menu', role: 'menu' });
+  let subOpen = null;
+  const closeSub = () => { if (subOpen) { subOpen.remove(); subOpen = null; } };
+  for (const e of entries.filter(Boolean)) {
+    if (e === '-') { if (box.lastChild && !box.lastChild.classList.contains('sep')) box.append(h('div', { class: 'sep' })); continue; }
+    const row = h('button', { class: 'mi' + (e.sub ? ' has-sub' : '') + (e.danger ? ' danger' : ''), role: 'menuitem', disabled: e.disabled }, h('span', {}, e.label), e.sub ? h('span', { class: 'dim' }, '›') : null);
+    const openSub = async () => {
+      if (subOpen && subOpen._from === row) return;
+      closeSub();
+      let kids;
+      try { kids = await e.sub(); } catch (x) { return toast(x.message, 6000); }
+      if (!box.isConnected) return;
+      subOpen = openMenu(row, kids, box); subOpen._from = row;
+    };
+    if (e.sub) { row.onmouseenter = openSub; row.onclick = openSub; }
+    else {
+      row.onmouseenter = closeSub;
+      row.onclick = async () => { closeMenus(); try { await e.run(); } catch (x) { toast(x.message, 6000); } };
+    }
+    box.append(row);
+  }
+  if (box.lastChild && box.lastChild.classList.contains('sep')) box.lastChild.remove();
+  document.body.append(box);
+  // Below the button (a submenu: beside its row), kept inside the window.
+  const r = anchor.getBoundingClientRect(), w = box.offsetWidth, ht = box.offsetHeight;
+  let x = parent ? r.right + 2 : r.right - w, y = parent ? r.top - 6 : r.bottom + 4;
+  if (parent && x + w > innerWidth - 8) x = r.left - w - 2;
+  if (!parent && y + ht > innerHeight - 8) y = Math.max(8, r.top - ht - 4);
+  if (parent && y + ht > innerHeight - 8) y = Math.max(8, innerHeight - ht - 8);
+  box.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + 'px';
+  box.style.top = y + 'px';
+  if (!parent) { const first = box.querySelector('.mi:not([disabled])'); if (first) first.focus({ preventScroll: true }); }
+  return box;
+}
+// Arrow keys move through a menu.
+document.addEventListener('keydown', e => {
+  const m = document.activeElement && document.activeElement.closest('.menu');
+  if (!m || !['ArrowDown', 'ArrowUp'].includes(e.key)) return;
+  e.preventDefault();
+  const rows = [...m.querySelectorAll('.mi:not([disabled])')], i = rows.indexOf(document.activeElement);
+  rows[(i + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length].focus();
+});
+
+// changed() runs after something on the item changed (watched, details …).
+function itemMenu(it, anchor, changed = () => {}) {
+  const admin = S.me.admin;
+  const watched = it.leafCount ? it.viewedLeafCount === it.leafCount : it.viewCount > 0;
+  const matchable = it.type === 'movie' || it.type === 'show';
+  const play = isPlayable(it);
+  openMenu(anchor, [
+    { label: t('Watch together'), run: () => watchTogether(it) },
+    { label: t('Share'), run: () => shareItem(it) },
+    { label: t('Add to queue'), run: () => addToQueue(it) },
+    { label: t('Add to …'), sub: () => addToEntries(it, changed) },
+    { label: watched ? t('Mark as unwatched') : t('Mark as watched'), run: async () => {
+      await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${it.id}`);
+      if (it.leafCount) it.viewedLeafCount = watched ? 0 : it.leafCount;
+      it.viewCount = watched ? 0 : Math.max(1, it.viewCount || 0); it.viewOffset = 0;
+      toast(watched ? t('Marked as unwatched') : t('Marked as watched')); changed();
+    } },
+    '-',
+    admin ? { label: t('Refresh metadata'), run: async () => {
+      toast(t('Downloading details…'));
+      const r = await api('POST', `/library/metadata/${it.id}/refresh`); toast(t(r.message), 4000); changed();
+    } } : null,
+    admin ? { label: t('Analyze'), run: async () => { await api('POST', `/library/metadata/${it.id}/analyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
+    admin && matchable ? { label: t('Fix match…'), run: async () => fixMatch(await fullItem(it)) } : null,
+    admin ? { label: t('Optimize…'), run: () => optimizeDialog(it) } : null,
+    play ? { label: t('Download file'), run: () => { location.href = withTok(`/library/parts/${it.id}/file?download=1`); } } : null,
+    admin && it.librarySectionID ? { label: t('Grant access…'), run: () => grantAccess(it) } : null,
+    '-',
+    { label: t('View play history'), run: () => historyDialog(it) },
+    { label: t('Report a problem'), run: () => reportDialog(it) },
+    play ? { label: t('Media info'), run: () => mediaInfo(it) } : null,
+  ]);
+}
+
+// "Add to …": playlists (and for the owner the collections of a movie or show).
+async function addToEntries(it, changed) {
+  const pls = meta(await GET('/playlists?kind=manual&owner=me&sort=title'));
+  const add = async (id, title) => { const r = await api('POST', `/playlists/${id}/items`, { ids: [it.id] }); toast(r.added ? t('Added to {name}', { name: title }) : t('Already in that playlist')); };
+  const out = [...pls.map(p => ({ label: p.title, run: () => add(p.id, p.title) })),
+    pls.length ? '-' : null,
+    { label: t('New playlist…'), run: async () => { const name = await ask(t('Name of the new playlist')); if (name) { await api('POST', '/playlists', { title: name, kind: 'manual', ids: [it.id] }); toast(t('Added to {name}', { name })); } } }];
+  if (S.me.admin && (it.type === 'movie' || it.type === 'show')) {
+    const full = await fullItem(it);
+    const mine = ((full.extra || {}).collections || []);
+    const all = (await GET(`/library/sections/${it.librarySectionID}/collections`)).MediaContainer.Metadata.map(c => c.title).filter(c => !mine.includes(c));
+    const setCols = async (cols, msg) => { await api('PUT', '/library/metadata/' + it.id, { collections: cols }); toast(msg); changed(); };
+    out.push('-', ...all.map(c => ({ label: t('Collection: {name}', { name: c }), run: () => setCols([...mine, c], t('Added to {name}', { name: c })) })),
+      { label: t('New collection…'), run: async () => { const name = (await ask(t('Name of the new collection')) || '').trim(); if (name) await setCols([...mine, name], t('Added to {name}', { name })); } });
+  }
+  return out;
+}
+
+// A link to the item's page, for someone with an account here.
+async function shareItem(it) {
+  const url = location.origin + location.pathname + '#/item/' + it.id;
+  const name = it.type === 'episode' && it.grandparentTitle ? `${it.grandparentTitle} · ${it.title}` : it.title;
+  if (navigator.share && matchMedia('(pointer:coarse)').matches) { try { await navigator.share({ title: name, url }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  copyBox(t('Share “{title}”', { title: name }), url, t('Anyone with an account on this server who may see this library can open it.'));
+}
+// Shows a link to copy (the clipboard needs https, so the text is selected as well).
+function copyBox(title, url, note) {
+  const inp = h('input', { value: url, readonly: true, style: 'width:100%', onclick: e => e.target.select() });
+  const copy = async () => {
+    inp.select();
+    let done = false;
+    try { if (navigator.clipboard && isSecureContext) { await navigator.clipboard.writeText(url); done = true; } } catch (e) { /* not allowed */ }
+    if (!done) { try { done = document.execCommand('copy'); } catch (e) { /* old browser */ } }
+    toast(done ? t('Link copied') : t('Press Ctrl+C to copy the link'));
+  };
+  const box = modal(title, [note ? h('p', { class: 'dim' }, note) : null, inp,
+    h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: copy }, t('Copy link')), h('button', { onclick: () => box.remove() }, t('Close')))]);
+  inp.select();
+  return box;
+}
+
+// ---------- queue: plays after what is playing now (kept per browser)
+const Q = { list: [] };
+try { Q.list = JSON.parse(localStorage.getItem('queue') || '[]'); } catch (e) { Q.list = []; }
+function saveQueue() { try { localStorage.setItem('queue', JSON.stringify(Q.list)); } catch (e) { /* private window */ } drawQueueChip(); }
+async function addToQueue(it) {
+  const list = await leavesOf(it);
+  if (!list.length) return toast(t('Nothing to add'));
+  Q.list.push(...list.map(x => ({ id: x.id, type: x.type, title: x.title, grandparentTitle: x.grandparentTitle, parentIndex: x.parentIndex, index: x.index, thumb: x.thumb, duration: x.duration })));
+  saveQueue();
+  toast(list.length === 1 ? t('Added to the queue') : t('{n} episodes added to the queue', { n: list.length }));
+}
+const queueTitle = x => x.type === 'episode' ? `${x.grandparentTitle || ''} · ${t('S{n}', { n: x.parentIndex || 0 })}${t('E{n}', { n: x.index || 0 })} ${x.title}` : x.title;
+function drawQueueChip() {
+  let chip = $('#qchip');
+  if (!chip) { chip = h('button', { id: 'qchip', class: 'small', onclick: queueDialog }); $('#top').insertBefore(chip, $('#who')); }
+  chip.textContent = t('Queue ({n})', { n: Q.list.length });
+  chip.style.display = Q.list.length && S.me ? '' : 'none';
+}
+function queueDialog() {
+  const body = h('div', { class: 'list', style: 'max-height:55vh;overflow:auto' });
+  const draw = () => {
+    if (!Q.list.length) { box.remove(); return; }
+    body.replaceChildren(...Q.list.map((x, i) => h('div', { class: 'li' },
+      h('img', { src: withTok(x.thumb), loading: 'lazy', alt: '' }),
+      h('div', { class: 'grow' }, h('b', {}, queueTitle(x)), h('div', { class: 'dim' }, fmtDur(x.duration))),
+      i ? h('button', { class: 'small', title: t('Move up'), onclick: () => { Q.list.splice(i - 1, 0, Q.list.splice(i, 1)[0]); saveQueue(); draw(); } }, '↑') : null,
+      h('button', { class: 'small', title: t('Remove'), onclick: () => { Q.list.splice(i, 1); saveQueue(); draw(); } }, '✕'))));
+  };
+  const box = modal(t('Queue'), [h('p', { class: 'dim' }, t('Plays one after the other, after whatever is playing now.')), body,
+    h('div', { class: 'actions' },
+      h('button', { class: 'primary', onclick: () => { box.remove(); if (P.it) return toast(t('The queue plays after this video')); const first = Q.list.shift(); saveQueue(); play(first, 0); } }, t('▶ Play the queue')),
+      h('button', { class: 'danger', onclick: () => { Q.list = []; saveQueue(); box.remove(); } }, t('Clear the queue')),
+      h('button', { onclick: () => box.remove() }, t('Close')))]);
+  draw();
+}
+
+// ---------- optimize: a version every browser plays as it is
+async function optimizeDialog(it) {
+  const full = await fullItem(it);
+  const has = (full.extra || {}).optimized;
+  const kinds = [['tv', t('Optimized for TV (1080p, 8 Mbps)')], ['mobile', t('Optimized for mobile (720p, 2 Mbps)')], ['original', t('Original quality (same size, up to 20 Mbps)')]];
+  const sel = h('select', {}, kinds.map(([v, l]) => h('option', { value: v }, l)));
+  const box = modal(t('Optimize “{title}”', { title: it.title }), [
+    h('p', { class: 'dim' }, t('Saves a copy as MP4 (H.264 video, stereo AAC sound) that browsers, phones and TVs play directly. It is played instead of the original whenever the original would have to be converted, which saves the server work while watching. Copies are kept in the server’s data folder (optimized).')),
+    !isPlayable(it) ? h('p', { class: 'dim' }, t('Every episode is optimized, one after the other.')) : null,
+    has ? h('p', {}, t('Already optimized: {kind}, {size}.', { kind: (kinds.find(k => k[0] === has.quality) || [0, has.quality])[1], size: fmtSize(has.size || 0) })) : null,
+    formRow(t('Quality'), sel),
+    h('div', { class: 'actions' },
+      h('button', { class: 'primary', onclick: async () => {
+        try { const r = await api('POST', `/library/metadata/${it.id}/optimize`, { quality: sel.value }); toast(t('Optimizing {n} video(s) — progress is shown at the top', { n: r.videos }), 5000); box.remove(); pollActivity(); } catch (e) { toast(e.message, 6000); }
+      } }, t('Optimize')),
+      has || !isPlayable(it) ? h('button', { class: 'danger', onclick: async () => { const r = await api('DELETE', `/library/metadata/${it.id}/optimize`); toast(t('{n} optimized version(s) deleted', { n: r.removed })); box.remove(); } }, t('Delete optimized versions')) : null,
+      h('button', { onclick: () => box.remove() }, t('Cancel')))]);
+}
+
+// ---------- access: who may see the library this is in
+async function grantAccess(it) {
+  const sid = Number(it.librarySectionID);
+  const sec = S.sections.find(s => s.id === sid) || { title: '#' + sid };
+  const users = (await GET('/api/users')).users.filter(u => !u.admin);
+  const may = u => u.allowed_sections === null || u.allowed_sections.includes(sid);
+  const checks = users.map(u => ({ u, el: h('input', { type: 'checkbox', checked: may(u) }) }));
+  const box = modal(t('Grant access'), [
+    h('p', { class: 'dim' }, t('Access is given per library: ticked people may see everything in “{name}”, including this title.', { name: sec.title })),
+    users.length ? h('div', { class: 'checks' }, checks.map(c => h('label', {}, c.el, c.u.username))) : h('p', {}, t('No other users yet. Invite someone under Users & invites.')),
+    h('div', { class: 'actions' },
+      users.length ? h('button', { class: 'primary', onclick: async () => {
+        for (const { u, el } of checks) {
+          if (el.checked === may(u)) continue;
+          const now = u.allowed_sections === null ? S.sections.map(s => s.id) : u.allowed_sections;
+          await api('PATCH', '/api/users/' + u.id, { allowed_sections: el.checked ? [...new Set([...now, sid])] : now.filter(x => x !== sid) });
+        }
+        toast(t('Saved')); box.remove();
+      } }, t('Save')) : h('button', { class: 'primary', onclick: () => { box.remove(); location.hash = '#/users'; } }, t('Users & invites')),
+      h('button', { onclick: () => box.remove() }, t('Cancel')))]);
+}
+
+// ---------- play history
+async function historyDialog(it) {
+  const r = await GET(`/library/metadata/${it.id}/history`);
+  const what = x => x.type === 'episode' ? `${t('S{n}', { n: x.parentIndex || 0 })}${t('E{n}', { n: x.index || 0 })} · ${x.title}` : x.title;
+  const box = modal(t('Play history: {title}', { title: it.title }), [
+    r.history.length ? h('table', {}, h('tr', {}, h('th', {}, t('When')), S.me.admin ? h('th', {}, t('Who')) : null, isPlayable(it) ? null : h('th', {}, t('Episode')), h('th', {}, '')),
+      r.history.map(e => h('tr', {}, h('td', {}, fmtDateTime(e.at)), S.me.admin ? h('td', {}, e.user || '–') : null,
+        isPlayable(it) ? null : h('td', {}, h('a', { href: '#/item/' + e.item.id, onclick: () => box.remove() }, what(e.item))),
+        h('td', { class: 'dim' }, e.manual ? t('marked as watched') : t('watched')))))
+      : h('p', { class: 'dim' }, t('Not watched yet.')),
+    h('div', { class: 'actions' }, h('button', { onclick: () => box.remove() }, t('Close')))]);
+}
+
+// ---------- report a problem
+const PROBLEMS = [['playback', 'Does not play / stops'], ['video', 'Picture problem'], ['audio', 'Sound problem'], ['subtitles', 'Subtitle problem'], ['metadata', 'Wrong details or poster'], ['other', 'Something else']];
+function reportDialog(it) {
+  const kind = h('select', {}, PROBLEMS.map(([v, l]) => h('option', { value: v }, t(l))));
+  const note = h('textarea', { placeholder: t('What happens? (optional)'), style: 'font-family:inherit;font-size:14px;min-height:90px' });
+  const box = modal(t('Report a problem'), [
+    h('p', { class: 'dim' }, t('The owner of this server sees your report.')),
+    formRow(t('Problem'), kind), formRow(t('Details'), note, null, true),
+    h('div', { class: 'actions' },
+      h('button', { class: 'primary', onclick: async () => { await api('POST', `/library/metadata/${it.id}/report`, { kind: kind.value, note: note.value }); toast(t('Thanks — the problem was reported')); box.remove(); } }, t('Send')),
+      h('button', { onclick: () => box.remove() }, t('Cancel')))]);
+}
+async function reportsPage() {
+  markNav('reports');
+  const r = await GET('/api/reports');
+  const kindName = k => t((PROBLEMS.find(p => p[0] === k) || [k, k])[1]);
+  const what = x => x.type === 'episode' ? `${x.grandparentTitle || ''} · ${t('S{n}', { n: x.parentIndex || 0 })}${t('E{n}', { n: x.index || 0 })} ${x.title}` : (x.title || t('(removed)'));
+  set(h('h1', {}, t('Reported problems')),
+    r.reports.length ? h('table', {}, h('tr', {}, h('th', {}, t('What')), h('th', {}, t('Problem')), h('th', {}, t('Who')), h('th', {}, t('When')), h('th', {}, '')),
+      r.reports.map(p => h('tr', { style: p.resolved ? 'opacity:.55' : '' },
+        h('td', {}, p.item.title ? h('a', { href: '#/item/' + p.item.id }, h('b', {}, what(p.item))) : what(p.item)),
+        h('td', {}, kindName(p.kind), p.note ? h('div', { class: 'dim', style: 'white-space:pre-wrap' }, p.note) : null),
+        h('td', {}, p.user || '–'), h('td', {}, fmtDateTime(p.at)),
+        h('td', { style: 'white-space:nowrap' },
+          h('button', { class: 'small', onclick: async () => { await api('PUT', '/api/reports/' + p.id, { resolved: !p.resolved }); reportsPage(); } }, p.resolved ? t('Reopen') : t('Done')), ' ',
+          h('button', { class: 'small danger', onclick: async () => { await api('DELETE', '/api/reports/' + p.id); reportsPage(); } }, t('Delete'))))))
+      : h('div', { class: 'empty' }, t('No problems reported.')));
+}
+
+// ---------- media info: every stream of the file
+async function mediaInfo(it) {
+  const full = await fullItem(it);
+  const m = (full.Media || [])[0];
+  if (!m) return toast(t('This entry has no video file'));
+  const kv = rows => h('div', { class: 'kv' }, rows.filter(r => r && r[1] !== undefined && r[1] !== null && r[1] !== '' && r[1] !== 0).map(([k, v]) => [h('div', { class: 'dim' }, k), h('div', { style: 'word-break:break-all' }, String(v))]));
+  const kinds = { video: t('Video'), audio: t('Audio'), subtitle: t('Subtitles') };
+  const streams = (m.streams || []).map(s => [h('h3', { style: 'margin:14px 0 4px' }, `${kinds[s.kind] || s.kind} #${s.index}${s.default ? ' · ' + t('default') : ''}`), kv([
+    [t('Codec'), s.codec + (s.profile ? ` (${s.profile})` : '')], [t('Language'), s.language], [t('Title'), s.title],
+    s.width ? [t('Resolution'), `${s.width}×${s.height}`] : null, [t('Bit depth'), s.bit_depth ? t('{n}-bit', { n: s.bit_depth }) : ''],
+    [t('HDR'), s.dovi ? 'Dolby Vision' : s.hdr10plus ? 'HDR10+' : s.color_transfer === 'smpte2084' ? 'HDR10' : s.color_transfer === 'arib-std-b67' ? 'HLG' : ''],
+    [t('Channels'), s.channels ? `${s.channels}${s.channel_layout ? ' (' + s.channel_layout + ')' : ''}` : '']])]);
+  const opt = (full.extra || {}).optimized;
+  const box = modal(t('Media info'), [
+    kv([[t('File'), m.file], [t('File type'), `${(m.container || '').toUpperCase()}${m.formatName ? ' (' + m.formatName + ')' : ''}`], [t('Size'), m.size ? fmtSize(m.size) : ''],
+      [t('Length'), fmtDur(full.duration)], [t('Bitrate'), m.bitrate ? fmtNum(m.bitrate) + ' kbit/s' : ''],
+      (m.Part || []).length > 1 ? [t('Parts'), t('{n} files, played one after the other', { n: m.Part.length })] : null,
+      opt ? [t('Optimized version'), `${opt.quality}, ${fmtSize(opt.size || 0)}`] : null,
+      [t('Subtitle files'), (m.subtitles || []).filter(s => !s.embedded).map(s => s.file).join(', ')]]),
+    m.probed === false ? h('p', { class: 'dim' }, t('The file has not been read with ffprobe yet — use Analyze.')) : null,
+    streams,
+    h('div', { class: 'actions' }, h('button', { onclick: () => box.remove() }, t('Close')))]);
+}
+
+// ---------- watch together: everyone in a room plays the same thing at the same place
+const TG = { code: null, seq: 0, timer: null, quiet: 0, members: [] };
+async function watchTogether(it) {
+  const list = await leavesOf(it);
+  const target = list.find(x => !x.viewCount) || list[0];
+  if (!target) return toast(t('Nothing to play'));
+  const r = await api('POST', '/api/together', { item: target.id, position: target.viewOffset || 0 });
+  const url = location.origin + location.pathname + '#/together/' + r.code;
+  const box = copyBox(t('Watch together'), url, t('Send this link to the people you want to watch with (they need an account here that may see this library). Whoever plays, pauses or jumps moves everyone.'));
+  box.querySelector('.actions').prepend(h('button', { class: 'primary', onclick: () => { box.remove(); joinTogether(r.code); } }, t('▶ Start watching')));
+}
+async function joinTogether(code) {
+  let st;
+  try { st = await GET('/api/together/' + code); } catch (e) { return set(h('div', { class: 'empty' }, e.message)); }
+  history.replaceState(null, '', location.pathname + location.search + '#/item/' + st.item);
+  TG.code = code; TG.seq = st.seq; TG.quiet = Date.now() + 3000;
+  await play({ id: st.item }, st.position / 1000, [], true);
+  if (st.paused) video.pause();
+  tgDraw(st.members);
+  clearInterval(TG.timer);
+  TG.timer = setInterval(tgPoll, 2000);
+  const others = st.members.filter(m => m.id !== S.me.id).map(m => m.name);
+  toast(others.length ? t('Joined — watching with {names}', { names: others.join(', ') }) : t('Waiting for the others — playing starts for everyone when you press play'), 5000);
+}
+function tgDraw(members) {
+  TG.members = members || TG.members;
+  const others = TG.members.filter(m => m.id !== S.me.id).map(m => m.name);
+  $('#ptogether').textContent = TG.code ? ' · ' + (others.length ? t('together with {names}', { names: others.join(', ') }) : t('together (waiting for others)')) : '';
+}
+async function tgPoll() {
+  if (!TG.code || !P.it) return tgLeave();
+  let st;
+  try { st = await GET('/api/together/' + TG.code); } catch (e) { toast(e.message, 5000); return tgLeave(); }
+  const before = TG.members.map(m => m.name).join();
+  tgDraw(st.members);
+  const now = TG.members.map(m => m.name).join();
+  if (before && before !== now) toast(t('Watching together: {names}', { names: TG.members.map(m => m.name).join(', ') }));
+  if (st.seq <= TG.seq) return;
+  TG.seq = st.seq;
+  TG.quiet = Date.now() + 2000;
+  if (String(st.item) !== String(P.it.id)) { await play({ id: st.item }, st.position / 1000, [], true); if (st.paused) video.pause(); return; }
+  const want = st.position / 1000;
+  if (Math.abs(position() - want) > 2) await seekTo(want);
+  if (st.paused && !video.paused) video.pause();
+  if (!st.paused && video.paused) video.play().catch(() => toast(t('{who} pressed play — click the video to play along', { who: st.by }), 5000));
+}
+// Something changed here: tell the others (not while following a change of theirs).
+function tgSend(extra) {
+  if (!TG.code || !P.it || Date.now() < TG.quiet) return;
+  api('POST', '/api/together/' + TG.code, { position: Math.round(position() * 1000), paused: video.paused, ...extra })
+    .then(st => { TG.seq = Math.max(TG.seq, st.seq); }).catch(() => {});
+}
+function tgLeave() {
+  clearInterval(TG.timer);
+  if (TG.code) api('DELETE', '/api/together/' + TG.code).catch(() => {});
+  TG.code = null; TG.members = [];
+  const el = $('#ptogether'); if (el) el.textContent = '';
+}
+video.addEventListener('play', () => tgSend());
+video.addEventListener('pause', () => { if (!video.ended) tgSend(); });
+video.addEventListener('seeked', () => { if (P.method === 'direct' && !split()) tgSend(); });
+
 // ---------- router
 async function render() {
   const hash = location.hash.slice(1) || '/';
@@ -585,6 +928,8 @@ async function render() {
       case 'plugins': return await pluginsPage();
       case 'settings': return await settingsPage();
       case 'api': return await apiPage();
+      case 'reports': return await reportsPage();
+      case 'together': return await joinTogether(parts[1]);
       case 'login': location.hash = '#/'; return;
       default: return set(h('div', { class: 'empty' }, t('Page not found.')));
     }

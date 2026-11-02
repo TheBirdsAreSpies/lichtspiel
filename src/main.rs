@@ -8,6 +8,7 @@
 //!   lichtspiel --screenshot out.png  draw the status window, save a picture, exit
 //!   lichtspiel --self-test out.json  try every feature end to end, save results, exit
 
+mod actions;
 mod auth;
 mod db;
 mod handlers;

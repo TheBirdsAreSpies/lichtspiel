@@ -120,6 +120,7 @@ function drawChrome() {
   if (!signed) return;
   who.append(h('span', {}, S.me.username), h('button', { class: 'small', onclick: logout }, t('Sign out')));
   document.querySelectorAll('#side .admin').forEach(e => (e.style.display = S.me.admin ? '' : 'none'));
+  drawQueueChip();
   $('#navsections').replaceChildren(...S.sections.map(s => h('a', { href: '#/section/' + s.id, 'data-nav': 'section/' + s.id },
     h('span', {}, s.title), h('small', {}, s.type === 'show' ? t('{n} shows', { n: s.count }) : s.videoCount))));
 }
@@ -139,13 +140,20 @@ function posterCard(it, opts = {}) {
   const img = it.type === 'episode' && it.grandparentThumb && !opts.episodeThumb ? it.grandparentThumb : it.thumb;
   const seen = it.viewCount > 0 || (it.leafCount && unseen === 0);
   // opts.pick(e, circle) = the library's multiple selection; true when it took the click.
-  return h('div', { class: seen ? 'card watched' : 'card', onclick: e => { if (!(opts.pick && opts.pick(e, false))) location.hash = '#/item/' + it.id; } },
+  // The "…" menu redraws the card after a change; opts.onReplace learns of the new one.
+  const more = e => {
+    e.stopPropagation();
+    itemMenu(it, e.currentTarget, () => { const fresh = posterCard(it, opts); card.replaceWith(fresh); if (opts.onReplace) opts.onReplace(fresh); });
+  };
+  const card = h('div', { class: seen ? 'card watched' : 'card', onclick: e => { if (!(opts.pick && opts.pick(e, false))) location.hash = '#/item/' + it.id; } },
     h('div', { class: 'poster' }, h('img', { src: withTok(img), loading: 'lazy', alt: '' }),
       prog > 0 ? h('div', { class: 'bar' }, h('i', { style: `width:${prog * 100}%` })) : null,
       it.leafCount && unseen > 0 ? h('span', { class: 'badge' }, unseen) : null,
       seen ? h('span', { class: 'seen', title: t('Watched') }, '✓') : null,
-      opts.pick ? h('span', { class: 'pick', title: t('Select'), onclick: e => { e.stopPropagation(); opts.pick(e, true); } }) : null),
+      opts.pick ? h('span', { class: 'pick', title: t('Select'), onclick: e => { e.stopPropagation(); opts.pick(e, true); } }) : null,
+      it.type === 'clip' ? null : h('button', { class: 'more', title: t('More'), 'aria-label': t('More'), onclick: more }, '⋯')),
     h('div', { class: 't', title }, title), h('div', { class: 's' }, sub));
+  return card;
 }
 // Poster size in the grids (the slider in a library's bar), kept per browser.
 const CARD = { min: 100, max: 300, def: 140 };
@@ -213,7 +221,7 @@ function pickGrid(items, cardOpts) {
     else if (picked.has(i)) picked.delete(i); else picked.add(i);
     last = i; draw();
   };
-  const card = i => posterCard(items[i], { ...cardOpts, pick: (e, circle) => {
+  const card = i => posterCard(items[i], { ...cardOpts, onReplace: el => { cards[i] = el; draw(); }, pick: (e, circle) => {
     if (!circle && !picked.size && !e.ctrlKey && !e.metaKey && !e.shiftKey) return false;
     e.preventDefault(); toggle(i, e); return true;
   } });
@@ -436,7 +444,8 @@ async function itemPage(id) {
             e.target.disabled = true; e.target.textContent = t('Downloading details…');
             try { const r = await api('POST', `/library/metadata/${it.id}/refresh`); toast(t(r.message), 4000); } catch (er) { toast(er.message, 6000); }
             refresh();
-          } }, t('Refresh details')) : null),
+          } }, t('Refresh details')) : null,
+          h('button', { title: t('More'), 'aria-label': t('More'), onclick: e => itemMenu(it, e.currentTarget, refresh) }, '⋯')),
         m ? h('div', { class: 'panel kv' },
           h('div', {}, t('File type')), h('div', {}, `${m.container.toUpperCase()}${m.formatName ? ' (' + m.formatName + ')' : ''} · ${fmtSize(m.size)}`),
           h('div', {}, t('Video')), h('div', {}, m.videoCodec ? `${m.videoCodec} ${m.width}×${m.height}${m.bitDepth > 8 ? ' ' + t('{n}-bit', { n: m.bitDepth }) : ''}` : t('unknown (ffprobe not available)')),
@@ -545,7 +554,9 @@ async function pollActivity() {
   const busy = st.queued > 0 || st.working_on || st.job || scanning.length;
   const parts = [];
   if (scanning.length) parts.push(h('span', { class: 'txt' }, t('Scanning {name}', { name: scanning.join(', ') })));
-  if (st.job) parts.push(h('span', { class: 'txt' }, t('{label}: {done} of {total}', { label: t(st.job.label), done: st.job.done, total: st.job.total })), h('span', { class: 'pbar' }, h('i', { style: `width:${Math.round(100 * st.job.done / Math.max(1, st.job.total))}%` })));
+  // Optimizing counts in hundredths of a video: shown as a percentage.
+  if (st.job) parts.push(h('span', { class: 'txt' }, st.job.label === 'Optimizing' ? t('{label}: {pct} %', { label: t(st.job.label), pct: Math.floor(100 * st.job.done / Math.max(1, st.job.total)) })
+    : t('{label}: {done} of {total}', { label: t(st.job.label), done: st.job.done, total: st.job.total })), h('span', { class: 'pbar' }, h('i', { style: `width:${Math.round(100 * st.job.done / Math.max(1, st.job.total))}%` })));
   if (st.working_on || st.queued > 0) parts.push(h('span', { class: 'txt' }, t('Updating details') + (st.working_title ? ': ' + st.working_title : '') + (st.queued > 0 ? ' · ' + t('{n} left', { n: st.queued }) : '')));
   if (busy) {
     el.replaceChildren(h('span', { class: 'spin' }), ...parts);
@@ -673,7 +684,8 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 const QUALITIES = [['original', t('Original quality')], ['1080p-20', '1080p 20 Mbps'], ['1080p-12', '1080p 12 Mbps'], ['1080p-8', '1080p 8 Mbps'], ['720p-4', '720p 4 Mbps'], ['720p-3', '720p 3 Mbps'], ['720p-2', '720p 2 Mbps'], ['480p-1.5', '480p ' + fmtNum(1.5) + ' Mbps'], ['320p-0.7', '320p ' + fmtNum(0.7) + ' Mbps']];
 const video = $('#video');
 
-async function play(it, startAt, queue) {
+// together = following a "Watch together" room (not told to the others again).
+async function play(it, startAt, queue, together) {
   P.queue = queue || [];
   if (!it.Media || !it.Media[0].streams) it = meta(await GET('/library/metadata/' + it.id))[0];
   P.it = it;
@@ -689,6 +701,11 @@ async function play(it, startAt, queue) {
   P.parts = ((it.Media && it.Media[0].Part) || []).map(x => (x.duration || 0) / 1000);
   P.part = 0; P.base = 0;
   await load(startAt || 0);
+  if (TG.code && !together) { TG.quiet = 0; tgSend({ item: it.id, position: Math.round((startAt || 0) * 1000) }); }
+}
+// Jump to a place in the whole video.
+async function seekTo(s) {
+  if (P.method === 'direct' && !split()) video.currentTime = s; else await load(s);
 }
 // Where part n starts in the whole movie (seconds).
 const partStart = n => P.parts.slice(0, n).reduce((a, b) => a + b, 0);
@@ -739,11 +756,13 @@ video.addEventListener('ended', () => {
   // The next part of a split movie.
   if (split() && P.part < P.parts.length - 1) { load(partStart(P.part + 1)); return; }
   report('stopped');
-  const next = P.queue.shift();
+  // Then the queue (the "…" menu's Add to queue).
+  let next = P.queue.shift();
+  if (!next && Q.list.length) { next = Q.list.shift(); saveQueue(); }
   if (next) play(next, 0, P.queue); else closePlayer(false);
 });
 $('#pseek').addEventListener('input', e => { e.target._drag = true; $('#ptime').textContent = fmtTime(+e.target.value); });
-$('#pseek').addEventListener('change', e => { e.target._drag = false; load(+e.target.value); });
+$('#pseek').addEventListener('change', async e => { e.target._drag = false; await load(+e.target.value); tgSend(); });
 $('#pquality').addEventListener('change', e => { P.quality = e.target.value; localStorage.setItem('quality', P.quality); load(position()); });
 $('#paudio').addEventListener('change', e => { P.audio = e.target.value; load(position()); });
 function setSpeed(v) {
@@ -757,6 +776,7 @@ $('#pspeed').addEventListener('change', e => setSpeed(Number(e.target.value)));
 video.addEventListener('ratechange', () => { if (P.it && SPEEDS.includes(video.playbackRate) && video.playbackRate !== P.speed) setSpeed(video.playbackRate); });
 function closePlayer(send) {
   if (send) report('stopped');
+  tgLeave();
   clearInterval(P.timer);
   video.pause(); video.removeAttribute('src'); video.load();
   $('#player').style.display = 'none';

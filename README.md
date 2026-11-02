@@ -32,6 +32,12 @@ Linux/Windows machine):
   **Categories** tabs. A movie page shows rows of other editions of the same
   film, related movies, **More by** the director and **More with** each of the first two actors
   (shows: related shows and More with).
+- **The "⋯" menu** on every poster and on a title's page: **Watch together** (a link; whoever
+  plays, pauses or jumps moves everyone), Share, Add to queue, Add to (playlist or collection),
+  mark watched, and for the owner Refresh metadata, Analyze (read the files again), Fix match,
+  **Optimize** (a saved MP4 copy that plays directly instead of being converted), Grant access;
+  then Download file, View play history, Report a problem (the owner sees them under
+  **Reported problems**) and Media info.
 - **Rows for the time of year** — the home page adds a row while the season lasts:
   **Halloween** (1 Oct – 2 Nov: horror and anything with Halloween in it), **Christmas**
   (1–26 Dec), **New Year's Eve** (27 Dec – 1 Jan) and **Valentine's Day** (7–14 Feb). Titles

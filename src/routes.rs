@@ -59,6 +59,18 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/library/metadata/{id}/credits", "Admin: run credits detection for one movie, show, season or episode"),
     ("POST", "/library/sections/{id}/refreshMetadata", "Admin: download details again for a whole library (in the background)"),
     ("GET", "/api/metadata/status", "Background work: details waiting and being downloaded, the last result, and any running job (credits detection) with progress"),
+    ("GET", "/library/metadata/{id}/history", "Play history of a movie, show, season or episode, newest first (the owner sees everyone's, others their own)"),
+    ("POST", "/library/metadata/{id}/report", "Report a problem {kind: playback|video|audio|subtitles|metadata|other, note}"),
+    ("POST", "/library/metadata/{id}/analyze", "Admin: read the files again with ffprobe (streams, length; in the background)"),
+    ("POST", "/library/metadata/{id}/optimize", "Admin: save a version every browser plays directly {quality: original|tv|mobile} (in the background; played instead of converting)"),
+    ("DELETE", "/library/metadata/{id}/optimize", "Admin: delete the optimized versions"),
+    ("GET", "/api/reports", "Admin: reported problems ?open=1"),
+    ("PUT", "/api/reports/{id}", "Admin: {resolved: true|false}"),
+    ("DELETE", "/api/reports/{id}", "Admin: delete a report"),
+    ("POST", "/api/together", "Watch together: open a room {item, position} → {code}; send the link #/together/{code}"),
+    ("GET", "/api/together/{code}", "A room's state {item, position (ms), paused, seq, members}; asking keeps you in it"),
+    ("POST", "/api/together/{code}", "Play, pause, seek or switch video for everyone {position, paused, item}"),
+    ("DELETE", "/api/together/{code}", "Leave a room"),
     ("GET", "/library/metadata/{id}/decision", "How it would play: direct, remux or transcode ?quality=720p-4"),
     ("GET", "/library/parts/{id}/file", "The original file, with seeking (Range requests); ?download=1"),
     ("GET", "/library/parts/{id}/subtitles/{n}", "A subtitle track as WebVTT (n, or xN for side files)"),
@@ -670,6 +682,33 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 Err(e) => fail(502, &e),
             }
         }
+        ("GET", ["library", "metadata", iid, "history"]) => match id(iid) { Some(i) => crate::actions::history(app, &user, i), None => fail(404, "Not found") },
+        ("POST", ["library", "metadata", iid, "report"]) => match id(iid) { Some(i) => crate::actions::report_problem(app, ctx, &user, i), None => fail(404, "Not found") },
+        ("POST", ["library", "metadata", iid, "analyze"]) => {
+            if !admin { return need_admin(); }
+            let Some(iid) = id(iid) else { return fail(404, "Not found") };
+            match crate::actions::analyze(app, iid) { Ok(n) => ok(json!({"ok": true, "videos": n})), Err(e) => fail(409, &e) }
+        }
+        ("POST", ["library", "metadata", iid, "optimize"]) => {
+            if !admin { return need_admin(); }
+            let Some(iid) = id(iid) else { return fail(404, "Not found") };
+            let q = ctx.body_or_param("quality").unwrap_or_else(|| "tv".into());
+            match crate::actions::optimize(app, iid, &q) { Ok(n) => ok(json!({"ok": true, "videos": n})), Err(e) => fail(409, &e) }
+        }
+        ("DELETE", ["library", "metadata", iid, "optimize"]) => {
+            if !admin { return need_admin(); }
+            let Some(iid) = id(iid) else { return fail(404, "Not found") };
+            ok(json!({"ok": true, "removed": crate::actions::remove_optimized(app, iid)}))
+        }
+        ("GET", ["api", "reports"]) => if admin { crate::actions::reports(app, ctx) } else { need_admin() },
+        ("PUT", ["api", "reports", rid]) | ("PATCH", ["api", "reports", rid]) | ("DELETE", ["api", "reports", rid]) => {
+            if !admin { return need_admin(); }
+            match id(rid) { Some(r) => crate::actions::update_report(app, ctx, r, m == "DELETE"), None => fail(404, "No such report") }
+        }
+        ("POST", ["api", "together"]) => crate::actions::together_create(app, ctx, &user),
+        ("GET", ["api", "together", code]) => crate::actions::together_get(app, &user, code),
+        ("POST", ["api", "together", code]) | ("PUT", ["api", "together", code]) => crate::actions::together_update(app, ctx, &user, code),
+        ("DELETE", ["api", "together", code]) => crate::actions::together_leave(&user, code),
         ("GET", ["library", "metadata", iid, "decision"]) => {
             let Some(iid) = id(iid) else { return fail(404, "Not found") };
             let db = app.db.lock().unwrap();
@@ -688,6 +727,14 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 Method::Direct => format!("/library/parts/{iid}/file?x=1{tok}"),
                 _ => format!("/video/transcode/{iid}/stream.mp4?quality={q}{tok}"),
             };
+            // An optimized version plays as it is instead of converting the original.
+            let original_quality = req.max_height == 0 && req.max_kbps == 0 && req.audio_stream.is_none() && !req.force_transcode;
+            if d.method != Method::Direct && part == 0 && original_quality && crate::actions::optimized_file(app, it).is_some() {
+                let url = format!("/library/parts/{iid}/file?optimized=1{tok}");
+                return ok(json!({"method": "direct", "optimized": true, "reasons": ["Plays the optimized version"], "height": d.height, "bitrateKbps": d.bitrate_kbps,
+                    "url": url, "decisionCode": 1000, "decisionText": transcode::decision_text(1000), "direct": url, "allowed": true,
+                    "hls": format!("/video/transcode/{iid}/start.m3u8?quality={q}{tok}"), "resume": db.view(user.id, iid).view_offset_ms, "duration": it.duration_ms}));
+            }
             let code = if !allowed && d.method == Method::Transcode { 2000 } else { transcode::decision_code(&d.method) };
             ok(json!({"method": d.method, "reasons": d.reasons, "height": d.height, "bitrateKbps": d.bitrate_kbps, "url": url,
                 "decisionCode": code, "decisionText": transcode::decision_text(code),
@@ -736,6 +783,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if ids.iter().any(|i| !db.items.contains_key(i)) { return fail(404, "Not found"); }
             for leaf in ids.iter().flat_map(|i| db.leaves(*i)).collect::<Vec<_>>() {
                 let v = db.view_mut(user.id, leaf);
+                let was = v.view_count;
                 if watched {
                     v.view_count = v.view_count.max(1);
                     v.last_viewed_at = now();
@@ -744,6 +792,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 }
                 v.view_offset_ms = 0;
                 v.finished = false;
+                // Marked by hand: in the history once, not again for something already watched.
+                if watched && was == 0 { db.record_play(user.id, leaf, true); }
             }
             drop(db);
             app.save();

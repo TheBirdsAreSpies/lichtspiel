@@ -191,6 +191,8 @@ impl Changes {
             ("tokens", js(&db.tokens)),
             ("playlists", js(&db.playlists)),
             ("plugins", js(&db.plugins)),
+            ("history", js(&db.history)),
+            ("reports", js(&db.reports)),
         ];
         let (items_all, items) = match db.items.take_changes() {
             Changed::All => (true, db.items.values().map(|it| (it.id, Some(ItemRow::of(it)))).collect()),
@@ -322,6 +324,8 @@ impl Store {
             playlists: part(&parts, "playlists")?,
             views: views.into(),
             plugins: part(&parts, "plugins")?,
+            history: part(&parts, "history")?,
+            reports: part(&parts, "reports")?,
         };
         // An id handed out must never come back, even if a stored counter is behind.
         let mut db = db;
@@ -386,8 +390,9 @@ impl Store {
     }
 }
 
-const PART_NAMES: [&str; 10] =
-    ["version", "machine_id", "next_id", "settings", "sections", "users", "invites", "tokens", "playlists", "plugins"];
+const PART_NAMES: [&str; 12] = [
+    "version", "machine_id", "next_id", "settings", "sections", "users", "invites", "tokens", "playlists", "plugins", "history", "reports",
+];
 
 /// The library in a data folder without starting a server (for the
 /// screenshot): the SQLite file, or an older version's JSON file.

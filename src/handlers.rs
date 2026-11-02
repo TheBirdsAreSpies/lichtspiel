@@ -205,6 +205,7 @@ pub fn timeline(app: &Arc<App>, user: &User, iid: u64, time_ms: u64, state: &str
             v.finished = false;
             v.view_offset_ms = time_ms;
         }
+        if watched_now { db.record_play(user.id, iid, false); }
     }
     let key = format!("{}:{}", user.id, iid);
     if state == "stopped" {
@@ -275,7 +276,11 @@ fn part_of(ctx: &Ctx) -> usize {
 
 /// Sends the original file, honouring Range requests so players can seek.
 pub fn direct_file(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
-    let (_, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
+    let (it, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
+    if ctx.param("optimized") == Some("1") {
+        let Some(p) = crate::actions::optimized_file(app, &it) else { return fail(404, "There is no optimized version") };
+        return serve_file(&p, "video/mp4", ctx.range.as_deref(), ctx.param("download") == Some("1"));
+    }
     serve_file(Path::new(&f.path), transcode::content_type(&f.container), ctx.range.as_deref(), ctx.param("download") == Some("1"))
 }
 

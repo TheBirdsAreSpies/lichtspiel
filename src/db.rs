@@ -478,6 +478,35 @@ pub struct ViewState {
     pub finished: bool,
 }
 
+/// One viewing in the play history: counted when the played threshold is
+/// passed, or marked watched by hand (`manual`).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PlayEvent {
+    pub user_id: u64,
+    pub item_id: u64,
+    pub at: u64,
+    #[serde(default)]
+    pub manual: bool,
+}
+
+/// The play history keeps at most this many viewings (the oldest go first).
+pub const HISTORY_MAX: usize = 20000;
+
+/// "Report a problem" on a movie, show or episode; the owner sees the list.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ProblemReport {
+    pub id: u64,
+    pub user_id: u64,
+    pub item_id: u64,
+    /// playback | audio | subtitles | video | metadata | other
+    pub kind: String,
+    #[serde(default)]
+    pub note: String,
+    pub at: u64,
+    #[serde(default)]
+    pub resolved: bool,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct PluginState {
     pub enabled: bool,
@@ -723,6 +752,10 @@ pub struct Db {
     /// key "user_id:item_id"
     pub views: Tracked<String, ViewState>,
     pub plugins: BTreeMap<String, PluginState>,
+    #[serde(default)]
+    pub history: Vec<PlayEvent>,
+    #[serde(default)]
+    pub reports: Vec<ProblemReport>,
 }
 
 impl Default for Db {
@@ -740,6 +773,8 @@ impl Default for Db {
             playlists: vec![],
             views: Tracked::default(),
             plugins: BTreeMap::new(),
+            history: vec![],
+            reports: vec![],
         };
         db.ensure_default_playlists();
         db
@@ -782,6 +817,15 @@ impl Db {
         let id = self.next_id;
         self.next_id += 1;
         id
+    }
+
+    /// Adds a viewing to the play history.
+    pub fn record_play(&mut self, user_id: u64, item_id: u64, manual: bool) {
+        self.history.push(PlayEvent { user_id, item_id, at: now(), manual });
+        if self.history.len() > HISTORY_MAX {
+            let extra = self.history.len() - HISTORY_MAX;
+            self.history.drain(..extra);
+        }
     }
 
     pub fn user(&self, id: u64) -> Option<&User> {

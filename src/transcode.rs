@@ -361,6 +361,29 @@ pub fn progressive_args(settings: &Settings, item: &Item, file: &MediaFile, d: &
     a
 }
 
+/// "Optimize": versions saved as a file that every browser plays directly
+/// (MP4, H.264 + stereo AAC, moov at the front): (name, max height, video kbit/s).
+/// 0 = the source's height; its bitrate is kept up to 20 Mbit/s.
+pub const OPTIMIZE: &[(&str, u32, u32)] = &[("original", 0, 0), ("tv", 1080, 8000), ("mobile", 720, 2000)];
+
+/// ffmpeg arguments that write an optimized version of `file` to `out`
+/// (a whole file; `-progress pipe:1` reports how far it got).
+pub fn optimize_args(settings: &Settings, file: &MediaFile, preset: &str, out: &str) -> Option<Vec<String>> {
+    let &(_, h, kb) = OPTIMIZE.iter().find(|p| p.0 == preset)?;
+    let src_h = file.video().map(|v| v.height).unwrap_or(0);
+    let height = if h > 0 && src_h > h { h } else { 0 };
+    let kb = if kb > 0 { kb } else { ((file.bitrate / 1000) as u32).clamp(2000, 20000) };
+    let d = Decision { method: Method::Transcode, reasons: vec![], height, bitrate_kbps: kb };
+    let (pre, video) = video_args(settings, &d, &Method::Transcode, 99, Some(41));
+    let mut a: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into(), "-y".into()];
+    a.extend(pre);
+    a.extend(["-i".into(), file.path.clone()]);
+    a.extend(audio_args(file, &Request::default()));
+    a.extend(video);
+    a.extend(["-sn".into(), "-dn".into(), "-movflags".into(), "+faststart".into(), "-progress".into(), "pipe:1".into(), "-f".into(), "mp4".into(), out.into()]);
+    Some(a)
+}
+
 /// ffmpeg arguments for an HLS session written into `dir`.
 pub fn hls_args(settings: &Settings, file: &MediaFile, d: &Decision, req: &Request, offset_s: f64, dir: &str) -> Vec<String> {
     let method = if d.method == Method::Direct { Method::Remux } else { d.method.clone() };
