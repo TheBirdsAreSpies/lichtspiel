@@ -49,6 +49,7 @@ pub const ITEM_FIELDS: &[(&str, &str, &str)] = &[
     ("video_resolution", "text", "4k, 1080, 720, 480 or sd"),
     ("hdr", "bool", "HDR picture (HDR10, HLG or HDR10+)"),
     ("hdr10plus", "bool", "HDR10+ picture"),
+    ("dovi", "bool", "Dolby Vision picture"),
     ("atmos", "bool", "Dolby Atmos sound"),
     ("subtitle_codec", "text", "srt, ass, pgs …"),
     ("audio_layout", "text", "mono, stereo, 5.1, 7.1 …"),
@@ -62,18 +63,23 @@ pub const ITEM_FIELDS: &[(&str, &str, &str)] = &[
 
 /// The filters offered on a library page, per kind of item, in order.
 pub const MOVIE_FILTERS: &[&str] = &[
-    "genre", "decade", "content_rating", "collection", "director", "actor", "writer", "producer", "country", "studio",
-    "video_resolution", "hdr", "hdr10plus", "atmos", "unwatched", "in_progress", "unmatched", "video_codec", "audio_codec",
+    "genre", "year", "decade", "content_rating", "collection", "director", "actor", "writer", "producer", "country", "studio",
+    "video_resolution", "hdr", "dovi", "hdr10plus", "atmos", "unwatched", "in_progress", "unmatched", "video_codec", "audio_codec",
     "subtitle_codec", "audio_layout", "audio_language", "subtitle_language", "edition", "label", "folder", "duplicate",
 ];
 pub const SHOW_FILTERS: &[&str] = &[
-    "genre", "content_rating", "network", "country", "collection", "director", "actor", "writer", "producer",
+    "genre", "year", "content_rating", "network", "country", "collection", "director", "actor", "writer", "producer",
     "unwatched_leaves", "unmatched", "edition", "label",
 ];
 pub const EPISODE_FILTERS: &[&str] = &[
-    "collection", "video_resolution", "hdr10plus", "atmos", "unwatched", "in_progress", "video_codec", "audio_codec",
+    "year", "collection", "video_resolution", "hdr", "dovi", "hdr10plus", "atmos", "unwatched", "in_progress", "video_codec", "audio_codec",
     "subtitle_codec", "audio_layout", "audio_language", "subtitle_language", "unmatched", "folder", "duplicate",
 ];
+/// Shown only to the server's owner ( adds them when the account is 1).
+pub const OWNER_FILTERS: &[&str] = &["label", "folder"];
+/// Shown only when the client asks for ?includeAdvanced=1 (the only advanced
+/// filter).
+pub const ADVANCED_FILTERS: &[&str] = &["duplicate"];
 
 pub fn filters_for(kind: ItemKind) -> &'static [&'static str] {
     match kind {
@@ -102,24 +108,39 @@ pub fn canonical_field(name: &str) -> &str {
         "lastviewedat" => "last_viewed_at",
         "viewcount" => "view_count",
         "location" => "folder",
+        "editiontitle" => "edition",
         other => other,
     }
 }
 
-/// "4k", "1080", "720", "480" or "sd" from the picture size, the way the
-/// original names resolutions.
+/// The name for a picture size: the longer side
+/// counts as the width; a size reaches a step when its width or its height
+/// does (table, width × height).
+pub const RESOLUTION_STEPS: &[(u32, u32, &str)] = &[
+    (15360, 8640, "16k"),
+    (7680, 4320, "8k"),
+    (3776, 2112, "4k"),
+    (2688, 1472, "2.7k"),
+    (2032, 1072, "2k"),
+    (1904, 1072, "1080"),
+    (1264, 704, "720"),
+    (1008, 560, "576"),
+    (848, 464, "480"),
+];
+
 pub fn resolution_name(width: u32, height: u32) -> &'static str {
-    if width >= 3200 || height >= 1600 {
-        "4k"
-    } else if width >= 1700 || height >= 900 {
-        "1080"
-    } else if width >= 1100 || height >= 600 {
-        "720"
-    } else if height >= 400 {
-        "480"
-    } else {
-        "sd"
+    if width == 0 || height == 0 {
+        return "";
     }
+    let (w, h) = if width < height { (height, width) } else { (width, height) };
+    for (sw, sh, name) in RESOLUTION_STEPS {
+        // "2k" is reached by the width alone.
+        let reached = if *name == "2k" { w >= *sw } else { w >= *sw || h >= *sh };
+        if reached {
+            return name;
+        }
+    }
+    "sd"
 }
 
 fn layout_name(s: &crate::db::Stream) -> String {
@@ -295,9 +316,10 @@ pub fn field(db: &Db, user_id: u64, item: &Item, name: &str) -> FieldValue {
             matches!(t.kind, ItemKind::Movie | ItemKind::Show) && !t.extra.contains_key("metadata_source")
         }),
         "duplicate" => Bool(duplicates(db).contains(&item.id)),
-        "video_resolution" => Text(file.and_then(|f| f.video()).map(|v| vec![resolution_name(v.width, v.height).to_string()]).unwrap_or_default()),
+        "video_resolution" => Text(file.and_then(|f| f.video()).map(|v| resolution_name(v.width, v.height)).filter(|r| !r.is_empty()).map(|r| vec![r.to_string()]).unwrap_or_default()),
         "hdr" => Bool(file.and_then(|f| f.video()).is_some_and(|v| v.is_hdr())),
         "hdr10plus" => Bool(file.and_then(|f| f.video()).is_some_and(|v| v.hdr10plus)),
+        "dovi" => Bool(file.and_then(|f| f.video()).is_some_and(|v| v.dovi)),
         "atmos" => Bool(file.is_some_and(|f| f.streams.iter().any(|s| s.kind == "audio" && s.is_atmos()))),
         "subtitle_codec" => Text(file.map(|f| {
             let mut v: Vec<String> = f.streams.iter().filter(|s| s.kind == "subtitle").map(|s| s.codec.clone()).collect();
@@ -572,7 +594,7 @@ pub fn rules_from_params(params: &[(String, String)]) -> Vec<Rule> {
     const RESERVED: &[&str] = &[
         "sort", "limit", "offset", "start", "size", "token", "match", "q", "query",
         "smart", "playlisttype", "owner", "includecollections", "container-start", "container-size",
-        "filter",
+        "filter", "includeadvanced", "includemeta", "includeguids",
     ];
     let mut rules = vec![];
     for (k, v) in params {
@@ -615,11 +637,14 @@ fn return_rules_in(rules: &mut Vec<Rule>, field: &str, v: &str) {
 
 /// For a library page: every filter offered for this kind of
 /// item, with the values found and how many items have each.
-pub fn section_filters(db: &Db, user_id: u64, items: &[&Item], kind: ItemKind) -> Vec<Value> {
+pub fn section_filters(db: &Db, user_id: u64, items: &[&Item], kind: ItemKind, owner: bool, advanced: bool) -> Vec<Value> {
     use std::collections::BTreeMap;
     let label = |f: &'static str| -> &'static str { ITEM_FIELDS.iter().find(|x| x.0 == f).map(|x| x.2).unwrap_or(f) };
     let mut out = vec![];
     for f in filters_for(kind) {
+        if (!owner && OWNER_FILTERS.contains(f)) || (!advanced && ADVANCED_FILTERS.contains(f)) {
+            continue;
+        }
         let mut counts: BTreeMap<String, (String, usize)> = BTreeMap::new();
         let mut is_bool = false;
         let mut yes = 0;
@@ -646,14 +671,18 @@ pub fn section_filters(db: &Db, user_id: u64, items: &[&Item], kind: ItemKind) -
             }
         }
         let mut values: Vec<(String, usize)> = counts.into_values().collect();
+        if *f == "year" || *f == "decade" {
+            values.reverse();
+        }
         if *f == "video_resolution" {
-            let rank = |v: &str| ["4k", "1080", "720", "480", "sd"].iter().position(|x| *x == v).unwrap_or(9);
+            let rank = |v: &str| RESOLUTION_STEPS.iter().position(|x| x.2 == v).unwrap_or(RESOLUTION_STEPS.len());
             values.sort_by_key(|(v, _)| rank(v));
         }
         out.push(serde_json::json!({
             "filter": f,
             "title": label(f),
-            "type": if is_bool { "boolean" } else if *f == "decade" { "number" } else { "string" },
+            "type": if is_bool { "boolean" } else if *f == "decade" || *f == "year" { "integer" } else { "string" },
+            "advanced": ADVANCED_FILTERS.contains(f),
             "count": if is_bool { Some(yes) } else { None },
             "values": values.iter().map(|(v, c)| serde_json::json!({"value": v, "count": c})).collect::<Vec<_>>(),
         }));
@@ -686,6 +715,7 @@ pub fn playlist_matches(p: &Playlist, user: &User, params: &[(String, String)], 
             "min_items" | "item_count>" => v.parse::<usize>().map(|n| item_count >= n).unwrap_or(true),
             "max_items" | "item_count<" => v.parse::<usize>().map(|n| item_count <= n).unwrap_or(true),
             "playlisttype" => v == "video" || v.is_empty(),
+            "section" => true,
             _ => true,
         };
         if !ok {
@@ -782,15 +812,25 @@ mod tests {
         assert_eq!(hits(&[("folder", "/m")]), vec![2, 3]);
         assert_eq!(hits(&[("unwatched", "1")]), vec![1, 2, 3]);
         let all: Vec<&Item> = db.items.values().collect();
-        let f = section_filters(&db, 1, &all, ItemKind::Movie);
+        let f = section_filters(&db, 1, &all, ItemKind::Movie, true, true);
         assert_eq!(f.len(), MOVIE_FILTERS.len());
+        assert_eq!(section_filters(&db, 1, &all, ItemKind::Movie, false, false).len(), MOVIE_FILTERS.len() - 3);
         let res = f.iter().find(|x| x["filter"] == "video_resolution").unwrap();
         assert_eq!(res["values"][0]["value"], "4k");
         assert_eq!(res["values"][1]["count"], 2);
         assert_eq!(f.iter().find(|x| x["filter"] == "hdr").unwrap()["count"], 1);
         assert_eq!(edition_of("Film {Edition-Extended}.mkv"), "Extended");
         assert_eq!(resolution_name(1920, 800), "1080");
-        assert_eq!(filters_for(ItemKind::Show).len(), 13);
-        assert_eq!(filters_for(ItemKind::Episode).len(), 15);
+        assert_eq!(resolution_name(2048, 858), "2k");
+        assert_eq!(resolution_name(3840, 1600), "4k");
+        assert_eq!(resolution_name(2704, 1520), "2.7k");
+        assert_eq!(resolution_name(1080, 1920), "1080");
+        assert_eq!(resolution_name(720, 576), "576");
+        assert_eq!(resolution_name(720, 480), "480");
+        assert_eq!(resolution_name(640, 360), "sd");
+        assert_eq!(resolution_name(7680, 4320), "8k");
+        assert_eq!(filters_for(ItemKind::Movie).len(), 29);
+        assert_eq!(filters_for(ItemKind::Show).len(), 14);
+        assert_eq!(filters_for(ItemKind::Episode).len(), 18);
     }
 }

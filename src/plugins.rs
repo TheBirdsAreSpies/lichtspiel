@@ -140,6 +140,7 @@ pub fn invoke(plugin: &Plugin, settings: &serde_json::Map<String, Value>, event:
     let mut child = Command::new(&program)
         .args(&cmd[1..])
         .current_dir(&plugin.dir)
+        .env("LICHTSPIEL_EVENT", event)
         .env("MEDIASERVER_EVENT", event)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -210,7 +211,7 @@ fn resolve_program(dir: &Path, prog: &str) -> PathBuf {
 }
 
 /// A tiny plugin built into the server, used as a working example and by
-/// the self-test: `mediaserver --example-plugin`. It answers metadata
+/// the self-test: `lichtspiel --example-plugin`. It answers metadata
 /// lookups with a tagline and echoes api.call requests.
 pub fn example_plugin_main() {
     let mut input = String::new();

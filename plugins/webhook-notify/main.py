@@ -15,7 +15,7 @@ WORDS = {
     "user.invited": "{by} invited {email}",
     "user.joined": "{username} joined the server",
     "library.scan.finished": "Scan finished: {added} added, {removed} removed",
-    "api.call": "Test message from the media server",
+    "api.call": "Test message from Lichtspiel",
 }
 
 

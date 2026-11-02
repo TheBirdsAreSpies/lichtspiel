@@ -1,12 +1,12 @@
-//! Home media server: movies and TV libraries, direct play and
+//! Lichtspiel, a home streaming server: movies and TV libraries, direct play and
 //! transcoding for every video container, playlists (default, manual and
 //! smart) with filters and sorting, user invites, plugins and a JSON API.
 //!
-//!   mediaserver                      run the server (port 8484 or the one saved in Settings, data in ./data)
-//!   mediaserver --data /config --port 8484
-//!   mediaserver --console            run the server with a status window
-//!   mediaserver --screenshot out.png draw the status window, save a picture, exit
-//!   mediaserver --self-test out.json try every feature end to end, save results, exit
+//!   lichtspiel                       run the server (port 8484 or the one saved in Settings, data in ./data)
+//!   lichtspiel --data /config --port 8484
+//!   lichtspiel --console             run the server with a status window
+//!   lichtspiel --screenshot out.png  draw the status window, save a picture, exit
+//!   lichtspiel --self-test out.json  try every feature end to end, save results, exit
 
 mod auth;
 mod db;
@@ -15,6 +15,7 @@ mod metadata;
 mod migrate;
 mod plugins;
 mod query;
+mod related;
 mod routes;
 mod scanner;
 mod selftest;
@@ -37,14 +38,19 @@ fn arg_value(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
 }
 
+/// LICHTSPIEL_<name>, or the older MEDIASERVER_<name> so existing setups keep working.
+pub fn env(name: &str) -> Option<String> {
+    std::env::var(format!("LICHTSPIEL_{name}")).or_else(|_| std::env::var(format!("MEDIASERVER_{name}"))).ok()
+}
+
 fn options(args: &[String]) -> Options {
     let data = arg_value(args, "--data")
-        .or_else(|| std::env::var("MEDIASERVER_DATA").ok())
+        .or_else(|| env("DATA"))
         .unwrap_or_else(|| "data".into());
     let port = arg_value(args, "--port")
-        .or_else(|| std::env::var("MEDIASERVER_PORT").ok())
+        .or_else(|| env("PORT"))
         .and_then(|p| p.parse().ok());
-    let bind = arg_value(args, "--bind").or_else(|| std::env::var("MEDIASERVER_BIND").ok()).unwrap_or_else(|| "0.0.0.0".into());
+    let bind = arg_value(args, "--bind").or_else(|| env("BIND")).unwrap_or_else(|| "0.0.0.0".into());
     Options { data: PathBuf::from(data), port, bind }
 }
 
@@ -103,7 +109,7 @@ fn main() {
         return;
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("mediaserver {}\n\n  --data DIR         where the library, settings and plugins are kept (default ./data, or MEDIASERVER_DATA)\n  --port N           port to listen on (default 8484 or the one saved in Settings, or MEDIASERVER_PORT)\n  --bind ADDR        address to listen on (default 0.0.0.0)\n  --console          also open the optional desktop status window\n  --no-browser       don't open the web app in the browser on first start\n  --screenshot FILE  draw the status window, save it as PNG and exit\n  --self-test FILE   test every feature, write the results as JSON and exit", server::VERSION);
+        println!("lichtspiel {}\n\n  --data DIR         where the library, settings and plugins are kept (default ./data, or LICHTSPIEL_DATA)\n  --port N           port to listen on (default 8484 or the one saved in Settings, or LICHTSPIEL_PORT)\n  --bind ADDR        address to listen on (default 0.0.0.0)\n  --console          also open the optional desktop status window\n  --no-browser       don't open the web app in the browser on first start\n  --screenshot FILE  draw the status window, save it as PNG and exit\n  --self-test FILE   test every feature, write the results as JSON and exit", server::VERSION);
         return;
     }
     if let Some(out) = arg_value(&args, "--self-test") {
@@ -131,7 +137,7 @@ fn main() {
         }
     };
     let port = *app.port.lock().unwrap();
-    println!("Media server {} is running.", server::VERSION);
+    println!("{} {} is running.", server::APP_NAME, server::VERSION);
     println!("  Open http://{}:{port}/ in a browser (or http://localhost:{port}/ on this computer).", lan_address());
     println!("  Data folder: {}", std::fs::canonicalize(&opts.data).unwrap_or(opts.data.clone()).display());
     println!("  API list: GET /api/docs");

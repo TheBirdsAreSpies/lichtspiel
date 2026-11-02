@@ -1,4 +1,4 @@
-//! Import from the old media server (the one this server replaces): its
+//! Import from the old server (the one Lichtspiel replaces): its
 //! libraries and folders, every account's watched state, resume points and
 //! ratings, manual playlists, credits markers, and titles/plots.
 //!
@@ -23,7 +23,7 @@ pub const DB_NAME: &str = "com.plexapp.plugins.library.db";
 /// Docker setup mounts it).
 pub fn candidates() -> Vec<PathBuf> {
     let mut v: Vec<PathBuf> = vec![];
-    if let Ok(p) = std::env::var("MEDIASERVER_OLD_SERVER") {
+    if let Some(p) = crate::env("OLD_SERVER") {
         v.push(p.into());
     }
     if let Ok(l) = std::env::var("LOCALAPPDATA") {

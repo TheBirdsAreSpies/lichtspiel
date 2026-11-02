@@ -1,8 +1,8 @@
 [package]
-name = "mediaserver"
+name = "lichtspiel"
 version = "0.1.0"
 edition = "2024"
-description = "A home media streaming server: movies and TV libraries, transcoding, playlists and smart playlists, user invites, plugins and a JSON API."
+description = "Lichtspiel, a home streaming server: movies and TV libraries, transcoding, playlists and smart playlists, user invites, plugins and a JSON API."
 
 [features]
 # The desktop console window (used for --screenshot and --console).

@@ -263,7 +263,7 @@ async function importPanel() {
   };
   if (st.running) waitDone();
   return h('div', { class: 'panel', style: 'margin-top:20px' },
-    h('h2', { style: 'margin-top:0' }, 'Import from your old media server'),
+    h('h2', { style: 'margin-top:0' }, 'Import from your old server'),
     h('p', { class: 'dim' }, 'Brings over libraries, everyone’s watched state, resume points and ratings, playlists, credits markers and titles/plots from the server this one replaces. It reads a copy of its library database (',
       h('code', {}, 'com.plexapp.plugins.library.db'), '); the old server keeps working. You can run it again any time — nothing is counted twice.'),
     h('label', {}, 'Old server’s data'), where,
@@ -313,7 +313,7 @@ async function usersPage() {
         const body = { email: email.value, note: note.value, days: Number(days.value) || 7, admin: asAdmin.checked };
         if (!allLibs.checked) body.allowed_sections = libChecks.filter(c => c.el.checked).map(c => c.s.id);
         const r = await api('POST', '/api/invites', body);
-        const mail = `mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent('Invitation to ' + (S.status ? S.status.name : 'my media server'))}&body=${encodeURIComponent((r.note ? r.note + '\n\n' : '') + 'Join here: ' + r.url)}`;
+        const mail = `mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent('Invitation to ' + (S.status ? S.status.name : 'Lichtspiel'))}&body=${encodeURIComponent((r.note ? r.note + '\n\n' : '') + 'Join here: ' + r.url)}`;
         result.replaceChildren(h('div', { class: 'panel', style: 'background:var(--panel2)' }, h('div', { class: 'ok' }, 'Invite ready. Send this link:'),
           h('input', { value: r.url, style: 'width:100%;margin:8px 0', onclick: e => e.target.select() }),
           h('button', { onclick: () => copy(r.url) }, 'Copy link'), ' ', r.email ? h('a', { href: mail }, h('button', {}, 'Open in email')) : null));

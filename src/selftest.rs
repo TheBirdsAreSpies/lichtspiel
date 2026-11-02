@@ -178,7 +178,7 @@ fn save(out: &Path, steps: &[Value]) {
 }
 
 pub fn run(out: &Path) -> bool {
-    let root: PathBuf = std::env::temp_dir().join(format!("mediaserver-selftest-{}", std::process::id()));
+    let root: PathBuf = std::env::temp_dir().join(format!("lichtspiel-selftest-{}", std::process::id()));
     let media = root.join("media");
     let data = root.join("data");
     let started = std::time::Instant::now();
@@ -476,13 +476,18 @@ pub fn run(out: &Path) -> bool {
         // country come over from the old server and can be filtered on.
         let film_sid = c.get("/library/sections").json()["MediaContainer"]["Directory"].as_array().cloned().unwrap_or_default().iter()
             .find(|s| s["title"] == "Old films").and_then(|s| s["id"].as_u64()).unwrap_or(0);
-        let fl = c.get(&format!("/library/sections/{film_sid}/filters")).json();
+        let fl = c.get(&format!("/library/sections/{film_sid}/filters?includeAdvanced=1")).json();
         let flist = fl["MediaContainer"]["Filter"].as_array().cloned().unwrap_or_default();
         let has_value = |f: &str, v: &str| flist.iter().any(|x| x["filter"] == f && x["values"].as_array().is_some_and(|a| a.iter().any(|y| y["value"] == v)));
         let found = |q: &str| c.get(&format!("/library/sections/{film_sid}/all?{q}")).json()["MediaContainer"]["Metadata"].as_array().is_some_and(|a| a.iter().any(|x| x["id"].as_u64() == Some(fid)));
         let filters_ok = flist.len() == crate::query::MOVIE_FILTERS.len() && has_value("collection", "Saga Box") && has_value("country", "France")
             && has_value("producer", "Pro Ducer") && has_value("decade", "2000") && found("collection=Saga%20Box") && found("producer=Pro%20Ducer")
-            && found("country=France") && found("decade=2000") && !found("decade=1990") && found("director=Dee%20Rector") && found("actor=Bob%20Second");
+            && found("country=France") && found("decade=2000") && !found("decade=1990") && found("director=Dee%20Rector") && found("actor=Bob%20Second")
+            // The library's Collections and Categories pages, its Playlists page and the rows under a movie.
+            && c.get(&format!("/library/sections/{film_sid}/collections")).json()["MediaContainer"]["Metadata"][0]["title"] == "Saga Box"
+            && c.get(&format!("/library/sections/{film_sid}/categories")).json()["MediaContainer"]["Metadata"][0]["title"] == "Drama"
+            && c.get(&format!("/playlists?section={film_sid}")).json()["MediaContainer"]["Metadata"].as_array().is_some_and(|a| a.iter().any(|p| p["title"] == "Old favourites"))
+            && c.get(&format!("/library/metadata/{fid}/related")).json()["MediaContainer"]["Hub"].is_array();
         let pilot = elist.first().and_then(|e| e["id"].as_u64()).unwrap_or(0);
         let pilot_offset = c.get(&format!("/library/metadata/{pilot}")).json()["MediaContainer"]["Metadata"][0]["viewOffset"].as_u64().unwrap_or(0);
         let pls = c.get("/playlists?owner=me").json();

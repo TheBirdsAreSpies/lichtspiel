@@ -17,7 +17,7 @@ use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
-const UA: &str = "HomeMediaServer/0.1 (self-hosted personal media server; metadata lookup)";
+const UA: &str = "Lichtspiel/0.1 (self-hosted personal streaming server; metadata lookup)";
 const TMDB: &str = "https://api.themoviedb.org/3";
 const TMDB_IMG: &str = "https://image.tmdb.org/t/p";
 const TVMAZE: &str = "https://api.tvmaze.com";

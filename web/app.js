@@ -177,12 +177,17 @@ async function sectionPage(id, qs) {
   const sec = S.sections.find(s => String(s.id) === String(id));
   if (!sec) return set(h('div', { class: 'empty' }, 'Library not found.'));
   const p = new URLSearchParams(qs || '');
+  // The library's own pages: Library, Collections, Playlists, Categories.
+  const tab = p.get('tab') || '';
+  const tabs = h('div', { class: 'tabs' }, [['', 'Library'], ['collections', 'Collections'], ['playlists', 'Playlists'], ['categories', 'Categories']]
+    .map(([k, l]) => h('a', { href: `#/section/${id}${k ? '?tab=' + k : ''}`, class: tab === k ? 'on' : '' }, l)));
+  if (tab) return sectionSubPage(sec, tab, tabs);
   const st = {}; for (const k of ['type', 'sort', 'genre', 'watched', 'from', 'to', 'q', 'container', 'more']) st[k] = p.get(k) || '';
   for (const [k, v] of p) if (k.startsWith('f.')) st[k] = v;
   if (!st.sort) st.sort = 'title';
   const go = () => { const n = new URLSearchParams(); for (const [k, v] of Object.entries(st)) if (v) n.set(k, v); location.hash = `#/section/${id}?${n}`; };
   const genres = (await GET(`/library/sections/${id}/genres`)).MediaContainer.Directory;
-  const filters = st.more ? (await GET(`/library/sections/${id}/filters${st.type ? '?type=' + st.type : ''}`)).MediaContainer.Filter.filter(f => !BAR_FILTERS.includes(f.filter)) : [];
+  const filters = st.more ? (await GET(`/library/sections/${id}/filters?includeAdvanced=1${st.type ? '&type=' + st.type : ''}`)).MediaContainer.Filter.filter(f => !BAR_FILTERS.includes(f.filter)) : [];
   const q = new URLSearchParams();
   if (st.type) q.set('type', st.type);
   q.set('sort', st.sort);
@@ -199,14 +204,20 @@ async function sectionPage(id, qs) {
   const res = (await GET(`/library/sections/${id}/all?${q}`)).MediaContainer;
   const sel = (key, opts) => h('select', { onchange: e => { st[key] = e.target.value; if (key === 'type') for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } }, opts.map(([v, l]) => h('option', { value: v, selected: st[key] === v }, l)));
   const valueName = (f, v) => f.filter === 'video_resolution' ? (RES_NAMES[v] || v) : f.filter === 'decade' ? v + 's' : v;
-  const panel = st.more ? h('div', { class: 'filter-panel' }, filters.map(f => {
+  const filterBox = f => {
     const key = 'f.' + f.filter;
     const opts = f.type === 'boolean' ? [['', 'Any'], ['true', `Yes (${f.count})`], ['false', 'No']] : [['', f.values.length ? 'Any' : 'None found'], ...f.values.map(x => [x.value, `${valueName(f, x.value)} (${x.count})`])];
     if (st[key] && !opts.some(o => o[0] === st[key])) opts.push([st[key], st[key]]);
     return h('label', { class: st[key] ? 'on' : '' }, FILTER_NAMES[f.filter] || f.title, sel(key, opts));
-  }), active ? h('button', { class: 'small', style: 'align-self:end', onclick: () => { for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } }, 'Clear filters') : null) : null;
+  };
+  // "Duplicates" stays apart as its only advanced filter.
+  const advanced = filters.filter(f => f.advanced);
+  const panel = st.more ? h('div', { class: 'filter-panel' }, filters.filter(f => !f.advanced).map(filterBox),
+    advanced.length ? h('div', { class: 'dim', style: 'grid-column:1/-1;font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-top:4px' }, 'Advanced') : null,
+    advanced.map(filterBox), active ? h('button', { class: 'small', style: 'align-self:end', onclick: () => { for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } }, 'Clear filters') : null) : null;
   const text = (key, ph, w) => h('input', { placeholder: ph, value: st[key], style: `width:${w}px`, onchange: e => { st[key] = e.target.value.trim(); go(); } });
   set(h('h1', {}, sec.title, ' ', h('span', { class: 'dim', style: 'font-size:16px;font-weight:400' }, res.totalSize + ' shown')),
+    tabs,
     h('div', { class: 'bar-tools' },
       sec.type === 'show' ? sel('type', [['', 'Shows'], ['season', 'Seasons'], ['episode', 'Episodes']]) : null,
       sel('sort', SORTS),
@@ -220,6 +231,32 @@ async function sectionPage(id, qs) {
       S.me.admin ? h('button', { onclick: async () => { await api('POST', `/library/sections/${id}/refresh`); toast('Scanning ' + sec.title); } }, 'Scan now') : null),
     panel,
     res.Metadata.length ? h('div', { class: 'grid' }, res.Metadata.map(i => posterCard(i, { episodeThumb: st.type === 'episode' }))) : h('div', { class: 'empty' }, 'Nothing matches these filters.'));
+}
+
+// Collections, Playlists and Categories of one library.
+async function sectionSubPage(sec, tab, tabs) {
+  const head = h('h1', {}, sec.title);
+  const tile = (d, onclick) => h('div', { class: 'card', onclick },
+    h('div', { class: 'poster' }, d.thumb ? h('img', { src: withTok(d.thumb), loading: 'lazy', alt: '' }) : null, h('span', { class: 'badge' }, d.childCount)),
+    h('div', { class: 't', title: d.title }, d.title), h('div', { class: 's' }, d.childCount === 1 ? '1 item' : `${d.childCount} items`));
+  const open = (k, v) => () => (location.hash = `#/section/${sec.id}?${k}=${encodeURIComponent(v)}`);
+  if (tab === 'collections') {
+    const list = (await GET(`/library/sections/${sec.id}/collections`)).MediaContainer.Metadata;
+    return set(head, tabs, list.length ? h('div', { class: 'grid' }, list.map(d => tile(d, open('f.collection', d.title))))
+      : h('div', { class: 'empty' }, 'No collections yet. Film series are added when details are downloaded; add your own under Edit details → Collections.'));
+  }
+  if (tab === 'categories') {
+    const list = (await GET(`/library/sections/${sec.id}/categories`)).MediaContainer.Metadata;
+    return set(head, tabs, list.length ? h('div', { class: 'cats' }, list.map(d => h('div', { class: 'cat', onclick: open('genre', d.title) },
+      d.art ? h('img', { src: withTok(d.art), loading: 'lazy', alt: '', onerror: e => { if (d.thumb && !e.target.dataset.f) { e.target.dataset.f = 1; e.target.src = withTok(d.thumb); } } }) : null,
+      h('div', {}, d.title, h('small', {}, d.childCount === 1 ? '1 item' : `${d.childCount} items`)))))
+      : h('div', { class: 'empty' }, 'No categories yet. They come from the genres of the movies and shows.'));
+  }
+  const pls = meta(await GET(`/playlists?section=${sec.id}&sort=title`));
+  set(head, tabs, pls.length ? h('div', { class: 'list' }, pls.map(pl => h('div', { class: 'li' },
+    h('div', { class: 'grow' }, h('a', { href: '#/playlist/' + pl.id }, h('b', {}, pl.title)),
+      h('div', { class: 'dim' }, [pl.smart ? 'Smart playlist' : 'Playlist', (pl.leafCount ?? 0) + ' items', pl.duration ? fmtDur(pl.duration) : null].filter(Boolean).join(' · '))))))
+    : h('div', { class: 'empty' }, 'No playlists with anything from this library yet.'));
 }
 
 // ---------- details
@@ -251,6 +288,8 @@ async function itemPage(id) {
   const links = [ids.imdb ? ['IMDb', 'https://www.imdb.com/title/' + ids.imdb] : null, ids.tmdb ? ['TMDB', `https://www.themoviedb.org/${it.type === 'movie' ? 'movie' : 'tv'}/${ids.tmdb}`] : null,
     ids.tvmaze ? ['TVmaze', 'https://www.tvmaze.com/shows/' + ids.tvmaze] : null, ids.wikipedia ? ['Wikipedia', ids.wikipedia] : null, ids.wikidata ? ['Wikidata', 'https://www.wikidata.org/wiki/' + ids.wikidata] : null].filter(Boolean);
   const matchable = it.type === 'movie' || it.type === 'show';
+  // Rows: Other Editions, Related, More by the director, More with the first two actors.
+  const related = matchable ? ((await GET(`/library/metadata/${id}/related?count=20`)).MediaContainer.Hub || []) : [];
   const hero = h('img', { class: 'hero', src: withTok(`/library/metadata/${id}/art?v=${it.updatedAt || 0}`), alt: '', onerror: e => e.target.remove() });
   set(
     hero,
@@ -310,7 +349,8 @@ async function itemPage(id) {
           h('img', { src: withTok(e.thumb), loading: 'lazy' }),
           h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, `${e.index}. ${e.title}`)), h('div', { class: 'dim' }, [fmtDur(e.duration), e.viewCount ? '✓ watched' : '', e.viewOffset ? 'stopped at ' + fmtTime(e.viewOffset / 1000) : ''].filter(Boolean).join(' · ')),
             e.summary ? h('div', { class: 'ep-plot' }, e.summary) : null),
-          h('button', { class: 'primary small', onclick: () => play(e, e.viewOffset ? e.viewOffset / 1000 : 0, kids.slice(i + 1)) }, '▶'))))] : null);
+          h('button', { class: 'primary small', onclick: () => play(e, e.viewOffset ? e.viewOffset / 1000 : 0, kids.slice(i + 1)) }, '▶'))))] : null,
+    related.map(hb => row(hb.title, hb.Metadata)));
   if (m) {
     try {
       const d = await GET(`/library/metadata/${id}/decision`);

@@ -24,7 +24,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const APP_NAME: &str = "Lichtspiel";
 /// The default port; it can be
 /// changed in Settings (saved, used after a restart) or with --port /
-/// MEDIASERVER_PORT.
+/// LICHTSPIEL_PORT.
 pub const DEFAULT_PORT: u16 = 8484;
 
 /// How often library folders are looked at for new or changed files (seconds).
@@ -800,13 +800,14 @@ fn install_bundled_plugins(dest: &Path) {
         return;
     }
     let mut sources: Vec<PathBuf> = vec![];
-    if let Ok(p) = std::env::var("MEDIASERVER_BUNDLED_PLUGINS") {
+    if let Some(p) = crate::env("BUNDLED_PLUGINS") {
         sources.push(PathBuf::from(p));
     }
     if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
         sources.push(dir.join("plugins"));
         sources.push(dir.join("..").join("..").join("plugins")); // cargo's target/debug next to the project
     }
+    sources.push(PathBuf::from("/opt/lichtspiel/plugins"));
     sources.push(PathBuf::from("/opt/mediaserver/plugins"));
     let Some(src) = sources.into_iter().find(|s| s.is_dir() && s.canonicalize().ok() != dest.canonicalize().ok()) else { return };
     let Ok(rd) = std::fs::read_dir(&src) else { return };

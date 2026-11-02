@@ -183,6 +183,9 @@ pub struct Stream {
     /// Video: HDR10+ dynamic metadata seen in the first frame.
     #[serde(default)]
     pub hdr10plus: bool,
+    /// Video: Dolby Vision (configuration record or dvhe / dvh1 / dav1 tag).
+    #[serde(default)]
+    pub dovi: bool,
     /// Audio: channel layout ("stereo", "5.1(side)" …).
     #[serde(default)]
     pub channel_layout: String,
@@ -190,7 +193,7 @@ pub struct Stream {
 
 impl Stream {
     pub fn is_hdr(&self) -> bool {
-        matches!(self.color_transfer.as_str(), "smpte2084" | "arib-std-b67") || self.hdr10plus
+        matches!(self.color_transfer.as_str(), "smpte2084" | "arib-std-b67") || self.hdr10plus || self.dovi
     }
     pub fn is_atmos(&self) -> bool {
         self.profile.to_lowercase().contains("atmos") || self.title.to_lowercase().contains("atmos")
@@ -216,7 +219,7 @@ pub struct MediaFile {
     #[serde(default)]
     pub probed: bool,
     /// Which version of the probe read the streams; older files are read
-    /// again on the next scan (PROBE_VERSION 2 added HDR, Atmos and layouts).
+    /// again on the next scan (PROBE_VERSION 2 added HDR, Atmos and layouts, 3 Dolby Vision).
     #[serde(default)]
     pub probe_version: u32,
     /// Subtitle files found next to the video (srt, ass, vtt …).
@@ -239,7 +242,7 @@ pub struct MediaFile {
 /// Bump when the credits detector changes, so files are looked at again.
 pub const CREDITS_DETECTOR_VERSION: u32 = 1;
 /// Bump when `scanner::probe` reads more about the streams.
-pub const PROBE_VERSION: u32 = 2;
+pub const PROBE_VERSION: u32 = 3;
 /// A file is given up on after more than 3 failed detections.
 pub const CREDITS_MAX_ERRORS: u32 = 3;
 
@@ -514,7 +517,7 @@ pub struct Settings {
     /// How many actor photos are saved per movie or show.
     #[serde(default = "cast_photos")]
     pub cast_photos_limit: usize,
-    /// Port the server listens on when no --port / MEDIASERVER_PORT is given
+    /// Port the server listens on when no --port / LICHTSPIEL_PORT is given
     /// (used after a restart).
     #[serde(default = "port")]
     pub port: u16,

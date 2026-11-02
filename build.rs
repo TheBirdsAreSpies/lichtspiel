@@ -1,9 +1,9 @@
 // Lets `cargo build` succeed while the server is running from target\<profile>.
 //
 // Windows won't let cargo delete a program that is running, so the build used to
-// stop with "failed to remove file …\mediaserver.exe (Access denied)". Windows
+// stop with "failed to remove file …\lichtspiel.exe (Access denied)". Windows
 // does allow *renaming* a running program, so before the new one is written the
-// running one is moved aside to mediaserver.exe.old (it keeps running; the next
+// running one is moved aside to lichtspiel.exe.old (it keeps running; the next
 // start uses the new build). Old copies that are no longer running are deleted.
 // Nothing happens on other systems (Docker / Synology build).
 
@@ -18,12 +18,12 @@ fn main() {
         return;
     }
     let Some(dir) = profile_dir() else { return };
-    let exe = dir.join("mediaserver.exe");
+    let exe = dir.join("lichtspiel.exe");
     // Leftovers from earlier builds, if they aren't running any more.
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
-            if name.starts_with("mediaserver.exe.old") {
+            if name.starts_with("lichtspiel.exe.old") {
                 let _ = std::fs::remove_file(e.path());
             }
         }
@@ -31,15 +31,15 @@ fn main() {
     if !exe.is_file() || !in_use(&exe) {
         return;
     }
-    let mut dest = dir.join("mediaserver.exe.old");
+    let mut dest = dir.join("lichtspiel.exe.old");
     let mut n = 1;
     while dest.exists() {
-        dest = dir.join(format!("mediaserver.exe.old{n}"));
+        dest = dir.join(format!("lichtspiel.exe.old{n}"));
         n += 1;
     }
     match std::fs::rename(&exe, &dest) {
-        Ok(()) => println!("cargo:warning=mediaserver.exe is running; it was moved to {} so the new build can be written (restart the server to use it)", dest.display()),
-        Err(e) => println!("cargo:warning=mediaserver.exe is running and could not be moved aside ({e}); stop the server and build again"),
+        Ok(()) => println!("cargo:warning=lichtspiel.exe is running; it was moved to {} so the new build can be written (restart the server to use it)", dest.display()),
+        Err(e) => println!("cargo:warning=lichtspiel.exe is running and could not be moved aside ({e}); stop the server and build again"),
     }
 }
 

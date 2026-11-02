@@ -18,12 +18,19 @@ Linux/Windows machine):
   Added Episodes, Unwatched Movies, Favorites, Top Rated). Playlists can be filtered (kind,
   owner, title, size, shared, pinned) and sorted (title, last changed, size, length …); the
   contents of any playlist can be filtered and sorted again.
-- **Library filters** — filters on every library page: genre, decade,
-  age rating, collection, director, actor, writer, producer, country, studio / network,
-  resolution, HDR, HDR10+, Dolby Atmos, unwatched, in progress, unmatched, video / audio /
+- **Library filters** — filters on every library page (29 for movies,
+  14 for shows, 18 for episodes): genre, year, decade, age rating, collection, director, actor,
+  writer, producer, country, studio / network, resolution (16k … SD),
+  HDR, Dolby Vision, HDR10+, Dolby Atmos, unwatched, in progress, unmatched, video / audio /
   subtitle format, audio channels, audio and subtitle language, edition, label, folder and
   duplicates. Click **More filters** on a library page; each menu shows the values found and
-  how many items have them. Labels, collections and edition can be set under **Edit**.
+  how many items have them. Labels and folder are only for the owner and
+  duplicates sits apart as the advanced filter. Labels, collections and edition can be set
+  under **Edit details**.
+- **Library pages** — each library has **Library**, **Collections**, **Playlists** and
+  **Categories** tabs. A movie page shows rows of other editions of the same
+  film, related movies, **More by** the director and **More with** each of the first two actors
+  (shows: related shows and More with).
 - **Users and invites** — create an invite link (valid 7 days by default, single use),
   choose which libraries the person may see and whether the server may convert video for
   them, then send them the link. They pick their own name and password. Each user has their
@@ -124,12 +131,12 @@ they stop changing (so a file that is still being copied isn't read half-way) an
 that library; only new or changed files are read. Files added while the server was off are
 found right after it starts.
 
-## Import everything from your old media server
+## Import everything from your old server
 
-On the **Libraries** page, under **Import from your old media server**, point the server at
+On the **Libraries** page, under **Import from your old server**, point the server at
 the old server's library database (`com.plexapp.plugins.library.db`, usually in
 `Plug-in Support/Databases`). It is found by itself in the usual places on Windows and in
-the Docker folder `/oldserver` (see `docker-compose.yml`; or set `MEDIASERVER_OLD_SERVER`).
+the Docker folder `/oldserver` (see `docker-compose.yml`; or set `LICHTSPIEL_OLD_SERVER`).
 The old database is only read, from a copy; nothing of the old server is changed.
 
 1. Press **Look inside**: you see the old libraries with their folders and the old accounts.
@@ -154,16 +161,16 @@ browser), and the status window is in `shots/now.png`.
 
 You need DSM 7.2 or newer with **Container Manager** installed (Package Center).
 
-1. In **File Station**, create the folder `docker/mediaserver` (it holds the server's
+1. In **File Station**, create the folder `docker/lichtspiel` (it holds the server's
    database, settings and plugins). Your videos can stay where they are, e.g. in the shared
    folder `video` with sub-folders `Movies` and `TV Shows`.
-2. Copy this whole `app` folder to the NAS, e.g. to `docker/mediaserver-build`.
+2. Copy this whole `app` folder to the NAS, e.g. to `docker/lichtspiel-build`.
 3. Open `docker-compose.yml` and check the two paths on the left side of the `volumes:` lines:
-   - `/volume1/docker/mediaserver` → where the server keeps its data
+   - `/volume1/docker/lichtspiel` → where the server keeps its data
    - `/volume1/video` → your videos (mounted read-only as `/media`)
    If you have no Intel graphics (or your model has none), delete the `devices:` lines.
-4. Container Manager → **Project** → **Create** → name `mediaserver`, path
-   `docker/mediaserver-build`, "Use existing docker-compose.yml" → Next → Done.
+4. Container Manager → **Project** → **Create** → name `lichtspiel`, path
+   `docker/lichtspiel-build`, "Use existing docker-compose.yml" → Next → Done.
    The first build takes 10–20 minutes on a NAS (it compiles the server).
 5. Open `http://<your-nas-ip>:8484` in a browser. The first visit asks you to create the
    owner account.
@@ -189,16 +196,16 @@ Portal → Advanced → Reverse Proxy) with HTTPS, and put that address into Set
 
 1. Install **ffmpeg** (e.g. `winget install ffmpeg`) so `ffmpeg` and `ffprobe` are on the PATH,
    or set their full paths in Settings.
-2. `cargo build --release` in this folder, then run `target\release\mediaserver.exe`.
+2. `cargo build --release` in this folder, then run `target\release\lichtspiel.exe`.
 3. Open `http://localhost:8484`.
 
 Data goes to a `data` folder next to where you start it. Options:
 
 | Option | Environment variable | Meaning |
 |---|---|---|
-| `--data <folder>` | `MEDIASERVER_DATA` | where the database, plugins and cache live |
-| `--port <n>` | `MEDIASERVER_PORT` | port (default 8484, or the one saved in Settings) |
-| `--bind <address>` | `MEDIASERVER_BIND` | network address to listen on (default all) |
+| `--data <folder>` | `LICHTSPIEL_DATA` | where the database, plugins and cache live |
+| `--port <n>` | `LICHTSPIEL_PORT` | port (default 8484, or the one saved in Settings) |
+| `--bind <address>` | `LICHTSPIEL_BIND` | network address to listen on (default all) |
 | `--console` | | also open the optional desktop status window |
 | `--no-browser` | | don't open the browser on the first start |
 | `--self-test <file.json>` | | builds test videos, runs every feature, writes a report |

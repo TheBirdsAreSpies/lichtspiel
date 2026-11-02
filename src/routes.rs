@@ -5,6 +5,7 @@ use crate::db::{self, now, Invite, ItemKind, Playlist, PlaylistKind, Section, Se
 use crate::handlers::*;
 use crate::plugins;
 use crate::query;
+use crate::related;
 use crate::server::*;
 use crate::transcode::{self, Method};
 use serde_json::{json, Value};
@@ -35,7 +36,10 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/library/sections/{id}/refresh", "Admin: scan the library now (?wait=1 to wait for the result)"),
     ("GET", "/library/sections/{id}/all", "Browse: ?type=movie|show|episode &sort=title|year:desc|added_at:desc|rating:desc|random &genre=Drama &year>=2000 &unwatched=1 &title~=star &q= &offset &limit"),
     ("GET", "/library/sections/{id}/genres", "Genres and years in a library with counts"),
-    ("GET", "/library/sections/{id}/filters", "Every filter the library page offers (?type=show|season|episode), with the values found and counts; use them in /all as field=value (several: a,b)"),
+    ("GET", "/library/sections/{id}/collections", "The library's collections, each with its size, a picture and the address of its items"),
+    ("GET", "/library/sections/{id}/categories", "The library's categories (one per genre) with a picture and size"),
+    ("GET", "/library/metadata/{id}/related", "Rows for a movie or show page: Other Editions, Related Movies/Shows, More by <first director>, More with <first two actors> (?count=, default 6)"),
+    ("GET", "/library/sections/{id}/filters", "Every filter the library page offers (?type=show|season|episode), with the values found and counts (labels and folders for the owner only; duplicates with ?includeAdvanced=1); use them in /all as field=value (several: a,b)"),
     ("GET", "/library/metadata/{id}", "One movie, show, season or episode with media details"),
     ("PUT", "/library/metadata/{id}", "Admin: edit {title, summary, year, genres, rating, content_rating, tagline, studio}"),
     ("GET", "/library/metadata/{id}/children", "Seasons of a show, episodes of a season"),
@@ -492,6 +496,24 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let years: std::collections::BTreeSet<u32> = db.items.values().filter(|i| i.section_id == sid).filter_map(|i| i.year).collect();
             ok(json!({"MediaContainer": {"Directory": counts.iter().map(|(g, c)| json!({"title": g, "count": c})).collect::<Vec<_>>(), "years": years}}))
         }
+        ("GET", ["library", "sections", sid, "collections"]) | ("GET", ["library", "sections", sid, "categories"]) => {
+            let Some(sid) = id(sid) else { return fail(404, "No such library") };
+            let db = app.db.lock().unwrap();
+            if !db.sections.iter().any(|s| s.id == sid) { return fail(404, "No such library") }
+            if !db.can_see_section(&user, sid) { return fail(403, "You don't have access to this library"); }
+            let cats = ctx.path.ends_with("categories");
+            let list = if cats { related::categories(&db, &user, sid) } else { related::collections(&db, &user, sid) };
+            let (pg, off) = page(ctx, &list);
+            ok(container(pg, list.len(), off, json!({"librarySectionID": sid, "viewGroup": if cats { "category" } else { "collection" }})))
+        }
+        ("GET", ["library", "metadata", iid, "related"]) => with_item(app, &user, iid, |db, it| {
+            let count = ctx.param("count").and_then(|c| c.parse().ok()).filter(|c: &usize| *c > 0).unwrap_or(related::HUB_COUNT);
+            let hubs: Vec<Value> = related::related(db, &user, it, count).into_iter().map(|hb| {
+                let list: Vec<Value> = hb.ids.iter().filter_map(|i| db.items.get(i)).map(|i| item_json(db, &user, i, false)).collect();
+                json!({"title": hb.title, "hubIdentifier": hb.identifier, "context": hb.context, "type": it.kind.as_str(), "size": list.len(), "more": hb.more, "Metadata": list})
+            }).collect();
+            ok(json!({"MediaContainer": {"size": hubs.len(), "Hub": hubs}}))
+        }),
         ("GET", ["library", "sections", sid, "filters"]) => {
             let Some(sid) = id(sid) else { return fail(404, "No such library") };
             let db = app.db.lock().unwrap();
@@ -503,7 +525,9 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 SectionKind::Other => ItemKind::Video,
             });
             let items: Vec<&db::Item> = db.items.values().filter(|i| i.section_id == sid && i.kind == kind).collect();
-            let list = query::section_filters(&db, user.id, &items, kind);
+            // Labels and folders only for the owner; duplicates only with ?includeAdvanced=1.
+            let advanced = matches!(ctx.param("includeAdvanced"), Some("1") | Some("true"));
+            let list = query::section_filters(&db, user.id, &items, kind, user.admin, advanced);
             ok(json!({"MediaContainer": {"size": list.len(), "type": kind.as_str(), "Filter": list}}))
         }
         ("GET", ["library", "metadata", iid]) => with_item(app, &user, iid, |db, it| ok(container(vec![item_json(db, &user, it, true)], 1, 0, json!({})))),
@@ -775,7 +799,11 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let mut jsons: HashMap<u64, Value> = HashMap::new();
             for p in db.playlists.iter().filter(|p| visible_playlist(p, &user)) {
                 let (v, n, d) = playlist_json(&db, &user, p);
-                if query::playlist_matches(p, &user, &ctx.params, n) {
+                // ?section=<id>: only playlists with something from that library (its Playlists page).
+                let in_section = ctx.param("section").and_then(|s| s.parse::<u64>().ok()).is_none_or(|sid| {
+                    query::playlist_items(&db, &user, p).iter().any(|i| db.items.get(i).is_some_and(|x| x.section_id == sid))
+                });
+                if in_section && query::playlist_matches(p, &user, &ctx.params, n) {
                     jsons.insert(p.id, v);
                     rows.push((p.clone(), n, d));
                 }
@@ -1131,7 +1159,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                     db.settings = s;
                     let mut v = json!({"ok": true, "settings": db.settings});
                     if port_changed || db.settings.port != *app.port.lock().unwrap() {
-                        v["restart_needed"] = json!(format!("The server keeps using port {} until it is restarted (a --port option or MEDIASERVER_PORT still wins over this setting).", *app.port.lock().unwrap()));
+                        v["restart_needed"] = json!(format!("The server keeps using port {} until it is restarted (a --port option or LICHTSPIEL_PORT still wins over this setting).", *app.port.lock().unwrap()));
                     }
                     drop(db);
                     app.save();

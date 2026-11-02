@@ -318,6 +318,8 @@ pub fn probe(ffprobe: &str, file: &mut MediaFile) -> bool {
                 profile: s["profile"].as_str().unwrap_or("").to_string(),
                 color_transfer: s["color_transfer"].as_str().unwrap_or("").to_string(),
                 hdr10plus: false,
+                dovi: s["side_data_list"].to_string().contains("DOVI")
+                    || matches!(s["codec_tag_string"].as_str().unwrap_or(""), "dvhe" | "dvh1" | "dav1" | "dva1" | "dvav"),
                 channel_layout: s["channel_layout"].as_str().unwrap_or("").to_string(),
             });
         }
