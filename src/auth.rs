@@ -68,6 +68,11 @@ pub fn valid_username(name: &str) -> bool {
         && n.chars().all(|c| c.is_alphanumeric() || " ._-@".contains(c))
 }
 
+/// A PIN is 4 to 8 digits.
+pub fn valid_pin(pin: &str) -> bool {
+    (4..=8).contains(&pin.len()) && pin.bytes().all(|b| b.is_ascii_digit())
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

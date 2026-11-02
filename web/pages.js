@@ -467,18 +467,22 @@ async function usersPage() {
   const lName = h('input', { autocomplete: 'off', style: 'width:100%;max-width:420px' });
   const lPass = h('input', { type: 'password', autocomplete: 'new-password', style: 'width:100%;max-width:420px' });
   const lAdmin = h('input', { type: 'checkbox' });
+  const lHome = h('input', { type: 'checkbox' });
+  const lPin = h('input', { type: 'password', inputmode: 'numeric', maxlength: 8, autocomplete: 'off', style: 'width:140px' });
   const lAll = h('input', { type: 'checkbox', checked: true });
   const lChecks = S.sections.map(s => ({ s, el: h('input', { type: 'checkbox', checked: true }) }));
   const lErr = h('div', { class: 'err' });
   set(h('h1', {}, t('Users & invites')),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Add a local user')),
       h('p', { class: 'dim' }, t('For people in your home: you pick their user name and password, and they sign in with it right away. No invite link needed.')),
-      formRow(t('User name'), lName), formRow(t('Password (at least 6 characters)'), lPass),
+      formRow(t('User name'), lName), formRow(t('Password (at least 6 characters)'), lPass, t('May stay empty for a home profile: it is then only picked on the sign-in screen.')),
+      formRow(t('Home profile'), lHome, t('Shown on the sign-in screen of browsers in your home network; a tap signs in.')),
+      formRow(t('PIN (optional)'), lPin, t('4 to 8 digits, asked when the profile is picked. Admins need one.')),
       formRow(t('Libraries they may watch'), h('div', { class: 'checks' }, h('label', {}, lAll, h('b', {}, t('All, including future ones'))), lChecks.map(c => h('label', {}, c.el, c.s.title)))),
       formRow(t('Make them an admin'), lAdmin),
       h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: async () => {
         lErr.textContent = '';
-        const body = { username: lName.value, password: lPass.value, admin: lAdmin.checked };
+        const body = { username: lName.value, password: lPass.value, admin: lAdmin.checked, home: lHome.checked, pin: lPin.value };
         if (!lAll.checked) body.allowed_sections = lChecks.filter(c => c.el.checked).map(c => c.s.id);
         try { await api('POST', '/api/users', body); toast(t('{name} was added', { name: lName.value.trim() })); usersPage(); } catch (x) { lErr.textContent = x.message; }
       } }, t('Add user'))), lErr),
@@ -498,7 +502,7 @@ async function usersPage() {
           h('button', { onclick: () => copy(r.url) }, t('Copy link')), ' ', r.email ? h('a', { href: mail }, h('button', {}, t('Open in email'))) : null));
       } }, t('Create invite link'))), result),
     h('h2', {}, t('People')),
-    h('table', {}, h('tr', {}, h('th', {}, t('User')), h('th', {}, t('Libraries')), h('th', {}, t('Admin')), h('th', {}, t('May convert')), h('th', {}, t('May delete files')), h('th', {}, t('May download')), h('th', {}, '')),
+    h('table', {}, h('tr', {}, h('th', {}, t('User')), h('th', {}, t('Libraries')), h('th', {}, t('Admin')), h('th', {}, t('May convert')), h('th', {}, t('May delete files')), h('th', {}, t('May download')), h('th', { title: t('Shown on the sign-in screen') }, t('Home profile')), h('th', {}, '')),
       users.users.map(u => h('tr', {},
         h('td', {}, h('b', {}, u.username), h('div', { class: 'dim' }, u.email || ''), h('div', { class: 'dim', style: 'font-size:12px' }, t('joined {date}', { date: fmtDate(u.created_at) }))),
         h('td', {}, u.admin ? t('all (admin)') : u.allowed_sections === null ? t('all') : u.allowed_sections.map(secName).join(', ') || t('none'), ' ',
@@ -511,6 +515,9 @@ async function usersPage() {
         h('td', {}, h('input', { type: 'checkbox', checked: u.allow_download, disabled: u.admin,
           title: u.admin ? t('Admins may always download') : t('May download movies and episodes, as they are or converted to a smaller quality'),
           onchange: async e => { await api('PATCH', '/api/users/' + u.id, { allow_download: e.target.checked }); toast(t('Saved')); } })),
+        h('td', {}, h('input', { type: 'checkbox', checked: u.home, title: t('Shown on the sign-in screen'),
+          onchange: async e => { try { await api('PATCH', '/api/users/' + u.id, { home: e.target.checked }); toast(t('Saved')); } catch (x) { toast(x.message); e.target.checked = !e.target.checked; } } }),
+          ' ', h('button', { class: 'small', title: u.has_pin ? t('PIN is set') : t('No PIN'), onclick: () => pinEditor(u) }, u.has_pin ? t('PIN') + ' 🔒' : t('PIN'))),
         h('td', {}, u.id === S.me.id ? h('span', { class: 'dim' }, t('you')) : [
           h('button', { class: 'small', onclick: async () => { const pw = await ask(t('New password for {name}', { name: u.username }), { password: true }); if (pw) { try { await api('PATCH', '/api/users/' + u.id, { password: pw }); toast(t('Password changed')); } catch (x) { toast(x.message); } } } }, t('Password')), ' ',
           h('button', { class: 'small danger', onclick: async () => { if (await sure(t('Remove {name}?', { name: u.username }), { ok: t('Remove'), danger: true })) { await api('DELETE', '/api/users/' + u.id); usersPage(); } } }, t('Remove'))])))),
@@ -522,6 +529,13 @@ async function usersPage() {
         h('td', {}, i.allowed_sections ? i.allowed_sections.map(secName).join(', ') : t('all')),
         h('td', {}, i.status === 'open' ? h('button', { class: 'small', onclick: () => copy(i.url) }, t('Copy link')) : ''),
         h('td', {}, h('button', { class: 'small danger', onclick: async () => { await api('DELETE', '/api/invites/' + i.code); usersPage(); } }, i.status === 'open' ? t('Cancel') : t('Delete')))))) : h('p', { class: 'dim' }, t('No invites yet.')));
+}
+
+async function pinEditor(u) {
+  const pin = await ask(t('PIN for {name}', { name: u.username }), { password: true, note: t('4 to 8 digits. Leave empty to remove the PIN.') });
+  if (pin === null) return;
+  try { await api('PATCH', '/api/users/' + u.id, { pin }); toast(pin ? t('PIN set') : t('PIN removed')); } catch (x) { toast(x.message); }
+  usersPage();
 }
 
 function accessEditor(u) {

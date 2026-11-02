@@ -77,9 +77,45 @@ function authPage(title, intro, fields, button, submit) {
   const first = form.querySelector('input'); if (first) first.focus();
 }
 async function signedIn(token) { S.token = token; localStorage.setItem('token', token); location.hash = '#/'; await boot(); }
-function loginPage() {
+async function loginPage() {
   authPage(t('Sign in'), S.status ? S.status.name : '', [['username', t('User name'), 'text', '', 'username'], ['password', t('Password'), 'password', '', 'current-password']], t('Sign in'),
     async v => { const r = await api('POST', '/api/login', { username: v.username, password: v.password, device: 'web' }); await signedIn(r.token); });
+  // Home profiles (only offered in the local network): a tap, and the PIN if there is one.
+  const form = main().querySelector('form.center');
+  let home;
+  try { home = await api('GET', '/api/home'); } catch (e) { return; }
+  if (!home.profiles.length || !form.isConnected) return;
+  const pick = h('div', { class: 'profiles' }, home.profiles.map(p => h('button', { type: 'button', class: 'profile', title: p.username, onclick: () => pinPage(p) },
+    h('span', { class: 'avatar' }, (p.username[0] || '?').toUpperCase()),
+    h('span', { class: 'pname' }, p.username, p.has_pin ? h('span', { class: 'dim', title: t('Needs a PIN') }, ' 🔒') : null))));
+  const or = h('div', { class: 'or dim' }, t('or sign in with a password'));
+  const firstLabel = form.querySelector('label');
+  form.insertBefore(pick, firstLabel);
+  form.insertBefore(or, firstLabel);
+}
+async function profileLogin(p, pin) {
+  const r = await api('POST', `/api/home/${p.id}/login`, { pin, device: 'web' });
+  await signedIn(r.token);
+}
+function pinPage(p) {
+  if (!p.has_pin) return profileLogin(p, '').catch(e => toast(e.message));
+  const err = h('div', { class: 'err' });
+  const pin = h('input', { type: 'password', inputmode: 'numeric', pattern: '[0-9]*', maxlength: 8, autocomplete: 'off', class: 'pin', 'aria-label': t('PIN') });
+  const form = h('form', { class: 'center', onsubmit: async e => {
+    e.preventDefault(); err.textContent = '';
+    try { await profileLogin(p, pin.value); } catch (x) { err.textContent = x.message; pin.value = ''; pin.focus(); }
+  } },
+    h('div', { class: 'profiles' }, h('div', { class: 'profile' }, h('span', { class: 'avatar' }, (p.username[0] || '?').toUpperCase()), h('span', { class: 'pname' }, p.username))),
+    h('label', {}, t('PIN')), pin,
+    h('div', { style: 'margin-top:18px' }, h('button', { class: 'primary', type: 'submit', style: 'width:100%' }, t('Sign in'))), err,
+    h('div', { style: 'margin-top:14px' }, h('a', { href: '#/login', onclick: e => { e.preventDefault(); loginPage(); } }, t('Back to all profiles'))));
+  set(form);
+  pin.focus();
+}
+// Sign out here and go back to the profiles.
+async function switchUser() {
+  try { await api('POST', '/api/logout'); } catch (e) { /* signed out anyway */ }
+  logout();
 }
 function setupPage() {
   authPage(t('Welcome'), t('Create the owner account for this server. You can invite other people afterwards.'),
@@ -124,6 +160,7 @@ function drawChrome() {
     { label: t('Settings'), run: () => { location.hash = '#/settings'; } },
     { label: 'API', run: () => { location.hash = '#/api'; } },
     '-',
+    { label: t('Switch user'), run: switchUser },
     { label: t('Sign out'), run: logout },
   ]));
   gear.setAttribute('aria-haspopup', 'menu');

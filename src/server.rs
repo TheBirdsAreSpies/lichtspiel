@@ -1261,9 +1261,25 @@ pub struct Ctx {
     pub host: String,
     pub range: Option<String>,
     pub token: Option<String>,
+    /// The caller's IP address.
+    pub remote: Option<std::net::IpAddr>,
 }
 
 impl Ctx {
+    /// The request comes from this computer or the local network (private, link-local
+    /// or loopback address). Behind a reverse proxy on the same machine every request looks local.
+    pub fn is_local(&self) -> bool {
+        use std::net::IpAddr;
+        match self.remote {
+            Some(IpAddr::V4(a)) => a.is_loopback() || a.is_private() || a.is_link_local(),
+            Some(IpAddr::V6(a)) => {
+                if let Some(v4) = a.to_ipv4_mapped() { return v4.is_loopback() || v4.is_private() || v4.is_link_local(); }
+                let first = a.segments()[0];
+                a.is_loopback() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+            }
+            None => false,
+        }
+    }
     pub fn param(&self, k: &str) -> Option<&str> {
         self.params.iter().find(|(a, _)| a.eq_ignore_ascii_case(k)).map(|(_, v)| v.as_str())
     }
@@ -1552,7 +1568,8 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     if let Some(id) = uid {
         app.stats.saw(id, req.remote_addr().map(|a| a.ip().to_string()).unwrap_or_default(), &agent);
     }
-    let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token };
+    let remote = req.remote_addr().map(|a| a.ip());
+    let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token, remote };
     let resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) } else { crate::routes::route(&app, &ctx) };
     // Count what is sent (bandwidth on the dashboard).
     let (status, headers, len) = (resp.status_code(), resp.headers().to_vec(), resp.data_length());
@@ -1745,7 +1762,8 @@ pub fn page<T: Clone>(ctx: &Ctx, list: &[T]) -> (Vec<T>, usize) {
 
 pub fn user_json(u: &User) -> Value {
     json!({"id": u.id, "username": u.username, "email": u.email, "admin": u.admin, "created_at": u.created_at,
-        "allowed_sections": u.allowed_sections, "allow_transcode": u.allow_transcode.unwrap_or(true), "allow_delete": u.allow_delete, "allow_download": u.admin || u.allow_download.unwrap_or(true), "invited_by": u.invited_by})
+        "allowed_sections": u.allowed_sections, "allow_transcode": u.allow_transcode.unwrap_or(true), "allow_delete": u.allow_delete, "allow_download": u.admin || u.allow_download.unwrap_or(true), "invited_by": u.invited_by,
+        "home": u.home, "has_pin": !u.pin_hash.is_empty()})
 }
 
 pub fn invite_json(db: &Db, i: &Invite, base: &str) -> Value {

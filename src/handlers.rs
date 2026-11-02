@@ -33,7 +33,7 @@ pub fn setup(app: &Arc<App>, ctx: &Ctx) -> Resp {
     let mut db = app.db.lock().unwrap();
     if !db.users.is_empty() { return fail(409, "This server is already set up; sign in instead"); }
     let id = db.new_id();
-    db.users.push(User { id, username, email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s, admin: true, created_at: now(), allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null });
+    db.users.push(User { id, username, email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s, admin: true, created_at: now(), allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new() });
     if let Some(name) = ctx.body_or_param("server_name").filter(|n| !n.trim().is_empty()) {
         db.settings.server_name = name;
     }
@@ -66,6 +66,71 @@ pub fn login(app: &Arc<App>, ctx: &Ctx) -> Resp {
     }
 }
 
+// ---------------------------------------------------------------- home profiles
+
+/// A home profile may be picked on the sign-in screen: it is marked as one, and an admin
+/// only with a PIN (else anyone in the house could take over the server).
+fn pickable(u: &User) -> bool {
+    u.home && (!u.admin || !u.pin_hash.is_empty())
+}
+
+/// Set or remove (empty) a user's PIN.
+pub fn set_pin(u: &mut User, pin: &str) -> Result<(), &'static str> {
+    if pin.is_empty() {
+        u.pin_hash.clear();
+        u.pin_salt.clear();
+        return Ok(());
+    }
+    if !auth::valid_pin(pin) { return Err("A PIN is 4 to 8 digits"); }
+    let (h, s) = auth::hash_password(pin);
+    u.pin_hash = h;
+    u.pin_salt = s;
+    Ok(())
+}
+
+/// Wrong PINs per user: (count, locked until). Five wrong ones lock the profile for five minutes.
+static PIN_FAILS: std::sync::Mutex<Option<std::collections::HashMap<u64, (u32, u64)>>> = std::sync::Mutex::new(None);
+const PIN_TRIES: u32 = 5;
+const PIN_LOCK_SECS: u64 = 300;
+
+pub fn home_profiles(app: &Arc<App>, ctx: &Ctx) -> Resp {
+    if !ctx.is_local() { return ok(json!({"local": false, "profiles": []})); }
+    let db = app.db.lock().unwrap();
+    let list: Vec<Value> = db.users.iter().filter(|u| pickable(u))
+        .map(|u| json!({"id": u.id, "username": u.username, "has_pin": !u.pin_hash.is_empty()})).collect();
+    ok(json!({"local": true, "profiles": list}))
+}
+
+pub fn home_login(app: &Arc<App>, ctx: &Ctx, uid: &str) -> Resp {
+    if !ctx.is_local() { return fail(403, "Profiles can only be picked in the local network; sign in with your password"); }
+    let Some(uid) = uid.parse::<u64>().ok() else { return fail(404, "No such profile") };
+    let Some(u) = app.db.lock().unwrap().user(uid).cloned().filter(pickable) else { return fail(404, "No such profile") };
+    if !u.pin_hash.is_empty() {
+        {
+            let mut g = PIN_FAILS.lock().unwrap();
+            if let Some((n, until)) = g.get_or_insert_with(Default::default).get(&uid).copied() {
+                if n >= PIN_TRIES && until > now() { return fail(429, "Too many wrong PINs; try again in a few minutes"); }
+            }
+        }
+        let pin = ctx.body_or_param("pin").unwrap_or_default();
+        if !auth::verify(&pin, &u.pin_salt, &u.pin_hash) {
+            std::thread::sleep(Duration::from_millis(400));
+            let mut g = PIN_FAILS.lock().unwrap();
+            let e = g.get_or_insert_with(Default::default).entry(uid).or_insert((0, 0));
+            if e.1 != 0 && e.1 <= now() { *e = (0, 0); }
+            e.0 += 1;
+            if e.0 >= PIN_TRIES { e.1 = now() + PIN_LOCK_SECS; }
+            return fail(401, "Wrong PIN");
+        }
+        PIN_FAILS.lock().unwrap().get_or_insert_with(Default::default).remove(&uid);
+    }
+    let mut db = app.db.lock().unwrap();
+    let tok = new_token(&mut db, u.id, &ctx.body_or_param("device").unwrap_or_else(|| "profile".into()));
+    drop(db);
+    app.save();
+    ok(json!({"token": tok, "user": user_json(&u)}))
+}
+
 pub fn invite_info(app: &Arc<App>, code: &str) -> Resp {
     let db = app.db.lock().unwrap();
     match db.invites.iter().find(|i| i.code == code) {
@@ -90,7 +155,7 @@ pub fn invite_accept(app: &Arc<App>, ctx: &Ctx, code: &str) -> Resp {
     if inv.expires_at < now() { return fail(410, "This invite has expired"); }
     let id = db.new_id();
     let email = ctx.body_or_param("email").filter(|e| !e.is_empty()).unwrap_or(inv.email.clone());
-    db.users.push(User { id, username: username.clone(), email, password_hash: h, salt: s, admin: inv.admin, created_at: now(), allowed_sections: inv.allowed_sections.clone(), invited_by: Some(inv.created_by), allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null });
+    db.users.push(User { id, username: username.clone(), email, password_hash: h, salt: s, admin: inv.admin, created_at: now(), allowed_sections: inv.allowed_sections.clone(), invited_by: Some(inv.created_by), allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new() });
     if let Some(i) = db.invites.iter_mut().find(|i| i.code == code) {
         i.used_by = Some(id);
         i.used_at = Some(now());

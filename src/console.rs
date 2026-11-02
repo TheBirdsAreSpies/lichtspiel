@@ -42,7 +42,7 @@ struct View {
 fn view_of(db: &Db, playing: Vec<String>, transcodes: usize, plugins: Vec<(String, bool)>, address: String, demo: bool) -> View {
     let admin = db.users.iter().find(|u| u.admin).cloned().unwrap_or(db::User {
         id: 0, username: "owner".into(), email: String::new(), password_hash: String::new(), salt: String::new(), admin: true,
-        created_at: 0, allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null,
+        created_at: 0, allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new(),
     });
     // Episodes show the show's name with "S1 E2" underneath; movies their year.
     let label = |i: &Item| -> (String, String, u64) {
@@ -132,8 +132,8 @@ fn demo_view(address: String) -> View {
             eps.push(add(&mut db, 9002, ItemKind::Episode, Some(se), &format!("Episode {e}"), None, Some(e), (s * 4) as u64 + e as u64));
         }
     }
-    db.users.push(db::User { id: 1, username: "owner".into(), email: String::new(), password_hash: String::new(), salt: String::new(), admin: true, created_at: t, allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null });
-    db.users.push(db::User { id: 2, username: "family".into(), email: String::new(), password_hash: String::new(), salt: String::new(), admin: false, created_at: t, allowed_sections: Some(vec![9001]), invited_by: Some(1), allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null });
+    db.users.push(db::User { id: 1, username: "owner".into(), email: String::new(), password_hash: String::new(), salt: String::new(), admin: true, created_at: t, allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new() });
+    db.users.push(db::User { id: 2, username: "family".into(), email: String::new(), password_hash: String::new(), salt: String::new(), admin: false, created_at: t, allowed_sections: Some(vec![9001]), invited_by: Some(1), allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new() });
     for (i, frac) in [(ids[1], 0.42), (eps[1], 0.7), (ids[4], 0.15)] {
         let v = db.view_mut(1, i);
         v.view_offset_ms = (6_000_000.0 * frac) as u64;

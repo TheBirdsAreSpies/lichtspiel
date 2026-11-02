@@ -19,6 +19,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/setup", "First start only: create the owner account {username, password}"),
     ("POST", "/api/login", "Sign in {username, password} → {token}; send the token as the X-Token header, Authorization: Bearer, or ?token="),
     ("POST", "/api/logout", "Forget this token"),
+    ("GET", "/api/home", "Home profiles to pick on the sign-in screen (only answered in the local network; no sign-in)"),
+    ("POST", "/api/home/{id}/login", "Sign in as a home profile {pin} → {token} (local network only; five wrong PINs lock it for five minutes)"),
     ("GET", "/api/tokens", "Your tokens (devices and scripts) by short id; the token itself is never shown again"),
     ("POST", "/api/tokens", "Make an extra token for a script {device} → token (shown once)"),
     ("POST", "/api/tokens/rotate", "Swap the token you are using for a new one; the old one stops working. {all: true} also signs out every other device"),
@@ -118,8 +120,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("PUT", "/playlists/{id}/items/{itemId}/move", "Reorder ?after=itemId (0 = to the top)"),
     ("POST", "/playlists/{id}/copy", "Save a playlist's current contents as a new manual playlist"),
     ("GET", "/api/users", "Admin: every user"),
-    ("POST", "/api/users", "Admin: add a local user directly, without an invite {username, password, email, admin, allowed_sections: [ids]|null}"),
-    ("PATCH", "/api/users/{id}", "Admin: {admin, allowed_sections: [ids]|null, allow_transcode, allow_delete, allow_download, password, email}"),
+    ("POST", "/api/users", "Admin: add a local user directly, without an invite {username, password, email, admin, allowed_sections: [ids]|null, home, pin} (a home profile needs no password)"),
+    ("PATCH", "/api/users/{id}", "Admin: {admin, allowed_sections: [ids]|null, allow_transcode, allow_delete, allow_download, password, email, home, pin (empty removes it)}"),
     ("DELETE", "/api/users/{id}", "Admin: remove a user"),
     ("DELETE", "/api/users/{id}/tokens", "Admin: sign a user out everywhere"),
     ("GET", "/api/invites", "Admin: open and used invites"),
@@ -225,6 +227,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("POST", ["api", "setup"]) => return setup(app, ctx),
         ("POST", ["api", "login"]) => return login(app, ctx),
+        ("GET", ["api", "home"]) => return home_profiles(app, ctx),
+        ("POST", ["api", "home", uid, "login"]) => return home_login(app, ctx, uid),
         ("GET", ["api", "invites", code]) => return invite_info(app, code),
         ("POST", ["api", "invites", code, "accept"]) => return invite_accept(app, ctx, code),
         ("GET", ["video", "transcode", "hls", sid, file]) => return hls_file(app, sid, file),
@@ -1208,9 +1212,15 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if !admin { return need_admin(); }
             let username = ctx.body_or_param("username").unwrap_or_default().trim().to_string();
             let password = ctx.body_or_param("password").unwrap_or_default();
+            let home = ctx.body.get("home").and_then(|v| v.as_bool()).unwrap_or(false);
+            let pin = ctx.body_or_param("pin").unwrap_or_default();
+            let as_admin = ctx.body.get("admin").and_then(|v| v.as_bool()).unwrap_or(false);
             if !auth::valid_username(&username) { return fail(400, "Pick a user name of 2-40 letters or numbers"); }
-            if password.chars().count() < 6 { return fail(400, "Use at least 6 characters for the password"); }
-            let (h, s) = auth::hash_password(&password);
+            // A home profile may go without a password: it is then only reachable from the sign-in screen.
+            if !(home && password.is_empty()) && password.chars().count() < 6 { return fail(400, "Use at least 6 characters for the password"); }
+            if !pin.is_empty() && !auth::valid_pin(&pin) { return fail(400, "A PIN is 4 to 8 digits"); }
+            if home && as_admin && pin.is_empty() { return fail(400, "An admin's home profile needs a PIN"); }
+            let (h, s) = if password.is_empty() { (db::random_hex(32), db::random_hex(16)) } else { auth::hash_password(&password) };
             let sections = match ctx.body.get("allowed_sections") {
                 Some(Value::Array(a)) => Some(a.iter().filter_map(|x| x.as_u64()).collect()),
                 _ => None,
@@ -1219,8 +1229,9 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if db.users.iter().any(|u| u.username.eq_ignore_ascii_case(&username)) { return fail(409, "That user name is taken"); }
             let id = db.new_id();
             db.users.push(db::User { id, username: username.clone(), email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s,
-                admin: ctx.body.get("admin").and_then(|v| v.as_bool()).unwrap_or(false), created_at: now(), allowed_sections: sections, invited_by: Some(user.id),
-                allow_transcode: None, allow_delete: false, allow_download: None, sidebar: Value::Null });
+                admin: as_admin, created_at: now(), allowed_sections: sections, invited_by: Some(user.id),
+                allow_transcode: None, allow_delete: false, allow_download: None, sidebar: Value::Null, home, pin_hash: String::new(), pin_salt: String::new() });
+            let _ = set_pin(db.users.last_mut().unwrap(), &pin);
             let v = user_json(db.user(id).unwrap());
             drop(db);
             app.save();
@@ -1233,6 +1244,12 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let mut db = app.db.lock().unwrap();
             let admins = db.users.iter().filter(|u| u.admin).count();
             let Some(u) = db.users.iter_mut().find(|u| u.id == uid) else { return fail(404, "No such user") };
+            let new_pin = ctx.body.get("pin").and_then(|v| v.as_str());
+            if let Some(p) = new_pin { if !p.is_empty() && !auth::valid_pin(p) { return fail(400, "A PIN is 4 to 8 digits"); } }
+            let will_admin = ctx.body.get("admin").and_then(|v| v.as_bool()).unwrap_or(u.admin);
+            let will_home = ctx.body.get("home").and_then(|v| v.as_bool()).unwrap_or(u.home);
+            let will_pin = new_pin.map(|p| !p.is_empty()).unwrap_or(!u.pin_hash.is_empty());
+            if will_home && will_admin && !will_pin { return fail(400, "An admin's home profile needs a PIN"); }
             if let Some(a) = ctx.body.get("admin").and_then(|v| v.as_bool()) {
                 if !a && u.admin && admins <= 1 { return fail(400, "The last admin can't be removed"); }
                 u.admin = a;
@@ -1244,6 +1261,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if let Some(v) = ctx.body.get("allow_delete").and_then(|v| v.as_bool()) { u.allow_delete = v; }
             if let Some(v) = ctx.body.get("allow_download").and_then(|v| v.as_bool()) { u.allow_download = Some(v); }
             if let Some(e) = ctx.body.get("email").and_then(|v| v.as_str()) { u.email = e.into(); }
+            if let Some(p) = new_pin { let _ = set_pin(u, p); }
+            u.home = will_home;
             if let Some(pw) = ctx.body.get("password").and_then(|v| v.as_str()) {
                 if pw.chars().count() < 6 { return fail(400, "Use at least 6 characters"); }
                 let (h, s) = auth::hash_password(pw);

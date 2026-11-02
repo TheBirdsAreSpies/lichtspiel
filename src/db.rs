@@ -365,6 +365,15 @@ pub struct User {
     /// The left menu as this person arranged it: {order: ["s12", "playlists", …], hidden: [...]}.
     #[serde(default)]
     pub sidebar: Value,
+    /// A home profile: shown on the sign-in screen of browsers in the local network,
+    /// picked with a tap (and the PIN, if one is set).
+    #[serde(default)]
+    pub home: bool,
+    /// PBKDF2 of the PIN; empty = no PIN.
+    #[serde(default)]
+    pub pin_hash: String,
+    #[serde(default)]
+    pub pin_salt: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

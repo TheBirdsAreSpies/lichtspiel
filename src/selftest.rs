@@ -439,6 +439,35 @@ pub fn run(out: &Path) -> bool {
         );
     }
 
+    // ---- users: home profiles picked on the sign-in screen, with and without a PIN
+    {
+        let open = c.post("/api/users", json!({"username": "guest", "home": true}));
+        let locked = c.post("/api/users", json!({"username": "mum", "home": true, "pin": "1234"}));
+        let admin_no_pin = c.post("/api/users", json!({"username": "boss", "home": true, "admin": true})).status;
+        let bad_pin = c.post("/api/users", json!({"username": "kid4", "home": true, "pin": "12a"})).status;
+        let list = anon.get("/api/home").json();
+        let names: Vec<String> = list["profiles"].as_array().map(|a| a.iter().filter_map(|p| p["username"].as_str().map(String::from)).collect()).unwrap_or_default();
+        let gid = open.json()["id"].as_u64().unwrap_or(0);
+        let mid_ = locked.json()["id"].as_u64().unwrap_or(0);
+        let tap = anon.post(&format!("/api/home/{gid}/login"), json!({}));
+        let wrong = anon.post(&format!("/api/home/{mid_}/login"), json!({"pin": "0000"})).status;
+        let right = anon.post(&format!("/api/home/{mid_}/login"), json!({"pin": "1234"})).status;
+        let no_pw_login = anon.post("/api/login", json!({"username": "guest", "password": ""})).status;
+        // Taken off the sign-in screen: can't be picked any more.
+        c.call("PATCH", &format!("/api/users/{gid}"), Some(json!({"home": false})), &[]);
+        let gone = anon.post(&format!("/api/home/{gid}/login"), json!({})).status;
+        // Five wrong PINs lock the profile, even for the right one.
+        for _ in 0..5 { anon.post(&format!("/api/home/{mid_}/login"), json!({"pin": "9999"})); }
+        let lockout = anon.post(&format!("/api/home/{mid_}/login"), json!({"pin": "1234"})).status;
+        steps.add(
+            "home profiles",
+            open.status == 201 && locked.status == 201 && admin_no_pin == 400 && bad_pin == 400 && list["local"] == true
+                && names.contains(&"guest".to_string()) && names.contains(&"mum".to_string()) && tap.status == 200 && tap.json()["token"].is_string()
+                && wrong == 401 && right == 200 && no_pw_login == 401 && gone == 404 && lockout == 429,
+            format!("profiles on the sign-in screen: {names:?}; tap signs in (HTTP {}), wrong PIN (HTTP {wrong}), right PIN (HTTP {right}), no password login without a password (HTTP {no_pw_login}), admin needs a PIN (HTTP {admin_no_pin}), bad PIN refused (HTTP {bad_pin}), hidden profile (HTTP {gone}), locked after 5 wrong PINs (HTTP {lockout})", tap.status),
+        );
+    }
+
     // ---- downloads: original at once, a converted copy in the background, the right to download
     {
         let orig = c.post("/api/downloads", json!({"ids": [mp4], "quality": "original"}));
