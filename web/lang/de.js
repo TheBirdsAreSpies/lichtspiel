@@ -1085,6 +1085,7 @@ I18N.add('de', 'Deutsch', {
     'Remote': 'Entfernt',
     'Direct': 'Direkt',
     'Stereo': 'Stereo',
+    '{n} channels': '{n} Kanäle',
     'Stop playback': 'Wiedergabe beenden',
     'Stop playback?': 'Wiedergabe beenden?',
     'Message to {name} (optional)': 'Nachricht an {name} (optional)',

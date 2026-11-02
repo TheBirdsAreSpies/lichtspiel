@@ -43,6 +43,9 @@ const fmtTime = s => { s = Math.max(0, Math.floor(s)); const hh = Math.floor(s /
 const fmtDate = sec => sec ? new Date(sec * 1000).toLocaleDateString(I18N.lang) : '';
 const fmtDateTime = sec => sec ? new Date(sec * 1000).toLocaleString(I18N.lang) : '';
 const fmtSize = b => b > 1e9 ? fmtNum(b / 1e9, 1) + ' GB' : fmtNum(b / 1e6, 0) + ' MB';
+const CONTAINER_NAMES = { matroska: 'MKV', mov: 'MP4', mp4: 'MP4', mpegts: 'TS', avi: 'AVI', webm: 'WebM' };
+const friendlyContainer = m => CONTAINER_NAMES[String(m.container || '').toLowerCase()] || String(m.container || '').toUpperCase();
+const friendlyChannels = n => ({ 1: 'Mono', 2: t('Stereo'), 3: '2.1', 6: '5.1', 7: '6.1', 8: '7.1' }[n] || (n ? t('{n} channels', { n }) : ''));
 
 async function api(method, path, body) {
   const opt = { method, headers: { 'X-Token': S.token, Accept: 'application/json' } };
@@ -531,11 +534,11 @@ async function itemPage(id) {
           iconBtn('more', t('More'), e => itemMenu(it, e.currentTarget, refresh, { detail: true })),
           starRating(it)),
         m ? h('div', { class: 'panel kv' },
-          h('div', {}, t('File type')), h('div', {}, `${m.container.toUpperCase()}${m.formatName ? ' (' + m.formatName + ')' : ''} · ${fmtSize(m.size)}`),
-          h('div', {}, t('Video')), h('div', {}, m.videoCodec ? `${m.videoCodec} ${m.width}×${m.height}${m.bitDepth > 8 ? ' ' + t('{n}-bit', { n: m.bitDepth }) : ''}` : t('unknown (ffprobe not available)')),
-          h('div', {}, t('Audio')), h('div', {}, m.audioCodec ? t('{codec}, {n} channels', { codec: m.audioCodec, n: m.audioChannels }) : '–'),
-          h('div', {}, t('Bitrate')), h('div', {}, m.bitrate ? fmtNum(m.bitrate) + ' kbit/s' : '–'),
-          h('div', {}, t('Subtitles')), h('div', {}, (m.subtitles || []).map(s => s.language || s.file || s.codec).join(', ') || t('none')),
+          h('div', {}, t('File type')), h('div', {}, `${friendlyContainer(m)} · ${fmtSize(m.size)}`),
+          h('div', {}, t('Video')), h('div', {}, m.videoCodec ? [String(m.videoCodec).toUpperCase(), `${m.width}×${m.height}`, m.bitDepth > 8 ? t('{n}-bit', { n: m.bitDepth }) : ''].filter(Boolean).join(' · ') : t('unknown (ffprobe not available)')),
+          h('div', {}, t('Audio')), h('div', {}, m.audioCodec ? [String(m.audioCodec).toUpperCase(), friendlyChannels(m.audioChannels)].filter(Boolean).join(' · ') : '–'),
+          h('div', {}, t('Bitrate')), h('div', {}, m.bitrate ? fmtNum(m.bitrate / 1000, 1) + ' Mbit/s' : '–'),
+          h('div', {}, t('Subtitles')), h('div', {}, [...new Set((m.subtitles || []).map(s => s.language ? langName(s.language) : s.file || s.codec))].join(', ') || t('none')),
           m.file ? [h('div', {}, t('Path')), h('div', { style: 'word-break:break-all' }, m.file)] : null,
           (m.Part || []).length > 1 ? [h('div', {}, t('Parts')), h('div', {}, t('{n} files, played one after the other', { n: m.Part.length }))] : null,
           h('div', {}, t('In your browser')), h('div', { id: 'decision', class: 'dim' }, '…')) : null)),

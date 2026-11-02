@@ -1078,8 +1078,8 @@ async function mediaInfo(it) {
     [t('Channels'), s.channels ? `${s.channels}${s.channel_layout ? ' (' + s.channel_layout + ')' : ''}` : '']])]);
   const opt = (full.extra || {}).optimized;
   const box = modal(t('Media info'), [
-    kv([[t('File'), m.file], [t('File type'), `${(m.container || '').toUpperCase()}${m.formatName ? ' (' + m.formatName + ')' : ''}`], [t('Size'), m.size ? fmtSize(m.size) : ''],
-      [t('Length'), fmtDur(full.duration)], [t('Bitrate'), m.bitrate ? fmtNum(m.bitrate) + ' kbit/s' : ''],
+    kv([[t('File'), m.file], [t('File type'), friendlyContainer(m)], [t('Size'), m.size ? fmtSize(m.size) : ''],
+      [t('Length'), fmtDur(full.duration)], [t('Bitrate'), m.bitrate ? fmtNum(m.bitrate / 1000, 1) + ' Mbit/s' : ''],
       (m.Part || []).length > 1 ? [t('Parts'), t('{n} files, played one after the other', { n: m.Part.length })] : null,
       opt ? [t('Optimized version'), `${opt.quality}, ${fmtSize(opt.size || 0)}`] : null,
       [t('Subtitle files'), (m.subtitles || []).filter(s => !s.embedded).map(s => s.file).join(', ')]]),
