@@ -21,8 +21,9 @@ use std::time::{Duration, Instant};
 use tiny_http::{Header, Response, StatusCode};
 
 /// Raised when automatic matching learns something new (2: the movie's folder name
-/// is tried too), so titles that were not found before are tried once more.
-pub const MATCH_VERSION: u64 = 2;
+/// is tried too; 3: also above "CD1" or a folder named like the file, and first when
+/// only the folder has a year), so titles that were not found before are tried once more.
+pub const MATCH_VERSION: u64 = 3;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The server's name (after the old German word for cinema, "Lichtspielhaus").
@@ -505,9 +506,10 @@ impl App {
             return None;
         }
         let path = Path::new(&it.file.as_ref()?.path);
-        let dir = path.parent()?;
         let section = db.sections.iter().find(|s| s.id == it.section_id)?;
-        if section.paths.iter().any(|r| Path::new(r) == dir) {
+        let is_root = |d: &Path| section.paths.iter().any(|r| scanner_same_dir(Path::new(r), d));
+        let mut dir = path.parent()?;
+        if is_root(dir) {
             return None;
         }
         // Parts of the same movie ("… - pt1", "… - pt2") do not count as other movies.
@@ -519,8 +521,20 @@ impl App {
         if others > 0 {
             return None;
         }
+        // A folder that says nothing about the movie ("CD1", "Disc 2", or named like the
+        // file itself: "Der Pate (1972)/funxd/funxd.mkv"): its parent's name is the title.
+        let file_title = scanner::parse_title_year(&mine).0.to_lowercase();
+        for _ in 0..2 {
+            let name = dir.file_name()?.to_string_lossy().to_string();
+            let (t, _) = scanner::parse_title_year(&name);
+            let generic = t.trim().is_empty() || t.to_lowercase() == file_title || is_disc_folder(&name);
+            match dir.parent() {
+                Some(up) if generic && !is_root(up) && up.file_name().is_some() => dir = up,
+                _ => break,
+            }
+        }
         let (title, year) = scanner::parse_title_year(&dir.file_name()?.to_string_lossy());
-        Some((title, year)).filter(|(t, _)| !t.trim().is_empty())
+        Some((title, year)).filter(|(t, _)| !t.trim().is_empty() && t.to_lowercase() != file_title)
     }
 
     /// The movie, show or other video an item belongs to (itself for movies and shows).
@@ -776,15 +790,30 @@ impl App {
         let (source, mid) = match choice.or(tagged).or(stored) {
             Some(x) => x,
             None => {
-                let found = metadata::search(&settings, kind, &title, year);
-                let mut best = found.as_ref().ok().and_then(|c| c.first().cloned()).filter(metadata::acceptable);
-                // Files are sometimes named after the release ("funxd.mkv"): then try
-                // the name of the movie's own folder ("Der Pate (1972)").
-                if best.is_none() {
-                    if let Some((ft, fy)) = &folder {
-                        best = metadata::search(&settings, kind, ft, fy.or(year)).ok().and_then(|c| c.first().cloned()).filter(metadata::acceptable);
-                    }
+                // Files are sometimes named after the release ("funxd.mkv"): then the
+                // name of the movie's own folder ("Der Pate (1972)") is tried too, and
+                // first when only the folder has a year.
+                let pick = |r: &Result<Vec<metadata::Candidate>, String>| r.as_ref().ok().and_then(|c| c.first().cloned()).filter(metadata::acceptable);
+                let folder_first = year.is_none() && folder.as_ref().is_some_and(|f| f.1.is_some());
+                let by_folder = || folder.as_ref().map(|(ft, fy)| metadata::search(&settings, kind, ft, fy.or(year)));
+                let mut found = None;
+                let mut best = None;
+                if folder_first {
+                    best = by_folder().as_ref().and_then(pick);
                 }
+                if best.is_none() {
+                    let r = metadata::search(&settings, kind, &title, year);
+                    best = pick(&r);
+                    found = Some(r);
+                }
+                if best.is_none() && !folder_first {
+                    best = by_folder().as_ref().and_then(pick);
+                }
+                let found = found.unwrap_or_else(|| Ok(vec![]));
+                let tried = match &folder {
+                    Some((ft, fy)) => format!("\"{title}\" or \"{ft}{}\"", fy.map(|y| format!(" ({y})")).unwrap_or_default()),
+                    None => format!("\"{title}\""),
+                };
                 match best {
                     Some(b) => (b.source, b.id),
                     None => {
@@ -796,8 +825,8 @@ impl App {
                         }
                         return Err(match found {
                             Err(e) => e,
-                            Ok(c) if c.is_empty() => format!("Nothing found online for \"{title}\""),
-                            Ok(c) => format!("No sure match for \"{title}\" (closest: {} {})", c[0].title, c[0].year.map(|y| format!("({y})")).unwrap_or_default()),
+                            Ok(c) if c.is_empty() => format!("Nothing found online for {tried}"),
+                            Ok(c) => format!("No sure match for {tried} (closest: {} {})", c[0].title, c[0].year.map(|y| format!("({y})")).unwrap_or_default()),
                         });
                     }
                 }
@@ -1885,6 +1914,19 @@ pub fn placeholder_svg(title: &str, kind: &str, id: u64) -> String {
     )
 }
 
+/// "CD1", "Disc 2", "Part 3", "DVD1" … — a folder for one part of a movie.
+fn is_disc_folder(name: &str) -> bool {
+    let n = name.trim().to_lowercase();
+    ["cd", "disc", "disk", "dvd", "part", "pt"].iter().any(|p| {
+        n.strip_prefix(p).is_some_and(|rest| { let r = rest.trim_start_matches([' ', '.', '_', '-']); !r.is_empty() && r.chars().all(|c| c.is_ascii_digit()) })
+    })
+}
+
+/// The same folder, however the path is written (separators, a trailing slash, letter case on Windows).
+fn scanner_same_dir(a: &Path, b: &Path) -> bool {
+    crate::migrate::path_key(&a.to_string_lossy()) == crate::migrate::path_key(&b.to_string_lossy())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1909,5 +1951,28 @@ mod tests {
         assert_eq!(App::folder_title(&db, &db.items[&2]), None);
         // A folder holding several movies is not a title.
         assert_eq!(App::folder_title(&db, &db.items[&3]), None);
+    }
+
+    #[test]
+    fn folder_title_looks_past_disc_and_release_folders() {
+        let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 9, "settings": crate::db::Settings::default(),
+            "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": ["/m/"], "created_at": 0}],
+            "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let movie = |id: u64, path: &str| -> Item {
+            let mut i: Item = serde_json::from_value(json!({"id": id, "section_id": 1, "kind": "movie", "title": "funxd", "sort_title": "funxd",
+                "added_at": 0, "updated_at": 0})).unwrap();
+            i.file = Some(MediaFile { path: path.into(), ..Default::default() });
+            i
+        };
+        for i in [movie(1, "/m/Der Pate (1972)/funxd/funxd.mkv"), movie(2, "/m/Heat (1995)/CD1/funxd.mkv"),
+            movie(3, "/m/Der.Pate.1972.German.DL.1080p.BluRay.x264-FuNXD/funxd.mkv"), movie(4, "/m/funxd/funxd.mkv")] {
+            db.items.insert(i.id, i);
+        }
+        assert_eq!(App::folder_title(&db, &db.items[&1]), Some(("Der Pate".into(), Some(1972))));
+        assert_eq!(App::folder_title(&db, &db.items[&2]), Some(("Heat".into(), Some(1995))));
+        assert_eq!(App::folder_title(&db, &db.items[&3]), Some(("Der Pate".into(), Some(1972))));
+        // Only the library folder above: nothing better than the file name.
+        assert_eq!(App::folder_title(&db, &db.items[&4]), None);
+        assert!(is_disc_folder("CD1") && is_disc_folder("Disc 2") && !is_disc_folder("Cdrama"));
     }
 }

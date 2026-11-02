@@ -1155,6 +1155,8 @@ I18N.add('de', 'Deutsch', {
     [/^The plugin failed: (.*)$/, 'Das Plugin ist fehlgeschlagen: $1'],
     [/^(.+) answered HTTP (\d+)$/, '$1 antwortete mit HTTP $2'],
     [/^could not reach (\S+): (.*)$/, '$1 nicht erreichbar: $2'],
+    [/^Nothing found online for "(.*)" or "(.*)"$/, 'Online nichts gefunden für „$1“ oder „$2“'],
+    [/^No sure match for "(.*)" or "(.*)" \(closest: (.*)\)$/, 'Keine sichere Zuordnung für „$1“ oder „$2“ (am nächsten: $3)'],
     [/^Nothing found online for "(.*)"$/, 'Online nichts gefunden für „$1“'],
     [/^No sure match for "(.*)" \(closest: (.*)\)$/, 'Keine sichere Zuordnung für „$1“ (am nächsten: $2)'],
     [/^(.+): details from (.+), (\d+) episodes$/, '$1: Details von $2, $3 Episoden'],
