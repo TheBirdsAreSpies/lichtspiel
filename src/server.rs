@@ -20,6 +20,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tiny_http::{Header, Response, StatusCode};
 
+/// Raised when automatic matching learns something new (2: the movie's folder name
+/// is tried too), so titles that were not found before are tried once more.
+pub const MATCH_VERSION: u64 = 2;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The server's name (after the old German word for cinema, "Lichtspielhaus").
 pub const APP_NAME: &str = "Lichtspiel";
@@ -428,6 +432,27 @@ impl App {
         });
     }
 
+    /// Title and year from the folder a movie's file is in, when that folder holds
+    /// only this movie (not the library folder itself, not a folder of many movies).
+    pub fn folder_title(db: &Db, it: &Item) -> Option<(String, Option<u32>)> {
+        if it.kind != ItemKind::Movie {
+            return None;
+        }
+        let path = Path::new(&it.file.as_ref()?.path);
+        let dir = path.parent()?;
+        let section = db.sections.iter().find(|s| s.id == it.section_id)?;
+        if section.paths.iter().any(|r| Path::new(r) == dir) {
+            return None;
+        }
+        let others = db.items.values().filter(|o| o.id != it.id && o.kind == ItemKind::Movie)
+            .filter(|o| o.file.as_ref().is_some_and(|f| Path::new(&f.path).parent() == Some(dir))).count();
+        if others > 0 {
+            return None;
+        }
+        let (title, year) = scanner::parse_title_year(&dir.file_name()?.to_string_lossy());
+        Some((title, year)).filter(|(t, _)| !t.trim().is_empty())
+    }
+
     /// The movie, show or other video an item belongs to (itself for movies and shows).
     pub fn top_level(db: &Db, id: u64) -> Option<u64> {
         let mut cur = db.items.get(&id)?;
@@ -641,7 +666,7 @@ impl App {
     pub fn match_online(self: &Arc<Self>, id: u64, choice: Option<(String, String)>, force: bool) -> Result<String, String> {
         use crate::metadata;
         let mut settings = self.settings();
-        let (kind, title, year, stored, seasons, status_recent) = {
+        let (kind, title, year, stored, seasons, status_recent, folder) = {
             let db = self.db.lock().unwrap();
             let it = db.items.get(&id).ok_or("No such item")?;
             // The library's own language, else the server's.
@@ -652,11 +677,14 @@ impl App {
             let s = |k: &str| it.extra.get(k).and_then(|v| v.as_str()).map(String::from);
             let stored = s("metadata_source").zip(s("metadata_id"));
             let seasons: Vec<u32> = db.children(id).iter().filter_map(|c| c.index).collect();
+            // A miss from before the folder name was tried counts as not checked yet.
             let recent = s("metadata_status").as_deref() == Some("unmatched")
+                && it.extra.get("match_version").and_then(|v| v.as_u64()) == Some(MATCH_VERSION)
                 && it.extra.get("metadata_checked_at").and_then(|v| v.as_u64()).is_some_and(|t| now().saturating_sub(t) < 7 * 86400);
             // Use the name from the file, not a name a previous wrong match gave it.
             let title = s("file_title").unwrap_or_else(|| it.title.clone());
-            (it.kind, title, it.year, stored, seasons, recent)
+            let folder = Self::folder_title(&db, it).filter(|(t, _)| !t.eq_ignore_ascii_case(&title));
+            (it.kind, title, it.year, stored, seasons, recent, folder)
         };
         if choice.is_none() && stored.is_none() && status_recent && !force {
             return Err("No match was found recently; use Fix match".into());
@@ -665,7 +693,14 @@ impl App {
             Some(x) => x,
             None => {
                 let found = metadata::search(&settings, kind, &title, year);
-                let best = found.as_ref().ok().and_then(|c| c.first().cloned()).filter(metadata::acceptable);
+                let mut best = found.as_ref().ok().and_then(|c| c.first().cloned()).filter(metadata::acceptable);
+                // Files are sometimes named after the release ("funxd.mkv"): then try
+                // the name of the movie's own folder ("Der Pate (1972)").
+                if best.is_none() {
+                    if let Some((ft, fy)) = &folder {
+                        best = metadata::search(&settings, kind, ft, fy.or(year)).ok().and_then(|c| c.first().cloned()).filter(metadata::acceptable);
+                    }
+                }
                 match best {
                     Some(b) => (b.source, b.id),
                     None => {
@@ -673,6 +708,7 @@ impl App {
                         if let Some(it) = db.items.get_mut(&id) {
                             it.extra.insert("metadata_status".into(), json!("unmatched"));
                             it.extra.insert("metadata_checked_at".into(), json!(now()));
+                            it.extra.insert("match_version".into(), json!(MATCH_VERSION));
                         }
                         return Err(match found {
                             Err(e) => e,
@@ -1179,6 +1215,18 @@ pub fn start_background(app: &Arc<App>) {
     // Online details for new movies and shows.
     let a = app.clone();
     std::thread::spawn(move || a.metadata_worker());
+    // Movies not found before the matcher learned more (MATCH_VERSION) get one more try.
+    let retry: Vec<u64> = {
+        let db = app.db.lock().unwrap();
+        db.items.values()
+            .filter(|i| i.kind == ItemKind::Movie && !i.extra.contains_key("metadata_source"))
+            .filter(|i| i.extra.get("metadata_status").and_then(|v| v.as_str()) == Some("unmatched"))
+            .filter(|i| i.extra.get("match_version").and_then(|v| v.as_u64()) != Some(MATCH_VERSION))
+            .map(|i| i.id).collect()
+    };
+    if !retry.is_empty() {
+        app.queue_online_details(&retry, false);
+    }
     // Watch the library folders: when the files in a library change (added,
     // removed, renamed), wait until they stop changing (copying finished) and
     // scan that library. Only changed files are read again.
@@ -1654,4 +1702,31 @@ pub fn placeholder_svg(title: &str, kind: &str, id: u64) -> String {
         (hue + 40) % 360,
         kind.to_uppercase()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::MediaFile;
+
+    #[test]
+    fn folder_title_only_for_a_movie_folder_of_its_own() {
+        let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 9, "settings": crate::db::Settings::default(),
+            "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": ["/m"], "created_at": 0}],
+            "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let movie = |id: u64, path: &str| -> Item {
+            let mut i: Item = serde_json::from_value(json!({"id": id, "section_id": 1, "kind": "movie", "title": "funxd", "sort_title": "funxd",
+                "added_at": 0, "updated_at": 0})).unwrap();
+            i.file = Some(MediaFile { path: path.into(), ..Default::default() });
+            i
+        };
+        for i in [movie(1, "/m/Der Pate (1972)/funxd.mkv"), movie(2, "/m/loose.mkv"), movie(3, "/m/Sammlung/a.mkv"), movie(4, "/m/Sammlung/b.mkv")] {
+            db.items.insert(i.id, i);
+        }
+        assert_eq!(App::folder_title(&db, &db.items[&1]), Some(("Der Pate".into(), Some(1972))));
+        // Right in the library folder: no folder name to use.
+        assert_eq!(App::folder_title(&db, &db.items[&2]), None);
+        // A folder holding several movies is not a title.
+        assert_eq!(App::folder_title(&db, &db.items[&3]), None);
+    }
 }
