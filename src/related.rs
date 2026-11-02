@@ -146,6 +146,133 @@ pub fn related(db: &Db, user: &User, it: &Item, count: usize) -> Vec<Hub> {
     hubs
 }
 
+// ---------------------------------------------------------------- occasions
+
+/// A time of year with films of its own: a home row while it lasts.
+pub struct Occasion {
+    pub key: &'static str,
+    /// Row title (English; the web app translates it).
+    pub title: &'static str,
+    /// First and last day, (month, day); a span may run over New Year.
+    pub from: (u32, u32),
+    pub to: (u32, u32),
+    /// Parts of genre names that fit (lower case; German and English names).
+    pub genres: &'static [&'static str],
+    /// Words in a title, tagline or plot that fit.
+    pub words: &'static [&'static str],
+}
+
+pub const OCCASIONS: &[Occasion] = &[
+    Occasion {
+        key: "halloween",
+        title: "Halloween",
+        from: (10, 1),
+        to: (11, 2),
+        genres: &["horror", "halloween", "grusel"],
+        words: &["halloween"],
+    },
+    Occasion {
+        key: "christmas",
+        title: "Christmas",
+        from: (12, 1),
+        to: (12, 26),
+        genres: &["christmas", "weihnacht"],
+        words: &["christmas", "xmas", "weihnacht", "heiligabend", "santa claus", "weihnachtsmann", "nikolaus", "grinch"],
+    },
+    Occasion {
+        key: "newyear",
+        title: "New Year's Eve",
+        from: (12, 27),
+        to: (1, 1),
+        genres: &[],
+        words: &["new year's eve", "new year\u{2019}s eve", "silvester"],
+    },
+    Occasion {
+        key: "valentine",
+        title: "Valentine's Day",
+        from: (2, 7),
+        to: (2, 14),
+        genres: &["romance", "romant", "liebes"],
+        words: &["valentine", "valentin"],
+    },
+];
+
+impl Occasion {
+    pub fn on(&self, day: (u32, u32)) -> bool {
+        if self.from <= self.to { self.from <= day && day <= self.to } else { day >= self.from || day <= self.to }
+    }
+
+    /// How well an item fits: 3 a word in its title, 2 a genre, 1 a word in
+    /// its tagline or plot, 0 not at all.
+    fn fit(&self, it: &Item) -> u8 {
+        let has = |text: &str| {
+            let t = text.to_lowercase();
+            self.words.iter().any(|w| t.contains(w))
+        };
+        if has(&it.title) {
+            3
+        } else if it.genres.iter().any(|g| {
+            let g = g.to_lowercase();
+            self.genres.iter().any(|x| g.contains(x))
+        }) {
+            2
+        } else if has(&it.tagline) || has(&it.summary) {
+            1
+        } else {
+            0
+        }
+    }
+}
+
+/// The occasion rows for a day: movies and shows that fit, best fit first and
+/// then the best rated; episodes only when their own title fits (a show's
+/// Halloween episode).
+pub fn occasion_rows(db: &Db, user: &User, day: (u32, u32), count: usize) -> Vec<Hub> {
+    let mut hubs = vec![];
+    for o in OCCASIONS.iter().filter(|o| o.on(day)) {
+        let mut list: Vec<(u8, &Item)> = db
+            .items
+            .values()
+            .filter(|i| db.can_see_section(user, i.section_id))
+            .filter_map(|i| {
+                let fit = o.fit(i);
+                let wanted = match i.kind {
+                    ItemKind::Movie | ItemKind::Show => fit > 0,
+                    ItemKind::Episode => fit == 3,
+                    _ => false,
+                };
+                wanted.then_some((fit, i))
+            })
+            .collect();
+        list.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then(b.1.rating.partial_cmp(&a.1.rating).unwrap_or(std::cmp::Ordering::Equal))
+                .then(a.1.sort_title.cmp(&b.1.sort_title))
+        });
+        if list.is_empty() {
+            continue;
+        }
+        let more = list.len() > count;
+        list.truncate(count);
+        hubs.push(Hub {
+            title: o.title.into(),
+            identifier: format!("occasion.{}", o.key),
+            context: "hub.home.occasion".into(),
+            ids: list.iter().map(|x| x.1.id).collect(),
+            more,
+        });
+    }
+    hubs
+}
+
+/// "MM-DD" or "YYYY-MM-DD" to (month, day).
+pub fn month_day(s: &str) -> Option<(u32, u32)> {
+    let mut parts = s.trim().rsplitn(3, '-');
+    let d: u32 = parts.next()?.parse().ok()?;
+    let m: u32 = parts.next()?.parse().ok()?;
+    ((1..=12).contains(&m) && (1..=31).contains(&d)).then_some((m, d))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +315,44 @@ mod tests {
         assert_eq!(cols.len(), 1);
         assert_eq!(cols[0]["childCount"], 2);
         let cats = categories(&db, &user, 1);
+        assert!(occasion_rows(&db, &user, (10, 31), 20).is_empty(), "no horror, no Halloween row");
         assert_eq!(cats.iter().map(|c| c["title"].as_str().unwrap().to_string()).collect::<Vec<_>>(), vec!["Comedy", "Drama", "Sci-Fi"]);
+    }
+
+    #[test]
+    fn occasion_rows_by_date() {
+        assert_eq!(month_day("2026-10-31"), Some((10, 31)));
+        assert_eq!(month_day("12-24"), Some((12, 24)));
+        assert_eq!(month_day("13-01"), None);
+        let ny = OCCASIONS.iter().find(|o| o.key == "newyear").unwrap();
+        assert!(ny.on((12, 31)) && ny.on((1, 1)) && !ny.on((1, 2)) && !ny.on((12, 26)));
+
+        let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 9, "settings": crate::db::Settings::default(),
+            "sections": [], "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let mk = |id: u64, kind: &str, title: &str, genres: &[&str], rating: f32, summary: &str| -> Item {
+            serde_json::from_value(json!({"id": id, "section_id": 1, "kind": kind, "title": title, "sort_title": title.to_lowercase(),
+                "genres": genres, "rating": rating, "summary": summary, "added_at": 0, "updated_at": 0})).unwrap()
+        };
+        for it in [
+            mk(1, "movie", "Scream", &["Horrorfilm"], 7.0, ""),
+            mk(2, "movie", "Halloween", &["Horror"], 6.0, ""),
+            mk(3, "movie", "The Shining", &["Horror"], 8.4, ""),
+            mk(4, "movie", "Garden", &["Comedy"], 9.0, ""),
+            mk(5, "episode", "Halloween Special", &[], 0.0, ""),
+            mk(6, "episode", "Pilot", &[], 0.0, "On Halloween night"),
+            mk(7, "movie", "Die Hard", &["Actionfilm"], 8.2, "On Christmas Eve, a cop"),
+            mk(8, "movie", "Weihnachtsfilm", &["Weihnachtsfilm"], 5.0, ""),
+        ] {
+            db.items.insert(it.id, it);
+        }
+        let user: User = serde_json::from_value(json!({"id": 1, "username": "o", "admin": true, "password_hash": "", "salt": "", "created_at": 0})).unwrap();
+        let rows = occasion_rows(&db, &user, (10, 31), 20);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title, "Halloween");
+        // Title first (film, then the episode), then horror by rating; the plain episode not.
+        assert_eq!(rows[0].ids, vec![2, 5, 3, 1]);
+        let rows = occasion_rows(&db, &user, (12, 24), 20);
+        assert_eq!(rows[0].ids, vec![8, 7]);
+        assert!(occasion_rows(&db, &user, (6, 1), 20).is_empty());
     }
 }

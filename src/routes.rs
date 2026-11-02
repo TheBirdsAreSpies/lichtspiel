@@ -72,7 +72,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/:/unscrobble", "Mark unwatched ?key="),
     ("POST", "/:/rate", "Your rating ?key= &rating=0-10"),
     ("PUT", "/api/items/{id}/favorite", "{favorite: true|false}"),
-    ("GET", "/hubs", "Home rows: continue watching, recently added movies and TV, pinned playlists"),
+    ("GET", "/hubs", "Home rows: continue watching, rows for the time of year (Halloween, Christmas, New Year's Eve, Valentine's Day; ?date=MM-DD tries a day), recently added movies and TV, pinned playlists"),
     ("GET", "/hubs/home/continueWatching", "Started but not finished, plus next episodes"),
     ("GET", "/hubs/home/onDeck", "Next episode of shows you are watching"),
     ("GET", "/hubs/home/recentlyAdded", "Newest items ?type=movie|episode &limit="),
@@ -752,11 +752,16 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         // ---------------- hubs and search
         ("GET", ["hubs"]) | ("GET", ["hubs", "home"]) => {
             let db = app.db.lock().unwrap();
-            let mut hubs = vec![
-                hub(&db, &user, "continueWatching", "Continue Watching", continue_watching(&db, &user)),
+            let mut hubs = vec![hub(&db, &user, "continueWatching", "Continue Watching", continue_watching(&db, &user))];
+            // Rows for the time of year (Halloween, Christmas ...); ?date=MM-DD tries another day.
+            let day = ctx.param("date").and_then(related::month_day).or_else(|| related::month_day(&db::today())).unwrap_or((1, 1));
+            for o in related::occasion_rows(&db, &user, day, 20) {
+                hubs.push(hub(&db, &user, &o.identifier, &o.title, o.ids));
+            }
+            hubs.extend([
                 hub(&db, &user, "recentlyAddedMovies", "Recently Added Movies", recently_added(&db, &user, Some(ItemKind::Movie), 20)),
                 hub(&db, &user, "recentlyAddedEpisodes", "Recently Added TV", recently_added(&db, &user, Some(ItemKind::Episode), 20)),
-            ];
+            ]);
             for p in db.playlists.iter().filter(|p| p.pinned && visible_playlist(p, &user)) {
                 if matches!(p.default_key.as_deref(), Some("continue" | "recent_movies" | "recent_episodes")) { continue; }
                 let mut ids = query::playlist_items(&db, &user, p);
