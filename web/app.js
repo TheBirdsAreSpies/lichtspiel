@@ -462,7 +462,7 @@ async function itemPage(id) {
         h('div', { class: 'dim' }, [it.year, it.type === 'episode' ? t('Season {n}', { n: it.parentIndex }) : null, fmtDur(it.duration), it.contentRating, it.rating ? `★ ${fmtNum(it.rating)}` : null, it.leafCount ? t('{seen}/{all} watched', { seen: it.viewedLeafCount, all: it.leafCount }) : null].filter(Boolean).join(' · ')),
         scoreBadges(x.ratings || (it.type === 'season' ? topX.ratings : null)),
         it.tagline ? h('p', { style: 'font-style:italic' }, it.tagline) : null,
-        it.summary ? h('p', { class: 'plot' }, it.summary) : (S.me.admin && matchable && !x.metadata_source ? h('p', { class: 'dim' }, x.metadata_status === 'unmatched' ? t('No details were found online for this title — use "Fix match" to pick the right one.') : t('Details are being looked up online…')) : null),
+        it.summary ? h('p', { class: 'plot' }, it.summary) : (S.me.admin && matchable && !x.metadata_source ? h('p', { class: 'dim' }, x.metadata_status === 'unmatched' ? t('No details were found online for this title — use "Match" to pick the right one.') : t('Details are being looked up online…')) : null),
         it.genres && it.genres.length ? h('div', {}, it.genres.map(g => h('span', { class: 'tag' }, g))) : null,
         crew.length || it.studio || x.originally_available || x.original_title ? h('div', { class: 'kv credits' },
           crew.map(([k, v]) => [h('div', { class: 'dim' }, k), h('div', {}, v.join(', '))]),
@@ -691,7 +691,7 @@ function fixMatch(it) {
           c.summary ? h('div', { class: 'ep-plot' }, c.summary) : null))));
     } catch (e) { results.replaceChildren(h('div', { class: 'err' }, e.message)); }
   };
-  const box = modal(t('Fix match'), [
+  const box = modal(x.metadata_source ? t('Fix match') : t('Match'), [
     formRow(t('Title'), title), formRow(t('Year'), year),
     h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: search }, t('Search')), h('button', { onclick: () => box.remove() }, t('Close'))),
     results]);
