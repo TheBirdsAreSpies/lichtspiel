@@ -295,7 +295,7 @@ async function itemPage(id) {
   const addTo = h('select', { onchange: async e => {
     const v = e.target.value; e.target.value = '';
     if (!v) return;
-    if (v === 'new') { const name = prompt(t('Name of the new playlist')); if (name) { await api('POST', '/playlists', { title: name, kind: 'manual', ids: [it.id] }); toast(t('Added to {name}', { name })); } return; }
+    if (v === 'new') { const name = await ask(t('Name of the new playlist')); if (name) { await api('POST', '/playlists', { title: name, kind: 'manual', ids: [it.id] }); toast(t('Added to {name}', { name })); } return; }
     const r = await api('POST', `/playlists/${v}/items`, { ids: [it.id] }); toast(r.added ? t('Added to playlist') : t('Already in that playlist'));
   } }, h('option', { value: '' }, t('+ Add to playlist')), playlists.map(p => h('option', { value: p.id }, p.title)), h('option', { value: 'new' }, t('New playlist…')));
   const nextEp = async () => { const l = meta(await GET(`/library/metadata/${id}/allLeaves`)); const e = l.find(x => !x.viewCount) || l[0]; if (e) play(e, e.viewOffset ? e.viewOffset / 1000 : 0, l.slice(l.indexOf(e) + 1)); };
@@ -474,10 +474,39 @@ async function pollActivity() {
   ACT.timer = setTimeout(pollActivity, busy ? 2500 : 8000);
 }
 
-function modal(title, kids) {
+// onclose runs however the box goes away: its buttons, a click beside it or Escape.
+function modal(title, kids, onclose) {
   const box = h('div', { class: 'modal', onclick: e => { if (e.target === box) box.remove(); } }, h('div', { class: 'box' }, h('h2', { style: 'margin-top:0' }, title), kids));
+  const remove = box.remove.bind(box);
+  box.remove = () => { if (!box.isConnected) return; remove(); if (onclose) onclose(); };
   document.body.append(box);
   return box;
+}
+document.addEventListener('keydown', e => {
+  const boxes = document.querySelectorAll('.modal');
+  if (e.key === 'Escape' && boxes.length) { e.stopImmediatePropagation(); boxes[boxes.length - 1].remove(); }
+}, true);
+
+// In-app stand-ins for the browser's prompt() and confirm().
+// ask() gives the text, or null when cancelled; sure() gives true or false.
+function ask(title, { value = '', placeholder = '', password = false, note = null, ok = t('OK') } = {}) {
+  return new Promise(res => {
+    let out = null;
+    const inp = h('input', { type: password ? 'password' : 'text', value, placeholder, autocomplete: password ? 'new-password' : 'off', style: 'width:100%',
+      onkeydown: e => { if (e.key === 'Enter') { out = inp.value; box.remove(); } } });
+    const box = modal(title, [note ? h('p', { class: 'dim' }, note) : null, inp,
+      h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: () => { out = inp.value; box.remove(); } }, ok), h('button', { onclick: () => box.remove() }, t('Cancel')))],
+      () => res(out));
+    inp.focus(); inp.select();
+  });
+}
+function sure(text, { ok = t('OK'), danger = false } = {}) {
+  return new Promise(res => {
+    let out = false;
+    const yes = h('button', { class: danger ? 'danger' : 'primary', onclick: () => { out = true; box.remove(); } }, ok);
+    const box = modal(text, [h('div', { class: 'actions' }, yes, h('button', { onclick: () => box.remove() }, t('Cancel')))], () => res(out));
+    yes.focus();
+  });
 }
 
 // Where the end credits start: decides when the video counts as watched.

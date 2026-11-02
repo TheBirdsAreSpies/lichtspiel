@@ -30,7 +30,7 @@ async function playlistsPage(qs) {
 }
 
 async function newManual() {
-  const name = prompt(t('Name of the new playlist'));
+  const name = await ask(t('Name of the new playlist'));
   if (!name) return;
   const r = await api('POST', '/playlists', { title: name, kind: 'manual' });
   location.hash = '#/playlist/' + meta(r)[0].id;
@@ -72,11 +72,11 @@ async function playlistPage(id, qs) {
       h('button', { class: 'primary', onclick: () => playPlaylist(id) }, t('▶ Play all')),
       h('button', { onclick: () => playPlaylist(id, true) }, t('Shuffle')),
       pl.smart && pl.editable ? h('button', { onclick: () => smartEditor(pl) }, t('Edit rules')) : null,
-      pl.editable ? h('button', { onclick: async () => { const name = prompt(t('New name'), plTitle(pl)); if (name) { await api('PUT', '/playlists/' + id, { title: name }); reload(); } } }, t('Rename')) : null,
+      pl.editable ? h('button', { onclick: async () => { const name = await ask(t('New name'), { value: plTitle(pl) }); if (name) { await api('PUT', '/playlists/' + id, { title: name }); reload(); } } }, t('Rename')) : null,
       pl.editable ? h('button', { onclick: async () => { await api('PUT', '/playlists/' + id, { pinned: !pl.pinned }); reload(); } }, pl.pinned ? t('Remove from home') : t('Show on home')) : null,
       pl.editable && !pl.default ? h('button', { onclick: async () => { await api('PUT', '/playlists/' + id, { shared: !pl.shared }); reload(); } }, pl.shared ? t('Stop sharing') : t('Share with everyone')) : null,
       pl.smart ? h('button', { onclick: async () => { const r = await api('POST', `/playlists/${id}/copy`, {}); location.hash = '#/playlist/' + r.id; } }, t('Save as normal playlist')) : null,
-      pl.editable && !pl.default ? h('button', { class: 'danger', onclick: async () => { if (confirm(t('Delete this playlist?'))) { await api('DELETE', '/playlists/' + id); location.hash = '#/playlists'; } } }, t('Delete')) : null),
+      pl.editable && !pl.default ? h('button', { class: 'danger', onclick: async () => { if (await sure(t('Delete this playlist?'), { ok: t('Delete'), danger: true })) { await api('DELETE', '/playlists/' + id); location.hash = '#/playlists'; } } }, t('Delete')) : null),
     h('div', { class: 'bar-tools' },
       sel('sort', [['', manual ? t('Playlist order') : t('Rule order')], ...SORTS, ['episode_order', t('Show, season, episode')]]),
       sel('type', [['', t('Movies and episodes')], ['movie', t('Movies')], ['episode', t('Episodes')]]),
@@ -183,8 +183,8 @@ async function librariesPage() {
       h('button', { title: t('Look for end credits in every video of this library now (from the chapters in the files)'), onclick: async () => {
         try { const r = await api('POST', `/library/sections/${s.id}/credits`); toast(t('Checking {n} videos for credits — progress is shown at the top', { n: r.videos }), 5000); pollActivity(); } catch (er) { toast(er.message, 6000); }
       } }, t('Detect credits')),
-      h('button', { onclick: async () => { const v = prompt(t('Folders (separate with ;)'), s.paths.join(';')); if (v !== null) { try { await api('PUT', '/library/sections/' + s.id, { paths: v }); } catch (e) { toast(e.message); } librariesPage(); } } }, t('Folders')),
-      h('button', { class: 'danger', onclick: async () => { if (confirm(t('Remove the library "{name}"? Your files stay on disk.', { name: s.title }))) { await api('DELETE', '/library/sections/' + s.id); librariesPage(); } } }, t('Remove'))))) : null,
+      h('button', { onclick: () => foldersDialog(s) }, t('Folders')),
+      h('button', { class: 'danger', onclick: async () => { if (await sure(t('Remove the library "{name}"? Your files stay on disk.', { name: s.title }), { ok: t('Remove'), danger: true })) { await api('DELETE', '/library/sections/' + s.id); librariesPage(); } } }, t('Remove'))))) : null,
     h('div', { class: 'panel', style: 'margin-top:20px' }, h('h2', { style: 'margin-top:0' }, t('Add a library')),
       formRow(t('Name'), name), formRow(t('Kind'), type), formRow(t('Language of titles and plots'), newLang), formRow(t('Folders'), paths, null, true),
       h('div', { class: 'actions' }, h('button', { onclick: () => folderPicker(p => { paths.value = (paths.value.trim() ? paths.value.trim() + '\n' : '') + p; }) }, t('Browse folders…')),
@@ -277,6 +277,34 @@ async function importPanel() {
     out, lastBox);
 }
 
+// The folders of one library: one row each, typed or picked, saved together.
+function foldersDialog(s) {
+  const rows = h('div', {});
+  const row = p => {
+    const inp = h('input', { value: p, placeholder: '/media/Movies', style: 'flex:1;min-width:200px' });
+    const r = h('div', { class: 'folder-row', style: 'display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap' }, inp,
+      h('button', { class: 'small', onclick: () => folderPicker(x => { inp.value = x; }) }, t('Browse…')),
+      h('button', { class: 'small danger', onclick: () => r.remove() }, t('Remove')));
+    rows.append(r);
+    return inp;
+  };
+  s.paths.forEach(row);
+  const box = modal(t('Folders of {name}', { name: s.title }), [
+    h('p', { class: 'dim' }, t('The library is scanned again after saving. Removing a folder takes its videos out of the library; the files stay on disk.')),
+    rows,
+    h('div', { class: 'actions' },
+      h('button', { onclick: () => folderPicker(p => row(p)) }, t('Add folder…')),
+      h('button', { onclick: () => row('').focus() }, t('Type a folder'))),
+    h('div', { class: 'actions', style: 'margin-top:14px' },
+      h('button', { class: 'primary', onclick: async () => {
+        const paths = [...rows.querySelectorAll('input')].map(i => i.value.trim()).filter(Boolean);
+        if (!paths.length) return toast(t('Give at least one folder in paths'));
+        try { await api('PUT', '/library/sections/' + s.id, { paths }); toast(t('Saved')); box.remove(); librariesPage(); }
+        catch (e) { toast(e.message, 5000); }
+      } }, t('Save')),
+      h('button', { onclick: () => box.remove() }, t('Cancel')))]);
+}
+
 function folderPicker(done) {
   const list = h('div', { class: 'list', style: 'max-height:50vh;overflow:auto' });
   const here = h('div', { class: 'dim', style: 'margin-bottom:8px;word-break:break-all' });
@@ -331,8 +359,8 @@ async function usersPage() {
         h('td', {}, h('input', { type: 'checkbox', checked: u.admin, disabled: u.id === S.me.id, onchange: async e => { try { await api('PATCH', '/api/users/' + u.id, { admin: e.target.checked }); } catch (x) { toast(x.message); } usersPage(); } })),
         h('td', {}, h('input', { type: 'checkbox', checked: u.allow_transcode, title: t('Allow converting video on the fly'), onchange: async e => { await api('PATCH', '/api/users/' + u.id, { allow_transcode: e.target.checked }); toast(t('Saved')); } })),
         h('td', {}, u.id === S.me.id ? h('span', { class: 'dim' }, t('you')) : [
-          h('button', { class: 'small', onclick: async () => { const pw = prompt(t('New password for {name}', { name: u.username })); if (pw) { try { await api('PATCH', '/api/users/' + u.id, { password: pw }); toast(t('Password changed')); } catch (x) { toast(x.message); } } } }, t('Password')), ' ',
-          h('button', { class: 'small danger', onclick: async () => { if (confirm(t('Remove {name}?', { name: u.username }))) { await api('DELETE', '/api/users/' + u.id); usersPage(); } } }, t('Remove'))])))),
+          h('button', { class: 'small', onclick: async () => { const pw = await ask(t('New password for {name}', { name: u.username }), { password: true }); if (pw) { try { await api('PATCH', '/api/users/' + u.id, { password: pw }); toast(t('Password changed')); } catch (x) { toast(x.message); } } } }, t('Password')), ' ',
+          h('button', { class: 'small danger', onclick: async () => { if (await sure(t('Remove {name}?', { name: u.username }), { ok: t('Remove'), danger: true })) { await api('DELETE', '/api/users/' + u.id); usersPage(); } } }, t('Remove'))])))),
     h('h2', {}, t('Invites')),
     invites.invites.length ? h('table', {}, h('tr', {}, h('th', {}, t('For')), h('th', {}, t('Status')), h('th', {}, t('Libraries')), h('th', {}, t('Link')), h('th', {}, '')),
       invites.invites.map(i => h('tr', {},
@@ -380,7 +408,7 @@ async function pluginsPage() {
 function accountPanel(dataDir) {
   return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Your account')),
     formRow(t('Language of this app'), langSelect(), t('Saved in this browser.')),
-    h('div', { style: 'margin-top:14px' }, h('button', { onclick: async () => { const old = prompt(t('Current password')); if (!old) return; const nw = prompt(t('New password (at least 6 characters)')); if (!nw) return; try { await api('POST', '/api/me/password', { old, new: nw }); toast(t('Password changed')); } catch (e) { toast(e.message); } } }, t('Change my password'))),
+    h('div', { style: 'margin-top:14px' }, h('button', { onclick: async () => { const old = await ask(t('Current password'), { password: true }); if (!old) return; const nw = await ask(t('New password (at least 6 characters)'), { password: true }); if (!nw) return; try { await api('POST', '/api/me/password', { old, new: nw }); toast(t('Password changed')); } catch (e) { toast(e.message); } } }, t('Change my password'))),
     dataDir ? h('p', { class: 'dim' }, t('Data folder on the server: '), h('code', {}, dataDir)) : null);
 }
 
@@ -473,7 +501,7 @@ async function apiPage() {
       h('td', {}, k.current ? '' : h('button', { class: 'small', onclick: async () => { await api('DELETE', '/api/tokens/' + k.id); toast(t('Token revoked')); loadTokens(); } }, t('Revoke')))))));
   };
   const rotate = async all => {
-    if (!confirm(all ? t('Make a new token and sign out every other device and script?') : t('Make a new token? Scripts using the old one stop working.'))) return;
+    if (!await sure(all ? t('Make a new token and sign out every other device and script?') : t('Make a new token? Scripts using the old one stop working.'))) return;
     const r = await api('POST', '/api/tokens/rotate', { all });
     S.token = r.token; localStorage.setItem('token', r.token); shown.textContent = '••••••••';
     toast(all ? t('New token made; {n} other sign-in(s) ended', { n: r.revoked - 1 }) : t('New token made; the old one no longer works'));
@@ -485,7 +513,7 @@ async function apiPage() {
       h('button', { class: 'small', onclick: () => { shown.textContent = S.token; } }, t('Show')), ' ',
       h('button', { class: 'small', onclick: () => rotate(false) }, t('Rotate token')), ' ',
       h('button', { class: 'small', onclick: () => rotate(true) }, t('Rotate and sign out everywhere else')), ' ',
-      h('button', { class: 'small', onclick: async () => { const n = prompt(t('Name for the new token (e.g. "backup script")')); if (n === null) return; const r = await api('POST', '/api/tokens', { device: n }); prompt(t('Copy the new token now; it is not shown again:'), r.token); loadTokens(); } }, t('New token for a script')),
+      h('button', { class: 'small', onclick: async () => { const n = await ask(t('Name for the new token (e.g. "backup script")')); if (n === null) return; const r = await api('POST', '/api/tokens', { device: n }); await ask(t('Copy the new token now; it is not shown again:'), { value: r.token, ok: t('Done') }); loadTokens(); } }, t('New token for a script')),
       h('p', { class: 'dim' }, t('Example: '), h('code', {}, `curl -H "X-Token: <token>" ${location.origin}/library/sections`)),
       tokens),
     h('div', { class: 'panel' }, h('b', {}, t('Filters')), h('p', { class: 'dim' }, t('Browsing, playlist contents and smart playlists share the same fields: '), S.filters.fields.map(f => h('code', { style: 'margin-right:5px' }, f.field)), t('. In addresses: '), Object.entries(S.filters.url_shortcuts).map(([k, v]) => h('span', {}, h('code', {}, k), ` ${v}; `)))),
