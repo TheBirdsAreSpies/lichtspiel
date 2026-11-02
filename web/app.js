@@ -63,13 +63,14 @@ function logout() { S.token = ''; S.me = null; localStorage.removeItem('token');
 function authPage(title, intro, fields, button, submit) {
   const err = h('div', { class: 'err' });
   const inputs = {};
-  const form = h('form', { class: 'center', onsubmit: async e => {
+  const form = h('form', { class: 'center', method: 'post', action: '#', onsubmit: async e => {
     e.preventDefault(); err.textContent = '';
     const vals = {}; for (const [k, el] of Object.entries(inputs)) vals[k] = el.value;
     try { await submit(vals); } catch (x) { err.textContent = x.message; }
   } },
     h('h1', {}, title), intro ? h('p', { class: 'dim' }, intro) : null,
-    fields.map(([k, label, type, val]) => [h('label', {}, label), (inputs[k] = h('input', { type: type || 'text', value: val || '' }))]),
+    fields.map(([k, label, type, val, ac]) => [h('label', { for: 'auth-' + k }, label),
+      (inputs[k] = h('input', { type: type || 'text', value: val || '', id: 'auth-' + k, name: k, autocomplete: ac || 'off' }))]),
     h('div', { style: 'margin-top:18px' }, h('button', { class: 'primary', type: 'submit', style: 'width:100%' }, button)), err,
     Object.keys(I18N.packs).length > 1 ? h('div', { style: 'margin-top:14px;text-align:right' }, langSelect()) : null);
   set(form);
@@ -77,19 +78,19 @@ function authPage(title, intro, fields, button, submit) {
 }
 async function signedIn(token) { S.token = token; localStorage.setItem('token', token); location.hash = '#/'; await boot(); }
 function loginPage() {
-  authPage(t('Sign in'), S.status ? S.status.name : '', [['username', t('User name')], ['password', t('Password'), 'password']], t('Sign in'),
+  authPage(t('Sign in'), S.status ? S.status.name : '', [['username', t('User name'), 'text', '', 'username'], ['password', t('Password'), 'password', '', 'current-password']], t('Sign in'),
     async v => { const r = await api('POST', '/api/login', { username: v.username, password: v.password, device: 'web' }); await signedIn(r.token); });
 }
 function setupPage() {
   authPage(t('Welcome'), t('Create the owner account for this server. You can invite other people afterwards.'),
-    [['server_name', t('Server name'), 'text', 'Lichtspiel'], ['username', t('Your user name')], ['password', t('Password (at least 6 characters)'), 'password']], t('Create account'),
+    [['server_name', t('Server name'), 'text', 'Lichtspiel'], ['username', t('Your user name'), 'text', '', 'username'], ['password', t('Password (at least 6 characters)'), 'password', '', 'new-password']], t('Create account'),
     async v => { const r = await api('POST', '/api/setup', v); await signedIn(r.token); });
 }
 async function invitePage(code) {
   let info;
   try { info = await api('GET', '/api/invites/' + code); } catch (e) { return set(h('div', { class: 'center' }, h('h1', {}, t('Invite')), h('p', { class: 'err' }, e.message), h('a', { href: '#/login' }, t('Sign in instead')))); }
   authPage(t('Join {server}', { server: info.server }), t('{who} invited you{note}. Pick a user name and password.', { who: info.invited_by || t('Someone'), note: info.note ? ': ' + info.note : '' }),
-    [['username', t('User name')], ['email', t('Email (optional)'), 'email', info.email], ['password', t('Password (at least 6 characters)'), 'password']], t('Join'),
+    [['username', t('User name'), 'text', '', 'username'], ['email', t('Email (optional)'), 'email', info.email, 'email'], ['password', t('Password (at least 6 characters)'), 'password', '', 'new-password']], t('Join'),
     async v => { const r = await api('POST', `/api/invites/${code}/accept`, v); await signedIn(r.token); });
 }
 

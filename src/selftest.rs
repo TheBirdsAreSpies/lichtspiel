@@ -423,6 +423,22 @@ pub fn run(out: &Path) -> bool {
         format!("invite link made ({}); friend joined (HTTP {}), sees {visible} library, TV blocked (HTTP {blocked}), admin pages blocked (HTTP {not_admin}), invite can't be reused (HTTP {reuse}), can sign in (HTTP {login})", url.replace(&code, "…"), joined.status),
     );
 
+    // ---- users: a local user made by the admin, no invite
+    {
+        let made = c.post("/api/users", json!({"username": "kid", "password": "kidpass1", "allowed_sections": [mid]}));
+        let dup = c.post("/api/users", json!({"username": "Kid", "password": "kidpass1"})).status;
+        let short = c.post("/api/users", json!({"username": "kid2", "password": "123"})).status;
+        let by_friend = friend.post("/api/users", json!({"username": "kid3", "password": "kidpass1"})).status;
+        let signed = anon.post("/api/login", json!({"username": "kid", "password": "kidpass1"}));
+        let kid = Client { port, token: signed.json()["token"].as_str().map(String::from) };
+        let sees = kid.get("/library/sections").json()["MediaContainer"]["size"].as_u64().unwrap_or(0);
+        steps.add(
+            "local user",
+            made.status == 201 && dup == 409 && short == 400 && by_friend == 403 && signed.status == 200 && sees == 1,
+            format!("admin added a local user (HTTP {}), name taken (HTTP {dup}), short password refused (HTTP {short}), not for non-admins (HTTP {by_friend}), signs in (HTTP {}) and sees {sees} library", made.status, signed.status),
+        );
+    }
+
     // ---- downloads: original at once, a converted copy in the background, the right to download
     {
         let orig = c.post("/api/downloads", json!({"ids": [mp4], "quality": "original"}));

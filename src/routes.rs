@@ -118,6 +118,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("PUT", "/playlists/{id}/items/{itemId}/move", "Reorder ?after=itemId (0 = to the top)"),
     ("POST", "/playlists/{id}/copy", "Save a playlist's current contents as a new manual playlist"),
     ("GET", "/api/users", "Admin: every user"),
+    ("POST", "/api/users", "Admin: add a local user directly, without an invite {username, password, email, admin, allowed_sections: [ids]|null}"),
     ("PATCH", "/api/users/{id}", "Admin: {admin, allowed_sections: [ids]|null, allow_transcode, allow_delete, allow_download, password, email}"),
     ("DELETE", "/api/users/{id}", "Admin: remove a user"),
     ("DELETE", "/api/users/{id}/tokens", "Admin: sign a user out everywhere"),
@@ -1201,6 +1202,30 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if !admin { return need_admin(); }
             let db = app.db.lock().unwrap();
             ok(json!({"users": db.users.iter().map(user_json).collect::<Vec<_>>()}))
+        }
+        ("POST", ["api", "users"]) => {
+            // A local account made by an admin: no invite link, they sign in with what the admin set.
+            if !admin { return need_admin(); }
+            let username = ctx.body_or_param("username").unwrap_or_default().trim().to_string();
+            let password = ctx.body_or_param("password").unwrap_or_default();
+            if !auth::valid_username(&username) { return fail(400, "Pick a user name of 2-40 letters or numbers"); }
+            if password.chars().count() < 6 { return fail(400, "Use at least 6 characters for the password"); }
+            let (h, s) = auth::hash_password(&password);
+            let sections = match ctx.body.get("allowed_sections") {
+                Some(Value::Array(a)) => Some(a.iter().filter_map(|x| x.as_u64()).collect()),
+                _ => None,
+            };
+            let mut db = app.db.lock().unwrap();
+            if db.users.iter().any(|u| u.username.eq_ignore_ascii_case(&username)) { return fail(409, "That user name is taken"); }
+            let id = db.new_id();
+            db.users.push(db::User { id, username: username.clone(), email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s,
+                admin: ctx.body.get("admin").and_then(|v| v.as_bool()).unwrap_or(false), created_at: now(), allowed_sections: sections, invited_by: Some(user.id),
+                allow_transcode: None, allow_delete: false, allow_download: None, sidebar: Value::Null });
+            let v = user_json(db.user(id).unwrap());
+            drop(db);
+            app.save();
+            app.fire("user.joined", json!({"username": username, "added_by": user.username}));
+            js(201, v)
         }
         ("PATCH", ["api", "users", uid]) | ("PUT", ["api", "users", uid]) => {
             if !admin { return need_admin(); }

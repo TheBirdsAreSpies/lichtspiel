@@ -463,7 +463,25 @@ async function usersPage() {
   const libChecks = S.sections.map(s => ({ s, el: h('input', { type: 'checkbox', checked: true }) }));
   const result = h('div');
   const copy = url => { if (navigator.clipboard) navigator.clipboard.writeText(url); toast(t('Link copied')); };
+  // A local user: made here with a name and password, no link to send.
+  const lName = h('input', { autocomplete: 'off', style: 'width:100%;max-width:420px' });
+  const lPass = h('input', { type: 'password', autocomplete: 'new-password', style: 'width:100%;max-width:420px' });
+  const lAdmin = h('input', { type: 'checkbox' });
+  const lAll = h('input', { type: 'checkbox', checked: true });
+  const lChecks = S.sections.map(s => ({ s, el: h('input', { type: 'checkbox', checked: true }) }));
+  const lErr = h('div', { class: 'err' });
   set(h('h1', {}, t('Users & invites')),
+    h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Add a local user')),
+      h('p', { class: 'dim' }, t('For people in your home: you pick their user name and password, and they sign in with it right away. No invite link needed.')),
+      formRow(t('User name'), lName), formRow(t('Password (at least 6 characters)'), lPass),
+      formRow(t('Libraries they may watch'), h('div', { class: 'checks' }, h('label', {}, lAll, h('b', {}, t('All, including future ones'))), lChecks.map(c => h('label', {}, c.el, c.s.title)))),
+      formRow(t('Make them an admin'), lAdmin),
+      h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: async () => {
+        lErr.textContent = '';
+        const body = { username: lName.value, password: lPass.value, admin: lAdmin.checked };
+        if (!lAll.checked) body.allowed_sections = lChecks.filter(c => c.el.checked).map(c => c.s.id);
+        try { await api('POST', '/api/users', body); toast(t('{name} was added', { name: lName.value.trim() })); usersPage(); } catch (x) { lErr.textContent = x.message; }
+      } }, t('Add user'))), lErr),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Invite someone')),
       h('p', { class: 'dim' }, t('You get a link to send them (by email, chat …). They open it, pick a user name and password, and can watch the libraries you tick.')),
       formRow(t('Their email'), email), formRow(t('Message'), note),
