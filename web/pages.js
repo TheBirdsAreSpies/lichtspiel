@@ -200,6 +200,7 @@ async function librariesPage() {
         try { const r = await api('POST', `/library/sections/${s.id}/credits`); toast(t('Checking {n} videos for credits — progress is shown at the top', { n: r.videos }), 5000); pollActivity(); } catch (er) { toast(er.message, 6000); }
       } }, t('Detect credits')),
       h('button', { onclick: () => foldersDialog(s) }, t('Folders')),
+      h('button', { title: t('More'), 'aria-label': t('More'), onclick: e => sectionMenu(s, e.currentTarget) }, '⋯'),
       h('button', { class: 'danger', onclick: async () => { if (await sure(t('Remove the library "{name}"? Your files stay on disk.', { name: s.title }), { ok: t('Remove'), danger: true })) { await api('DELETE', '/library/sections/' + s.id); refreshList(); } } }, t('Remove')))))] : []));
   drawList(secs);
   set(h('h1', {}, t('Libraries')),
@@ -298,8 +299,8 @@ async function importPanel() {
     out, lastBox);
 }
 
-// The folders of one library: one row each, typed or picked, saved together.
-function foldersDialog(s) {
+// A library's folders: one row each, typed or picked. values() = the folders given.
+function folderRows(paths) {
   const rows = h('div', {});
   const row = p => {
     const inp = h('input', { value: p, placeholder: '/media/Movies', style: 'flex:1;min-width:200px' });
@@ -309,16 +310,22 @@ function foldersDialog(s) {
     rows.append(r);
     return inp;
   };
-  s.paths.forEach(row);
+  paths.forEach(row);
+  const el = h('div', { style: 'width:100%' }, rows,
+    h('div', { class: 'actions', style: 'margin-top:0' },
+      h('button', { onclick: () => folderPicker(p => row(p)) }, t('Add folder…')),
+      h('button', { onclick: () => row('').focus() }, t('Type a folder'))));
+  return { el, values: () => [...rows.querySelectorAll('input')].map(i => i.value.trim()).filter(Boolean) };
+}
+// The folders of one library, saved together.
+function foldersDialog(s) {
+  const folders = folderRows(s.paths);
   const box = modal(t('Folders of {name}', { name: s.title }), [
     h('p', { class: 'dim' }, t('The library is scanned again after saving. Removing a folder takes its videos out of the library; the files stay on disk.')),
-    rows,
-    h('div', { class: 'actions' },
-      h('button', { onclick: () => folderPicker(p => row(p)) }, t('Add folder…')),
-      h('button', { onclick: () => row('').focus() }, t('Type a folder'))),
+    folders.el,
     h('div', { class: 'actions', style: 'margin-top:14px' },
       h('button', { class: 'primary', onclick: async () => {
-        const paths = [...rows.querySelectorAll('input')].map(i => i.value.trim()).filter(Boolean);
+        const paths = folders.values();
         if (!paths.length) return toast(t('Give at least one folder in paths'));
         try { await api('PUT', '/library/sections/' + s.id, { paths }); toast(t('Saved')); box.remove(); librariesPage(); pollActivity(); }
         catch (e) { toast(e.message, 5000); }
@@ -372,13 +379,16 @@ async function usersPage() {
           h('button', { onclick: () => copy(r.url) }, t('Copy link')), ' ', r.email ? h('a', { href: mail }, h('button', {}, t('Open in email'))) : null));
       } }, t('Create invite link'))), result),
     h('h2', {}, t('People')),
-    h('table', {}, h('tr', {}, h('th', {}, t('User')), h('th', {}, t('Libraries')), h('th', {}, t('Admin')), h('th', {}, t('May convert')), h('th', {}, '')),
+    h('table', {}, h('tr', {}, h('th', {}, t('User')), h('th', {}, t('Libraries')), h('th', {}, t('Admin')), h('th', {}, t('May convert')), h('th', {}, t('May delete files')), h('th', {}, '')),
       users.users.map(u => h('tr', {},
         h('td', {}, h('b', {}, u.username), h('div', { class: 'dim' }, u.email || ''), h('div', { class: 'dim', style: 'font-size:12px' }, t('joined {date}', { date: fmtDate(u.created_at) }))),
         h('td', {}, u.admin ? t('all (admin)') : u.allowed_sections === null ? t('all') : u.allowed_sections.map(secName).join(', ') || t('none'), ' ',
           u.admin ? null : h('button', { class: 'small', onclick: () => accessEditor(u) }, t('Change'))),
         h('td', {}, h('input', { type: 'checkbox', checked: u.admin, disabled: u.id === S.me.id, onchange: async e => { try { await api('PATCH', '/api/users/' + u.id, { admin: e.target.checked }); } catch (x) { toast(x.message); } usersPage(); } })),
         h('td', {}, h('input', { type: 'checkbox', checked: u.allow_transcode, title: t('Allow converting video on the fly'), onchange: async e => { await api('PATCH', '/api/users/' + u.id, { allow_transcode: e.target.checked }); toast(t('Saved')); } })),
+        h('td', {}, h('input', { type: 'checkbox', checked: u.admin || u.allow_delete, disabled: u.admin,
+          title: u.admin ? t('Admins may always delete files (when media deletion is allowed in the settings)') : t('May delete movie and episode files from disk in the libraries they can see'),
+          onchange: async e => { await api('PATCH', '/api/users/' + u.id, { allow_delete: e.target.checked }); toast(t('Saved')); } })),
         h('td', {}, u.id === S.me.id ? h('span', { class: 'dim' }, t('you')) : [
           h('button', { class: 'small', onclick: async () => { const pw = await ask(t('New password for {name}', { name: u.username }), { password: true }); if (pw) { try { await api('PATCH', '/api/users/' + u.id, { password: pw }); toast(t('Password changed')); } catch (x) { toast(x.message); } } } }, t('Password')), ' ',
           h('button', { class: 'small danger', onclick: async () => { if (await sure(t('Remove {name}?', { name: u.username }), { ok: t('Remove'), danger: true })) { await api('DELETE', '/api/users/' + u.id); usersPage(); } } }, t('Remove'))])))),
@@ -456,7 +466,9 @@ async function settingsPage() {
       sel('played_at_behaviour', t('Mark videos as watched'), r.played_at_choices.map(c => [c.value, t(c.label)]), t('Credits markers come from chapters named "Credits" / "Abspann" in the file, or are set by hand on the movie or episode page. Without markers the threshold is used.')),
       inp('continue_watching_weeks', t('Weeks to consider for Continue Watching'), 'number'), inp('continue_watching_limit', t('Maximum Continue Watching items'), 'number'),
       chk('continue_watching_include_premieres', t('Include season premieres in Continue Watching'), t('New season premieres always appear no matter how many weeks have passed since watching.')),
-      inp('invite_default_days', t('Invite links last (days)'), 'number')),
+      inp('invite_default_days', t('Invite links last (days)'), 'number'),
+      chk('empty_trash_automatically', t('Empty trash automatically after every scan'), t('Files gone from disk leave the library right away. Off: they stay as unavailable (with their watched state and details) until you choose "Empty trash" in the library’s menu. A library folder that cannot be read never empties anything.')),
+      chk('allow_media_deletion', t('Allow media deletion'), t('Admins, and people you allow under Users & invites, may delete movie and episode files from disk with "Delete" in the "⋯" menu.'))),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Movie and show details')),
       chk('metadata_enabled', t('Download plot, cast, posters and episode titles from the internet')),
       sel('metadata_language', t('Language of titles, plots and episode names'), r.languages.map(l => [l.code, l.name]), t('Used by every library that is set to "Same as server" on the Libraries page (each library can have its own). Changing it downloads the details again in the background — watch the progress at the top of the page. Show episode names are only translated with a TMDB key.')),
@@ -631,6 +643,8 @@ function itemMenu(it, anchor, changed = () => {}) {
   const watched = it.leafCount ? it.viewedLeafCount === it.leafCount : it.viewCount > 0;
   const matchable = it.type === 'movie' || it.type === 'show';
   const play = isPlayable(it);
+  // Extras (trailers …) are left out: they belong to their movie.
+  const deletable = S.me.can_delete && it.type !== 'clip' && !(it.extra || {}).extra_type;
   openMenu(anchor, [
     { label: t('Watch together'), run: () => watchTogether(it) },
     { label: t('Share'), run: () => shareItem(it) },
@@ -656,7 +670,25 @@ function itemMenu(it, anchor, changed = () => {}) {
     { label: t('View play history'), run: () => historyDialog(it) },
     { label: t('Report a problem'), run: () => reportDialog(it) },
     play ? { label: t('Media info'), run: () => mediaInfo(it) } : null,
+    deletable ? '-' : null,
+    deletable ? { label: t('Delete…'), danger: true, run: () => deleteItem(it) } : null,
   ]);
+}
+
+// ---------- deleting files from disk (for whoever may: the server setting and the person's right)
+async function deleteItem(it) {
+  const name = it.type === 'episode' && it.grandparentTitle ? `${it.grandparentTitle} · ${it.title}` : it.type === 'season' ? `${it.parentTitle || ''} · ${seasonTitle(it.title)}` : it.title;
+  const n = isPlayable(it) ? 1 : (it.leafCount || (await leavesOf(it)).length);
+  const msg = isPlayable(it) ? t('Delete “{title}” from disk? The file is deleted for good; this cannot be undone.', { title: name })
+    : t('Delete all {n} episodes of “{title}” from disk? The files are deleted for good; this cannot be undone.', { n, title: name });
+  if (!(await sure(msg, { ok: t('Delete'), danger: true }))) return;
+  const r = await api('DELETE', '/library/metadata/' + it.id);
+  toast(t('{n} file(s) deleted', { n: r.deleted }), 4000);
+  // Its own page (or that of a season or show it took along) no longer exists.
+  const here = location.hash.match(/^#\/item\/(\d+)/);
+  if (here && (Number(here[1]) === it.id || !(await GET('/library/metadata/' + here[1]).catch(() => null)))) location.hash = '#/section/' + it.librarySectionID;
+  else render();
+  reloadSections(false);
 }
 
 // "Add to …": playlists (and for the owner the collections of a movie or show).
@@ -755,15 +787,16 @@ async function optimizeDialog(it) {
       h('button', { onclick: () => box.remove() }, t('Cancel')))]);
 }
 
-// ---------- access: who may see the library this is in
-async function grantAccess(it) {
-  const sid = Number(it.librarySectionID);
+// ---------- access: who may see the library this is in (or a library itself)
+const grantAccess = it => grantSectionAccess(Number(it.librarySectionID), true);
+async function grantSectionAccess(sid, forItem) {
   const sec = S.sections.find(s => s.id === sid) || { title: '#' + sid };
   const users = (await GET('/api/users')).users.filter(u => !u.admin);
   const may = u => u.allowed_sections === null || u.allowed_sections.includes(sid);
   const checks = users.map(u => ({ u, el: h('input', { type: 'checkbox', checked: may(u) }) }));
   const box = modal(t('Grant access'), [
-    h('p', { class: 'dim' }, t('Access is given per library: ticked people may see everything in “{name}”, including this title.', { name: sec.title })),
+    h('p', { class: 'dim' }, forItem ? t('Access is given per library: ticked people may see everything in “{name}”, including this title.', { name: sec.title })
+      : t('Ticked people may see everything in “{name}”.', { name: sec.title })),
     users.length ? h('div', { class: 'checks' }, checks.map(c => h('label', {}, c.el, c.u.username))) : h('p', {}, t('No other users yet. Invite someone under Users & invites.')),
     h('div', { class: 'actions' },
       users.length ? h('button', { class: 'primary', onclick: async () => {
@@ -904,6 +937,180 @@ function tgLeave() {
 video.addEventListener('play', () => tgSend());
 video.addEventListener('pause', () => { if (!video.ended) tgSend(); });
 video.addEventListener('seeked', () => { if (P.method === 'direct' && !split()) tgSend(); });
+
+// ---------- the left menu: libraries and Playlists in the order each person chose
+// (kept on the server per person), unpinned ones under "More"; "⋯" edits it.
+const NAV = { edit: false, cur: '', more: false };
+try { NAV.more = localStorage.getItem('navMore') === '1'; } catch (e) { /* private window */ }
+function navList() {
+  const all = [...S.sections.map(s => ({ key: 's' + s.id, sec: s, title: s.title })), { key: 'playlists', title: t('Playlists') }];
+  const sb = (S.me && S.me.sidebar) || {};
+  const order = sb.order || [], hidden = new Set(sb.hidden || []);
+  // New libraries come after the ones already placed, in the server's order.
+  const pos = new Map(all.map((e, i) => [e.key, order.includes(e.key) ? order.indexOf(e.key) : order.length + i]));
+  return all.sort((a, b) => pos.get(a.key) - pos.get(b.key)).map(e => Object.assign(e, { hidden: hidden.has(e.key) }));
+}
+async function putNav(sb) {
+  S.me.sidebar = sb; drawNav();
+  try { await api('PUT', '/api/me/sidebar', sb); } catch (e) { toast(e.message, 5000); }
+}
+const saveNav = list => putNav({ order: list.map(e => e.key), hidden: list.filter(e => e.hidden).map(e => e.key) });
+function setPinned(key, pinned) {
+  const list = navList();
+  const e = list.find(x => x.key === key); if (!e) return;
+  list.splice(list.indexOf(e), 1);
+  e.hidden = !pinned;
+  // Pinned again: after the last pinned entry. Unpinned: at the end (under "More").
+  if (pinned) { let at = 0; list.forEach((x, i) => { if (!x.hidden) at = i + 1; }); list.splice(at, 0, e); } else list.push(e);
+  saveNav(list);
+  toast(pinned ? t('Pinned to the menu') : t('Unpinned — it is under “More” in the menu'));
+}
+const moreBtn = (title, onclick) => h('button', { class: 'more', title, 'aria-label': title, onclick: e => { e.preventDefault(); e.stopPropagation(); onclick(e.currentTarget); } }, '⋯');
+function navLink(e) {
+  const s = e.sec;
+  return h('a', { href: s ? '#/section/' + s.id : '#/playlists', 'data-nav': s ? 'section/' + s.id : 'playlists' },
+    h('span', {}, e.title), s ? h('small', {}, s.type === 'show' ? t('{n} shows', { n: s.count }) : s.videoCount) : null,
+    moreBtn(t('More'), b => s ? sectionMenu(s, b) : openMenu(b, [{ label: e.hidden ? t('Pin') : t('Unpin'), run: () => setPinned(e.key, e.hidden) }])));
+}
+function drawNav() {
+  const box = $('#navsections');
+  if (!S.me) return box.replaceChildren();
+  const list = navList();
+  const sb = S.me.sidebar || {};
+  const head = h('div', { class: 'head navhead' }, h('span', {}, t('LIBRARIES')),
+    NAV.edit ? h('button', { class: 'small primary', onclick: () => { NAV.edit = false; drawNav(); } }, t('Done'))
+      : moreBtn(t('Edit the menu'), b => openMenu(b, [
+        { label: t('Edit the menu'), run: () => { NAV.edit = true; drawNav(); } },
+        list.some(e => e.hidden) ? { label: t('Pin all'), run: () => putNav({ order: sb.order || [], hidden: [] }) } : null,
+        (sb.order || []).length || (sb.hidden || []).length ? { label: t('Back to the standard order'), run: () => putNav({ order: [], hidden: [] }) } : null,
+        S.me.admin ? '-' : null,
+        S.me.admin ? { label: t('Add a library…'), run: () => { location.hash = '#/libraries'; } } : null])));
+  const pinned = list.filter(e => !e.hidden), off = list.filter(e => e.hidden);
+  if (NAV.edit) {
+    box.replaceChildren(head, h('p', { class: 'dim navhint' }, t('Drag to sort, or use the arrows. ✕ unpins, + pins again.')),
+      ...pinned.map(e => editRow(e, list)), off.length ? h('div', { class: 'edit-sep' }, t('NOT PINNED')) : '', ...off.map(e => editRow(e, list)));
+  } else {
+    // "More" opens by itself while one of its libraries is shown.
+    const open = NAV.more || off.some(e => (e.sec ? 'section/' + e.sec.id : 'playlists') === NAV.cur);
+    box.replaceChildren(head, ...pinned.map(navLink),
+      off.length ? h('a', { href: '#', class: 'morehead', onclick: ev => {
+        ev.preventDefault(); NAV.more = !open;
+        try { localStorage.setItem('navMore', NAV.more ? '1' : '0'); } catch (x) { /* private window */ }
+        drawNav();
+      } }, h('span', {}, t('More')), h('small', {}, (open ? '▾ ' : '▸ ') + off.length)) : '',
+      ...(open ? off.map(navLink) : []));
+  }
+  document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', a.dataset.nav === NAV.cur));
+}
+// One line of the menu while it is being edited: drag it, move it up or down, (un)pin it.
+function editRow(e, list) {
+  const group = list.filter(x => x.hidden === e.hidden), i = group.indexOf(e);
+  const move = d => { const a = list.indexOf(e), b = list.indexOf(group[i + d]); [list[a], list[b]] = [list[b], list[a]]; saveNav(list); };
+  const clear = () => row.classList.remove('over-top', 'over-bottom');
+  const below = ev => ev.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+  const row = h('div', { class: 'edit-row' + (e.hidden ? ' off' : ''), draggable: 'true',
+    ondragstart: ev => { ev.dataTransfer.setData('text/plain', e.key); ev.dataTransfer.effectAllowed = 'move'; row.classList.add('drag'); },
+    ondragend: () => row.classList.remove('drag'),
+    ondragover: ev => { ev.preventDefault(); clear(); row.classList.add(below(ev) ? 'over-bottom' : 'over-top'); },
+    ondragleave: clear,
+    ondrop: ev => {
+      ev.preventDefault(); clear();
+      const from = list.find(x => x.key === ev.dataTransfer.getData('text/plain'));
+      if (!from || from === e) return;
+      list.splice(list.indexOf(from), 1);
+      // Dropped among the pinned entries it is pinned, among the others unpinned.
+      from.hidden = e.hidden;
+      list.splice(list.indexOf(e) + (below(ev) ? 1 : 0), 0, from);
+      saveNav(list);
+    } },
+    h('span', { class: 'grip', 'aria-hidden': 'true' }, '⠿'), h('span', { class: 'n', title: e.title }, e.title),
+    h('button', { title: t('Move up'), 'aria-label': t('Move up'), disabled: i === 0, onclick: () => move(-1) }, '↑'),
+    h('button', { title: t('Move down'), 'aria-label': t('Move down'), disabled: i === group.length - 1, onclick: () => move(1) }, '↓'),
+    h('button', { title: e.hidden ? t('Pin') : t('Unpin'), 'aria-label': e.hidden ? t('Pin') : t('Unpin'), onclick: () => setPinned(e.key, e.hidden) }, e.hidden ? '+' : '✕'));
+  return row;
+}
+
+// ---------- a library's "⋯" menu (in the left menu, on its page and under Libraries)
+// Reads the libraries again; on the Libraries page or a library's page that page is drawn again too.
+async function reloadSections(rerender = true) {
+  try { S.sections = (await GET('/library/sections')).MediaContainer.Directory; } catch (e) { return; }
+  drawChrome();
+  if (rerender && /^#\/(libraries|section\/)/.test(location.hash)) render();
+}
+function sectionMenu(sec, anchor) {
+  const key = 's' + sec.id;
+  const e = navList().find(x => x.key === key);
+  const hidden = !!(e && e.hidden);
+  const admin = S.me.admin;
+  openMenu(anchor, [
+    admin ? { label: t('Scan library files'), run: async () => {
+      await api('POST', `/library/sections/${sec.id}/refresh`); toast(t('Scanning {name}', { name: sec.title })); pollActivity();
+      setTimeout(() => reloadSections(location.hash === '#/libraries'), 800);
+    } } : null,
+    admin ? { label: t('Grant access…'), run: () => grantSectionAccess(sec.id) } : null,
+    admin ? { label: t('Manage library'), sub: async () => {
+      const fresh = await GET('/library/sections/' + sec.id);
+      return [
+        { label: t('Edit…'), run: () => editSection(fresh) },
+        { label: t('Refresh all metadata'), run: async () => {
+          const r = await api('POST', `/library/sections/${sec.id}/refreshMetadata`);
+          toast(t('Downloading details for {n} movies and shows again — progress is shown at the top', { n: r.queued }), 5000); pollActivity();
+        } },
+        { label: fresh.trash ? t('Empty trash ({n})', { n: fresh.trash }) : t('Empty trash'), run: () => emptyTrash(fresh) },
+        { label: t('Analyze'), run: async () => {
+          const r = await api('POST', `/library/sections/${sec.id}/analyze`);
+          toast(t('Analyzing {n} videos — progress is shown at the top', { n: r.videos }), 5000); pollActivity();
+        } },
+        '-',
+        { label: t('Delete library…'), danger: true, run: () => removeSection(fresh) },
+      ];
+    } } : null,
+    admin ? '-' : null,
+    { label: hidden ? t('Pin') : t('Unpin'), run: () => setPinned(key, hidden) },
+  ]);
+}
+async function emptyTrash(sec) {
+  if (!sec.trash) return toast(t('The trash of “{name}” is empty', { name: sec.title }));
+  if (!(await sure(t('Take {n} unavailable items out of “{name}” for good? Their watched state and details go with them.', { n: sec.trash, name: sec.title }), { ok: t('Empty trash'), danger: true }))) return;
+  const r = await api('POST', `/library/sections/${sec.id}/emptyTrash`);
+  toast(t('{n} items taken out', { n: r.removed })); reloadSections();
+}
+async function removeSection(sec) {
+  if (!(await sure(t('Remove the library "{name}"? Your files stay on disk.', { name: sec.title }), { ok: t('Remove'), danger: true }))) return;
+  await api('DELETE', '/library/sections/' + sec.id);
+  toast(t('Library removed'));
+  if (location.hash.startsWith('#/section/' + sec.id)) { location.hash = '#/'; reloadSections(false); } else reloadSections();
+}
+// "Edit…": name, details language, credits detection and folders in one window.
+async function editSection(sec) {
+  const st = await GET('/api/settings');
+  const serverLang = (st.languages.find(l => l.code === st.settings.metadata_language) || {}).name || st.settings.metadata_language;
+  const name = h('input', { value: sec.title, style: 'width:100%' });
+  const lang = h('select', {}, h('option', { value: '', selected: !sec.language }, t('Same as server ({lang})', { lang: serverLang })),
+    st.languages.map(l => h('option', { value: l.code, selected: sec.language === l.code }, l.name)));
+  const credits = h('input', { type: 'checkbox', checked: sec.creditsDetection !== false });
+  const folders = folderRows(sec.paths);
+  const box = modal(t('Edit library'), [
+    formRow(t('Name'), name), formRow(t('Kind'), h('span', {}, sectionKind(sec.type))),
+    formRow(t('Language of titles and plots'), lang, t('Changing it downloads this library’s details again.')),
+    formRow(t('Enable credits detection'), credits),
+    formRow(t('Folders'), folders.el, t('Removing a folder takes its videos out of the library; the files stay on disk.'), true),
+    h('div', { class: 'actions', style: 'margin-top:14px' },
+      h('button', { class: 'primary', onclick: async () => {
+        const paths = folders.values();
+        if (!paths.length) return toast(t('Give at least one folder in paths'));
+        if (!name.value.trim()) return toast(t('Give the library a name'));
+        const body = { name: name.value.trim(), language: lang.value, credits_detection: credits.checked };
+        if (paths.join('\n') !== sec.paths.join('\n')) body.paths = paths;
+        try {
+          const r = await api('PUT', '/library/sections/' + sec.id, body);
+          toast(r.refetching ? t('Downloading details for {n} movies and shows again — progress is shown at the top', { n: r.refetching }) : body.paths ? t('Saved; scanning') : t('Saved'), 5000);
+          box.remove(); reloadSections(); pollActivity();
+        } catch (e) { toast(e.message, 5000); }
+      } }, t('Save')),
+      h('button', { onclick: () => box.remove() }, t('Cancel')))]);
+  name.focus();
+}
 
 // ---------- router
 async function render() {

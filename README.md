@@ -38,6 +38,19 @@ Linux/Windows machine):
   **Optimize** (a saved MP4 copy that plays directly instead of being converted), Grant access;
   then Download file, View play history, Report a problem (the owner sees them under
   **Reported problems**) and Media info.
+- **The left menu is yours**: "⋯" next to *Libraries* → **Edit the menu** to sort it (drag, or
+  the arrows) and to unpin libraries or Playlists; unpinned ones wait under **More**. Kept per
+  person on the server.
+- **A library's "⋯" menu** (in the left menu, on its page and under Libraries): **Scan library
+  files**, **Grant access**, **Manage library** → Edit (name, language, credits detection and
+  folders in one window), Refresh all metadata, **Empty trash**, Analyze, Delete; and Unpin.
+- **Trash**: with *Empty trash automatically after every scan* off (Settings), files gone from
+  disk stay as *Unavailable* — watched state and details kept — until the trash is emptied. A
+  library folder that cannot be read (a share not mounted) never empties anything.
+- **Deleting files**: with *Allow media deletion* on (the default), admins — and people ticked
+  *May delete files* under Users & invites — get **Delete** in a poster's "⋯" menu. It deletes the
+  movie's or episode's files (a season or show: all its episodes) from disk; only files inside the
+  library's folders are touched.
 - **Rows for the time of year** — the home page adds a row while the season lasts:
   **Halloween** (1 Oct – 2 Nov: horror and anything with Halloween in it), **Christmas**
   (1–26 Dec), **New Year's Eve** (27 Dec – 1 Jan) and **Valentine's Day** (7–14 Feb). Titles

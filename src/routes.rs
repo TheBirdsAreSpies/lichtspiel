@@ -34,6 +34,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("PUT", "/library/sections/{id}", "Admin: change {name, paths, credits_detection, language} (language: details language for this library, empty = the server's; changing it downloads the details again)"),
     ("DELETE", "/library/sections/{id}", "Admin: remove a library (files stay on disk)"),
     ("POST", "/library/sections/{id}/refresh", "Admin: scan the library now (?wait=1 to wait for the result)"),
+    ("POST", "/library/sections/{id}/analyze", "Admin: read every file of the library again with ffprobe (in the background)"),
+    ("POST", "/library/sections/{id}/emptyTrash", "Admin: take the unavailable items (files gone from disk) out of the library for good"),
     ("GET", "/library/sections/{id}/all", "Browse: ?type=movie|show|episode &sort=title|year:desc|added_at:desc|rating:desc|random &genre=Drama &year>=2000 &unwatched=1 &title~=star &q= &offset &limit"),
     ("GET", "/library/sections/{id}/genres", "Genres and years in a library with counts"),
     ("GET", "/library/sections/{id}/collections", "The library's collections, each with its size, a picture and the address of its items"),
@@ -61,6 +63,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/metadata/status", "Background work: details waiting and being downloaded, the last result, and any running job (credits detection) with progress"),
     ("GET", "/library/metadata/{id}/history", "Play history of a movie, show, season or episode, newest first (the owner sees everyone's, others their own)"),
     ("POST", "/library/metadata/{id}/report", "Report a problem {kind: playback|video|audio|subtitles|metadata|other, note}"),
+    ("DELETE", "/library/metadata/{id}", "Delete the files of a movie or episode (or every episode of a season or show) from disk; needs media deletion allowed in the settings and, for others than admins, the right to delete"),
     ("POST", "/library/metadata/{id}/analyze", "Admin: read the files again with ffprobe (streams, length; in the background)"),
     ("POST", "/library/metadata/{id}/optimize", "Admin: save a version every browser plays directly {quality: original|tv|mobile} (in the background; played instead of converting)"),
     ("DELETE", "/library/metadata/{id}/optimize", "Admin: delete the optimized versions"),
@@ -103,7 +106,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("PUT", "/playlists/{id}/items/{itemId}/move", "Reorder ?after=itemId (0 = to the top)"),
     ("POST", "/playlists/{id}/copy", "Save a playlist's current contents as a new manual playlist"),
     ("GET", "/api/users", "Admin: every user"),
-    ("PATCH", "/api/users/{id}", "Admin: {admin, allowed_sections: [ids]|null, allow_transcode, password, email}"),
+    ("PATCH", "/api/users/{id}", "Admin: {admin, allowed_sections: [ids]|null, allow_transcode, allow_delete, password, email}"),
     ("DELETE", "/api/users/{id}", "Admin: remove a user"),
     ("DELETE", "/api/users/{id}/tokens", "Admin: sign a user out everywhere"),
     ("GET", "/api/invites", "Admin: open and used invites"),
@@ -224,7 +227,24 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             app.save();
             ok(json!({"ok": true}))
         }
-        ("GET", ["api", "me"]) => ok(user_json(&user)),
+        ("GET", ["api", "me"]) => {
+            let mut v = user_json(&user);
+            v["can_delete"] = json!(crate::actions::may_delete(&app.db.lock().unwrap(), &user));
+            v["sidebar"] = user.sidebar.clone();
+            ok(v)
+        }
+        ("PUT", ["api", "me", "sidebar"]) => {
+            // {order: [keys], hidden: [keys]}; a key is "s<library id>" or "playlists".
+            let keys = |k: &str| -> Vec<Value> {
+                ctx.body.get(k).and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str()).filter(|x| x.len() <= 40).take(500).map(|x| json!(x)).collect()).unwrap_or_default()
+            };
+            let v = json!({"order": keys("order"), "hidden": keys("hidden")});
+            let mut db = app.db.lock().unwrap();
+            if let Some(u) = db.users.iter_mut().find(|u| u.id == user.id) { u.sidebar = v.clone(); }
+            drop(db);
+            app.save();
+            ok(json!({"ok": true, "sidebar": v}))
+        }
         ("POST", ["api", "me", "password"]) => {
             let old = ctx.body_or_param("old").unwrap_or_default();
             let new = ctx.body_or_param("new").unwrap_or_default();
@@ -329,6 +349,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 let sid = s.id;
                 drop(db);
                 app.save();
+                if new_paths { app.scan_in_background(sid); }
                 let n = app.refetch_details(|sec| sec.id == sid);
                 return ok(json!({"ok": true, "id": sid, "refetching": n}));
             }
@@ -366,6 +387,16 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             }
             app.scan_in_background(sid);
             ok(json!({"ok": true, "scanning": true}))
+        }
+        ("POST", ["library", "sections", sid, "analyze"]) => {
+            if !admin { return need_admin(); }
+            let Some(sid) = id(sid) else { return fail(404, "No such library") };
+            match crate::actions::analyze_section(app, sid) { Ok(n) => ok(json!({"ok": true, "videos": n})), Err(e) => fail(409, &e) }
+        }
+        ("POST", ["library", "sections", sid, "emptyTrash"]) => {
+            if !admin { return need_admin(); }
+            let Some(sid) = id(sid) else { return fail(404, "No such library") };
+            match crate::actions::empty_trash(app, sid) { Ok(n) => ok(json!({"ok": true, "removed": n})), Err(e) => fail(409, &e) }
         }
         ("POST", ["library", "sections", sid, "refreshMetadata"]) => {
             if !admin { return need_admin(); }
@@ -684,6 +715,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["library", "metadata", iid, "history"]) => match id(iid) { Some(i) => crate::actions::history(app, &user, i), None => fail(404, "Not found") },
         ("POST", ["library", "metadata", iid, "report"]) => match id(iid) { Some(i) => crate::actions::report_problem(app, ctx, &user, i), None => fail(404, "Not found") },
+        ("DELETE", ["library", "metadata", iid]) => match id(iid) { Some(i) => crate::actions::delete_media(app, &user, i), None => fail(404, "Not found") },
         ("POST", ["library", "metadata", iid, "analyze"]) => {
             if !admin { return need_admin(); }
             let Some(iid) = id(iid) else { return fail(404, "Not found") };
@@ -1097,6 +1129,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 u.allowed_sections = if v.is_null() { None } else { v.as_array().map(|a| a.iter().filter_map(|x| x.as_u64()).collect()) };
             }
             if let Some(v) = ctx.body.get("allow_transcode").and_then(|v| v.as_bool()) { u.allow_transcode = Some(v); }
+            if let Some(v) = ctx.body.get("allow_delete").and_then(|v| v.as_bool()) { u.allow_delete = v; }
             if let Some(e) = ctx.body.get("email").and_then(|v| v.as_str()) { u.email = e.into(); }
             if let Some(pw) = ctx.body.get("password").and_then(|v| v.as_str()) {
                 if pw.chars().count() < 6 { return fail(400, "Use at least 6 characters"); }

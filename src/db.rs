@@ -355,6 +355,13 @@ pub struct User {
     pub invited_by: Option<u64>,
     #[serde(default)]
     pub allow_transcode: Option<bool>,
+    /// May delete media files from disk (when the server allows media deletion;
+    /// admins always may then).
+    #[serde(default)]
+    pub allow_delete: bool,
+    /// The left menu as this person arranged it: {order: ["s12", "playlists", …], hidden: [...]}.
+    #[serde(default)]
+    pub sidebar: Value,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -596,6 +603,14 @@ pub struct Settings {
     /// Fill in IMDb ratings from IMDb's own ratings file (about 9 MB, weekly).
     #[serde(default = "yes")]
     pub imdb_ratings_file: bool,
+    /// "Empty trash automatically after every scan": files gone from disk leave
+    /// the library at once. Off: they stay as unavailable until "Empty trash".
+    #[serde(default = "yes")]
+    pub empty_trash_automatically: bool,
+    /// "Allow media deletion": the owner (and people allowed to) may delete
+    /// files from disk from the "…" menu.
+    #[serde(default = "yes")]
+    pub allow_media_deletion: bool,
 }
 
 fn port() -> u16 {
@@ -733,6 +748,8 @@ impl Default for Settings {
             watch_folders: true,
             credits_from_picture: true,
             imdb_ratings_file: true,
+            empty_trash_automatically: true,
+            allow_media_deletion: true,
         }
     }
 }

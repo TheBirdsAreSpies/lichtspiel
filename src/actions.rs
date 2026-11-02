@@ -1,6 +1,6 @@
 //! What the "…" menu on a poster does beyond the basics: play history,
-//! problem reports, analysing files again, optimized versions and
-//! "Watch together" rooms.
+//! problem reports, analysing files again, optimized versions,
+//! "Watch together" rooms, emptying a library's trash and deleting files.
 
 use crate::db::{self, now, Db, Item, User};
 use crate::server::*;
@@ -95,12 +95,24 @@ pub fn update_report(app: &Arc<App>, ctx: &Ctx, rid: u64, delete: bool) -> Resp 
 /// Reads every file of the item (and its episodes) again with ffprobe, on a
 /// background thread shown as a job. Returns how many videos it will read.
 pub fn analyze(app: &Arc<App>, iid: u64) -> Result<usize, String> {
+    if !app.db.lock().unwrap().items.contains_key(&iid) { return Err("Not found".into()); }
+    analyze_where(app, iid, |db| with_leaves(db, iid))
+}
+
+/// "Analyze" for a whole library: every video in it.
+pub fn analyze_section(app: &Arc<App>, sid: u64) -> Result<usize, String> {
+    if !app.db.lock().unwrap().sections.iter().any(|s| s.id == sid) { return Err("No such library".into()); }
+    analyze_where(app, sid, |db| db.items.values().filter(|i| i.section_id == sid && i.kind.playable()).map(|i| i.id).collect())
+}
+
+fn analyze_where(app: &Arc<App>, iid: u64, pick: impl FnOnce(&Db) -> Vec<u64>) -> Result<usize, String> {
     let mut job = app.job.lock().unwrap();
     if job.is_some() { return Err("Another job is already running; try again in a moment".into()); }
     let (ids, ffprobe) = {
         let db = app.db.lock().unwrap();
-        if !db.items.contains_key(&iid) { return Err("Not found".into()); }
-        let ids: Vec<u64> = with_leaves(&db, iid).into_iter().filter(|i| db.items.get(i).is_some_and(|x| x.file.is_some())).collect();
+        // Unavailable files (in the trash) are left out.
+        let ids: Vec<u64> = pick(&db).into_iter()
+            .filter(|i| db.items.get(i).is_some_and(|x| x.file.is_some() && !x.extra.contains_key(crate::scanner::MISSING))).collect();
         (ids, db.settings.ffprobe.clone())
     };
     let total = ids.len();
@@ -235,6 +247,73 @@ pub fn remove_optimized(app: &Arc<App>, iid: u64) -> usize {
     drop(db);
     app.save();
     n
+}
+
+// ---------------------------------------------------------------- trash
+
+/// "Empty trash" of a library: unavailable items leave it for good.
+pub fn empty_trash(app: &Arc<App>, sid: u64) -> Result<usize, String> {
+    if app.scanning.lock().unwrap().contains(&sid) { return Err("That library is being scanned; try again when it is done".into()); }
+    let mut db = app.db.lock().unwrap();
+    if !db.sections.iter().any(|s| s.id == sid) { return Err("No such library".into()); }
+    let gone = crate::scanner::empty_trash(&mut db, sid);
+    drop(db);
+    app.save();
+    for id in &gone { app.fire("library.item.removed", json!({"id": id, "section_id": sid})); }
+    Ok(gone.len())
+}
+
+// ---------------------------------------------------------------- deleting files
+
+/// May this person delete files from disk? Only when the server allows media
+/// deletion, and then the owner and admins, and people given the right.
+pub fn may_delete(db: &Db, user: &User) -> bool {
+    db.settings.allow_media_deletion && (user.admin || user.allow_delete)
+}
+
+/// Deletes the files of a movie or episode (every part), or of every episode of
+/// a season or show, and takes them out of the library. Optimized copies go too.
+pub fn delete_media(app: &Arc<App>, user: &User, iid: u64) -> Resp {
+    let mut db = app.db.lock().unwrap();
+    if !db.settings.allow_media_deletion { return fail(403, "Deleting media is switched off in the settings"); }
+    if !may_delete(&db, user) { return fail(403, "You may not delete files"); }
+    let Some(it) = db.items.get(&iid) else { return fail(404, "Not found") };
+    if !db.can_see_section(user, it.section_id) { return fail(404, "Not found"); }
+    let sid = it.section_id;
+    if app.scanning.lock().unwrap().contains(&sid) { return fail(409, "That library is being scanned; try again when it is done"); }
+    let roots: Vec<PathBuf> = db.sections.iter().find(|s| s.id == sid).map(|s| s.paths.iter().map(PathBuf::from).collect()).unwrap_or_default();
+    let mut removed = vec![];
+    let mut files = 0;
+    let mut failed: Vec<String> = vec![];
+    for id in with_leaves(&db, iid) {
+        let Some(leaf) = db.items.get(&id) else { continue };
+        if !leaf.kind.playable() { continue; }
+        let mut all = true;
+        for f in leaf.all_files() {
+            let path = std::path::Path::new(&f.path);
+            // Only files inside the library's own folders are touched.
+            if !roots.iter().any(|r| path.starts_with(r)) { failed.push(format!("{}: not inside the library's folders", f.path)); all = false; continue; }
+            match std::fs::remove_file(path) {
+                Ok(()) => files += 1,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => { failed.push(format!("{}: {e}", f.path)); all = false; }
+            }
+        }
+        if all {
+            let _ = std::fs::remove_file(optimized_path(app, id));
+            removed.push(id);
+        }
+    }
+    for id in &removed { db.items.remove(id); }
+    let pruned = crate::scanner::prune_empty(&mut db, sid);
+    drop(db);
+    app.save();
+    for id in removed.iter().chain(pruned.iter()) { app.fire("library.item.removed", json!({"id": id, "section_id": sid, "deleted_by": user.username})); }
+    if !failed.is_empty() {
+        eprintln!("deleting item {iid}: {}", failed.join("; "));
+        return js(500, json!({"error": format!("{} file(s) could not be deleted: {}", failed.len(), failed.join("; ")), "deleted": files, "failed": failed}));
+    }
+    ok(json!({"ok": true, "deleted": files, "removed": removed.len() + pruned.len()}))
 }
 
 // ---------------------------------------------------------------- watch together

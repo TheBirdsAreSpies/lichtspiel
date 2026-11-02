@@ -121,10 +121,9 @@ function drawChrome() {
   who.append(h('span', {}, S.me.username), h('button', { class: 'small', onclick: logout }, t('Sign out')));
   document.querySelectorAll('#side .admin').forEach(e => (e.style.display = S.me.admin ? '' : 'none'));
   drawQueueChip();
-  $('#navsections').replaceChildren(...S.sections.map(s => h('a', { href: '#/section/' + s.id, 'data-nav': 'section/' + s.id },
-    h('span', {}, s.title), h('small', {}, s.type === 'show' ? t('{n} shows', { n: s.count }) : s.videoCount))));
+  drawNav();
 }
-function markNav(key) { document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', a.dataset.nav === key)); }
+function markNav(key) { NAV.cur = key; document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', a.dataset.nav === key)); }
 let searchTimer;
 $('#q').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { const v = e.target.value.trim(); location.hash = v ? '#/search/' + encodeURIComponent(v) : '#/'; }, 300); });
 
@@ -145,8 +144,9 @@ function posterCard(it, opts = {}) {
     e.stopPropagation();
     itemMenu(it, e.currentTarget, () => { const fresh = posterCard(it, opts); card.replaceWith(fresh); if (opts.onReplace) opts.onReplace(fresh); });
   };
-  const card = h('div', { class: seen ? 'card watched' : 'card', onclick: e => { if (!(opts.pick && opts.pick(e, false))) location.hash = '#/item/' + it.id; } },
+  const card = h('div', { class: 'card' + (seen ? ' watched' : '') + (it.missing ? ' missing' : ''), onclick: e => { if (!(opts.pick && opts.pick(e, false))) location.hash = '#/item/' + it.id; } },
     h('div', { class: 'poster' }, h('img', { src: withTok(img), loading: 'lazy', alt: '' }),
+      it.missing ? h('span', { class: 'gone', title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null,
       prog > 0 ? h('div', { class: 'bar' }, h('i', { style: `width:${prog * 100}%` })) : null,
       it.leafCount && unseen > 0 ? h('span', { class: 'badge' }, unseen) : null,
       seen ? h('span', { class: 'seen', title: t('Watched') }, '✓') : null,
@@ -327,7 +327,8 @@ async function sectionPage(id, qs) {
     advanced.length ? h('div', { class: 'dim', style: 'grid-column:1/-1;font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-top:4px' }, t('Advanced')) : null,
     advanced.map(filterBox), active ? h('button', { class: 'small', style: 'align-self:end', onclick: () => { for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } }, t('Clear filters')) : null) : null;
   const text = (key, ph, w) => h('input', { placeholder: ph, value: st[key], style: `width:${w}px`, onchange: e => { st[key] = e.target.value.trim(); go(); } });
-  set(h('h1', {}, sec.title, ' ', h('span', { class: 'dim', style: 'font-size:16px;font-weight:400' }, t('{n} shown', { n: res.totalSize }))),
+  set(h('h1', {}, sec.title, ' ', h('span', { class: 'dim', style: 'font-size:16px;font-weight:400' }, t('{n} shown', { n: res.totalSize })),
+    h('button', { class: 'more', title: t('More'), 'aria-label': t('More'), onclick: e => sectionMenu(sec, e.currentTarget) }, '⋯')),
     tabs,
     h('div', { class: 'bar-tools' },
       sec.type === 'show' ? sel('type', [['', t('Shows')], ['season', t('Seasons')], ['episode', t('Episodes')]]) : null,
@@ -416,7 +417,8 @@ async function itemPage(id) {
     h('div', { class: 'detail' },
       h('div', { class: 'poster' }, h('img', { src: withTok(it.thumb), alt: '' })),
       h('div', { class: 'info' },
-        h('h1', { style: 'margin-bottom:4px' }, it.type === 'episode' ? `${it.index}. ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : it.title),
+        h('h1', { style: 'margin-bottom:4px' }, it.type === 'episode' ? `${it.index}. ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : it.title,
+          it.missing ? h('span', { class: 'tag', style: 'margin-left:10px;font-size:13px;vertical-align:middle;color:var(--red)', title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null),
         h('div', { class: 'dim' }, [it.year, it.type === 'episode' ? t('Season {n}', { n: it.parentIndex }) : null, fmtDur(it.duration), it.contentRating, it.rating ? `★ ${fmtNum(it.rating)}` : null, it.leafCount ? t('{seen}/{all} watched', { seen: it.viewedLeafCount, all: it.leafCount }) : null].filter(Boolean).join(' · ')),
         scoreBadges(x.ratings || (it.type === 'season' ? topX.ratings : null)),
         it.tagline ? h('p', { style: 'font-style:italic' }, it.tagline) : null,

@@ -42,6 +42,29 @@ label{display:block;color:var(--dim);font-size:13px;margin:10px 0 4px}
 #side a.on{color:var(--text);background:var(--panel2);border-left-color:var(--accent)}
 #side .head{font-size:11px;letter-spacing:.08em;color:#6f7780;padding:16px 22px 6px}
 #side small{color:#6f7780}
+#side a{position:relative}
+#side .navhead{display:flex;align-items:center;justify-content:space-between;padding-right:12px}
+#side .more{width:26px;height:26px;padding:0;border:0;border-radius:50%;background:none;color:var(--dim);font-size:16px;line-height:24px;opacity:0;flex:none}
+#side a .more{position:absolute;right:10px;top:50%;transform:translateY(-50%)}
+#side .more:hover,#side .more:focus-visible{background:var(--line);color:var(--text)}
+#side .navhead:hover .more,#side a:hover .more,#side .more:focus-visible{opacity:1}
+#side a:hover small,#side a:focus-within small{visibility:hidden}
+@media (hover:none){#side .more{opacity:1}#side a small{visibility:hidden}}
+#side .morehead{font-size:13px}
+#side .navhint{font-size:12px;padding:0 22px;margin:0 0 6px}
+#side .edit-row{display:flex;align-items:center;gap:4px;padding:5px 10px 5px 14px;border-top:2px solid transparent;border-bottom:2px solid transparent}
+#side .edit-row .grip{cursor:grab;color:var(--dim);padding:0 4px;user-select:none}
+#side .edit-row .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#side .edit-row.off .n{color:var(--dim)}
+#side .edit-row button{padding:1px 6px;font-size:12px}
+#side .edit-row button[disabled]{opacity:.3;cursor:default}
+#side .edit-row.drag{opacity:.4}
+#side .edit-row.over-top{border-top-color:var(--accent)}
+#side .edit-row.over-bottom{border-bottom-color:var(--accent)}
+#side .edit-sep{font-size:11px;letter-spacing:.08em;color:#6f7780;padding:10px 22px 4px}
+.card.missing .poster img{filter:grayscale(1) brightness(.45)}
+.poster .gone{position:absolute;left:6px;top:6px;background:rgba(0,0,0,.75);color:var(--red);font-size:11px;padding:2px 6px;border-radius:4px}
+h1 .more{margin-left:10px;vertical-align:middle;padding:2px 10px;font-size:16px}
 #main{margin:56px 0 0 220px;padding:26px 30px 60px;min-height:calc(100vh - 56px)}
 h1{font-size:26px;margin:0 0 18px}
 h2{font-size:19px;margin:28px 0 12px}
@@ -196,7 +219,6 @@ code.m-get{color:#6cb6ff}code.m-post{color:var(--green)}code.m-put,code.m-patch{
 <nav id="side">
   <a href="#/" data-nav="home" data-t="Home">Home</a>
   <div id="navsections"></div>
-  <a href="#/playlists" data-nav="playlists" data-t="Playlists">Playlists</a>
   <div class="head admin" data-t="MANAGE">MANAGE</div>
   <a class="admin" href="#/libraries" data-nav="libraries" data-t="Libraries">Libraries</a>
   <a class="admin" href="#/users" data-nav="users" data-t="Users &amp; invites">Users &amp; invites</a>

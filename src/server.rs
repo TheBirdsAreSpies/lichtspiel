@@ -1440,6 +1440,7 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
         "favorite": v.favorite,
     });
     if let Some(y) = it.year { o["year"] = json!(y); }
+    if it.extra.contains_key(crate::scanner::MISSING) { o["missing"] = json!(true); }
     if let Some(r) = it.rating { o["rating"] = json!(r); }
     if let Some(r) = v.rating { o["userRating"] = json!(r); }
     if !it.content_rating.is_empty() { o["contentRating"] = json!(it.content_rating); }
@@ -1555,11 +1556,12 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
 pub fn section_json(db: &Db, s: &Section) -> Value {
     let top = db.items.values().filter(|i| i.section_id == s.id && i.parent_id.is_none()).count();
     let playable = db.items.values().filter(|i| i.section_id == s.id && i.kind.playable() && !i.is_extra()).count();
+    let trash = db.items.values().filter(|i| i.section_id == s.id && i.extra.contains_key(crate::scanner::MISSING)).count();
     json!({
         "key": s.id.to_string(), "id": s.id, "title": s.name, "type": s.kind.as_str(),
         "Location": s.paths.iter().map(|p| json!({"path": p})).collect::<Vec<_>>(),
         "paths": s.paths, "createdAt": s.created_at, "scannedAt": s.scanned_at, "creditsDetection": s.credits_detection, "language": s.language,
-        "count": top, "videoCount": playable,
+        "count": top, "videoCount": playable, "trash": trash,
     })
 }
 
@@ -1590,7 +1592,7 @@ pub fn page<T: Clone>(ctx: &Ctx, list: &[T]) -> (Vec<T>, usize) {
 
 pub fn user_json(u: &User) -> Value {
     json!({"id": u.id, "username": u.username, "email": u.email, "admin": u.admin, "created_at": u.created_at,
-        "allowed_sections": u.allowed_sections, "allow_transcode": u.allow_transcode.unwrap_or(true), "invited_by": u.invited_by})
+        "allowed_sections": u.allowed_sections, "allow_transcode": u.allow_transcode.unwrap_or(true), "allow_delete": u.allow_delete, "invited_by": u.invited_by})
 }
 
 pub fn invite_json(db: &Db, i: &Invite, base: &str) -> Value {

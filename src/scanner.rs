@@ -1114,45 +1114,43 @@ where
         }
     }
 
-    // Remove what disappeared, then empty seasons and shows.
+    // Remove what disappeared (or, with "Empty trash automatically" off, keep it
+    // as unavailable), then empty seasons and shows. A library folder that cannot
+    // be read (a drive or share not mounted) never empties anything.
+    let offline: Vec<PathBuf> = section.paths.iter().map(PathBuf::from)
+        .filter(|r| std::fs::read_dir(r).map(|mut d| d.next().is_none()).unwrap_or(true))
+        .collect();
     with_db(&mut |db: &mut Db| {
-        let gone: Vec<u64> = db
-            .items
-            .values()
-            .filter(|i| i.section_id == section.id)
-            // Gone from disk, or now a later part of a split movie.
-            .filter(|i| i.file.as_ref().map(|f| !seen.contains(&f.path) || later_parts.contains(&f.path)).unwrap_or(false))
-            .map(|i| i.id)
-            .collect();
+        let auto = db.settings.empty_trash_automatically;
+        let mut gone = vec![];
+        let mut trash = vec![];
+        let mut back = vec![];
+        for i in db.items.values().filter(|i| i.section_id == section.id) {
+            let Some(f) = i.file.as_ref() else { continue };
+            if later_parts.contains(&f.path) {
+                // Now a later part of a split movie.
+                gone.push(i.id);
+            } else if !seen.contains(&f.path) {
+                let unreachable = offline.iter().any(|r| Path::new(&f.path).starts_with(r));
+                if auto && !unreachable { gone.push(i.id) } else if !i.extra.contains_key(MISSING) { trash.push(i.id) }
+            } else if i.extra.contains_key(MISSING) {
+                back.push(i.id);
+            }
+        }
         for id in &gone {
             db.items.remove(id);
         }
-        report.removed.extend(gone);
-        // Which items have children (all libraries: a child is found by its parent only).
-        let children = |db: &Db| {
-            let mut m: HashMap<u64, Vec<u64>> = HashMap::new();
-            for i in db.items.values() {
-                if let Some(p) = i.parent_id {
-                    m.entry(p).or_default().push(i.id);
-                }
-            }
-            m
-        };
-        for _ in 0..2 {
-            let kids = children(db);
-            let empty: Vec<u64> = db
-                .items
-                .values()
-                .filter(|i| i.section_id == section.id && !i.kind.playable() && !kids.contains_key(&i.id))
-                .map(|i| i.id)
-                .collect();
-            for id in empty {
-                db.items.remove(&id);
-            }
+        for id in &trash {
+            if let Some(it) = db.items.get_mut(id) { it.extra.insert(MISSING.into(), Value::from(now())); }
         }
+        for id in &back {
+            if let Some(it) = db.items.get_mut(id) { it.extra.remove(MISSING); }
+        }
+        report.removed.extend(gone);
+        report.removed.extend(prune_empty(db, section.id));
         // Shows and seasons take the newest episode's date, so they rise in
         // "recently added", and the length of all their episodes.
-        let kids = children(db);
+        let kids = children_map(db);
         fn below(db: &Db, kids: &HashMap<u64, Vec<u64>>, id: u64, newest: &mut Option<u64>, total: &mut u64) {
             for c in kids.get(&id).into_iter().flatten() {
                 let Some(it) = db.items.get(c) else { continue };
@@ -1188,6 +1186,59 @@ where
         }
     });
     report
+}
+
+/// Marks an item whose file is gone from disk but kept (the library's trash).
+pub const MISSING: &str = "missing_since";
+
+/// Which items have children (all libraries: a child is found by its parent only).
+fn children_map(db: &Db) -> HashMap<u64, Vec<u64>> {
+    let mut m: HashMap<u64, Vec<u64>> = HashMap::new();
+    for i in db.items.values() {
+        if let Some(p) = i.parent_id {
+            m.entry(p).or_default().push(i.id);
+        }
+    }
+    m
+}
+
+/// Takes out seasons and shows left without episodes, and extras whose movie
+/// is gone. Returns what was taken out.
+pub fn prune_empty(db: &mut Db, section: u64) -> Vec<u64> {
+    let mut out = vec![];
+    let orphans: Vec<u64> = db.items.values()
+        .filter(|i| i.section_id == section && i.is_extra() && i.parent_id.is_some_and(|p| !db.items.contains_key(&p)))
+        .map(|i| i.id).collect();
+    for id in orphans {
+        db.items.remove(&id);
+        out.push(id);
+    }
+    for _ in 0..2 {
+        let kids = children_map(db);
+        let empty: Vec<u64> = db.items.values()
+            .filter(|i| i.section_id == section && !i.kind.playable() && !kids.contains_key(&i.id))
+            .map(|i| i.id).collect();
+        for id in empty {
+            db.items.remove(&id);
+            out.push(id);
+        }
+    }
+    out
+}
+
+/// "Empty trash": takes the unavailable items of a library out for good (those
+/// whose file is still not there), then the seasons and shows left empty.
+pub fn empty_trash(db: &mut Db, section: u64) -> Vec<u64> {
+    let gone: Vec<u64> = db.items.values()
+        .filter(|i| i.section_id == section && i.extra.contains_key(MISSING))
+        .filter(|i| i.file.as_ref().is_none_or(|f| !Path::new(&f.path).is_file()))
+        .map(|i| i.id).collect();
+    for id in &gone {
+        db.items.remove(id);
+    }
+    let mut out = gone;
+    out.extend(prune_empty(db, section));
+    out
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1351,6 +1402,45 @@ mod tests {
         scan(&mut db);
         assert_eq!(db.items.values().find(|i| i.title == "The Dark Knight").unwrap().parts.len(), 2);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn trash_keeps_gone_files_until_emptied() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-trash-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for f in ["Avatar (2009)/Avatar (2009).mkv", "Avatar (2009)/Avatar (2009)-trailer.mkv", "Heat (1995)/Heat (1995).mkv"] {
+            let p = root.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, b"x").unwrap();
+        }
+        let mut settings = crate::db::Settings::default();
+        settings.empty_trash_automatically = false;
+        let mut db: Db = serde_json::from_value(serde_json::json!({"version": 1, "machine_id": "x", "next_id": 1, "settings": settings,
+            "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": [root.to_string_lossy()], "created_at": 0}],
+            "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let section = db.sections[0].clone();
+        let scan = |db: &mut Db| scan_section(&section, "no-such-ffprobe", |f| f(db));
+        scan(&mut db);
+        assert_eq!(db.items.len(), 3);
+        let missing = |db: &Db| { let mut v: Vec<String> = db.items.values().filter(|i| i.extra.contains_key(MISSING)).map(|i| i.title.clone()).collect(); v.sort(); v };
+        // Gone from disk: kept, marked unavailable.
+        std::fs::remove_file(root.join("Avatar (2009)/Avatar (2009).mkv")).unwrap();
+        assert!(scan(&mut db).removed.is_empty());
+        assert_eq!(missing(&db), vec!["Avatar"]);
+        // Back again: available again.
+        std::fs::write(root.join("Avatar (2009)/Avatar (2009).mkv"), b"x").unwrap();
+        scan(&mut db);
+        assert!(missing(&db).is_empty());
+        // Gone again and the trash emptied: the movie and its trailer leave.
+        std::fs::remove_file(root.join("Avatar (2009)/Avatar (2009).mkv")).unwrap();
+        scan(&mut db);
+        assert_eq!(empty_trash(&mut db, 1).len(), 2);
+        assert_eq!(db.items.values().map(|i| i.title.clone()).collect::<Vec<_>>(), vec!["Heat"]);
+        // A library folder that cannot be read empties nothing, even with the automatic setting.
+        db.settings.empty_trash_automatically = true;
+        std::fs::remove_dir_all(&root).unwrap();
+        scan(&mut db);
+        assert_eq!(missing(&db), vec!["Heat"]);
     }
 
     #[test]
