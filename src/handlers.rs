@@ -94,14 +94,15 @@ const PIN_TRIES: u32 = 5;
 const PIN_LOCK_SECS: u64 = 300;
 
 pub fn home_profiles(app: &Arc<App>, ctx: &Ctx) -> Resp {
-    if !ctx.is_local() { return ok(json!({"local": false, "profiles": []})); }
     let db = app.db.lock().unwrap();
+    if !db.settings.home_profiles || !ctx.is_local() { return ok(json!({"local": ctx.is_local(), "profiles": []})); }
     let list: Vec<Value> = db.users.iter().filter(|u| pickable(u))
         .map(|u| json!({"id": u.id, "username": u.username, "has_pin": !u.pin_hash.is_empty()})).collect();
     ok(json!({"local": true, "profiles": list}))
 }
 
 pub fn home_login(app: &Arc<App>, ctx: &Ctx, uid: &str) -> Resp {
+    if !app.db.lock().unwrap().settings.home_profiles { return fail(403, "Profiles on the sign-in screen are switched off"); }
     if !ctx.is_local() { return fail(403, "Profiles can only be picked in the local network; sign in with your password"); }
     let Some(uid) = uid.parse::<u64>().ok() else { return fail(404, "No such profile") };
     let Some(u) = app.db.lock().unwrap().user(uid).cloned().filter(pickable) else { return fail(404, "No such profile") };

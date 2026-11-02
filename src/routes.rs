@@ -138,7 +138,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/plugins/panels", "Switched-on plugins that give each person a panel in Settings (e.g. Connect Trakt)"),
     ("POST", "/api/plugins/{id}/call/{action}", "Run a plugin's own action (any JSON body is passed on); an answer with mark_watched marks those items watched for you"),
     ("GET", "/api/settings", "Admin: server settings"),
-    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, ffmpeg, ffprobe}"),
+    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, home_profiles, trusted_proxies, ffmpeg, ffprobe}"),
     ("GET", "/api/transcoder", "Admin: is ffmpeg there, which hardware encoders"),
     ("GET", "/api/browse", "Admin: list folders on the server ?path= (to pick library folders)"),
     ("POST", "/api/imdb-ratings/refresh", "Admin: download IMDb's ratings file now and update every rating (in the background; progress in /api/metadata/status)"),
@@ -1382,7 +1382,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 "played_at_choices": db::PLAYED_AT_CHOICES.iter().map(|c| json!({"value": c.0, "label": c.1})).collect::<Vec<_>>(),
                 "credits_marker_choices": db::CREDITS_MARKER_CHOICES.iter().map(|c| json!({"value": c.0, "label": c.1})).collect::<Vec<_>>(),
                 "languages": db::LANGUAGES.iter().map(|l| json!({"code": l.0, "name": l.1})).collect::<Vec<_>>(),
-                "port_in_use": *app.port.lock().unwrap()}))
+                "port_in_use": *app.port.lock().unwrap(),
+                "your_address": ctx.remote.map(|a| a.to_string()), "your_address_trusted": ctx.remote_trusted, "you_are_local": ctx.is_local()}))
         }
         ("PUT", ["api", "settings"]) | ("PATCH", ["api", "settings"]) => {
             if !admin { return need_admin(); }

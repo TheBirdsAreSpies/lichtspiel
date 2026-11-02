@@ -468,6 +468,25 @@ pub fn run(out: &Path) -> bool {
         );
     }
 
+    // ---- reverse proxy: forwarded addresses only count from a trusted proxy
+    {
+        let count = |r: Reply| r.json()["profiles"].as_array().map(|a| a.len()).unwrap_or(0);
+        let direct = count(anon.get("/api/home"));
+        let spoofed = count(anon.call("GET", "/api/home", None, &[("X-Forwarded-For", "192.168.1.20")]));
+        c.call("PUT", "/api/settings", Some(json!({"trusted_proxies": "127.0.0.1, ::1"})), &[]);
+        let outside = count(anon.call("GET", "/api/home", None, &[("X-Forwarded-For", "203.0.113.9")]));
+        let faked_left = count(anon.call("GET", "/api/home", None, &[("X-Forwarded-For", "192.168.1.20, 203.0.113.9")]));
+        let inside = count(anon.call("GET", "/api/home", None, &[("X-Forwarded-For", "192.168.1.20")]));
+        c.call("PUT", "/api/settings", Some(json!({"home_profiles": false})), &[]);
+        let off = count(anon.get("/api/home"));
+        c.call("PUT", "/api/settings", Some(json!({"home_profiles": true, "trusted_proxies": ""})), &[]);
+        steps.add(
+            "reverse proxy",
+            direct > 0 && spoofed == 0 && outside == 0 && faked_left == 0 && inside > 0 && off == 0,
+            format!("profiles shown: directly {direct}, forwarded by an untrusted proxy {spoofed}, trusted proxy + outside caller {outside}, made-up home address in front {faked_left}, trusted proxy + home caller {inside}, switched off {off}"),
+        );
+    }
+
     // ---- downloads: original at once, a converted copy in the background, the right to download
     {
         let orig = c.post("/api/downloads", json!({"ids": [mp4], "quality": "original"}));

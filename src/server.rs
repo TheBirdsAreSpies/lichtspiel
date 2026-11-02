@@ -5,6 +5,7 @@
 //! /video/…/transcode); admin features live under /api/.
 //! Routes are in routes.rs, the larger handlers in handlers.rs.
 
+use std::net::IpAddr;
 use crate::db::{self, now, Db, Invite, Item, ItemKind, Playlist, PlaylistKind, Section, User};
 use crate::plugins::{self, Plugins};
 use crate::query;
@@ -1250,6 +1251,81 @@ pub fn container(list: Vec<Value>, total: usize, offset: usize, extra: Value) ->
     json!({"MediaContainer": mc})
 }
 
+/// `ip` is in the list of addresses and ranges ("10.0.0.2, 172.16.0.0/12 ::1").
+pub fn ip_in_list(list: &str, ip: IpAddr) -> bool {
+    let ip = match ip { IpAddr::V6(a) => a.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(IpAddr::V6(a)), v4 => v4 };
+    list.split(|c: char| c == ',' || c.is_whitespace()).filter(|e| !e.is_empty()).any(|e| {
+        let (addr, bits) = match e.split_once('/') { Some((a, b)) => (a, b.parse::<u32>().ok()), None => (e, None) };
+        let Ok(net) = addr.parse::<IpAddr>() else { return false };
+        match (net, ip) {
+            (IpAddr::V4(n), IpAddr::V4(a)) => {
+                let b = bits.unwrap_or(32).min(32);
+                let mask = if b == 0 { 0 } else { u32::MAX << (32 - b) };
+                (u32::from(n) & mask) == (u32::from(a) & mask)
+            }
+            (IpAddr::V6(n), IpAddr::V6(a)) => {
+                let b = bits.unwrap_or(128).min(128);
+                let mask = if b == 0 { 0 } else { u128::MAX << (128 - b) };
+                (u128::from(n) & mask) == (u128::from(a) & mask)
+            }
+            _ => false,
+        }
+    })
+}
+
+/// One address from a forwarding header: "1.2.3.4", "1.2.3.4:5678", "[::1]:80", "\"[::1]\"".
+fn parse_fwd(v: &str) -> Option<IpAddr> {
+    let v = v.trim().trim_matches('"');
+    if let Ok(ip) = v.parse() { return Some(ip); }
+    if let Some(rest) = v.strip_prefix('[') { return rest.split(']').next()?.parse().ok(); }
+    v.rsplit_once(':').and_then(|(a, _)| a.parse().ok())
+}
+
+/// The real caller: the connecting address, or, when that is a trusted reverse proxy, the
+/// address it forwarded. The flag is false when a forwarding header came from someone who is
+/// not trusted, so the address can't be relied on (it then never counts as local).
+pub fn client_address(peer: Option<IpAddr>, xff: &[String], real_ip: Option<&str>, forwarded: &[String], trusted: &str) -> (Option<IpAddr>, bool) {
+    if xff.is_empty() && real_ip.is_none() && forwarded.is_empty() { return (peer, true); }
+    let Some(p) = peer else { return (None, false) };
+    if !ip_in_list(trusted, p) { return (peer, false); }
+    // X-Forwarded-For: proxies add on the right, so the first address from the right that is
+    // not one of our proxies is the caller (anything left of it may be made up).
+    let chain: Vec<&str> = xff.iter().flat_map(|h| h.split(',')).collect();
+    if !chain.is_empty() {
+        for part in chain.iter().rev() {
+            match parse_fwd(part) {
+                Some(ip) if ip_in_list(trusted, ip) => continue,
+                Some(ip) => return (Some(ip), true),
+                None => return (peer, false),
+            }
+        }
+        return (parse_fwd(chain[0]), true);
+    }
+    if let Some(ip) = real_ip.and_then(parse_fwd) { return (Some(ip), true); }
+    let fors: Vec<&str> = forwarded.iter().flat_map(|h| h.split(',')).filter_map(|el| {
+        el.split(';').find_map(|kv| kv.trim().strip_prefix("for=").or_else(|| kv.trim().strip_prefix("For=")))
+    }).collect();
+    for f in fors.iter().rev() {
+        match parse_fwd(f) {
+            Some(ip) if ip_in_list(trusted, ip) => continue,
+            Some(ip) => return (Some(ip), true),
+            None => return (peer, false),
+        }
+    }
+    (peer, false)
+}
+
+pub fn ip_is_local(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(a) => a.is_loopback() || a.is_private() || a.is_link_local(),
+        IpAddr::V6(a) => {
+            if let Some(v4) = a.to_ipv4_mapped() { return ip_is_local(IpAddr::V4(v4)); }
+            let first = a.segments()[0];
+            a.is_loopback() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+        }
+    }
+}
+
 // ---------------------------------------------------------------- request context
 
 pub struct Ctx {
@@ -1261,24 +1337,18 @@ pub struct Ctx {
     pub host: String,
     pub range: Option<String>,
     pub token: Option<String>,
-    /// The caller's IP address.
-    pub remote: Option<std::net::IpAddr>,
+    /// The caller's IP address (behind a trusted reverse proxy: the one it forwarded).
+    pub remote: Option<IpAddr>,
+    /// `remote` can be relied on (no forwarding header from an untrusted machine).
+    pub remote_trusted: bool,
 }
 
 impl Ctx {
     /// The request comes from this computer or the local network (private, link-local
-    /// or loopback address). Behind a reverse proxy on the same machine every request looks local.
+    /// or loopback address). A request passed on by a reverse proxy counts only when the proxy
+    /// is trusted in the settings, and then by the address it forwarded.
     pub fn is_local(&self) -> bool {
-        use std::net::IpAddr;
-        match self.remote {
-            Some(IpAddr::V4(a)) => a.is_loopback() || a.is_private() || a.is_link_local(),
-            Some(IpAddr::V6(a)) => {
-                if let Some(v4) = a.to_ipv4_mapped() { return v4.is_loopback() || v4.is_private() || v4.is_link_local(); }
-                let first = a.segments()[0];
-                a.is_loopback() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
-            }
-            None => false,
-        }
+        self.remote_trusted && self.remote.is_some_and(ip_is_local)
     }
     pub fn param(&self, k: &str) -> Option<&str> {
         self.params.iter().find(|(a, _)| a.eq_ignore_ascii_case(k)).map(|(_, v)| v.as_str())
@@ -1527,6 +1597,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let mut token = None;
     let mut range = None;
     let mut agent = String::new();
+    let (mut xff, mut real_ip, mut forwarded) = (Vec::new(), None, Vec::new());
     for h in req.headers() {
         let f = h.field.as_str().as_str().to_ascii_lowercase();
         match f.as_str() {
@@ -1538,6 +1609,9 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
             }
             "range" => range = Some(h.value.as_str().to_string()),
             "user-agent" => agent = h.value.as_str().to_string(),
+            "x-forwarded-for" => xff.push(h.value.as_str().to_string()),
+            "x-real-ip" => real_ip = Some(h.value.as_str().to_string()),
+            "forwarded" => forwarded.push(h.value.as_str().to_string()),
             _ => {}
         }
     }
@@ -1564,12 +1638,13 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         let uid = db.tokens.iter().find(|x| &x.token == t)?.user_id;
         db.user(uid).cloned()
     });
+    let trusted = app.db.lock().unwrap().settings.trusted_proxies.clone();
+    let (remote, remote_trusted) = client_address(req.remote_addr().map(|a| a.ip()), &xff, real_ip.as_deref(), &forwarded, &trusted);
     let uid = user.as_ref().map(|u| u.id);
     if let Some(id) = uid {
-        app.stats.saw(id, req.remote_addr().map(|a| a.ip().to_string()).unwrap_or_default(), &agent);
+        app.stats.saw(id, remote.map(|a| a.to_string()).unwrap_or_default(), &agent);
     }
-    let remote = req.remote_addr().map(|a| a.ip());
-    let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token, remote };
+    let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token, remote, remote_trusted };
     let resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) } else { crate::routes::route(&app, &ctx) };
     // Count what is sent (bandwidth on the dashboard).
     let (status, headers, len) = (resp.status_code(), resp.headers().to_vec(), resp.data_length());
@@ -1992,5 +2067,36 @@ mod tests {
         // Only the library folder above: nothing better than the file name.
         assert_eq!(App::folder_title(&db, &db.items[&4]), None);
         assert!(is_disc_folder("CD1") && is_disc_folder("Disc 2") && !is_disc_folder("Cdrama"));
+    }
+}
+
+#[cfg(test)]
+mod proxy_tests {
+    use super::*;
+    fn ip(s: &str) -> Option<IpAddr> { s.parse().ok() }
+    fn v(s: &[&str]) -> Vec<String> { s.iter().map(|x| x.to_string()).collect() }
+
+    #[test]
+    fn lists() {
+        assert!(ip_in_list("172.16.0.0/12", "172.18.0.3".parse().unwrap()));
+        assert!(!ip_in_list("172.16.0.0/12", "172.32.0.1".parse().unwrap()));
+        assert!(ip_in_list("10.0.0.1, ::1", "::1".parse().unwrap()));
+        assert!(ip_in_list("127.0.0.1", "::ffff:127.0.0.1".parse().unwrap()));
+        assert!(!ip_in_list("", "127.0.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn forwarding() {
+        let proxy = ip("172.18.0.2");
+        // No proxy in between: the connecting address.
+        assert_eq!(client_address(ip("192.168.1.20"), &[], None, &[], ""), (ip("192.168.1.20"), true));
+        // A forwarding header from a machine that isn't trusted can't be believed.
+        assert_eq!(client_address(proxy, &v(&["192.168.1.20"]), None, &[], "").1, false);
+        // Trusted proxy: the rightmost address that isn't a proxy; a made-up one on the left is ignored.
+        assert_eq!(client_address(proxy, &v(&["192.168.1.20, 203.0.113.9"]), None, &[], "172.16.0.0/12"), (ip("203.0.113.9"), true));
+        assert_eq!(client_address(proxy, &v(&["192.168.1.20"]), None, &[], "172.16.0.0/12"), (ip("192.168.1.20"), true));
+        assert_eq!(client_address(proxy, &[], Some("203.0.113.9"), &[], "172.18.0.2"), (ip("203.0.113.9"), true));
+        assert_eq!(client_address(proxy, &[], None, &v(&["for=\"[2001:db8::1]:4711\";proto=https"]), "172.18.0.2"), (ip("2001:db8::1"), true));
+        assert_eq!(client_address(proxy, &v(&["garbage"]), None, &[], "172.18.0.2").1, false);
     }
 }

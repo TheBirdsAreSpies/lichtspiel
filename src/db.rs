@@ -657,6 +657,13 @@ pub struct Settings {
     /// Converted downloads are deleted this many days after they were made (0 = kept).
     #[serde(default = "keep_days")]
     pub download_keep_days: u64,
+    /// Home profiles can be picked on the sign-in screen (in the local network).
+    #[serde(default = "yes")]
+    pub home_profiles: bool,
+    /// Reverse proxies whose X-Forwarded-For / X-Real-IP / Forwarded header is believed:
+    /// addresses or ranges (192.168.1.5, 172.16.0.0/12, ::1), separated by commas or spaces.
+    #[serde(default)]
+    pub trusted_proxies: String,
 }
 
 fn keep_days() -> u64 {
@@ -801,6 +808,8 @@ impl Default for Settings {
             empty_trash_automatically: true,
             allow_media_deletion: true,
             download_keep_days: keep_days(),
+            home_profiles: true,
+            trusted_proxies: String::new(),
         }
     }
 }
