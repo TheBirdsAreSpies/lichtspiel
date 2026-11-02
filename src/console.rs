@@ -58,7 +58,7 @@ fn view_of(db: &Db, playing: Vec<String>, transcodes: usize, plugins: Vec<(Strin
     };
     let pick = |ids: Vec<u64>| -> Vec<(String, String, u64)> { ids.iter().filter_map(|i| db.items.get(i)).map(label).collect() };
     View {
-        name: db.settings.server_name.clone(),
+        name: crate::server::display_name(&db.settings),
         address,
         sections: db.sections.iter().map(|s| {
             let top = db.items.values().filter(|i| i.section_id == s.id && i.parent_id.is_none()).count();

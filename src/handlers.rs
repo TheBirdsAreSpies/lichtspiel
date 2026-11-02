@@ -69,7 +69,7 @@ pub fn login(app: &Arc<App>, ctx: &Ctx) -> Resp {
 pub fn invite_info(app: &Arc<App>, code: &str) -> Resp {
     let db = app.db.lock().unwrap();
     match db.invites.iter().find(|i| i.code == code) {
-        Some(i) if i.used_by.is_none() && i.expires_at >= now() => ok(json!({"valid": true, "server": db.settings.server_name, "email": i.email, "note": i.note,
+        Some(i) if i.used_by.is_none() && i.expires_at >= now() => ok(json!({"valid": true, "server": crate::server::display_name(&db.settings), "email": i.email, "note": i.note,
             "invited_by": db.user(i.created_by).map(|u| u.username.clone()), "expires_at": i.expires_at})),
         Some(i) if i.used_by.is_some() => fail(410, "This invite was already used"),
         Some(_) => fail(410, "This invite has expired"),

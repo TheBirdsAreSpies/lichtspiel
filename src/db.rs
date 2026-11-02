@@ -421,6 +421,7 @@ pub struct PluginState {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Settings {
+    /// Empty = the computer's name (see `display_name`).
     pub server_name: String,
     /// "none", "vaapi", "qsv" or "nvenc".
     pub hw_accel: String,
@@ -696,7 +697,7 @@ impl Db {
         };
         // Servers still called by the old default name get the new one; a name
         // chosen by the owner stays.
-        if matches!(db.settings.server_name.trim(), "" | "Home Media Server" | "Media Server") {
+        if matches!(db.settings.server_name.trim(), "Home Media Server" | "Media Server") {
             db.settings.server_name = crate::server::APP_NAME.into();
         }
         db.ensure_default_playlists();

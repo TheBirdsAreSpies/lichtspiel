@@ -332,11 +332,18 @@ pub fn run(out: &Path) -> bool {
     let n_routes = docs["routes"].as_array().map(|a| a.len()).unwrap_or(0);
     let parts = ["Continue Watching", "Playlists", "Users", "Plugins", "Libraries"];
     let missing: Vec<&str> = parts.iter().copied().filter(|p| !html.contains(p)).collect();
-    let status = c.get("/api/status").json();
+    let status_reply = c.get("/api/status");
+    let status = status_reply.json();
+    // Replies without their own cache rule say "no-cache", and an
+    // empty server name shows the computer's name instead.
+    let no_cache = status_reply.head.to_lowercase().contains("cache-control: no-cache");
+    c.call("PUT", "/api/settings", Some(json!({"server_name": ""})), &[]);
+    let fallback = c.get("/api/status").json()["name"].as_str().unwrap_or("").to_string();
+    c.call("PUT", "/api/settings", Some(json!({"server_name": "Self-test server"})), &[]);
     steps.add(
         "hud",
-        web.status == 200 && missing.is_empty() && n_routes >= 60 && status["name"] == "Self-test server",
-        format!("web app served ({} KB, shows {}{}); API lists {n_routes} addresses; server name and version shown ({})",
+        web.status == 200 && missing.is_empty() && n_routes >= 60 && status["name"] == "Self-test server" && no_cache && !fallback.is_empty(),
+        format!("web app served ({} KB, shows {}{}); API lists {n_routes} addresses; server name and version shown ({}); API replies not cached: {no_cache}; without a name the server is called \"{fallback}\"",
             html.len() / 1024, parts.join(", "), if missing.is_empty() { String::new() } else { format!(", missing {missing:?}") }, status["version"]),
     );
 

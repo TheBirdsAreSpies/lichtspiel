@@ -946,7 +946,44 @@ pub fn bytes(status: u16, ctype: &str, body: Vec<u8>) -> Resp {
 }
 
 pub fn js(status: u16, v: Value) -> Resp {
-    bytes(status, "application/json; charset=utf-8", v.to_string().into_bytes())
+    // A reply that sets no cache rule of its own
+    // gets "no-cache", so lists and details are never shown from a stale copy.
+    let mut r = bytes(status, "application/json; charset=utf-8", v.to_string().into_bytes());
+    r.add_header(header("Cache-Control", "no-cache"));
+    r
+}
+
+/// The name the server shows: the
+/// name set in Settings; when that is empty, the computer's description (Windows) or
+/// its network name; and if none can be read, a fixed fallback.
+pub fn display_name(settings: &crate::db::Settings) -> String {
+    let set = settings.server_name.trim();
+    if !set.is_empty() {
+        return set.to_string();
+    }
+    computer_name().unwrap_or_else(|| APP_NAME.to_string())
+}
+
+fn computer_name() -> Option<String> {
+    #[cfg(windows)]
+    {
+        let desc = std::process::Command::new("reg")
+            .args(["query", r"HKLM\SYSTEM\CurrentControlSet\services\LanmanServer\Parameters", "/v", "srvcomment"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.lines().find(|l| l.contains("srvcomment")).and_then(|l| l.split("REG_SZ").nth(1)).map(|v| v.trim().to_string()))
+            .filter(|v| !v.is_empty());
+        if desc.is_some() {
+            return desc;
+        }
+    }
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .ok()
+        .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 pub fn ok(v: Value) -> Resp {

@@ -165,11 +165,11 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["identity"]) => {
             let db = app.db.lock().unwrap();
-            return ok(json!({"MediaContainer": {"machineIdentifier": db.machine_id, "version": VERSION, "friendlyName": db.settings.server_name}}));
+            return ok(json!({"MediaContainer": {"machineIdentifier": db.machine_id, "version": VERSION, "friendlyName": crate::server::display_name(&db.settings)}}));
         }
         ("GET", ["api", "status"]) => {
             let db = app.db.lock().unwrap();
-            return ok(json!({"name": db.settings.server_name, "version": VERSION, "setup_needed": db.users.is_empty(), "machine_id": db.machine_id,
+            return ok(json!({"name": crate::server::display_name(&db.settings), "version": VERSION, "setup_needed": db.users.is_empty(), "machine_id": db.machine_id,
                 "started_at": app.started_at, "signed_in": ctx.user.as_ref().map(|u| u.username.clone())}));
         }
         ("POST", ["api", "setup"]) => return setup(app, ctx),
