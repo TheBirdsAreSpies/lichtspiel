@@ -165,9 +165,25 @@ async function librariesPage() {
   const langSel = (cur, list, onchange) => h('select', { onchange }, h('option', { value: '', selected: !cur }, t('Same as server ({lang})', { lang: serverLang })),
     list.map(l => h('option', { value: l.code, selected: cur === l.code }, l.name)));
   const newLang = langSel('', langs);
-  set(h('h1', {}, t('Libraries')),
-    h('p', { class: 'dim' }, t('Movies and TV shows are kept in separate libraries. Name TV files like "Show/Season 01/Show - S01E02 - Title.mkv" and movies like "Title (Year).mkv". Every video container is picked up: '), h('code', {}, 'mkv mp4 avi mov ts m2ts wmv webm mpg vob flv ogv 3gp …')),
-    secs.length ? h('div', { class: 'list' }, secs.map(s => h('div', { class: 'li' },
+  // The list redraws on its own (the form below is left alone) and keeps checking
+  // while a library is being scanned, so new and rescanned libraries show up without a reload.
+  const listBox = h('div', {});
+  let polling = false;
+  // more: check again this many times even if nothing is scanning yet (the scan
+  // starts on its own thread right after the request).
+  const refreshList = async (more = 0) => {
+    if (!listBox.isConnected) return;
+    let fresh;
+    try { fresh = (await GET('/library/sections')).MediaContainer.Directory; } catch (e) { return; }
+    if (!listBox.isConnected) return;
+    S.sections = fresh; drawChrome(); markNav('libraries');
+    drawList(fresh);
+    if ((more > 0 || fresh.some(s => s.scanning)) && !polling) {
+      polling = true;
+      setTimeout(() => { polling = false; refreshList(Math.max(0, more - 1)); }, 2000);
+    }
+  };
+  const drawList = secs => listBox.replaceChildren(...(secs.length ? [h('div', { class: 'list' }, secs.map(s => h('div', { class: 'li' },
       h('div', { class: 'grow' }, h('b', {}, s.title), ' ', h('span', { class: 'tag' }, sectionKind(s.type)), s.scanning ? h('span', { class: 'tag smart' }, t('scanning…')) : null,
         h('div', { class: 'dim' }, (s.type === 'show' ? t('{n} shows', { n: s.count }) + ', ' : '') + t('{n} videos · last scan {when}', { n: s.videoCount, when: s.scannedAt ? fmtDateTime(s.scannedAt) : t('never') })),
         h('div', { class: 'dim', style: 'font-size:13px' }, s.paths.join(' · ')),
@@ -179,20 +195,25 @@ async function librariesPage() {
               try { const r = await api('PUT', '/library/sections/' + s.id, { language: e.target.value }); toast(r.refetching ? t('Downloading details for {n} movies and shows again — progress is shown at the top', { n: r.refetching }) : t('Saved'), 6000); }
               catch (er) { toast(er.message); }
             })))),
-      h('button', { onclick: async () => { await api('POST', `/library/sections/${s.id}/refresh`); toast(t('Scanning {name}', { name: s.title })); setTimeout(librariesPage, 1500); } }, t('Scan now')),
+      h('button', { onclick: async () => { await api('POST', `/library/sections/${s.id}/refresh`); toast(t('Scanning {name}', { name: s.title })); refreshList(2); } }, t('Scan now')),
       h('button', { title: t('Look for end credits in every video of this library now (from the chapters in the files)'), onclick: async () => {
         try { const r = await api('POST', `/library/sections/${s.id}/credits`); toast(t('Checking {n} videos for credits — progress is shown at the top', { n: r.videos }), 5000); pollActivity(); } catch (er) { toast(er.message, 6000); }
       } }, t('Detect credits')),
       h('button', { onclick: () => foldersDialog(s) }, t('Folders')),
-      h('button', { class: 'danger', onclick: async () => { if (await sure(t('Remove the library "{name}"? Your files stay on disk.', { name: s.title }), { ok: t('Remove'), danger: true })) { await api('DELETE', '/library/sections/' + s.id); librariesPage(); } } }, t('Remove'))))) : null,
+      h('button', { class: 'danger', onclick: async () => { if (await sure(t('Remove the library "{name}"? Your files stay on disk.', { name: s.title }), { ok: t('Remove'), danger: true })) { await api('DELETE', '/library/sections/' + s.id); refreshList(); } } }, t('Remove')))))] : []));
+  drawList(secs);
+  set(h('h1', {}, t('Libraries')),
+    h('p', { class: 'dim' }, t('Movies and TV shows are kept in separate libraries. Name TV files like "Show/Season 01/Show - S01E02 - Title.mkv" and movies like "Title (Year).mkv". Every video container is picked up: '), h('code', {}, 'mkv mp4 avi mov ts m2ts wmv webm mpg vob flv ogv 3gp …')),
+    listBox,
     h('div', { class: 'panel', style: 'margin-top:20px' }, h('h2', { style: 'margin-top:0' }, t('Add a library')),
       formRow(t('Name'), name), formRow(t('Kind'), type), formRow(t('Language of titles and plots'), newLang), formRow(t('Folders'), paths, null, true),
       h('div', { class: 'actions' }, h('button', { onclick: () => folderPicker(p => { paths.value = (paths.value.trim() ? paths.value.trim() + '\n' : '') + p; }) }, t('Browse folders…')),
         h('button', { class: 'primary', onclick: async () => {
-          try { await api('POST', '/library/sections', { name: name.value, type: type.value, paths: paths.value, language: newLang.value }); toast(t('Library added; scanning')); setTimeout(librariesPage, 1200); }
+          try { await api('POST', '/library/sections', { name: name.value, type: type.value, paths: paths.value, language: newLang.value }); toast(t('Library added; scanning')); name.value = ''; paths.value = ''; refreshList(2); }
           catch (e) { toast(e.message, 5000); }
         } }, t('Add library')))),
     await importPanel());
+  if (secs.some(s => s.scanning)) refreshList();
 }
 
 // ---------- admin: import from the old server
