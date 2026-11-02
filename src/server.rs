@@ -945,7 +945,7 @@ impl App {
         };
         // Forget what an earlier match said before applying this one.
         for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes", "originally_available", "metadata_status", "metadata_checked_at", "ratings", "imdb_ratings_checked", "unmatched_by_hand"] {
-            if k == "art" && it.locked.iter().any(|l| l == "art") { continue; }
+            if it.locked.iter().any(|l| l == k) { continue; }
             it.extra.remove(k);
         }
         if !it.extra.contains_key("file_title") {
@@ -968,6 +968,7 @@ impl App {
             meta["extra"]["art"] = json!(a);
         }
         apply_metadata(it, &meta, false);
+        use_original_title(it);
         let new_title = it.title.clone();
         let _ = std::fs::remove_file(self.data_dir.join("cache").join("thumbs").join(format!("{id}.jpg")));
         if art.is_some() {
@@ -1080,7 +1081,7 @@ impl App {
                 for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes",
                     "originally_available", "ratings", "imdb_ratings_checked", "metadata_source", "metadata_id", "metadata_language", "matched_at",
                     "pictures_version", "metadata_checked_at", "match_version"] {
-                    if k == "art" && it.locked.iter().any(|l| l == "art") { continue; }
+                    if it.locked.iter().any(|l| l == k) { continue; }
                     it.extra.remove(k);
                 }
                 it.extra.insert("metadata_status".into(), json!("unmatched"));
@@ -1294,6 +1295,17 @@ pub fn name_key(name: &str) -> String {
     use sha2::{Digest, Sha256};
     let norm: String = name.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ");
     format!("n-{}", Sha256::digest(norm.as_bytes()).iter().take(8).map(|b| format!("{b:02x}")).collect::<String>())
+}
+
+/// "Use the original title" chosen for this title: the original title becomes the title.
+pub fn use_original_title(it: &mut Item) {
+    if it.extra.get("use_original_title").and_then(|v| v.as_str()) != Some("yes") {
+        return;
+    }
+    if let Some(o) = it.extra.get("original_title").and_then(|v| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        it.sort_title = db::sort_title(&o);
+        it.title = o;
+    }
 }
 
 pub fn apply_metadata(it: &mut Item, meta: &Value, by_hand: bool) {

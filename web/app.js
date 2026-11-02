@@ -509,7 +509,7 @@ async function itemPage(id) {
     h('div', { class: 'detail' },
       h('div', { class: 'poster' }, h('img', { src: withTok(it.thumb), alt: '' })),
       h('div', { class: 'info' },
-        h('h1', { style: 'margin-bottom:4px' }, it.type === 'episode' ? `${it.index}. ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : it.title,
+        h('h1', { style: 'margin-bottom:4px' }, it.type === 'episode' ? `${it.index}. ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : it.clearLogo ? h('img', { src: withTok(it.clearLogo), alt: it.title, title: it.title, style: 'max-height:96px;max-width:100%;object-fit:contain;display:block', onerror: e => e.target.replaceWith(document.createTextNode(it.title)) }) : it.title,
           it.missing ? h('span', { class: 'tag', style: 'margin-left:10px;font-size:13px;vertical-align:middle;color:var(--red)', title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null),
         h('div', { class: 'dim' }, [it.year, it.type === 'episode' ? t('Season {n}', { n: it.parentIndex }) : null, fmtDur(it.duration), it.contentRating, it.rating ? `★ ${fmtNum(it.rating)}` : null, it.leafCount ? t('{seen}/{all} watched', { seen: it.viewedLeafCount, all: it.leafCount }) : null].filter(Boolean).join(' · ')),
         scoreBadges(x.ratings || (it.type === 'season' ? topX.ratings : null)),
@@ -806,7 +806,7 @@ async function editItem(it, saved) {
     [t('Advanced'), [
       formRow(t('Language for details'), (f.language_override = h('select', {}, h('option', { value: '' }, t('Library default')), langs.map(l => h('option', { value: l.code, selected: x.language_override === l.code }, l.name)))), t('Applies the next time the details are fetched online (menu "⋯" → refresh).')),
       formRow(t('Detect credits'), (f.credits_detection = h('select', {}, [['', t('Library default')], ['on', t('Yes')], ['off', t('No')]].map(([v, n]) => h('option', { value: v, selected: (x.credits_detection || '') === v }, n)))), t('Whether the "Skip credits" mark is searched for in this title.')),
-      x.original_title ? formRow(t('Original title'), h('button', { onclick: e => { f.title.value = x.original_title; toast(t('Title replaced with the original — save to keep it')); } }, t('Use the original title as the title'))) : null]],
+      formRow(t('Use original title'), (f.use_original_title = h('select', {}, [['', t('Library default')], ['yes', t('Yes')], ['no', t('No')]].map(([v, n]) => h('option', { value: v, selected: (x.use_original_title || '') === v }, n)))), t('Shows the original title instead of the translated one.'))]],
     ...[['poster', t('Poster'), `/library/metadata/${it.id}/thumb`, true], ['art', t('Background'), `/library/metadata/${it.id}/art`, true], ['logo', t('Logo'), it.clearLogo, !!it.clearLogo], ['square', t('Square poster'), it.squareThumb, !!it.squareThumb]]
       .map(([slot, label, url, has]) => [label, [imagePicker(it, slot, url, has)]]),
     [t('Info'), [h('div', { class: 'kv' },

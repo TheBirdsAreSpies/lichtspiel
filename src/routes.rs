@@ -662,7 +662,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 body["genres"] = json!(g.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>());
             }
             // Labels, collections and edition are kept with the other details.
-            for k in ["labels", "collections", "edition", "directors", "writers", "producers", "countries", "original_title", "originally_available", "language_override", "credits_detection"] {
+            for k in ["labels", "collections", "edition", "directors", "writers", "producers", "countries", "original_title", "originally_available", "language_override", "credits_detection", "use_original_title"] {
                 let Some(v) = body.get(k).cloned() else { continue };
                 let v = match (k, v) {
                     ("edition" | "original_title" | "originally_available", v) => json!(v.as_str().unwrap_or("").trim()),
@@ -671,6 +671,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                         if !l.is_empty() && !db::LANGUAGES.iter().any(|x| x.0 == l) { return fail(400, "Unknown language"); }
                         json!(l)
                     }
+                    ("use_original_title", v) => json!(match v.as_str().unwrap_or("") { "yes" => "yes", "no" => "no", _ => "" }),
                     ("credits_detection", v) => json!(match v.as_str().unwrap_or("") { "on" => "on", "off" => "off", _ => "" }),
                     (_, Value::String(t)) => json!(t.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>()),
                     (_, v) => v,
@@ -681,7 +682,17 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let mut db = app.db.lock().unwrap();
             let Some(it) = db.items.get_mut(&iid) else { return fail(404, "Not found") };
             if body.get("unlock").and_then(|v| v.as_bool()) == Some(true) { it.locked.clear(); }
+            let old_title = it.title.clone();
+            // What was changed by hand is locked: a refresh from online keeps it.
+            let changed: Vec<String> = ["original_title", "originally_available", "directors", "writers", "producers", "countries"].into_iter()
+                .filter(|k| body["extra"].get(*k).is_some_and(|v| {
+                    let old = it.extra.get(*k).cloned().unwrap_or(Value::Null);
+                    old != *v && !(old.is_null() && (v == &json!("") || v == &json!([])))
+                }))
+                .map(String::from).collect();
             apply_metadata(it, &body, true);
+            for k in changed { if !it.locked.contains(&k) { it.locked.push(k); } }
+            if body["extra"].get("use_original_title").is_some() && it.title == old_title { use_original_title(it); }
             drop(db);
             app.save();
             with_item(app, &user, &iid.to_string(), |db, it| ok(item_json(db, &user, it, true)))
