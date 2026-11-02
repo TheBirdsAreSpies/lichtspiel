@@ -38,6 +38,10 @@ Linux/Windows machine):
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
   details, react to events (new item, playback, invites …) and add their own API calls. Two
   are included: an `.nfo` file reader and a webhook / Discord notifier.
+- **English and German** — the web app follows the browser's language; anyone can switch it
+  under **Settings → Your account** (kept per browser). Language packs live in `web/lang/`
+  (`de.js`); to add another, copy it, translate the texts, and list it in `src/server.rs`
+  (`WEB_LANGS`) and `web/index.html`.
 - **A full API** — every feature in the web page is an HTTP + JSON call. The list is built
   in: open `http://<server>:8484/api/docs` or the **API** page in the web app.
 

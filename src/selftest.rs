@@ -331,8 +331,16 @@ pub fn run(out: &Path) -> bool {
     let html = String::from_utf8_lossy(&web.body).to_string();
     let docs = c.get("/api/docs").json();
     let n_routes = docs["routes"].as_array().map(|a| a.len()).unwrap_or(0);
-    let parts = ["Continue Watching", "Playlists", "Users", "Plugins", "Libraries"];
-    let missing: Vec<&str> = parts.iter().copied().filter(|p| !html.contains(p)).collect();
+    let parts = ["Playlists", "Users", "Plugins", "Libraries", "/web/i18n.js", "/web/lang/de.js"];
+    let mut missing: Vec<&str> = parts.iter().copied().filter(|p| !html.contains(p)).collect();
+    // The texts are translated in the browser: the German pack must be served and know the home rows.
+    let de = c.get("/web/lang/de.js");
+    if de.status != 200 || !String::from_utf8_lossy(&de.body).contains("Weiterschauen") {
+        missing.push("German language pack");
+    }
+    if c.get("/web/i18n.js").status != 200 {
+        missing.push("i18n.js");
+    }
     let status_reply = c.get("/api/status");
     let status = status_reply.json();
     // Replies without their own cache rule say "no-cache", and an

@@ -165,6 +165,13 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
     match (m, segs.as_slice()) {
         ("GET", ["web", "app.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_JS.as_bytes().to_vec()),
         ("GET", ["web", "pages.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_PAGES_JS.as_bytes().to_vec()),
+        ("GET", ["web", "i18n.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_I18N_JS.as_bytes().to_vec()),
+        ("GET", ["web", "lang", file]) => {
+            return match WEB_LANGS.iter().find(|l| l.0 == *file) {
+                Some(l) => bytes(200, "text/javascript; charset=utf-8", l.1.as_bytes().to_vec()),
+                None => fail(404, "Not found"),
+            };
+        }
         ("GET", []) | ("GET", ["web", ..]) | ("GET", ["index.html"]) => {
             return bytes(200, "text/html; charset=utf-8", WEB_APP.as_bytes().to_vec());
         }

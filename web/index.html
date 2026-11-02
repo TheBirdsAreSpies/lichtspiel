@@ -21,6 +21,15 @@ input,select,textarea{background:#101317;border:1px solid var(--line);border-rad
 input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 textarea{width:100%;min-height:110px;font-family:ui-monospace,Consolas,monospace;font-size:13px}
 label{display:block;color:var(--dim);font-size:13px;margin:10px 0 4px}
+.field{display:grid;grid-template-columns:240px minmax(0,1fr);gap:4px 18px;align-items:center;margin:12px 0}
+.field>label{margin:0;font-size:14px}
+.field.top{align-items:start}
+.field.top>label{padding-top:8px}
+.field>.ctl{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}
+.field>.ctl>input[type=checkbox]{margin:0}
+.field select{max-width:100%}
+.field>.help{grid-column:2;font-size:13px}
+.modal .field{grid-template-columns:150px minmax(0,1fr)}
 #top{position:fixed;top:0;left:0;right:0;height:56px;background:var(--panel);display:flex;align-items:center;gap:16px;padding:0 18px;z-index:5;border-bottom:1px solid #0c0e10}
 #top .logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:18px;min-width:190px}
 #top .logo svg{width:22px;height:22px}
@@ -147,40 +156,42 @@ code.m-get{color:#6cb6ff}code.m-post{color:var(--green)}code.m-put,code.m-patch{
 .score b{font-size:17px}
 .score span{font-size:11px;color:var(--dim);letter-spacing:.03em}
 .empty{padding:40px;text-align:center;color:var(--dim);background:var(--panel);border-radius:var(--r)}
-@media (max-width:760px){#side{display:none}#main{margin-left:0;padding:18px}#top .logo{min-width:0}.detail{flex-direction:column}.detail .poster{width:180px;flex-basis:auto}}
+@media (max-width:760px){.field,.modal .field{grid-template-columns:minmax(0,1fr);gap:4px}.field>.help{grid-column:1}.field.top>label{padding-top:0}#side{display:none}#main{margin-left:0;padding:18px}#top .logo{min-width:0}.detail{flex-direction:column}.detail .poster{width:180px;flex-basis:auto}}
 </style>
 </head>
 <body>
 <div id="top">
   <a class="logo" href="#/"><svg viewBox="0 0 32 32"><path d="M8 5l20 11-20 11z" fill="#f2a516"/></svg><span id="sname">Lichtspiel</span></a>
-  <div id="search"><input id="q" placeholder="Search movies and shows" autocomplete="off"></div>
-  <div id="activity" title="Background work on the server"></div>
+  <div id="search"><input id="q" placeholder="Search movies and shows" data-t-placeholder="Search movies and shows" autocomplete="off"></div>
+  <div id="activity" title="Background work on the server" data-t-title="Background work on the server"></div>
   <div id="who"></div>
 </div>
 <nav id="side">
-  <a href="#/" data-nav="home">Home</a>
+  <a href="#/" data-nav="home" data-t="Home">Home</a>
   <div id="navsections"></div>
-  <a href="#/playlists" data-nav="playlists">Playlists</a>
-  <div class="head admin">MANAGE</div>
-  <a class="admin" href="#/libraries" data-nav="libraries">Libraries</a>
-  <a class="admin" href="#/users" data-nav="users">Users &amp; invites</a>
-  <a class="admin" href="#/plugins" data-nav="plugins">Plugins</a>
-  <a class="admin" href="#/settings" data-nav="settings">Settings</a>
+  <a href="#/playlists" data-nav="playlists" data-t="Playlists">Playlists</a>
+  <div class="head admin" data-t="MANAGE">MANAGE</div>
+  <a class="admin" href="#/libraries" data-nav="libraries" data-t="Libraries">Libraries</a>
+  <a class="admin" href="#/users" data-nav="users" data-t="Users &amp; invites">Users &amp; invites</a>
+  <a class="admin" href="#/plugins" data-nav="plugins" data-t="Plugins">Plugins</a>
+  <a href="#/settings" data-nav="settings" data-t="Settings">Settings</a>
   <a href="#/api" data-nav="api">API</a>
 </nav>
-<main id="main"><p class="dim">Loading… (Continue Watching, Playlists, Users, Plugins, Libraries)</p></main>
+<main id="main"><p class="dim" data-t="Loading…">Loading…</p></main>
 <div id="player">
   <video id="video" controls playsinline crossorigin="anonymous"></video>
   <div class="pbar">
-    <button id="pclose">✕ Close</button>
+    <button id="pclose" data-t="✕ Close">✕ Close</button>
     <b id="ptitle"></b><span class="dim" id="pmethod"></span>
     <span class="grow"></span>
-    <span id="pjump" style="display:none;align-items:center;gap:8px;flex:1"><span class="dim">Jump</span><input id="pseek" type="range" min="0" max="100" value="0"><span id="ptime" class="dim"></span></span>
-    <select id="pquality" title="Quality"></select>
-    <select id="paudio" title="Audio track"></select>
+    <span id="pjump" style="display:none;align-items:center;gap:8px;flex:1"><span class="dim" data-t="Jump">Jump</span><input id="pseek" type="range" min="0" max="100" value="0"><span id="ptime" class="dim"></span></span>
+    <select id="pquality" title="Quality" data-t-title="Quality"></select>
+    <select id="paudio" title="Audio track" data-t-title="Audio track"></select>
   </div>
 </div>
 <div id="toast"></div>
+<script src="/web/i18n.js"></script>
+<script src="/web/lang/de.js"></script>
 <script src="/web/app.js"></script>
 <script src="/web/pages.js"></script>
 </body>

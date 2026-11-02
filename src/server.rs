@@ -34,6 +34,11 @@ pub static WATCH_SECONDS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atom
 pub const WEB_APP: &str = include_str!("../web/index.html");
 pub const WEB_JS: &str = include_str!("../web/app.js");
 pub const WEB_PAGES_JS: &str = include_str!("../web/pages.js");
+pub const WEB_I18N_JS: &str = include_str!("../web/i18n.js");
+/// Language packs for the web app (web/lang/<code>.js); English needs none.
+/// To add a language: put its file in web/lang, list it here and add a
+/// <script> line for it in index.html.
+pub const WEB_LANGS: &[(&str, &str)] = &[("de.js", include_str!("../web/lang/de.js"))];
 
 pub type Resp = Response<Box<dyn Read + Send>>;
 
