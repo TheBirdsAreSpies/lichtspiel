@@ -395,18 +395,11 @@ async function itemPage(id) {
   const it = meta(await GET('/library/metadata/' + id))[0];
   const m = it.Media && it.Media[0];
   const kids = it.type === 'show' || it.type === 'season' ? meta(await GET(`/library/metadata/${id}/children`)) : [];
-  const playlists = meta(await GET('/playlists?kind=manual&owner=me&sort=title'));
   const refresh = () => itemPage(id);
   const watched = it.leafCount ? it.viewedLeafCount === it.leafCount : it.viewCount > 0;
   const crumbs = [];
   if (it.grandparentTitle) crumbs.push(h('a', { href: '#/item/' + it.grandparentRatingKey }, it.grandparentTitle), ' › ');
   if (it.parentTitle) crumbs.push(h('a', { href: '#/item/' + it.parentRatingKey }, seasonTitle(it.parentTitle)));
-  const addTo = h('select', { onchange: async e => {
-    const v = e.target.value; e.target.value = '';
-    if (!v) return;
-    if (v === 'new') { const name = await ask(t('Name of the new playlist')); if (name) { await api('POST', '/playlists', { title: name, kind: 'manual', ids: [it.id] }); toast(t('Added to {name}', { name })); } return; }
-    const r = await api('POST', `/playlists/${v}/items`, { ids: [it.id] }); toast(r.added ? t('Added to playlist') : t('Already in that playlist'));
-  } }, h('option', { value: '' }, t('+ Add to playlist')), playlists.map(p => h('option', { value: p.id }, p.title)), h('option', { value: 'new' }, t('New playlist…')));
   const nextEp = async () => { const l = meta(await GET(`/library/metadata/${id}/allLeaves`)); const e = l.find(x => !x.viewCount) || l[0]; if (e) play(e, e.viewOffset ? e.viewOffset / 1000 : 0, l.slice(l.indexOf(e) + 1)); };
   // Online details (plot, cast, crew …) live in it.extra; seasons and episodes borrow the show's.
   const x = it.extra || {};
@@ -440,25 +433,17 @@ async function itemPage(id) {
           x.original_title && x.original_title !== it.title ? [h('div', { class: 'dim' }, t('Original title')), h('div', {}, x.original_title)] : null,
           x.originally_available ? [h('div', { class: 'dim' }, it.type === 'movie' ? t('Released') : t('First aired')), h('div', {}, new Date(x.originally_available).toLocaleDateString(I18N.lang))] : null) : null,
         links.length ? h('div', { class: 'dim', style: 'margin-top:6px' }, t('More: '), links.map(([n, u], i) => [i ? ' · ' : '', h('a', { href: u, target: '_blank', rel: 'noopener' }, n)])) : null,
-        h('div', { class: 'actions' },
-          m && it.viewOffset ? h('button', { class: 'primary', onclick: () => play(it, it.viewOffset / 1000) }, t('▶ Resume from {time}', { time: fmtTime(it.viewOffset / 1000) })) : null,
-          m ? h('button', { class: it.viewOffset ? '' : 'primary', onclick: () => play(it, 0) }, it.viewOffset ? t('▶ Play from start') : t('▶ Play')) : null,
-          !m && it.leafCount ? h('button', { class: 'primary', onclick: nextEp }, t('▶ Play next episode')) : null,
-          h('button', { onclick: async () => { await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${it.id}`); refresh(); } }, watched ? t('Mark unwatched') : t('Mark watched')),
-          h('button', { onclick: async () => { await api('PUT', `/api/items/${it.id}/favorite`, { favorite: !it.favorite }); refresh(); } }, it.favorite ? t('♥ Favorite') : t('♡ Favorite')),
-          h('button', { title: it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), onclick: async () => { await toggleWatchlist(it); refresh(); } }, it.watchlist ? t('✓ On watchlist') : t('+ Watchlist')),
-          starRating(it),
-          addTo,
-          S.me.can_download && (m || it.leafCount) ? h('button', { onclick: () => downloadDialog([it]) }, t('Download…')) : null,
-          S.me.admin ? h('button', { onclick: () => editItem(it) }, t('Edit details')) : null,
-          S.me.admin && matchable ? h('button', { onclick: () => fixMatch(it) }, t('Fix match…')) : null,
-          S.me.admin && m ? h('button', { onclick: () => creditsDialog(it) }, t('Credits…')) : null,
-          S.me.admin && (matchable || top) ? h('button', { onclick: async e => {
-            e.target.disabled = true; e.target.textContent = t('Downloading details…');
-            try { const r = await api('POST', `/library/metadata/${it.id}/refresh`); toast(t(r.message), 4000); } catch (er) { toast(er.message, 6000); }
-            refresh();
-          } }, t('Refresh details')) : null,
-          h('button', { title: t('More'), 'aria-label': t('More'), onclick: e => itemMenu(it, e.currentTarget, refresh) }, '⋯')),
+        // Play first; the toggles as round icons (their state shows in colour); everything else under "⋯".
+        h('div', { class: 'actions item-actions' },
+          m && it.viewOffset ? h('button', { class: 'primary big', onclick: () => play(it, it.viewOffset / 1000) }, t('▶ Resume from {time}', { time: fmtTime(it.viewOffset / 1000) })) : null,
+          m && it.viewOffset ? iconBtn('restart', t('▶ Play from start'), () => play(it, 0)) : null,
+          m && !it.viewOffset ? h('button', { class: 'primary big', onclick: () => play(it, 0) }, t('▶ Play')) : null,
+          !m && it.leafCount ? h('button', { class: 'primary big', onclick: nextEp }, t('▶ Play next episode')) : null,
+          iconBtn('check', watched ? t('Mark as unwatched') : t('Mark as watched'), async () => { await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${it.id}`); refresh(); }, watched),
+          iconBtn(it.favorite ? 'heart' : 'heartOff', it.favorite ? t('Remove from favorites') : t('Add to favorites'), async () => { await api('PUT', `/api/items/${it.id}/favorite`, { favorite: !it.favorite }); refresh(); }, !!it.favorite),
+          it.type === 'clip' ? null : iconBtn(it.watchlist ? 'mark' : 'markOff', it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), async () => { await toggleWatchlist(it); refresh(); }, !!it.watchlist),
+          iconBtn('more', t('More'), e => itemMenu(it, e.currentTarget, refresh, { detail: true })),
+          starRating(it)),
         m ? h('div', { class: 'panel kv' },
           h('div', {}, t('File type')), h('div', {}, `${m.container.toUpperCase()}${m.formatName ? ' (' + m.formatName + ')' : ''} · ${fmtSize(m.size)}`),
           h('div', {}, t('Video')), h('div', {}, m.videoCodec ? `${m.videoCodec} ${m.width}×${m.height}${m.bitDepth > 8 ? ' ' + t('{n}-bit', { n: m.bitDepth }) : ''}` : t('unknown (ffprobe not available)')),
@@ -727,7 +712,16 @@ const ICONS = {
   full: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
   exitfull: 'M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z',
   close: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
+  check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+  heart: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
+  heartOff: 'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z',
+  mark: 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z',
+  markOff: 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15-5-2.18L7 18V5h10v13z',
+  restart: 'M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z',
+  more: 'M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
 };
+// A round button with just an icon; the name is in the tooltip. on (true/false) = a toggle and whether it is set.
+const iconBtn = (name, label, onclick, on) => h('button', { class: 'ibtn' + (on ? ' on' : ''), title: label, 'aria-label': label, 'aria-pressed': on === undefined ? null : String(on), onclick }, icon(name));
 const icon = name => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.innerHTML = `<path d="${ICONS[name]}"/>`; return s; };
 function btn(id, name, title, label) {
   const b = $('#' + id); b.replaceChildren(icon(name)); if (label) b.append(label);

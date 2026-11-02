@@ -889,6 +889,8 @@ I18N.add('de', 'Deutsch', {
     'Remove from watchlist': 'Von der Merkliste entfernen',
     '+ Watchlist': '+ Merkliste',
     '✓ On watchlist': '✓ Auf der Merkliste',
+    'Add to favorites': 'Zu den Favoriten hinzufügen',
+    'Remove from favorites': 'Aus den Favoriten entfernen',
     'Added to your watchlist': 'Zur Merkliste hinzugefügt',
     'Removed from your watchlist': 'Von der Merkliste entfernt',
     '{n} added to your watchlist': '{n} zur Merkliste hinzugefügt',

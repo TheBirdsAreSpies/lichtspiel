@@ -696,7 +696,8 @@ document.addEventListener('keydown', e => {
 });
 
 // changed() runs after something on the item changed (watched, details …).
-function itemMenu(it, anchor, changed = () => {}) {
+// opts.detail: opened on the item's own page, which keeps its admin tools in this menu.
+function itemMenu(it, anchor, changed = () => {}, opts = {}) {
   const admin = S.me.admin;
   const watched = it.leafCount ? it.viewedLeafCount === it.leafCount : it.viewCount > 0;
   const matchable = it.type === 'movie' || it.type === 'show';
@@ -721,7 +722,9 @@ function itemMenu(it, anchor, changed = () => {}) {
       const r = await api('POST', `/library/metadata/${it.id}/refresh`); toast(t(r.message), 4000); changed();
     } } : null,
     admin ? { label: t('Analyze'), run: async () => { await api('POST', `/library/metadata/${it.id}/analyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
+    admin ? { label: t('Edit details'), run: async () => editItem(await fullItem(it)) } : null,
     admin && matchable ? { label: t('Fix match…'), run: async () => fixMatch(await fullItem(it)) } : null,
+    admin && play && opts.detail ? { label: t('Credits…'), run: () => creditsDialog(it) } : null,
     admin ? { label: t('Optimize…'), run: () => optimizeDialog(it) } : null,
     S.me.can_download && it.type !== 'clip' ? { label: t('Download…'), run: () => downloadDialog([it]) } : null,
     admin && it.librarySectionID ? { label: t('Grant access…'), run: () => grantAccess(it) } : null,
