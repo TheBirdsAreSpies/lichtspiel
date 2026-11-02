@@ -315,6 +315,10 @@ pub fn probe(ffprobe: &str, file: &mut MediaFile) -> bool {
                 bit_depth,
                 default: s["disposition"]["default"].as_i64() == Some(1),
                 title: s["tags"]["title"].as_str().unwrap_or("").to_string(),
+                profile: s["profile"].as_str().unwrap_or("").to_string(),
+                color_transfer: s["color_transfer"].as_str().unwrap_or("").to_string(),
+                hdr10plus: false,
+                channel_layout: s["channel_layout"].as_str().unwrap_or("").to_string(),
             });
         }
     }
@@ -330,7 +334,19 @@ pub fn probe(ffprobe: &str, file: &mut MediaFile) -> bool {
                 .collect()
         })
         .unwrap_or_default();
+    // HDR10+ metadata sits in the frames, not the stream header: look at the
+    // first frame of PQ video only.
+    if let Some(v) = file.streams.iter_mut().find(|s| s.kind == "video" && s.color_transfer == "smpte2084") {
+        let frames = Command::new(ffprobe)
+            .args(["-v", "quiet", "-print_format", "json", "-select_streams", "v:0", "-read_intervals", "%+#1", "-show_frames", "-show_entries", "frame=side_data_list"])
+            .arg(&file.path)
+            .output();
+        if let Ok(o) = frames {
+            v.hdr10plus = String::from_utf8_lossy(&o.stdout).contains("2094-40");
+        }
+    }
     file.probed = true;
+    file.probe_version = crate::db::PROBE_VERSION;
     true
 }
 
@@ -654,11 +670,16 @@ where
 
     // Which files are new or changed?
     let mut known: HashMap<String, (u64, u64, u64)> = HashMap::new();
+    // Files read by an older probe: only their streams are read again.
+    let mut stale: HashSet<String> = HashSet::new();
     with_db(&mut |db: &mut Db| {
         for it in db.items.values() {
             if it.section_id == section.id {
                 if let Some(f) = &it.file {
                     known.insert(f.path.clone(), (it.id, f.size, f.modified));
+                    if f.probed && f.probe_version < crate::db::PROBE_VERSION {
+                        stale.insert(f.path.clone());
+                    }
                 }
             }
         }
@@ -672,6 +693,18 @@ where
             None => true,
         };
         if !changed {
+            if stale.contains(&key) {
+                let mut m = MediaFile { path: key.clone(), ..Default::default() };
+                if probe(ffprobe, &mut m) {
+                    let id = known[&key].0;
+                    with_db(&mut |db: &mut Db| {
+                        if let Some(f) = db.items.get_mut(&id).and_then(|i| i.file.as_mut()) {
+                            f.streams = m.streams.clone();
+                            f.probe_version = m.probe_version;
+                        }
+                    });
+                }
+            }
             continue;
         }
         let mut media = MediaFile {

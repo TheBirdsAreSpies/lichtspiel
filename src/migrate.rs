@@ -120,6 +120,10 @@ pub struct Old {
     /// Tag type 4 "Director" and 5 "Writer".
     pub directors: HashMap<i64, Vec<String>>,
     pub writers: HashMap<i64, Vec<String>>,
+    /// Tag types 2 "Collection", 7 "Producer" and 8 "Country".
+    pub collections: HashMap<i64, Vec<String>>,
+    pub producers: HashMap<i64, Vec<String>>,
+    pub countries: HashMap<i64, Vec<String>>,
     /// (item id, kind "credits"/"intro", start ms, end ms)
     pub markers: Vec<(i64, String, i64, i64)>,
     pub playlists: Vec<OldPlaylist>,
@@ -263,7 +267,7 @@ pub fn read(src: &Path, work: &Path) -> Result<Old, String> {
     }
     // People are shared tags in the old server (one per type and name,
     // gives the types); each item links to them with a role text and an order.
-    let people_sql = "select tg.metadata_item_id, t.tag_type, t.tag, coalesce(tg.text, ''), coalesce(t.user_thumb_url, '') from taggings tg join tags t on t.id = tg.tag_id where t.tag_type in (4, 5, 6) and t.tag <> '' order by tg.metadata_item_id, t.tag_type, tg.\"index\"";
+    let people_sql = "select tg.metadata_item_id, t.tag_type, t.tag, coalesce(tg.text, ''), coalesce(t.user_thumb_url, '') from taggings tg join tags t on t.id = tg.tag_id where t.tag_type in (2, 4, 5, 6, 7, 8) and t.tag <> '' order by tg.metadata_item_id, t.tag_type, tg.\"index\"";
     // Older databases have no photo column.
     let has_photos = c.prepare("select user_thumb_url from tags limit 0").is_ok();
     let people = if has_photos { rows(&c, people_sql, 5, w) } else { rows(&c, &people_sql.replace("coalesce(t.user_thumb_url, '')", "''"), 5, w) };
@@ -273,7 +277,11 @@ pub fn read(src: &Path, work: &Path) -> Result<Old, String> {
         match kind {
             6 => old.cast.entry(id).or_default().push((name, text(&r[3]).trim().to_string(), text(&r[4]))),
             4 => old.directors.entry(id).or_default().push(name),
-            _ => old.writers.entry(id).or_default().push(name),
+            5 => old.writers.entry(id).or_default().push(name),
+            2 => old.collections.entry(id).or_default().push(name),
+            7 => old.producers.entry(id).or_default().push(name),
+            8 => old.countries.entry(id).or_default().push(name),
+            _ => {}
         }
     }
     old.markers = rows(&c, "select tg.metadata_item_id, coalesce(nullif(tg.text, ''), t.tag), tg.time_offset, tg.end_time_offset from taggings tg join tags t on t.id = tg.tag_id where t.tag_type = 12", 4, w)
@@ -605,7 +613,7 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
                 people += list.len();
                 m["extra"]["cast"] = json!(list);
             }
-            for (k, src) in [("directors", &old.directors), ("writers", &old.writers)] {
+            for (k, src) in [("directors", &old.directors), ("writers", &old.writers), ("collections", &old.collections), ("producers", &old.producers), ("countries", &old.countries)] {
                 if let Some(v) = src.get(oid).filter(|v| !v.is_empty()) {
                     m["extra"][k] = json!(v);
                 }

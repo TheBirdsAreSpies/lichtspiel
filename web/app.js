@@ -163,15 +163,26 @@ async function searchPage(q) {
 
 const SORTS = [['title', 'Title'], ['year:desc', 'Year (newest)'], ['year', 'Year (oldest)'], ['added_at:desc', 'Recently added'], ['rating:desc', 'Rating'], ['duration:desc', 'Length'], ['last_viewed_at:desc', 'Recently watched'], ['view_count:desc', 'Most watched'], ['random', 'Random']];
 
+// Short names for the library filters (the list itself comes from the server).
+const FILTER_NAMES = { decade: 'Decade', content_rating: 'Age rating', collection: 'Collection', director: 'Director', actor: 'Actor', writer: 'Writer', producer: 'Producer',
+  country: 'Country', studio: 'Studio', network: 'Network', video_resolution: 'Resolution', hdr: 'HDR', hdr10plus: 'HDR10+', atmos: 'Dolby Atmos', unmatched: 'Unmatched',
+  video_codec: 'Video codec', audio_codec: 'Audio codec', subtitle_codec: 'Subtitle format', audio_layout: 'Audio channels', audio_language: 'Audio language',
+  subtitle_language: 'Subtitle language', edition: 'Edition', label: 'Label', folder: 'Folder', duplicate: 'Duplicates' };
+const RES_NAMES = { '4k': '4K', 1080: '1080p', 720: '720p', 480: '480p', sd: 'SD' };
+// Covered by the genre and watched menus in the bar.
+const BAR_FILTERS = ['genre', 'unwatched', 'in_progress', 'unwatched_leaves'];
+
 async function sectionPage(id, qs) {
   markNav('section/' + id);
   const sec = S.sections.find(s => String(s.id) === String(id));
   if (!sec) return set(h('div', { class: 'empty' }, 'Library not found.'));
   const p = new URLSearchParams(qs || '');
-  const st = {}; for (const k of ['type', 'sort', 'genre', 'watched', 'from', 'to', 'q', 'container']) st[k] = p.get(k) || '';
+  const st = {}; for (const k of ['type', 'sort', 'genre', 'watched', 'from', 'to', 'q', 'container', 'more']) st[k] = p.get(k) || '';
+  for (const [k, v] of p) if (k.startsWith('f.')) st[k] = v;
   if (!st.sort) st.sort = 'title';
   const go = () => { const n = new URLSearchParams(); for (const [k, v] of Object.entries(st)) if (v) n.set(k, v); location.hash = `#/section/${id}?${n}`; };
   const genres = (await GET(`/library/sections/${id}/genres`)).MediaContainer.Directory;
+  const filters = st.more ? (await GET(`/library/sections/${id}/filters${st.type ? '?type=' + st.type : ''}`)).MediaContainer.Filter.filter(f => !BAR_FILTERS.includes(f.filter)) : [];
   const q = new URLSearchParams();
   if (st.type) q.set('type', st.type);
   q.set('sort', st.sort);
@@ -183,8 +194,17 @@ async function sectionPage(id, qs) {
   if (st.to) q.set('year<', st.to);
   if (st.q) q.set('q', st.q);
   if (st.container) q.set('container', st.container);
+  for (const [k, v] of Object.entries(st)) if (k.startsWith('f.') && v) q.set(k.slice(2), v);
+  const active = Object.keys(st).filter(k => k.startsWith('f.') && st[k]).length;
   const res = (await GET(`/library/sections/${id}/all?${q}`)).MediaContainer;
-  const sel = (key, opts) => h('select', { onchange: e => { st[key] = e.target.value; go(); } }, opts.map(([v, l]) => h('option', { value: v, selected: st[key] === v }, l)));
+  const sel = (key, opts) => h('select', { onchange: e => { st[key] = e.target.value; if (key === 'type') for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } }, opts.map(([v, l]) => h('option', { value: v, selected: st[key] === v }, l)));
+  const valueName = (f, v) => f.filter === 'video_resolution' ? (RES_NAMES[v] || v) : f.filter === 'decade' ? v + 's' : v;
+  const panel = st.more ? h('div', { class: 'filter-panel' }, filters.map(f => {
+    const key = 'f.' + f.filter;
+    const opts = f.type === 'boolean' ? [['', 'Any'], ['true', `Yes (${f.count})`], ['false', 'No']] : [['', f.values.length ? 'Any' : 'None found'], ...f.values.map(x => [x.value, `${valueName(f, x.value)} (${x.count})`])];
+    if (st[key] && !opts.some(o => o[0] === st[key])) opts.push([st[key], st[key]]);
+    return h('label', { class: st[key] ? 'on' : '' }, FILTER_NAMES[f.filter] || f.title, sel(key, opts));
+  }), active ? h('button', { class: 'small', style: 'align-self:end', onclick: () => { for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } }, 'Clear filters') : null) : null;
   const text = (key, ph, w) => h('input', { placeholder: ph, value: st[key], style: `width:${w}px`, onchange: e => { st[key] = e.target.value.trim(); go(); } });
   set(h('h1', {}, sec.title, ' ', h('span', { class: 'dim', style: 'font-size:16px;font-weight:400' }, res.totalSize + ' shown')),
     h('div', { class: 'bar-tools' },
@@ -195,8 +215,10 @@ async function sectionPage(id, qs) {
       text('from', 'Year from', 95), text('to', 'Year to', 85),
       sel('container', [['', 'Any file type'], ...['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'].map(c => [c, c.toUpperCase()])]),
       text('q', 'Filter by title', 150),
+      h('button', { class: st.more ? 'small primary' : 'small', onclick: () => { st.more = st.more ? '' : '1'; go(); } }, active ? `More filters (${active})` : 'More filters'),
       h('span', { class: 'grow' }),
       S.me.admin ? h('button', { onclick: async () => { await api('POST', `/library/sections/${id}/refresh`); toast('Scanning ' + sec.title); } }, 'Scan now') : null),
+    panel,
     res.Metadata.length ? h('div', { class: 'grid' }, res.Metadata.map(i => posterCard(i, { episodeThumb: st.type === 'episode' }))) : h('div', { class: 'empty' }, 'Nothing matches these filters.'));
 }
 
@@ -432,6 +454,8 @@ function editItem(it) {
   const box = modal('Edit details', [
     field('title', 'Title', it.title), field('year', 'Year', it.year), field('summary', 'Summary', it.summary, true), field('tagline', 'Tagline', it.tagline),
     field('genres', 'Genres (comma separated)', (it.genres || []).join(', ')), field('rating', 'Rating (0-10)', it.rating), field('content_rating', 'Age rating', it.contentRating), field('studio', 'Studio', it.studio),
+    field('labels', 'Labels (comma separated)', ((it.extra || {}).labels || []).join(', ')), field('collections', 'Collections (comma separated)', ((it.extra || {}).collections || []).join(', ')),
+    it.type === 'movie' || it.type === 'episode' ? field('edition', 'Edition (e.g. Director’s Cut)', (it.extra || {}).edition) : null,
     h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: async () => {
       const body = {}; for (const [k, el] of Object.entries(f)) body[k] = el.value;
       body.year = body.year ? Number(body.year) : null; body.rating = body.rating ? Number(body.rating) : null;

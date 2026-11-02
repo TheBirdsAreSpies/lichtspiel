@@ -35,6 +35,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/library/sections/{id}/refresh", "Admin: scan the library now (?wait=1 to wait for the result)"),
     ("GET", "/library/sections/{id}/all", "Browse: ?type=movie|show|episode &sort=title|year:desc|added_at:desc|rating:desc|random &genre=Drama &year>=2000 &unwatched=1 &title~=star &q= &offset &limit"),
     ("GET", "/library/sections/{id}/genres", "Genres and years in a library with counts"),
+    ("GET", "/library/sections/{id}/filters", "Every filter the library page offers (?type=show|season|episode), with the values found and counts; use them in /all as field=value (several: a,b)"),
     ("GET", "/library/metadata/{id}", "One movie, show, season or episode with media details"),
     ("PUT", "/library/metadata/{id}", "Admin: edit {title, summary, year, genres, rating, content_rating, tagline, studio}"),
     ("GET", "/library/metadata/{id}/children", "Seasons of a show, episodes of a season"),
@@ -491,6 +492,20 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let years: std::collections::BTreeSet<u32> = db.items.values().filter(|i| i.section_id == sid).filter_map(|i| i.year).collect();
             ok(json!({"MediaContainer": {"Directory": counts.iter().map(|(g, c)| json!({"title": g, "count": c})).collect::<Vec<_>>(), "years": years}}))
         }
+        ("GET", ["library", "sections", sid, "filters"]) => {
+            let Some(sid) = id(sid) else { return fail(404, "No such library") };
+            let db = app.db.lock().unwrap();
+            let Some(sec) = db.sections.iter().find(|s| s.id == sid) else { return fail(404, "No such library") };
+            if !db.can_see_section(&user, sid) { return fail(403, "You don't have access to this library"); }
+            let kind = ctx.param("type").and_then(ItemKind::parse).unwrap_or(match sec.kind {
+                SectionKind::Movie => ItemKind::Movie,
+                SectionKind::Show => ItemKind::Show,
+                SectionKind::Other => ItemKind::Video,
+            });
+            let items: Vec<&db::Item> = db.items.values().filter(|i| i.section_id == sid && i.kind == kind).collect();
+            let list = query::section_filters(&db, user.id, &items, kind);
+            ok(json!({"MediaContainer": {"size": list.len(), "type": kind.as_str(), "Filter": list}}))
+        }
         ("GET", ["library", "metadata", iid]) => with_item(app, &user, iid, |db, it| ok(container(vec![item_json(db, &user, it, true)], 1, 0, json!({})))),
         ("PUT", ["library", "metadata", iid]) | ("PATCH", ["library", "metadata", iid]) => {
             if !admin { return need_admin(); }
@@ -498,6 +513,17 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let mut body = if ctx.body.is_object() { ctx.body.clone() } else { Value::Object(ctx.params.iter().map(|(k, v)| (k.clone(), json!(v))).collect()) };
             if let Some(g) = body.get("genres").and_then(|g| g.as_str()).map(String::from) {
                 body["genres"] = json!(g.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>());
+            }
+            // Labels, collections and edition are kept with the other details.
+            for k in ["labels", "collections", "edition"] {
+                let Some(v) = body.get(k).cloned() else { continue };
+                let v = match (k, v) {
+                    ("edition", v) => json!(v.as_str().unwrap_or("").trim()),
+                    (_, Value::String(t)) => json!(t.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>()),
+                    (_, v) => v,
+                };
+                if !body["extra"].is_object() { body["extra"] = json!({}); }
+                body["extra"][k] = v;
             }
             let mut db = app.db.lock().unwrap();
             let Some(it) = db.items.get_mut(&iid) else { return fail(404, "Not found") };

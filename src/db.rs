@@ -174,6 +174,27 @@ pub struct Stream {
     pub default: bool,
     #[serde(default)]
     pub title: String,
+    /// ffprobe's profile ("Main 10", "Dolby TrueHD + Dolby Atmos" …).
+    #[serde(default)]
+    pub profile: String,
+    /// Video: color transfer (smpte2084 = HDR10/PQ, arib-std-b67 = HLG).
+    #[serde(default)]
+    pub color_transfer: String,
+    /// Video: HDR10+ dynamic metadata seen in the first frame.
+    #[serde(default)]
+    pub hdr10plus: bool,
+    /// Audio: channel layout ("stereo", "5.1(side)" …).
+    #[serde(default)]
+    pub channel_layout: String,
+}
+
+impl Stream {
+    pub fn is_hdr(&self) -> bool {
+        matches!(self.color_transfer.as_str(), "smpte2084" | "arib-std-b67") || self.hdr10plus
+    }
+    pub fn is_atmos(&self) -> bool {
+        self.profile.to_lowercase().contains("atmos") || self.title.to_lowercase().contains("atmos")
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -194,6 +215,10 @@ pub struct MediaFile {
     pub streams: Vec<Stream>,
     #[serde(default)]
     pub probed: bool,
+    /// Which version of the probe read the streams; older files are read
+    /// again on the next scan (PROBE_VERSION 2 added HDR, Atmos and layouts).
+    #[serde(default)]
+    pub probe_version: u32,
     /// Subtitle files found next to the video (srt, ass, vtt …).
     #[serde(default)]
     pub external_subtitles: Vec<String>,
@@ -213,6 +238,8 @@ pub struct MediaFile {
 
 /// Bump when the credits detector changes, so files are looked at again.
 pub const CREDITS_DETECTOR_VERSION: u32 = 1;
+/// Bump when `scanner::probe` reads more about the streams.
+pub const PROBE_VERSION: u32 = 2;
 /// A file is given up on after more than 3 failed detections.
 pub const CREDITS_MAX_ERRORS: u32 = 3;
 

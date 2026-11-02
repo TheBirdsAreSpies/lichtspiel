@@ -36,8 +36,154 @@ pub const ITEM_FIELDS: &[(&str, &str, &str)] = &[
     ("audio_language", "text", "Audio language code (eng, ger …)"),
     ("subtitle_language", "text", "Subtitle language code"),
     ("size", "number", "File size in MB"),
+    ("decade", "number", "Decade of release (1990, 2000 …)"),
+    ("collection", "text", "Collection (film series)"),
+    ("director", "text", "Director"),
+    ("actor", "text", "Actor"),
+    ("writer", "text", "Writer"),
+    ("producer", "text", "Producer"),
+    ("country", "text", "Country of production"),
+    ("network", "text", "TV network (the show's studio)"),
+    ("label", "text", "Your own labels"),
+    ("edition", "text", "Edition, from {edition-…} in the file name"),
+    ("video_resolution", "text", "4k, 1080, 720, 480 or sd"),
+    ("hdr", "bool", "HDR picture (HDR10, HLG or HDR10+)"),
+    ("hdr10plus", "bool", "HDR10+ picture"),
+    ("atmos", "bool", "Dolby Atmos sound"),
+    ("subtitle_codec", "text", "srt, ass, pgs …"),
+    ("audio_layout", "text", "mono, stereo, 5.1, 7.1 …"),
+    ("folder", "text", "Folder the file is in"),
+    ("unwatched", "bool", "Not seen yet"),
+    ("unwatched_leaves", "bool", "Show or season with episodes not seen yet"),
+    ("unmatched", "bool", "No online details found yet"),
+    ("duplicate", "bool", "The same movie or episode is in the library more than once"),
     ("random", "sort", "Random order (sort only)"),
 ];
+
+/// The filters offered on a library page, per kind of item, in order.
+pub const MOVIE_FILTERS: &[&str] = &[
+    "genre", "decade", "content_rating", "collection", "director", "actor", "writer", "producer", "country", "studio",
+    "video_resolution", "hdr", "hdr10plus", "atmos", "unwatched", "in_progress", "unmatched", "video_codec", "audio_codec",
+    "subtitle_codec", "audio_layout", "audio_language", "subtitle_language", "edition", "label", "folder", "duplicate",
+];
+pub const SHOW_FILTERS: &[&str] = &[
+    "genre", "content_rating", "network", "country", "collection", "director", "actor", "writer", "producer",
+    "unwatched_leaves", "unmatched", "edition", "label",
+];
+pub const EPISODE_FILTERS: &[&str] = &[
+    "collection", "video_resolution", "hdr10plus", "atmos", "unwatched", "in_progress", "video_codec", "audio_codec",
+    "subtitle_codec", "audio_layout", "audio_language", "subtitle_language", "unmatched", "folder", "duplicate",
+];
+
+pub fn filters_for(kind: ItemKind) -> &'static [&'static str] {
+    match kind {
+        ItemKind::Show | ItemKind::Season => SHOW_FILTERS,
+        ItemKind::Episode => EPISODE_FILTERS,
+        _ => MOVIE_FILTERS,
+    }
+}
+
+/// The names a URL may use for a field (lower case), mapped to this build's fields.
+pub fn canonical_field(name: &str) -> &str {
+    match name {
+        "type" => "kind",
+        "videocodec" => "video_codec",
+        "audiocodec" => "audio_codec",
+        "subtitlecodec" => "subtitle_codec",
+        "audiolanguage" => "audio_language",
+        "subtitlelanguage" => "subtitle_language",
+        "audiolayout" | "audiochannellayout" => "audio_layout",
+        "videoresolution" => "video_resolution",
+        "contentrating" => "content_rating",
+        "inprogress" => "in_progress",
+        "unwatchedleaves" => "unwatched_leaves",
+        "userrating" => "user_rating",
+        "addedat" => "added_at",
+        "lastviewedat" => "last_viewed_at",
+        "viewcount" => "view_count",
+        "location" => "folder",
+        other => other,
+    }
+}
+
+/// "4k", "1080", "720", "480" or "sd" from the picture size, the way the
+/// original names resolutions.
+pub fn resolution_name(width: u32, height: u32) -> &'static str {
+    if width >= 3200 || height >= 1600 {
+        "4k"
+    } else if width >= 1700 || height >= 900 {
+        "1080"
+    } else if width >= 1100 || height >= 600 {
+        "720"
+    } else if height >= 400 {
+        "480"
+    } else {
+        "sd"
+    }
+}
+
+fn layout_name(s: &crate::db::Stream) -> String {
+    let l = s.channel_layout.split('(').next().unwrap_or("").trim();
+    if !l.is_empty() {
+        return l.to_string();
+    }
+    match s.channels {
+        0 => String::new(),
+        1 => "mono".into(),
+        2 => "stereo".into(),
+        6 => "5.1".into(),
+        8 => "7.1".into(),
+        n => format!("{n} channels"),
+    }
+}
+
+/// The text inside {edition-…} in a file or folder name.
+pub fn edition_of(path: &str) -> String {
+    let lower = path.to_lowercase();
+    let Some(at) = lower.rfind("{edition-") else { return String::new() };
+    let rest = &path[at + "{edition-".len()..];
+    rest.split('}').next().unwrap_or("").trim().to_string()
+}
+
+fn str_list(v: Option<&Value>) -> Vec<String> {
+    match v {
+        Some(Value::Array(a)) => a.iter().filter_map(|x| x.as_str().map(String::from).or_else(|| x["name"].as_str().map(String::from))).collect(),
+        Some(Value::String(s)) if !s.is_empty() => vec![s.clone()],
+        _ => vec![],
+    }
+}
+
+/// Movies and episodes that are in the same library more than once (same
+/// title and year, or the same episode of the same season). Worked out once
+/// for many items in a row.
+fn duplicates(db: &Db) -> std::rc::Rc<std::collections::HashSet<u64>> {
+    use std::cell::RefCell;
+    use std::collections::{HashMap, HashSet};
+    use std::rc::Rc;
+    type Cached = Option<((usize, usize, u64), Rc<HashSet<u64>>)>;
+    thread_local! {
+        static CACHE: RefCell<Cached> = const { RefCell::new(None) };
+    }
+    let key = (db as *const Db as usize, db.items.len(), now() / 10);
+    if let Some(hit) = CACHE.with(|c| c.borrow().as_ref().filter(|(k, _)| *k == key).map(|(_, v)| v.clone())) {
+        return hit;
+    }
+    let mut groups: HashMap<(u64, String), Vec<u64>> = HashMap::new();
+    for i in db.items.values().filter(|i| i.file.is_some()) {
+        let k = match i.kind {
+            ItemKind::Episode => match (i.parent_id, i.index) {
+                (Some(p), Some(n)) => (p, format!("e{n}")),
+                _ => continue,
+            },
+            _ => (i.section_id, format!("{}|{}", i.sort_title.to_lowercase(), i.year.unwrap_or(0))),
+        };
+        groups.entry(k).or_default().push(i.id);
+    }
+    let set: HashSet<u64> = groups.into_values().filter(|g| g.len() > 1).flatten().collect();
+    let set = Rc::new(set);
+    CACHE.with(|c| *c.borrow_mut() = Some((key, set.clone())));
+    set
+}
 
 pub const OPERATORS: &[(&str, &str)] = &[
     ("is", "equals"),
@@ -76,6 +222,18 @@ pub fn field(db: &Db, user_id: u64, item: &Item, name: &str) -> FieldValue {
             _ => None,
         }
     };
+    // Seasons and episodes share the show's people, collections and country.
+    let top = || -> &Item {
+        match item.kind {
+            ItemKind::Season => item.parent_id.and_then(|p| db.items.get(&p)).unwrap_or(item),
+            ItemKind::Episode => show().unwrap_or(item),
+            _ => item,
+        }
+    };
+    let inherited = |key: &str| -> Vec<String> {
+        let own = str_list(item.extra.get(key));
+        if own.is_empty() { str_list(top().extra.get(key)) } else { own }
+    };
     let watched_container = |db: &Db| -> (bool, bool) {
         // A show/season counts as watched when every episode is.
         let leaves = db.leaves(item.id);
@@ -110,8 +268,44 @@ pub fn field(db: &Db, user_id: u64, item: &Item, name: &str) -> FieldValue {
         "in_progress" => Bool(if item.kind.playable() {
             view.view_offset_ms > 0
         } else {
-            false
+            watched_container(db).1
         }),
+        "unwatched" => Bool(if item.kind.playable() { view.view_count == 0 } else { !watched_container(db).0 }),
+        "unwatched_leaves" => Bool(if item.kind.playable() {
+            view.view_count == 0
+        } else {
+            db.leaves(item.id).iter().any(|l| db.view(user_id, *l).view_count == 0)
+        }),
+        "decade" => Num(item.year.or(top().year).map(|y| (y / 10 * 10) as f64)),
+        "collection" => Text(inherited("collections")),
+        "director" => Text(inherited("directors")),
+        "writer" => Text(inherited("writers")),
+        "producer" => Text(inherited("producers")),
+        "country" => Text(inherited("countries")),
+        "actor" => Text(inherited("cast")),
+        "label" => Text(str_list(item.extra.get("labels"))),
+        "network" => Text(vec![top().studio.clone()]),
+        "edition" => Text({
+            let e = item.extra.get("edition").and_then(|v| v.as_str()).map(String::from)
+                .unwrap_or_else(|| file.map(|f| edition_of(&f.path)).unwrap_or_default());
+            if e.is_empty() { vec![] } else { vec![e] }
+        }),
+        "unmatched" => Bool({
+            let t = top();
+            matches!(t.kind, ItemKind::Movie | ItemKind::Show) && !t.extra.contains_key("metadata_source")
+        }),
+        "duplicate" => Bool(duplicates(db).contains(&item.id)),
+        "video_resolution" => Text(file.and_then(|f| f.video()).map(|v| vec![resolution_name(v.width, v.height).to_string()]).unwrap_or_default()),
+        "hdr" => Bool(file.and_then(|f| f.video()).is_some_and(|v| v.is_hdr())),
+        "hdr10plus" => Bool(file.and_then(|f| f.video()).is_some_and(|v| v.hdr10plus)),
+        "atmos" => Bool(file.is_some_and(|f| f.streams.iter().any(|s| s.kind == "audio" && s.is_atmos()))),
+        "subtitle_codec" => Text(file.map(|f| {
+            let mut v: Vec<String> = f.streams.iter().filter(|s| s.kind == "subtitle").map(|s| s.codec.clone()).collect();
+            v.extend(f.external_subtitles.iter().filter_map(|p| p.rsplit('.').next().map(|e| e.to_lowercase())));
+            v
+        }).unwrap_or_default()),
+        "audio_layout" => Text(file.map(|f| f.streams.iter().filter(|s| s.kind == "audio").map(layout_name).filter(|s| !s.is_empty()).collect()).unwrap_or_default()),
+        "folder" => Text(file.and_then(|f| std::path::Path::new(&f.path).parent().map(|p| p.to_string_lossy().to_string())).into_iter().collect()),
         "view_count" => Num(Some(view.view_count as f64)),
         "favorite" => Bool(view.favorite),
         "container" => Text(vec![file.map(|f| f.container.clone()).unwrap_or_default()]),
@@ -378,7 +572,7 @@ pub fn rules_from_params(params: &[(String, String)]) -> Vec<Rule> {
     const RESERVED: &[&str] = &[
         "sort", "limit", "offset", "start", "size", "token", "match", "q", "query",
         "smart", "playlisttype", "owner", "includecollections", "container-start", "container-size",
-        "unwatched", "filter",
+        "filter",
     ];
     let mut rules = vec![];
     for (k, v) in params {
@@ -399,7 +593,11 @@ pub fn rules_from_params(params: &[(String, String)]) -> Vec<Rule> {
         } else {
             (lk.clone(), "is")
         };
-        let fieldname = if fieldname == "type" { "kind".to_string() } else { fieldname };
+        let mut fieldname = canonical_field(&fieldname).to_string();
+        // The resolution filter uses names (4k, 1080, sd); a number stays a picture height.
+        if fieldname == "resolution" && v.split(',').any(|x| x.trim().parse::<f64>().is_err()) {
+            fieldname = "video_resolution".into();
+        }
         let value = if v.contains(',') && (op == "is" || op == "in") {
             return_rules_in(&mut rules, &fieldname, v);
             continue;
@@ -408,15 +606,59 @@ pub fn rules_from_params(params: &[(String, String)]) -> Vec<Rule> {
         };
         rules.push(Rule { field: fieldname, op: op.into(), value });
     }
-    // The ?unwatched=1 shortcut
-    if params.iter().any(|(k, v)| k == "unwatched" && v == "1") {
-        rules.push(crate::db::rule("watched", "is", Value::Bool(false)));
-    }
     rules
 }
 
 fn return_rules_in(rules: &mut Vec<Rule>, field: &str, v: &str) {
     rules.push(Rule { field: field.into(), op: "in".into(), value: Value::String(v.into()) });
+}
+
+/// For a library page: every filter offered for this kind of
+/// item, with the values found and how many items have each.
+pub fn section_filters(db: &Db, user_id: u64, items: &[&Item], kind: ItemKind) -> Vec<Value> {
+    use std::collections::BTreeMap;
+    let label = |f: &'static str| -> &'static str { ITEM_FIELDS.iter().find(|x| x.0 == f).map(|x| x.2).unwrap_or(f) };
+    let mut out = vec![];
+    for f in filters_for(kind) {
+        let mut counts: BTreeMap<String, (String, usize)> = BTreeMap::new();
+        let mut is_bool = false;
+        let mut yes = 0;
+        for it in items {
+            match field(db, user_id, it, f) {
+                FieldValue::Bool(b) => {
+                    is_bool = true;
+                    yes += b as usize;
+                }
+                FieldValue::Num(Some(n)) => {
+                    let e = counts.entry(format!("{n:012.0}")).or_insert((format!("{n}"), 0));
+                    e.1 += 1;
+                }
+                FieldValue::Num(None) => {}
+                FieldValue::Text(vals) => {
+                    let mut seen = std::collections::HashSet::new();
+                    for v in vals.into_iter().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) {
+                        if seen.insert(v.to_lowercase()) {
+                            let e = counts.entry(v.to_lowercase()).or_insert((v, 0));
+                            e.1 += 1;
+                        }
+                    }
+                }
+            }
+        }
+        let mut values: Vec<(String, usize)> = counts.into_values().collect();
+        if *f == "video_resolution" {
+            let rank = |v: &str| ["4k", "1080", "720", "480", "sd"].iter().position(|x| *x == v).unwrap_or(9);
+            values.sort_by_key(|(v, _)| rank(v));
+        }
+        out.push(serde_json::json!({
+            "filter": f,
+            "title": label(f),
+            "type": if is_bool { "boolean" } else if *f == "decade" { "number" } else { "string" },
+            "count": if is_bool { Some(yes) } else { None },
+            "values": values.iter().map(|(v, c)| serde_json::json!({"value": v, "count": c})).collect::<Vec<_>>(),
+        }));
+    }
+    out
 }
 
 /// Filter and sort for the list of playlists.
@@ -475,4 +717,80 @@ pub fn sort_playlists(list: &mut [(Playlist, usize, u64)], sort: &str) {
         }
         Ordering::Equal
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{MediaFile, Stream};
+    use serde_json::json;
+
+    fn item(id: u64, title: &str, year: u32, extra: Value) -> Item {
+        serde_json::from_value(json!({"id": id, "section_id": 1, "kind": "movie", "title": title, "sort_title": title.to_lowercase(),
+            "year": year, "added_at": 0, "updated_at": 0, "extra": extra})).unwrap()
+    }
+
+    #[test]
+    fn original_library_filters() {
+        let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 9, "settings": crate::db::Settings::default(),
+            "sections": [], "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let mut a = item(1, "Alpha", 1994, json!({"directors": ["Dee Rector"], "countries": ["France"], "collections": ["Alpha Saga"],
+            "cast": [{"name": "Ann Actor"}], "labels": ["Kids"], "metadata_source": "tmdb"}));
+        a.file = Some(MediaFile {
+            path: "/m/Alpha (1994) {edition-Director's Cut}/a.mkv".into(), probed: true,
+            streams: vec![
+                Stream { kind: "video".into(), codec: "hevc".into(), width: 3840, height: 2160, color_transfer: "smpte2084".into(), hdr10plus: true, ..Default::default() },
+                Stream { kind: "audio".into(), codec: "truehd".into(), channels: 8, profile: "Dolby TrueHD + Dolby Atmos".into(), channel_layout: "7.1".into(), ..Default::default() },
+                Stream { kind: "subtitle".into(), codec: "subrip".into(), ..Default::default() },
+            ],
+            ..Default::default()
+        });
+        let mut b = item(2, "Beta", 2003, json!({}));
+        b.file = Some(MediaFile { path: "/m/b.mp4".into(), streams: vec![Stream { kind: "video".into(), codec: "h264".into(), width: 1280, height: 720, ..Default::default() },
+            Stream { kind: "audio".into(), codec: "aac".into(), channels: 2, ..Default::default() }], ..Default::default() });
+        let mut c = b.clone();
+        c.id = 3;
+        for i in [a, b, c] {
+            db.items.insert(i.id, i);
+        }
+        let hits = |params: &[(&str, &str)]| -> Vec<u64> {
+            let p: Vec<(String, String)> = params.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            let rules = rules_from_params(&p);
+            let mut ids: Vec<u64> = db.items.values().filter(|i| matches_all(&db, 1, i, &rules, true)).map(|i| i.id).collect();
+            ids.sort();
+            ids
+        };
+        assert_eq!(hits(&[("decade", "1990")]), vec![1]);
+        assert_eq!(hits(&[("director", "Dee Rector")]), vec![1]);
+        assert_eq!(hits(&[("actor", "ann actor")]), vec![1]);
+        assert_eq!(hits(&[("country", "France")]), vec![1]);
+        assert_eq!(hits(&[("collection", "Alpha Saga")]), vec![1]);
+        assert_eq!(hits(&[("label", "kids")]), vec![1]);
+        assert_eq!(hits(&[("edition", "Director's Cut")]), vec![1]);
+        assert_eq!(hits(&[("resolution", "4k")]), vec![1]);
+        assert_eq!(hits(&[("resolution", "720")]), vec![2, 3]);
+        assert_eq!(hits(&[("videoResolution", "720")]), vec![2, 3]);
+        assert_eq!(hits(&[("hdr", "1")]), vec![1]);
+        assert_eq!(hits(&[("hdr10plus", "1")]), vec![1]);
+        assert_eq!(hits(&[("atmos", "1")]), vec![1]);
+        assert_eq!(hits(&[("audioLayout", "7.1")]), vec![1]);
+        assert_eq!(hits(&[("audio_layout", "stereo")]), vec![2, 3]);
+        assert_eq!(hits(&[("subtitleCodec", "subrip")]), vec![1]);
+        assert_eq!(hits(&[("videoCodec", "hevc")]), vec![1]);
+        assert_eq!(hits(&[("unmatched", "1")]), vec![2, 3]);
+        assert_eq!(hits(&[("duplicate", "1")]), vec![2, 3]);
+        assert_eq!(hits(&[("folder", "/m")]), vec![2, 3]);
+        assert_eq!(hits(&[("unwatched", "1")]), vec![1, 2, 3]);
+        let all: Vec<&Item> = db.items.values().collect();
+        let f = section_filters(&db, 1, &all, ItemKind::Movie);
+        assert_eq!(f.len(), MOVIE_FILTERS.len());
+        let res = f.iter().find(|x| x["filter"] == "video_resolution").unwrap();
+        assert_eq!(res["values"][0]["value"], "4k");
+        assert_eq!(res["values"][1]["count"], 2);
+        assert_eq!(f.iter().find(|x| x["filter"] == "hdr").unwrap()["count"], 1);
+        assert_eq!(edition_of("Film {Edition-Extended}.mkv"), "Extended");
+        assert_eq!(resolution_name(1920, 800), "1080");
+        assert_eq!(filters_for(ItemKind::Show).len(), 13);
+        assert_eq!(filters_for(ItemKind::Episode).len(), 15);
+    }
 }

@@ -672,12 +672,12 @@ impl App {
         let Some(it) = db.items.get_mut(&id) else { return Err("The item went away".into()) };
         // People brought over from the old server stay when the online source has none.
         let kept: Vec<(&str, Value)> = if it.extra.contains_key("imported_from_old_server") {
-            ["cast", "directors", "writers"].into_iter().filter(|k| d.meta["extra"][*k].as_array().is_none_or(|a| a.is_empty())).filter_map(|k| it.extra.get(k).cloned().map(|v| (k, v))).collect()
+            ["cast", "directors", "writers", "producers", "countries", "collections"].into_iter().filter(|k| d.meta["extra"][*k].as_array().is_none_or(|a| a.is_empty())).filter_map(|k| it.extra.get(k).cloned().map(|v| (k, v))).collect()
         } else {
             vec![]
         };
         // Forget what an earlier match said before applying this one.
-        for k in ["cast", "directors", "writers", "creators", "ids", "art", "original_title", "runtime_minutes", "originally_available", "metadata_status", "metadata_checked_at", "ratings", "imdb_ratings_checked"] {
+        for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes", "originally_available", "metadata_status", "metadata_checked_at", "ratings", "imdb_ratings_checked"] {
             it.extra.remove(k);
         }
         if !it.extra.contains_key("file_title") {

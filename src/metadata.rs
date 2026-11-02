@@ -424,6 +424,22 @@ fn tmdb_fetch(settings: &Settings, kind: ItemKind, id: &str, seasons_wanted: &[u
             "url": format!("https://www.themoviedb.org/{}/{id}", if show { "tv" } else { "movie" }), "as_of": crate::db::today()});
     }
     extra["ratings"] = ratings;
+    // Country, producer and collection, for the library filters.
+    extra["countries"] = json!(names(&v["production_countries"], "name"));
+    if !show {
+        let mut producers: Vec<String> = vec![];
+        for c in v["credits"]["crew"].as_array().cloned().unwrap_or_default().iter().filter(|c| c["job"] == "Producer") {
+            if let Some(n) = c["name"].as_str() {
+                if !producers.iter().any(|w| w == n) && producers.len() < 6 {
+                    producers.push(n.into());
+                }
+            }
+        }
+        extra["producers"] = json!(producers);
+        if let Some(c) = v["belongs_to_collection"]["name"].as_str() {
+            extra["collections"] = json!([c]);
+        }
+    }
     if let Some(r) = v["runtime"].as_u64() { extra["runtime_minutes"] = json!(r); }
     if !date.is_empty() { extra["originally_available"] = json!(date); }
     let mut meta = json!({"title": title, "summary": summary, "tagline": v["tagline"].as_str().unwrap_or(""), "genres": genres,
@@ -907,7 +923,7 @@ fn wiki_fetch(settings: &Settings, q: &str) -> Result<Details, String> {
     // Names of everyone and everything the item points to, in one go.
     let rating_prop = if lang == "de" { "P1981" } else { "P1657" };
     let mut refs: Vec<String> = vec![];
-    for p in ["P57", "P58", "P161", "P136", "P272", rating_prop] {
+    for p in ["P57", "P58", "P161", "P136", "P272", "P162", "P495", rating_prop] {
         refs.extend(claim_ids(&e, p));
     }
     // Character names are qualifiers (P453) on cast members.
@@ -972,7 +988,7 @@ fn wiki_fetch(settings: &Settings, q: &str) -> Result<Details, String> {
         "genres": genres,
         "studio": list("P272", 1).first().cloned().unwrap_or_default(),
         "content_rating": claim_ids(&e, rating_prop).first().map(|r| lbl(r)).unwrap_or_default(),
-        "extra": {"cast": cast, "directors": list("P57", 4), "writers": list("P58", 6), "ids": ids, "metadata_source": "wikidata", "metadata_id": q,
+        "extra": {"cast": cast, "directors": list("P57", 4), "writers": list("P58", 6), "producers": list("P162", 6), "countries": list("P495", 3), "ids": ids, "metadata_source": "wikidata", "metadata_id": q,
             "metadata_language": if local_article.is_some() { lang.as_str() } else { "en" }},
     });
     if let Some(y) = claim_year(&e) { meta["year"] = json!(y); }

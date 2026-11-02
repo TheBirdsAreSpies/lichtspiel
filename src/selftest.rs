@@ -138,9 +138,10 @@ fn make_old_db(path: &Path, films: &str, tv: &str) -> bool {
         insert into media_items values (100, 10), (101, 22), (102, 10);
         insert into media_parts values (1000, 100, '{films}\Imported Film (2001).mp4'), (1001, 101, '{tv}\Test Show\Season 01\Test Show - S01E01 - Pilot.mkv'), (1002, 102, '{films}\gone.mkv');
         insert into metadata_item_settings values (1, 1, 'old://movie/abc', 8.0, 0, 2, 1700000000), (2, 1, 'old://episode/e1', null, 2000, 0, 1700000100), (3, 2, 'old://movie/abc', 6.0, 0, 1, 1700000000);
-        insert into tags values (1, 'Drama', 1), (2, '', 12), (3, 'Ann Actor', 6), (4, 'Dee Rector', 4), (5, 'Wri Ter', 5), (6, 'Bob Second', 6);
+        insert into tags values (1, 'Drama', 1), (2, '', 12), (3, 'Ann Actor', 6), (4, 'Dee Rector', 4), (5, 'Wri Ter', 5), (6, 'Bob Second', 6), (7, 'Saga Box', 2), (8, 'Pro Ducer', 7), (9, 'France', 8);
         insert into taggings values (1, 10, 1, 0, null, null, null), (2, 10, 2, 0, 'credits', 3000, 5000),
-            (3, 10, 6, 1, 'Sidekick', null, null), (4, 10, 3, 0, 'Hero', null, null), (5, 10, 4, 0, '', null, null), (6, 10, 5, 0, '', null, null);
+            (3, 10, 6, 1, 'Sidekick', null, null), (4, 10, 3, 0, 'Hero', null, null), (5, 10, 4, 0, '', null, null), (6, 10, 5, 0, '', null, null),
+            (7, 10, 7, 0, '', null, null), (8, 10, 8, 0, '', null, null), (9, 10, 9, 0, '', null, null);
         insert into metadata_item_accounts values (1, 1, 30);
         insert into play_queue_generators values (1, 30, 10, null, 1.0), (2, 30, 22, null, 2.0), (3, 31, null, 'library://x/directory/y', 1.0);
     "#);
@@ -471,6 +472,17 @@ pub fn run(out: &Path) -> bool {
         let people_ok = half && cast_names == ["Ann Actor as Hero", "Bob Second as Sidekick"] && fx["cast"][0]["count"] == 1
             && fx["directors"][0] == "Dee Rector" && fx["writers"][0] == "Wri Ter"
             && person["type"] == "person" && person["Metadata"][0]["title"] == "Imported Film" && person["Metadata"][0]["role"] == "Hero";
+        // Library filters: collection, producer and
+        // country come over from the old server and can be filtered on.
+        let film_sid = c.get("/library/sections").json()["MediaContainer"]["Directory"].as_array().cloned().unwrap_or_default().iter()
+            .find(|s| s["title"] == "Old films").and_then(|s| s["id"].as_u64()).unwrap_or(0);
+        let fl = c.get(&format!("/library/sections/{film_sid}/filters")).json();
+        let flist = fl["MediaContainer"]["Filter"].as_array().cloned().unwrap_or_default();
+        let has_value = |f: &str, v: &str| flist.iter().any(|x| x["filter"] == f && x["values"].as_array().is_some_and(|a| a.iter().any(|y| y["value"] == v)));
+        let found = |q: &str| c.get(&format!("/library/sections/{film_sid}/all?{q}")).json()["MediaContainer"]["Metadata"].as_array().is_some_and(|a| a.iter().any(|x| x["id"].as_u64() == Some(fid)));
+        let filters_ok = flist.len() == crate::query::MOVIE_FILTERS.len() && has_value("collection", "Saga Box") && has_value("country", "France")
+            && has_value("producer", "Pro Ducer") && has_value("decade", "2000") && found("collection=Saga%20Box") && found("producer=Pro%20Ducer")
+            && found("country=France") && found("decade=2000") && !found("decade=1990") && found("director=Dee%20Rector") && found("actor=Bob%20Second");
         let pilot = elist.first().and_then(|e| e["id"].as_u64()).unwrap_or(0);
         let pilot_offset = c.get(&format!("/library/metadata/{pilot}")).json()["MediaContainer"]["Metadata"][0]["viewOffset"].as_u64().unwrap_or(0);
         let pls = c.get("/playlists?owner=me").json();
@@ -483,13 +495,13 @@ pub fn run(out: &Path) -> bool {
             && marks["source"] == "imported" && marks["credits"][0] == 3000
             && pilot_offset == 2000 && report["watched"]["ratings"] == 2
             && old_pl["leafCount"].as_u64().or(old_pl["itemCount"].as_u64()) == Some(2)
-            && report["playlists"]["smart_not_imported"][0] == "Old smart" && people_ok;
+            && report["playlists"]["smart_not_imported"][0] == "Old smart" && people_ok && filters_ok;
         steps.add("import", ok, format!(
-            "old server's database read ({} libraries, {} accounts); files found {} of {} after translating D:\\OldPC\\… paths; libraries added: {}; film → \"{}\", plot taken, genres {}, watched {}×, rated {} (half star 3½ → 7 kept: {half}); cast {:?}, director {}, writer {}, actor page lists it: {}; friend matched by name: {}; resume point on an episode: {} ms; credits marker: {} ({}); playlist \"Old favourites\" with {} items; smart playlist skipped: {}",
+            "old server's database read ({} libraries, {} accounts); files found {} of {} after translating D:\\OldPC\\… paths; libraries added: {}; film → \"{}\", plot taken, genres {}, watched {}×, rated {} (half star 3½ → 7 kept: {half}); cast {:?}, director {}, writer {}, actor page lists it: {}; library filters {} (collection, producer, country, decade, director, actor: {filters_ok}); friend matched by name: {}; resume point on an episode: {} ms; credits marker: {} ({}); playlist \"Old favourites\" with {} items; smart playlist skipped: {}",
             pv["libraries"].as_array().map(|a| a.len()).unwrap_or(0), pv["accounts"].as_array().map(|a| a.len()).unwrap_or(0),
             report["files"]["found_here"], report["files"]["in_old_database"], report["libraries_created"].as_array().map(|a| a.len()).unwrap_or(0),
             film["title"].as_str().unwrap_or("?"), film["genres"], film["viewCount"], film["userRating"],
-            cast_names, fx["directors"], fx["writers"], person["Metadata"][0]["title"] == "Imported Film", friend_suggested == Some(friend_id),
+            cast_names, fx["directors"], fx["writers"], person["Metadata"][0]["title"] == "Imported Film", flist.len(), friend_suggested == Some(friend_id),
             pilot_offset, marks["credits"], marks["source"], old_pl["leafCount"].as_u64().or(old_pl["itemCount"].as_u64()).unwrap_or(0),
             report["playlists"]["smart_not_imported"]));
     }

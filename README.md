@@ -18,6 +18,12 @@ Linux/Windows machine):
   Added Episodes, Unwatched Movies, Favorites, Top Rated). Playlists can be filtered (kind,
   owner, title, size, shared, pinned) and sorted (title, last changed, size, length …); the
   contents of any playlist can be filtered and sorted again.
+- **Library filters** — filters on every library page: genre, decade,
+  age rating, collection, director, actor, writer, producer, country, studio / network,
+  resolution, HDR, HDR10+, Dolby Atmos, unwatched, in progress, unmatched, video / audio /
+  subtitle format, audio channels, audio and subtitle language, edition, label, folder and
+  duplicates. Click **More filters** on a library page; each menu shows the values found and
+  how many items have them. Labels, collections and edition can be set under **Edit**.
 - **Users and invites** — create an invite link (valid 7 days by default, single use),
   choose which libraries the person may see and whether the server may convert video for
   them, then send them the link. They pick their own name and password. Each user has their
