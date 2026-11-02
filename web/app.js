@@ -447,8 +447,10 @@ async function pollActivity() {
   if (!S.me || !S.me.admin) { el.style.display = 'none'; return; }
   let st;
   try { st = await GET('/api/metadata/status'); } catch (e) { ACT.timer = setTimeout(pollActivity, 10000); return; }
-  const busy = st.queued > 0 || st.working_on || st.job;
+  const scanning = st.scanning || [];
+  const busy = st.queued > 0 || st.working_on || st.job || scanning.length;
   const parts = [];
+  if (scanning.length) parts.push(h('span', { class: 'txt' }, t('Scanning {name}', { name: scanning.join(', ') })));
   if (st.job) parts.push(h('span', { class: 'txt' }, t('{label}: {done} of {total}', { label: t(st.job.label), done: st.job.done, total: st.job.total })), h('span', { class: 'pbar' }, h('i', { style: `width:${Math.round(100 * st.job.done / Math.max(1, st.job.total))}%` })));
   if (st.working_on || st.queued > 0) parts.push(h('span', { class: 'txt' }, t('Updating details') + (st.working_title ? ': ' + st.working_title : '') + (st.queued > 0 ? ' · ' + t('{n} left', { n: st.queued }) : '')));
   if (busy) {

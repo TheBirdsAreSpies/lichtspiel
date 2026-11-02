@@ -195,7 +195,7 @@ async function librariesPage() {
               try { const r = await api('PUT', '/library/sections/' + s.id, { language: e.target.value }); toast(r.refetching ? t('Downloading details for {n} movies and shows again — progress is shown at the top', { n: r.refetching }) : t('Saved'), 6000); }
               catch (er) { toast(er.message); }
             })))),
-      h('button', { onclick: async () => { await api('POST', `/library/sections/${s.id}/refresh`); toast(t('Scanning {name}', { name: s.title })); refreshList(2); } }, t('Scan now')),
+      h('button', { onclick: async () => { await api('POST', `/library/sections/${s.id}/refresh`); toast(t('Scanning {name}', { name: s.title })); refreshList(2); pollActivity(); } }, t('Scan now')),
       h('button', { title: t('Look for end credits in every video of this library now (from the chapters in the files)'), onclick: async () => {
         try { const r = await api('POST', `/library/sections/${s.id}/credits`); toast(t('Checking {n} videos for credits — progress is shown at the top', { n: r.videos }), 5000); pollActivity(); } catch (er) { toast(er.message, 6000); }
       } }, t('Detect credits')),
@@ -209,7 +209,7 @@ async function librariesPage() {
       formRow(t('Name'), name), formRow(t('Kind'), type), formRow(t('Language of titles and plots'), newLang), formRow(t('Folders'), paths, null, true),
       h('div', { class: 'actions' }, h('button', { onclick: () => folderPicker(p => { paths.value = (paths.value.trim() ? paths.value.trim() + '\n' : '') + p; }) }, t('Browse folders…')),
         h('button', { class: 'primary', onclick: async () => {
-          try { await api('POST', '/library/sections', { name: name.value, type: type.value, paths: paths.value, language: newLang.value }); toast(t('Library added; scanning')); name.value = ''; paths.value = ''; refreshList(2); }
+          try { await api('POST', '/library/sections', { name: name.value, type: type.value, paths: paths.value, language: newLang.value }); toast(t('Library added; scanning')); name.value = ''; paths.value = ''; refreshList(2); pollActivity(); }
           catch (e) { toast(e.message, 5000); }
         } }, t('Add library')))),
     await importPanel());
@@ -320,7 +320,7 @@ function foldersDialog(s) {
       h('button', { class: 'primary', onclick: async () => {
         const paths = [...rows.querySelectorAll('input')].map(i => i.value.trim()).filter(Boolean);
         if (!paths.length) return toast(t('Give at least one folder in paths'));
-        try { await api('PUT', '/library/sections/' + s.id, { paths }); toast(t('Saved')); box.remove(); librariesPage(); }
+        try { await api('PUT', '/library/sections/' + s.id, { paths }); toast(t('Saved')); box.remove(); librariesPage(); pollActivity(); }
         catch (e) { toast(e.message, 5000); }
       } }, t('Save')),
       h('button', { onclick: () => box.remove() }, t('Cancel')))]);

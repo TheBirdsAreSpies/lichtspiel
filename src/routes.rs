@@ -463,7 +463,13 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let busy_title = if busy == 0 { None } else { app.db.lock().unwrap().items.get(&busy).map(|i| i.title.clone()) };
             let p = app.meta_progress.lock().unwrap();
             let job = app.job.lock().unwrap().clone();
-            ok(json!({"queued": q, "working_on": if busy == 0 { Value::Null } else { json!(busy) }, "working_title": busy_title,
+            // Libraries being scanned right now (by name), so the web app can show it.
+            let scanning_ids = app.scanning.lock().unwrap().clone();
+            let scanning: Vec<String> = if scanning_ids.is_empty() { vec![] } else {
+                let db = app.db.lock().unwrap();
+                db.sections.iter().filter(|s| scanning_ids.contains(&s.id) && db.can_see_section(&user, s.id)).map(|s| s.name.clone()).collect()
+            };
+            ok(json!({"queued": q, "scanning": scanning, "working_on": if busy == 0 { Value::Null } else { json!(busy) }, "working_title": busy_title,
                 "done": p.done, "failed": p.failed, "last": p.last,
                 "job": job.map(|(label, done, total)| json!({"label": label, "done": done, "total": total}))}))
         }
