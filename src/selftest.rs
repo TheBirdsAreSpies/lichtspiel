@@ -477,13 +477,14 @@ pub fn run(out: &Path) -> bool {
         let outside = count(anon.call("GET", "/api/home", None, &[("X-Forwarded-For", "203.0.113.9")]));
         let faked_left = count(anon.call("GET", "/api/home", None, &[("X-Forwarded-For", "192.168.1.20, 203.0.113.9")]));
         let inside = count(anon.call("GET", "/api/home", None, &[("X-Forwarded-For", "192.168.1.20")]));
-        c.call("PUT", "/api/settings", Some(json!({"home_profiles": false})), &[]);
+        let no_header = count(anon.get("/api/home"));
+        c.call("PUT", "/api/settings", Some(json!({"home_profiles": false, "trusted_proxies": ""})), &[]);
         let off = count(anon.get("/api/home"));
         c.call("PUT", "/api/settings", Some(json!({"home_profiles": true, "trusted_proxies": ""})), &[]);
         steps.add(
             "reverse proxy",
-            direct > 0 && spoofed == 0 && outside == 0 && faked_left == 0 && inside > 0 && off == 0,
-            format!("profiles shown: directly {direct}, forwarded by an untrusted proxy {spoofed}, trusted proxy + outside caller {outside}, made-up home address in front {faked_left}, trusted proxy + home caller {inside}, switched off {off}"),
+            direct > 0 && spoofed == 0 && outside == 0 && faked_left == 0 && inside > 0 && no_header == 0 && off == 0,
+            format!("profiles shown: directly {direct}, forwarded by an untrusted proxy {spoofed}, trusted proxy + outside caller {outside}, made-up home address in front {faked_left}, trusted proxy + home caller {inside}, trusted proxy without the header {no_header}, switched off {off}"),
         );
     }
 

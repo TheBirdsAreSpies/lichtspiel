@@ -1285,7 +1285,12 @@ fn parse_fwd(v: &str) -> Option<IpAddr> {
 /// address it forwarded. The flag is false when a forwarding header came from someone who is
 /// not trusted, so the address can't be relied on (it then never counts as local).
 pub fn client_address(peer: Option<IpAddr>, xff: &[String], real_ip: Option<&str>, forwarded: &[String], trusted: &str) -> (Option<IpAddr>, bool) {
-    if xff.is_empty() && real_ip.is_none() && forwarded.is_empty() { return (peer, true); }
+    if xff.is_empty() && real_ip.is_none() && forwarded.is_empty() {
+        // A trusted proxy that says nothing about the caller: the caller is unknown, and the
+        // proxy's own (private) address must not make everyone look like they are at home.
+        let from_proxy = peer.is_some_and(|p| ip_in_list(trusted, p));
+        return (peer, !from_proxy);
+    }
     let Some(p) = peer else { return (None, false) };
     if !ip_in_list(trusted, p) { return (peer, false); }
     // X-Forwarded-For: proxies add on the right, so the first address from the right that is
@@ -2098,5 +2103,7 @@ mod proxy_tests {
         assert_eq!(client_address(proxy, &[], Some("203.0.113.9"), &[], "172.18.0.2"), (ip("203.0.113.9"), true));
         assert_eq!(client_address(proxy, &[], None, &v(&["for=\"[2001:db8::1]:4711\";proto=https"]), "172.18.0.2"), (ip("2001:db8::1"), true));
         assert_eq!(client_address(proxy, &v(&["garbage"]), None, &[], "172.18.0.2").1, false);
+        // The proxy forgot the header: not trusted, so never "home network".
+        assert_eq!(client_address(proxy, &[], None, &[], "172.16.0.0/12").1, false);
     }
 }
