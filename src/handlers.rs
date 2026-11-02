@@ -276,19 +276,29 @@ pub fn timeline(app: &Arc<App>, user: &User, iid: u64, time_ms: u64, state: &str
         if watched_now { db.record_play(user.id, iid, false); }
     }
     let key = format!("{}:{}", user.id, iid);
+    // The play so far (for the statistics): carried from report to report,
+    // counting the time between two while it was playing.
+    let (before, entry) = {
+        let map = app.playing.lock().unwrap();
+        let before = map.get(&key).cloned();
+        let (session_at, mut watched_ms) = before.as_ref().map(|b| (b.session_at, b.watched_ms)).unwrap_or((now(), 0));
+        if let Some(b) = before.as_ref().filter(|b| b.state == "playing") {
+            watched_ms += (b.updated.elapsed().as_millis() as u64).min(30_000);
+        }
+        (before.map(|b| b.state), Playing { user_id: user.id, item_id: iid, offset_ms: time_ms, state: state.into(), method: "player".into(), updated: Instant::now(), client, height: 0, audio: None, viewer, session_at, watched_ms })
+    };
     if let Some(message) = stopped_by_owner {
-        app.playing.lock().unwrap().remove(&key);
+        let ended = app.playing.lock().unwrap().remove(&key);
+        app.close_sessions(ended.into_iter().chain([entry]).collect());
         app.save();
         app.fire("playback.stopped", json!({"id": iid, "user": user.username, "time": time_ms, "by_owner": true}));
         return ok(json!({"ok": false, "stopped": true, "message": message, "watched": watched_now}));
     }
     if state == "stopped" {
         app.playing.lock().unwrap().remove(&key);
+        app.close_sessions(vec![entry]);
     } else {
-        let mut map = app.playing.lock().unwrap();
-        let before = map.get(&key).map(|p| p.state.clone());
-        map.insert(key, Playing { user_id: user.id, item_id: iid, offset_ms: time_ms, state: state.into(), method: "player".into(), updated: Instant::now(), client, height: 0, audio: None, viewer });
-        drop(map);
+        app.playing.lock().unwrap().insert(key, entry);
         match before {
             None => app.fire("playback.started", json!({"id": iid, "user": user.username, "time": time_ms, "state": state})),
             // Paused or playing again (not every 10-second report).
@@ -308,7 +318,7 @@ pub fn sessions(app: &Arc<App>, user: &User) -> Resp {
     for p in app.playing.lock().unwrap().values() { all.push((p.clone(), "player")); }
     for p in app.progressive.lock().unwrap().values() { all.push((p.clone(), "progressive")); }
     for s in app.hls.lock().unwrap().values() {
-        all.push((Playing { user_id: s.user_id, item_id: s.item_id, offset_ms: 0, state: "playing".into(), method: format!("{:?}", s.method).to_lowercase(), updated: s.last_access, client: format!("hls {}", s.id), height: s.height, audio: s.audio, viewer: s.viewer.clone() }, "hls"));
+        all.push((Playing { user_id: s.user_id, item_id: s.item_id, offset_ms: 0, state: "playing".into(), method: format!("{:?}", s.method).to_lowercase(), updated: s.last_access, client: format!("hls {}", s.id), height: s.height, audio: s.audio, viewer: s.viewer.clone(), session_at: 0, watched_ms: 0 }, "hls"));
     }
     let list: Vec<Value> = all.iter().filter(|(p, _)| user.admin || p.user_id == user.id).map(|(p, kind)| {
         let it = db.items.get(&p.item_id);
@@ -505,7 +515,7 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let out = child.stdout.take().unwrap();
     let key = db::random_hex(8);
     let method = format!("{:?}", d.method).to_lowercase();
-    app.progressive.lock().unwrap().insert(key.clone(), Playing { user_id: user.id, item_id: it.id, offset_ms: (offset * 1000.0) as u64, state: "playing".into(), method: method.clone(), updated: Instant::now(), client: "browser".into(), height: d.height, audio: req.audio_stream, viewer: ctx.viewer() });
+    app.progressive.lock().unwrap().insert(key.clone(), Playing { user_id: user.id, item_id: it.id, offset_ms: (offset * 1000.0) as u64, state: "playing".into(), method: method.clone(), updated: Instant::now(), client: "browser".into(), height: d.height, audio: req.audio_stream, viewer: ctx.viewer(), session_at: 0, watched_ms: 0 });
     let mut h = base_headers();
     h.push(header("Content-Type", "video/mp4"));
     h.push(header("X-Transcode-Method", &method));

@@ -2,7 +2,7 @@
 //! bandwidth, processor and memory, who is active, and the play history
 //! counted per day.
 
-use crate::db::{now, Db, ItemKind, User};
+use crate::db::{now, Db, ItemKind, PlaySession, User, SESSION_MIN_MS};
 use crate::server::*;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -62,7 +62,7 @@ pub const ACTIVE_SECONDS: u64 = 300;
 
 fn sample_json(s: &crate::stats::Sample) -> Value {
     json!({"at": s.at, "cpu": s.cpu, "cpu_server": s.cpu_server, "mem_used": s.mem_used, "mem_total": s.mem_total,
-        "mem_server": s.mem_server, "out_bps": s.out_bps, "streams": s.streams, "transcodes": s.transcodes})
+        "mem_server": s.mem_server, "out_bps": s.out_bps, "out_remote_bps": s.out_remote_bps, "streams": s.streams, "transcodes": s.transcodes})
 }
 
 /// Everything playing right now, one entry per person and video: the player's
@@ -242,52 +242,91 @@ fn top_of(db: &Db, id: u64) -> u64 {
     at
 }
 
-/// GET /api/dashboard/history?days=30&user=: viewings over the last days, as
+/// GET /api/dashboard/history?days=30&user=: plays over the last days, as
 /// a compact list the browser counts per day in its own time zone
 /// [[at, user id, kind, minutes], …], plus who and what was played most and
-/// the latest viewings.
-pub fn history(db: &Db, days: u64, only_user: Option<u64>) -> Resp {
+/// the latest plays.
+///
+/// A play is each time someone played a movie or episode for at least a minute,
+/// with the time it really ran (`open`: the ones still going). Marked watched
+/// by hand (or imported) counts as a play of the whole length; viewings from
+/// before plays were recorded count as before.
+pub fn history(db: &Db, open: &[PlaySession], days: u64, only_user: Option<u64>) -> Resp {
+    struct Play {
+        at: u64,
+        user: u64,
+        item: u64,
+        minutes: f64,
+        manual: bool,
+        live: bool,
+    }
     let days = days.clamp(1, 366);
     let from = now().saturating_sub(days * 86400);
-    let events: Vec<&crate::db::PlayEvent> =
-        db.history.iter().filter(|e| e.at >= from && only_user.is_none_or(|u| e.user_id == u)).collect();
-    let mins = |id: u64| db.items.get(&id).map(|i| (i.duration_ms as f64 / 60000.0).round() as u64).unwrap_or(0);
-    let plays: Vec<Value> = events.iter().map(|e| json!([e.at, e.user_id, kind_name(db, e.item_id), mins(e.item_id)])).collect();
-    let mut by_user: HashMap<u64, (u64, u64)> = HashMap::new();
-    let mut by_title: HashMap<u64, (u64, u64)> = HashMap::new();
-    for e in &events {
-        let u = by_user.entry(e.user_id).or_default();
-        u.0 += 1;
-        u.1 += mins(e.item_id);
-        let t = by_title.entry(top_of(db, e.item_id)).or_default();
-        t.0 += 1;
-        t.1 += mins(e.item_id);
+    let length = |id: u64| db.items.get(&id).map(|i| i.duration_ms as f64 / 60000.0).unwrap_or(0.0);
+    let since = db.sessions.first().map(|s| s.at).into_iter().chain(open.iter().map(|s| s.at)).min().unwrap_or(u64::MAX);
+    let wanted = |at: u64, user: u64| at >= from && only_user.is_none_or(|u| user == u);
+    let mut events: Vec<Play> = vec![];
+    for (s, live) in db.sessions.iter().map(|s| (s, false)).chain(open.iter().filter(|s| s.watched_ms >= SESSION_MIN_MS).map(|s| (s, true))) {
+        if wanted(s.at, s.user_id) {
+            events.push(Play { at: s.at, user: s.user_id, item: s.item_id, minutes: s.watched_ms as f64 / 60000.0, manual: false, live });
+        }
     }
-    let mut users: Vec<Value> = by_user
+    for e in &db.history {
+        // Watched to the end while plays were recorded: that play is counted already.
+        if (e.manual || e.at < since) && wanted(e.at, e.user_id) {
+            events.push(Play { at: e.at, user: e.user_id, item: e.item_id, minutes: length(e.item_id), manual: e.manual, live: false });
+        }
+    }
+    events.sort_by_key(|e| e.at);
+    let round = |m: f64| (m * 10.0).round() / 10.0;
+    let plays: Vec<Value> = events.iter().map(|e| json!([e.at, e.user, kind_name(db, e.item), round(e.minutes)])).collect();
+    let mut by_user: HashMap<u64, (u64, f64)> = HashMap::new();
+    let mut by_title: HashMap<u64, (u64, f64)> = HashMap::new();
+    for e in &events {
+        let u = by_user.entry(e.user).or_default();
+        u.0 += 1;
+        u.1 += e.minutes;
+        let t = by_title.entry(top_of(db, e.item)).or_default();
+        t.0 += 1;
+        t.1 += e.minutes;
+    }
+    let mut users: Vec<(u64, u64, f64)> = by_user.into_iter().map(|(id, (n, m))| (id, n, m)).collect();
+    users.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.total_cmp(&a.2)));
+    let users: Vec<Value> = users
         .into_iter()
-        .map(|(id, (n, m))| json!({"id": id, "username": db.user(id).map(|u| u.username.clone()), "plays": n, "minutes": m}))
+        .map(|(id, n, m)| json!({"id": id, "username": db.user(id).map(|u| u.username.clone()), "plays": n, "minutes": round(m)}))
         .collect();
-    users.sort_by_key(|u| std::cmp::Reverse(u["plays"].as_u64().unwrap_or(0)));
-    let mut titles: Vec<(u64, u64, u64)> = by_title.into_iter().map(|(id, (n, m))| (id, n, m)).collect();
-    titles.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
+    let mut titles: Vec<(u64, u64, f64)> = by_title.into_iter().map(|(id, (n, m))| (id, n, m)).collect();
+    titles.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.total_cmp(&a.2)));
     let titles: Vec<Value> = titles
         .into_iter()
         .take(10)
         .map(|(id, n, m)| {
             let it = db.items.get(&id);
             json!({"id": id, "title": it.map(|i| i.title.clone()), "type": it.map(|i| i.kind.as_str()), "year": it.and_then(|i| i.year),
-                "thumb": format!("/library/metadata/{}/thumb?v={}", id, it.map(|i| i.updated_at).unwrap_or(0)), "plays": n, "minutes": m})
+                "thumb": format!("/library/metadata/{}/thumb?v={}", id, it.map(|i| i.updated_at).unwrap_or(0)), "plays": n, "minutes": round(m)})
         })
         .collect();
     let recent: Vec<Value> = events
         .iter()
         .rev()
         .take(25)
-        .map(|e| json!({"at": e.at, "manual": e.manual, "user": db.user(e.user_id).map(|u| u.username.clone()), "item": crate::actions::brief(db.items.get(&e.item_id), e.item_id, db)}))
+        .map(|e| json!({"at": e.at, "manual": e.manual, "live": e.live, "minutes": round(e.minutes),
+            "user": db.user(e.user).map(|u| u.username.clone()), "item": crate::actions::brief(db.items.get(&e.item), e.item, db)}))
         .collect();
-    let total_minutes: u64 = events.iter().map(|e| mins(e.item_id)).sum();
-    ok(json!({"days": days, "from": from, "size": plays.len(), "minutes": total_minutes,
+    let total_minutes = events.iter().fold(0.0, |n, e| n + e.minutes);
+    ok(json!({"days": days, "from": from, "size": plays.len(), "minutes": round(total_minutes),
         "plays": plays, "users": users, "titles": titles, "recent": recent}))
+}
+
+/// GET /api/dashboard/stats?range=realtime|12h|24h|7d|30d|90d|365d|all: bandwidth
+/// (with the part sent outside the local network), processor, memory and streams
+/// on an even grid; a time without values is only {"at"}.
+pub fn stats_range(app: &Arc<App>, range: &str) -> Resp {
+    let range = match range { "12h" | "24h" | "7d" | "30d" | "90d" | "365d" | "all" => range, _ => "realtime" };
+    let (step, values) = app.stats.range(range, now());
+    let samples: Vec<Value> = values.iter().map(|(at, s)| s.as_ref().map(sample_json).unwrap_or_else(|| json!({"at": at}))).collect();
+    ok(json!({"range": range, "step": step, "samples": samples}))
 }
 
 #[cfg(test)]
@@ -309,6 +348,29 @@ mod tests {
         let user: User = serde_json::from_value(json!({"id": 1, "username": "a", "password_hash": "", "salt": "", "admin": true, "created_at": 0})).unwrap();
         db.users.push(user.clone());
         (db, user)
+    }
+
+    #[test]
+    fn plays_count_with_the_time_really_watched() {
+        let (mut db, _) = setup();
+        db.items.get_mut(&10).unwrap().duration_ms = 90 * 60000;
+        let t = now();
+        // Before plays were recorded: a viewing counts with the whole length.
+        db.history.push(crate::db::PlayEvent { user_id: 1, item_id: 10, at: t - 5000, manual: false });
+        assert!(db.record_session(PlaySession { user_id: 1, item_id: 10, at: t - 4000, watched_ms: 20 * 60000 }));
+        // Too short: not counted.
+        assert!(!db.record_session(PlaySession { user_id: 1, item_id: 22, at: t - 3000, watched_ms: 30_000 }));
+        // Watched to the end during a recorded play: counted once (by the play).
+        db.history.push(crate::db::PlayEvent { user_id: 1, item_id: 10, at: t - 3500, manual: false });
+        // Marked watched by hand: counts.
+        db.history.push(crate::db::PlayEvent { user_id: 1, item_id: 23, at: t - 2000, manual: true });
+        let open = [PlaySession { user_id: 1, item_id: 22, at: t - 600, watched_ms: 5 * 60000 }];
+        let r = history(&db, &open, 30, None);
+        let v: Value = serde_json::from_slice(&{ let mut b = vec![]; std::io::Read::read_to_end(&mut r.into_reader(), &mut b).unwrap(); b }).unwrap();
+        assert_eq!(v["size"], 4, "{v}");
+        assert_eq!(v["minutes"].as_f64().unwrap(), 90.0 + 20.0 + 0.0 + 5.0);
+        assert_eq!(v["recent"][0]["live"], true);
+        assert_eq!(v["recent"][0]["minutes"].as_f64().unwrap(), 5.0);
     }
 
     #[test]

@@ -65,13 +65,21 @@ Linux/Windows machine):
   (*Settings → Keep converted downloads*). Under **Users & invites** each person can be allowed
   to download or not (*May download*; on by default); without it the plain
   file download is refused too. Converting also needs *May convert*.
-- **Dashboard** (admins, under *Manage*): what is playing right now — who, on which device and
-  address, direct play / direct stream / transcode, position and the bandwidth it takes — plus
-  tiles and last-hour charts for bandwidth, processor (whole computer and Lichtspiel itself),
-  memory and streams, a list of users with who is active (seen in the last 5 minutes), and the
-  **play history** as a chart per day (per week for a year): viewings or hours, movies and
-  episodes stacked, for everyone or one person, with the most played titles, top users and the
-  latest viewings. Processor and memory are read on Linux (Synology) and Windows.
+- **Dashboard** (admins, the pulse button at the top — grey when quiet, yellow with the number
+  of streams while something plays): what is playing right now — who, on which device
+  ("Plex for Samsung — TV 2020", "Chrome · Windows"), local or remote with the address and
+  bandwidth, picture and sound as source → output ("1080p (HEVC Main) → 720p (H.264) —
+  Transcode (hw)", "German (AC3 5.1) → AAC Stereo — Transcode") and the position. **Stop** ends
+  a playback with an optional message: converted streams end at once, the web player closes and
+  shows the message. Below: tiles and charts for bandwidth (local and remote), processor and
+  memory (all, Lichtspiel or the system) and streams over real time, the last 12 / 24 hours,
+  7 / 30 / 90 days, the last year or everything (minute and hour averages are kept in
+  `stats.json` in the data folder), a list of users with who is active (seen in the last
+  5 minutes), and the **play history** as a chart per day (per week for a year): plays or hours,
+  movies and episodes stacked, for everyone or one person, with the most played titles, top users
+  and the latest plays. Every play of a minute or more counts, with the time really watched
+  (pauses don't count); marked watched by hand counts as a whole play. Processor and memory are
+  read on Linux (Synology) and Windows.
 - **The left menu is yours**: "⋯" next to *Libraries* → **Edit the menu** to sort it (drag, or
   the arrows) and to unpin libraries or Playlists; unpinned ones wait under **More**. Kept per
   person on the server.

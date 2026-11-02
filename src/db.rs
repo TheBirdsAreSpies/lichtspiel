@@ -542,6 +542,22 @@ pub struct Download {
 /// The play history keeps at most this many viewings (the oldest go first).
 pub const HISTORY_MAX: usize = 20000;
 
+/// One time someone played a movie or episode (watched to the end or not), for
+/// the dashboard's play statistics: when it started and how long it really ran.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct PlaySession {
+    pub user_id: u64,
+    pub item_id: u64,
+    pub at: u64,
+    /// Time spent playing (pauses don't count).
+    pub watched_ms: u64,
+}
+
+/// Shorter plays are not counted (a look in, a wrong click).
+pub const SESSION_MIN_MS: u64 = 60_000;
+/// The statistics keep at most this many plays (the oldest go first).
+pub const SESSIONS_MAX: usize = 50000;
+
 /// "Report a problem" on a movie, show or episode; the owner sees the list.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProblemReport {
@@ -831,6 +847,9 @@ pub struct Db {
     pub plugins: BTreeMap<String, PluginState>,
     #[serde(default)]
     pub history: Vec<PlayEvent>,
+    /// Plays that have ended, oldest first (see PlaySession).
+    #[serde(default)]
+    pub sessions: Vec<PlaySession>,
     #[serde(default)]
     pub reports: Vec<ProblemReport>,
     #[serde(default)]
@@ -853,6 +872,7 @@ impl Default for Db {
             views: Tracked::default(),
             plugins: BTreeMap::new(),
             history: vec![],
+            sessions: vec![],
             reports: vec![],
             downloads: vec![],
         };
@@ -930,6 +950,18 @@ impl Db {
             let extra = self.history.len() - HISTORY_MAX;
             self.history.drain(..extra);
         }
+    }
+
+    /// Keeps an ended play for the statistics (when it ran long enough).
+    pub fn record_session(&mut self, s: PlaySession) -> bool {
+        if s.watched_ms < SESSION_MIN_MS { return false; }
+        let pos = self.sessions.iter().rposition(|e| e.at <= s.at).map_or(0, |i| i + 1);
+        self.sessions.insert(pos, s);
+        if self.sessions.len() > SESSIONS_MAX {
+            let extra = self.sessions.len() - SESSIONS_MAX;
+            self.sessions.drain(..extra);
+        }
+        true
     }
 
     pub fn user(&self, id: u64) -> Option<&User> {

@@ -31,7 +31,8 @@ async function watchlistPage(qs) {
 }
 
 // ---------- dashboard
-const DB = { timer: null, days: 30, user: '', metric: 'plays', hist: null, data: null };
+const DB = { timer: null, days: 30, user: '', metric: 'plays', hist: null, data: null, series: null, seriesAt: 0,
+  range: store.get('dashRange', 'realtime'), cpuShow: store.get('dashCpu', 'all'), memShow: store.get('dashMem', 'all') };
 const fmtBits = bps => { const b = bps * 8; return b >= 1e9 ? fmtNum(b / 1e9, 2) + ' Gbit/s' : b >= 1e6 ? fmtNum(b / 1e6, 1) + ' Mbit/s' : b >= 1e3 ? fmtNum(b / 1e3, 0) + ' kbit/s' : fmtNum(b, 0) + ' bit/s'; };
 const fmtBytes = b => b >= 1e12 ? fmtNum(b / 1e12, 2) + ' TB' : b >= 1e9 ? fmtNum(b / 1e9, 1) + ' GB' : b >= 1e6 ? fmtNum(b / 1e6, 0) + ' MB' : fmtNum(b / 1e3, 0) + ' kB';
 const fmtPct = v => v === null || v === undefined ? '–' : fmtNum(v, v < 10 ? 1 : 0) + ' %';
@@ -70,7 +71,9 @@ const niceTop = v => 4 * niceMax(Math.max(v, 1e-9) / 4);
 const legend = entries => h('div', { class: 'legend' }, entries.map(([c, l]) => h('span', {}, h('i', { style: 'background:' + c }), l)));
 
 // Lines over time (the last hour). series: [{name, color, values}], times: unix seconds.
-function lineChart(box, { times, series, max, fmt, height = 150 }) {
+// dates: the range is days long (the axis shows dates, the tooltip date and time).
+function lineChart(box, { times, series, max, fmt, height = 150, dates = false }) {
+  const when = (sec, tip) => { const d = new Date(sec * 1000); return dates ? (tip ? d.toLocaleString(I18N.lang, { day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString(I18N.lang, { day: 'numeric', month: 'numeric' })) : tip ? d.toLocaleTimeString(I18N.lang) : d.toLocaleTimeString(I18N.lang, { hour: '2-digit', minute: '2-digit' }); };
   const W = Math.max(260, box.clientWidth || 600), H = height, L = 52, R = 10, T = 10, B = 22;
   const all = series.flatMap(s => s.values).filter(v => v !== null && v !== undefined);
   const yMax = niceTop(max || Math.max(...all, 0) * 1.1 || 1);
@@ -86,7 +89,7 @@ function lineChart(box, { times, series, max, fmt, height = 150 }) {
     let prev = '';
     for (let k = 0; k < labels; k++) {
       const i = Math.round((k / Math.max(1, labels - 1)) * (n - 1));
-      const txt = new Date(times[i] * 1000).toLocaleTimeString(I18N.lang, { hour: '2-digit', minute: '2-digit' });
+      const txt = when(times[i], false);
       if (txt === prev) continue;
       prev = txt;
       g.append(sv('text', { x: X(i), y: H - 6, 'text-anchor': k === 0 ? 'start' : k === labels - 1 ? 'end' : 'middle', class: 'tick' },
@@ -94,17 +97,18 @@ function lineChart(box, { times, series, max, fmt, height = 150 }) {
     }
   }
   for (const s of series) {
-    let d = '', area = '', started = false, first = 0, lastI = 0;
+    // A gap (no values: the server wasn't running) breaks the line; each piece gets its own fill.
+    let d = '', area = '', seg = '', started = false, first = 0, lastI = 0;
+    const closeSeg = () => { if (seg) area += seg + `L${X(lastI).toFixed(1)} ${Y(0)}L${X(first).toFixed(1)} ${Y(0)}Z`; seg = ''; };
     s.values.forEach((v, i) => {
-      if (v === null || v === undefined) { started = false; return; }
-      d += (started ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1);
-      if (!started && !area) first = i;
+      if (v === null || v === undefined) { if (started) closeSeg(); started = false; return; }
+      const p = (started ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1);
+      d += p; seg += p;
+      if (!started) first = i;
       started = true; lastI = i;
     });
-    if (s.fill && d) {
-      area = d + `L${X(lastI).toFixed(1)} ${Y(0)}L${X(first).toFixed(1)} ${Y(0)}Z`;
-      g.append(sv('path', { d: area, fill: s.color, opacity: 0.14 }));
-    }
+    closeSeg();
+    if (s.fill && area) g.append(sv('path', { d: area, fill: s.color, opacity: 0.14 }));
     if (d) g.append(sv('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
   }
   if (!n) g.append(sv('text', { x: W / 2, y: H / 2, 'text-anchor': 'middle', class: 'tick' }, t('Collecting values…')));
@@ -119,7 +123,7 @@ function lineChart(box, { times, series, max, fmt, height = 150 }) {
     const i = Math.max(0, Math.min(n - 1, Math.round(((px - L) / (W - L - R)) * (n - 1))));
     cross.setAttribute('x1', X(i)); cross.setAttribute('x2', X(i)); cross.style.display = '';
     series.forEach((s, k) => { const v = s.values[i]; if (v === null || v === undefined) { dots[k].style.display = 'none'; return; } dots[k].setAttribute('cx', X(i)); dots[k].setAttribute('cy', Y(v)); dots[k].style.display = ''; });
-    vizTip(e, [[null, new Date(times[i] * 1000).toLocaleTimeString(I18N.lang)], ...series.map(s => [s.color, s.name, s.values[i] === null || s.values[i] === undefined ? '–' : fmt(s.values[i], true)])]);
+    vizTip(e, [[null, when(times[i], true)], ...series.map(s => [s.color, s.name, s.values[i] === null || s.values[i] === undefined ? '–' : fmt(s.values[i], true)])]);
   });
   hit.addEventListener('mouseleave', e => { cross.style.display = 'none'; dots.forEach(d => (d.style.display = 'none')); vizTip(e, null); });
   g.append(hit);
@@ -223,7 +227,7 @@ async function dashboardPage() {
   if (!S.me.admin) return set(h('div', { class: 'empty' }, t('Only an admin can do this')));
   clearTimeout(DB.timer);
   const live = h('div', {}), charts = h('div', { class: 'dash-charts' }), hist = h('div', {});
-  set(h('div', { class: 'dash-head' }, h('h1', {}, t('Dashboard')), h('span', { class: 'dim', id: 'dashsub' })), live, charts, hist);
+  set(h('div', { class: 'dash-head' }, h('h1', {}, t('Dashboard')), h('span', { class: 'dim', id: 'dashsub' })), live, chartTools(charts), charts, hist);
   await Promise.all([dashLive(live, charts), dashHistory(hist)]);
 }
 async function dashLive(live, charts) {
@@ -234,7 +238,7 @@ async function dashLive(live, charts) {
   if (!live.isConnected) return;
   DB.data = d;
   drawPlayingBtn(d.playing.length);
-  const c = d.current || {}, ss = d.samples || [];
+  const c = d.current || {};
   const active = d.users.filter(u => u.active);
   const tc = d.playing.filter(p => p.method === 'transcode').length;
   const sub = $('#dashsub');
@@ -243,7 +247,7 @@ async function dashLive(live, charts) {
   live.replaceChildren(
     h('div', { class: 'tiles' },
       tile(t('Playing now'), String(d.playing.length), tc ? t('{n} of them converted', { n: tc }) + (d.max_transcodes ? ' ' + t('(at most {n} at once)', { n: d.max_transcodes }) : '') : t('none converted')),
-      tile(t('Bandwidth'), fmtBits(c.out_bps || 0), t('sent to players right now')),
+      tile(t('Bandwidth'), fmtBits(c.out_bps || 0), c.out_bps ? t('{local} local · {remote} remote', { local: fmtBits(Math.max(0, c.out_bps - (c.out_remote_bps || 0))), remote: fmtBits(c.out_remote_bps || 0) }) : t('sent to players right now')),
       tile(t('Processor'), fmtPct(c.cpu), c.cpu_server !== null && c.cpu_server !== undefined ? t('Lichtspiel: {pct} · {n} cores', { pct: fmtPct(c.cpu_server), n: d.cores }) : t('{n} cores', { n: d.cores })),
       tile(t('Memory'), c.mem_total ? fmtPct((100 * c.mem_used) / c.mem_total) : '–', mem + (c.mem_server ? ' · ' + t('Lichtspiel: {size}', { size: fmtBytes(c.mem_server) }) : '')),
       tile(t('Active users'), `${active.length}`, t('of {n} · active = seen in the last {m} min', { n: d.users.length, m: Math.round(d.active_seconds / 60) }))),
@@ -259,25 +263,62 @@ async function dashLive(live, charts) {
         h('td', { class: 'dim' }, u.client || '–'), h('td', { class: 'dim' }, u.ip || '–'),
         h('td', {}, u.playing ? String(u.playing) : '–'), h('td', {}, u.out_bps ? fmtBits(u.out_bps) : '–'),
         h('td', { class: 'dim' }, u.last_play ? fmtDateTime(u.last_play) : '–'))))));
-  // The last hour.
+  DB.timer = setTimeout(() => dashLive(live, charts), (d.sample_seconds || 5) * 1000);
+  // Real time follows every sample; longer ranges change slowly (once a minute is enough).
+  if (DB.range === 'realtime' || !DB.series || DB.series.range !== DB.range || Date.now() - DB.seriesAt > 60000) await loadSeries();
+  if (live.isConnected) drawCharts(charts);
+}
+async function loadSeries() {
+  try { DB.series = await GET('/api/dashboard/stats?range=' + DB.range); DB.seriesAt = Date.now(); } catch (e) { /* the next round tries again */ }
+}
+const RANGES = [['realtime', 'Real time'], ['12h', 'Last 12 hours'], ['24h', 'Last 24 hours'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'], ['365d', 'Last year'], ['all', 'Unlimited']];
+const SHOW = [['all', 'All'], ['server', 'Lichtspiel'], ['system', 'System']];
+function segBtns(vals, cur, pick) {
+  return h('div', { class: 'seg' }, vals.map(([v, l]) => h('button', { class: 'small' + (cur === v ? ' on' : ''), onclick: () => pick(v) }, t(l))));
+}
+// The time range for every chart, above them.
+function chartTools(charts) {
+  const box = h('div', { class: 'dash-head', style: 'margin-top:26px' }, h('h2', { style: 'margin:0' }, t('Activity')),
+    h('select', { 'aria-label': t('Time range'), onchange: async e => {
+      DB.range = e.target.value; store.set('dashRange', DB.range);
+      await loadSeries(); drawCharts(charts);
+    } }, RANGES.map(([v, l]) => h('option', { value: v, selected: DB.range === v }, t(l)))));
+  return box;
+}
+function drawCharts(charts) {
+  const r = DB.series, c = (DB.data && DB.data.current) || {};
+  if (!r || !charts.isConnected) return;
+  const ss = r.samples || [];
   const times = ss.map(s => s.at);
+  // Longer than a day and a half: the axis shows days.
+  const dates = ss.length > 1 && times[times.length - 1] - times[0] > 36 * 3600;
+  const label = t((RANGES.find(x => x[0] === r.range) || RANGES[0])[1]);
+  const num = v => (v === null || v === undefined ? null : v);
   const gb = v => (v === null || v === undefined ? null : v / 1e9);
   const memMax = c.mem_total ? c.mem_total / 1e9 : null;
-  const box = (title, note) => { const b = h('div', { class: 'chart' }); return [h('div', { class: 'panel' }, h('div', { class: 'ch-title' }, h('b', {}, title), note ? h('span', { class: 'dim' }, note) : null), b), b]; };
-  const [p1, b1] = box(t('Bandwidth'), t('last hour'));
-  const [p2, b2] = box(t('Processor'), t('last hour'));
-  const [p3, b3] = box(t('Memory'), memMax ? t('of {size}', { size: fmtBytes(c.mem_total) }) : t('last hour'));
-  const [p4, b4] = box(t('Streams'), t('last hour'));
-  charts.replaceChildren(p1, p2, p3, p4);
-  // The unit follows the highest value of the hour (bit/s, kbit/s, Mbit/s, Gbit/s).
-  const peak = Math.max(0, ...ss.map(s => s.out_bps * 8));
+  const box = (title, ...side) => { const b = h('div', { class: 'chart' }); return [h('div', { class: 'panel' }, h('div', { class: 'ch-title' }, h('b', {}, title), h('span', { class: 'ch-side' }, side)), b), b]; };
+  const redraw = () => drawCharts(charts);
+  // The unit follows the highest value of the range (bit/s, kbit/s, Mbit/s, Gbit/s).
+  const peak = Math.max(0, ...ss.map(s => (s.out_bps || 0) * 8));
   const [div, unit] = peak >= 1e9 ? [1e9, 'Gbit/s'] : peak >= 1e6 ? [1e6, 'Mbit/s'] : peak >= 1e3 ? [1e3, 'kbit/s'] : [1, 'bit/s'];
-  lineChart(b1, { times, series: [{ name: t('Sent'), color: 'var(--s1)', values: ss.map(s => (s.out_bps * 8) / div), fill: true }], fmt: (v, full) => fmtNum(v, v && v < 10 && v % 1 ? 1 : 0) + (full ? ' ' + unit : '') });
-  b1.previousSibling.lastChild.textContent = t('last hour') + ' · ' + unit;
-  lineChart(b2, { times, max: 100, series: [{ name: t('Computer'), color: 'var(--s1)', values: ss.map(s => s.cpu) }, { name: 'Lichtspiel', color: 'var(--s2)', values: ss.map(s => s.cpu_server) }], fmt: v => fmtNum(v, 0) + ' %' });
-  lineChart(b3, { times, max: memMax, series: [{ name: t('Computer'), color: 'var(--s1)', values: ss.map(s => gb(s.mem_used)) }, { name: 'Lichtspiel', color: 'var(--s2)', values: ss.map(s => gb(s.mem_server)) }], fmt: (v, full) => fmtNum(v, full && v < 10 ? 1 : 0) + (full ? ' GB' : '') });
-  lineChart(b4, { times, series: [{ name: t('Playing'), color: 'var(--s1)', values: ss.map(s => s.streams) }, { name: t('Converted'), color: 'var(--s2)', values: ss.map(s => s.transcodes) }], max: Math.max(4, ...ss.map(s => s.streams)), fmt: v => fmtNum(v, 0) });
-  DB.timer = setTimeout(() => dashLive(live, charts), (d.sample_seconds || 5) * 1000);
+  const [p1, b1] = box(t('Bandwidth'), h('span', { class: 'dim' }, label + ' · ' + unit));
+  const [p2, b2] = box(t('Processor'), segBtns(SHOW, DB.cpuShow, v => { DB.cpuShow = v; store.set('dashCpu', v); redraw(); }));
+  const [p3, b3] = box(t('Memory'), segBtns(SHOW, DB.memShow, v => { DB.memShow = v; store.set('dashMem', v); redraw(); }));
+  const [p4, b4] = box(t('Streams'), h('span', { class: 'dim' }, label));
+  charts.replaceChildren(p1, p2, p3, p4);
+  const bits = v => (v === null || v === undefined ? null : (v * 8) / div);
+  lineChart(b1, { times, dates, series: [
+    { name: t('Local'), color: 'var(--s1)', values: ss.map(s => (s.out_bps === undefined ? null : bits(Math.max(0, s.out_bps - (s.out_remote_bps || 0))))), fill: true },
+    { name: t('Remote'), color: 'var(--s2)', values: ss.map(s => (s.out_bps === undefined ? null : bits(s.out_remote_bps || 0))), fill: true }],
+  fmt: (v, full) => fmtNum(v, v && v < 10 && v % 1 ? 1 : 0) + (full ? ' ' + unit : '') });
+  const pick = (show, sys, srv) => [show !== 'server' ? sys : null, show !== 'system' ? srv : null].filter(Boolean);
+  lineChart(b2, { times, dates, max: DB.cpuShow === 'server' ? null : 100, series: pick(DB.cpuShow,
+    { name: t('System'), color: 'var(--s1)', values: ss.map(s => num(s.cpu)) },
+    { name: 'Lichtspiel', color: 'var(--s2)', values: ss.map(s => num(s.cpu_server)) }), fmt: v => fmtNum(v, 0) + ' %' });
+  lineChart(b3, { times, dates, max: DB.memShow === 'server' ? null : memMax, series: pick(DB.memShow,
+    { name: t('System'), color: 'var(--s1)', values: ss.map(s => gb(s.mem_used)) },
+    { name: 'Lichtspiel', color: 'var(--s2)', values: ss.map(s => gb(s.mem_server)) }), fmt: (v, full) => fmtNum(v, full && v < 10 ? 1 : 0) + (full ? ' GB' : '') });
+  lineChart(b4, { times, dates, series: [{ name: t('Playing'), color: 'var(--s1)', values: ss.map(s => num(s.streams)) }, { name: t('Converted'), color: 'var(--s2)', values: ss.map(s => num(s.transcodes)) }], max: Math.max(4, ...ss.map(s => s.streams || 0)), fmt: v => fmtNum(v, 0) });
 }
 // Viewings per day (or per week for long spans), in this browser's time zone.
 async function dashHistory(box) {
@@ -329,7 +370,7 @@ async function dashHistory(box) {
       r.recent.length ? h('table', {}, h('tr', {}, [t('When'), t('User'), t('Title'), ''].map(x => h('th', {}, x))),
         r.recent.map(e => h('tr', {}, h('td', { class: 'dim' }, fmtDateTime(e.at)), h('td', {}, e.user || '?'),
           h('td', {}, e.item.title ? h('a', { href: '#/item/' + e.item.id }, what(e.item)) : what(e.item)),
-          h('td', { class: 'dim' }, e.manual ? t('marked by hand') : '')))) : h('p', { class: 'dim' }, t('No viewings in this time.'))));
+          h('td', { class: 'dim' }, e.manual ? t('marked by hand') : [fmtDur(e.minutes * 60000), e.live ? ' · ' + t('playing now') : ''])))) : h('p', { class: 'dim' }, t('No viewings in this time.'))));
   barChart(chart, { buckets, keys: KINDS, fmt });
 }
 window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#/dashboard')) clearTimeout(DB.timer); vizTip({}, null); });

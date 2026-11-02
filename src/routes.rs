@@ -101,6 +101,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("DELETE", "/api/downloads/{id}", "Remove a download (stops its conversion, deletes the converted copy)"),
     ("DELETE", "/api/downloads", "Remove several ?state=finished (ready and failed)|ready|failed|all &all=1 (admin: everyone's)"),
     ("GET", "/api/dashboard", "Admin: what is playing (who, how, bandwidth), processor and memory of the computer and the server, bytes sent, the last hour in samples, users and who is active"),
+    ("GET", "/api/dashboard/stats", "Admin: bandwidth (all and outside the local network), processor and memory (computer and server) and streams over ?range=realtime|12h|24h|7d|30d|90d|365d|all, as samples on an even grid"),
     ("POST", "/api/dashboard/stop", "Admin: stop what a user is playing {user, item, message}: converted streams end at once, the player shows the message on its next report, and the same video can't start again for 30 s unless the player heard it"),
     ("GET", "/api/dashboard/history", "Admin: viewings of the last days ?days=30 &user=id as [[at, user, kind, minutes], …] to count per day, plus most played titles, top users and the latest viewings"),
     ("GET", "/hubs", "Home rows: continue watching, rows for the time of year (Halloween, Christmas, New Year's Eve, Valentine's Day; ?date=MM-DD tries a day), recently added movies and TV, pinned playlists"),
@@ -959,6 +960,10 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if !user.admin { return fail(403, "Only an admin can do this"); }
             crate::dashboard::dashboard(app)
         }
+        ("GET", ["api", "dashboard", "stats"]) => {
+            if !user.admin { return fail(403, "Only an admin can do this"); }
+            crate::dashboard::stats_range(app, ctx.param("range").unwrap_or("realtime"))
+        }
         ("POST", ["api", "dashboard", "stop"]) => {
             if !admin { return need_admin(); }
             let (Some(uid), Some(iid)) = (ctx.body["user"].as_u64(), ctx.body["item"].as_u64()) else { return fail(400, "user and item are needed") };
@@ -968,8 +973,10 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["api", "dashboard", "history"]) => {
             if !user.admin { return fail(403, "Only an admin can do this"); }
+            // Plays still going count too (with the time so far).
+            let open: Vec<crate::db::PlaySession> = app.playing.lock().unwrap().values().filter(|p| p.session_at > 0).map(|p| p.session()).collect();
             let db = app.db.lock().unwrap();
-            crate::dashboard::history(&db, ctx.num("days").unwrap_or(30), ctx.num("user"))
+            crate::dashboard::history(&db, &open, ctx.num("days").unwrap_or(30), ctx.num("user"))
         }
 
         // ---------------- hubs and search

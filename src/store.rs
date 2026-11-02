@@ -192,6 +192,7 @@ impl Changes {
             ("playlists", js(&db.playlists)),
             ("plugins", js(&db.plugins)),
             ("history", js(&db.history)),
+            ("sessions", js(&db.sessions)),
             ("reports", js(&db.reports)),
             ("downloads", js(&db.downloads)),
         ];
@@ -326,6 +327,7 @@ impl Store {
             views: views.into(),
             plugins: part(&parts, "plugins")?,
             history: part(&parts, "history")?,
+            sessions: part(&parts, "sessions")?,
             reports: part(&parts, "reports")?,
             downloads: part(&parts, "downloads")?,
         };
@@ -392,8 +394,8 @@ impl Store {
     }
 }
 
-const PART_NAMES: [&str; 13] = [
-    "version", "machine_id", "next_id", "settings", "sections", "users", "invites", "tokens", "playlists", "plugins", "history", "reports", "downloads",
+const PART_NAMES: [&str; 14] = [
+    "version", "machine_id", "next_id", "settings", "sections", "users", "invites", "tokens", "playlists", "plugins", "history", "sessions", "reports", "downloads",
 ];
 
 /// The library in a data folder without starting a server (for the

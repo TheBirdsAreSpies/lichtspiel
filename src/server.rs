@@ -89,6 +89,19 @@ pub struct Playing {
     pub height: u32,
     pub audio: Option<u32>,
     pub viewer: Viewer,
+    /// Player reports: when this play started, and how long it has played so far
+    /// (for the play statistics; 0 for streams).
+    pub session_at: u64,
+    pub watched_ms: u64,
+}
+
+impl Playing {
+    /// The play so far, counting the time since a "playing" report (as much as
+    /// a report adds at most, see `timeline`).
+    pub fn session(&self) -> db::PlaySession {
+        let since = if self.state == "playing" { (self.updated.elapsed().as_millis() as u64).min(30_000) } else { 0 };
+        db::PlaySession { user_id: self.user_id, item_id: self.item_id, at: self.session_at, watched_ms: self.watched_ms + since }
+    }
 }
 
 pub struct App {
@@ -1148,12 +1161,13 @@ impl App {
     pub fn stop_playback(&self, user: u64, item: u64, message: &str) -> usize {
         self.stops.lock().unwrap().insert((user, item), (message.trim().to_string(), Instant::now()));
         let mut n = 0;
-        {
+        let ended: Vec<Playing> = {
             let mut map = self.playing.lock().unwrap();
-            let before = map.len();
-            map.retain(|_, p| !(p.user_id == user && p.item_id == item));
-            n += before - map.len();
-        }
+            let keys: Vec<String> = map.iter().filter(|(_, p)| p.user_id == user && p.item_id == item).map(|(k, _)| k.clone()).collect();
+            keys.iter().filter_map(|k| map.remove(k)).collect()
+        };
+        n += ended.len();
+        self.close_sessions(ended);
         // Converted streams notice the stop themselves on their next read (see ChildStream).
         n += self.progressive.lock().unwrap().values().filter(|p| p.user_id == user && p.item_id == item).count();
         let ended: Vec<HlsSession> = {
@@ -1168,6 +1182,17 @@ impl App {
             let _ = std::fs::remove_dir_all(&s.dir);
         }
         n
+    }
+
+    /// Plays that ended (stopped, or the player went away): into the statistics.
+    pub fn close_sessions(&self, ended: Vec<Playing>) {
+        let ended: Vec<db::PlaySession> = ended.iter().filter(|p| p.session_at > 0).map(|p| p.session()).collect();
+        if ended.is_empty() { return; }
+        let mut db = self.db.lock().unwrap();
+        let mut any = false;
+        for s in ended { any |= db.record_session(s); }
+        drop(db);
+        if any { self.save(); }
     }
 
     /// The owner's message when they stopped this playback lately (Some("") without one).
@@ -1593,7 +1618,11 @@ pub fn start_background(app: &Arc<App>) {
     let a = app.clone();
     std::thread::spawn(move || {
         let mut last_t = crate::stats::times();
+        let stats_file = a.data_dir.join("stats.json");
+        a.stats.load(&stats_file);
         let mut last_bytes = a.stats.bytes_out.load(std::sync::atomic::Ordering::Relaxed);
+        let mut last_remote = a.stats.bytes_remote.load(std::sync::atomic::Ordering::Relaxed);
+        let mut taken: u64 = 0;
         let mut last_user: HashMap<u64, u64> = HashMap::new();
         let mut last_at = Instant::now();
         loop {
@@ -1607,6 +1636,9 @@ pub fn start_background(app: &Arc<App>) {
             let bytes = a.stats.bytes_out.load(std::sync::atomic::Ordering::Relaxed);
             let out_bps = (bytes.saturating_sub(last_bytes) as f64 / secs) as u64;
             last_bytes = bytes;
+            let remote = a.stats.bytes_remote.load(std::sync::atomic::Ordering::Relaxed);
+            let out_remote_bps = ((remote.saturating_sub(last_remote) as f64 / secs) as u64).min(out_bps);
+            last_remote = remote;
             let mut per_user = HashMap::new();
             for (uid, c) in a.stats.user_bytes.lock().unwrap().iter() {
                 let b = c.load(std::sync::atomic::Ordering::Relaxed);
@@ -1622,9 +1654,15 @@ pub fn start_background(app: &Arc<App>) {
                 mem_total: mem.as_ref().map(|m| m.total),
                 mem_server: mem.as_ref().map(|m| m.process).filter(|p| *p > 0),
                 out_bps,
+                out_remote_bps,
                 streams: a.stream_count(),
                 transcodes: a.active_transcodes(),
             });
+            // The minute and hour averages go to disk every five minutes.
+            taken += 1;
+            if taken % (300 / crate::stats::SAMPLE_SECONDS) == 0 {
+                a.stats.save(&stats_file);
+            }
         }
     });
     // Stop idle HLS transcodes and clean their folders.
@@ -1646,7 +1684,13 @@ pub fn start_background(app: &Arc<App>) {
             let _ = s.child.wait();
             let _ = std::fs::remove_dir_all(&s.dir);
         }
-        a.playing.lock().unwrap().retain(|_, p| p.updated.elapsed() < Duration::from_secs(120));
+        // Players that stopped reporting: their play has ended.
+        let gone: Vec<Playing> = {
+            let mut map = a.playing.lock().unwrap();
+            let keys: Vec<String> = map.iter().filter(|(_, p)| p.updated.elapsed() >= Duration::from_secs(120)).map(|(k, _)| k.clone()).collect();
+            keys.iter().filter_map(|k| map.remove(k)).collect()
+        };
+        a.close_sessions(gone);
     });
     // Online details for new movies and shows.
     let a = app.clone();
@@ -1844,10 +1888,12 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     }
     let device = device_label(&product, &device_name, &params, &agent);
     let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token, remote, remote_trusted, device };
+    let is_local = ctx.is_local();
     let resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) } else { crate::routes::route(&app, &ctx) };
     // Count what is sent (bandwidth on the dashboard).
     let (status, headers, len) = (resp.status_code(), resp.headers().to_vec(), resp.data_length());
-    let body = crate::stats::Counting { inner: resp.into_reader(), all: app.stats.bytes_out.clone(), user: app.stats.counter_for(uid) };
+    let remote = if is_local { None } else { Some(app.stats.bytes_remote.clone()) };
+    let body = crate::stats::Counting { inner: resp.into_reader(), all: app.stats.bytes_out.clone(), user: app.stats.counter_for(uid), remote };
     let resp: Resp = Response::new(status, headers, Box::new(body) as Box<dyn Read + Send>, len, None);
     let _ = req.respond(resp);
 }
