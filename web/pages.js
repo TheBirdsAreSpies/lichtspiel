@@ -229,7 +229,7 @@ async function plexSyncPanel() {
   const accBox = h('div', {});
   const rows = [];
   const addRow = a => {
-    const token = h('input', { type: 'password', placeholder: a ? t('Token {hint} (leave empty to keep)', { hint: a.token_hint }) : 'X-Plex-Token', style: 'flex:1;min-width:200px', autocomplete: 'off' });
+    const token = h('input', { type: 'password', placeholder: a ? t('Token {hint} (leave empty to keep)', { hint: a.token_hint }) : 'X-Plex-Token', style: 'flex:1;min-width:300px', autocomplete: 'off' });
     const who = h('select', {}, users.users.map(u => h('option', { value: u.id, selected: a ? u.id === a.user_id : u.id === S.me.id }, u.username)));
     const row = { id: a && a.id, token, who };
     const el = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap' },
@@ -751,7 +751,8 @@ window.addEventListener('resize', closeMenus);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.menu')) { e.stopImmediatePropagation(); closeMenus(); } }, true);
 
 // A list of entries next to `anchor`. Entries: {label, run, sub: async () => entries, danger} or '-' (a line).
-function openMenu(anchor, entries, parent) {
+// align 'left': the menu starts at the button's left edge (default: ends at its right edge).
+function openMenu(anchor, entries, parent, align) {
   if (!parent) closeMenus();
   const box = h('div', { class: 'menu', role: 'menu' });
   let subOpen = null;
@@ -778,9 +779,14 @@ function openMenu(anchor, entries, parent) {
   document.body.append(box);
   // Below the button (a submenu: beside its row), kept inside the window.
   const r = anchor.getBoundingClientRect(), w = box.offsetWidth, ht = box.offsetHeight;
-  let x = parent ? r.right + 2 : r.right - w, y = parent ? r.top - 6 : r.bottom + 4;
+  let x = parent ? r.right + 2 : align === 'left' ? r.left : r.right - w, y = parent ? r.top - 6 : r.bottom + 4;
   if (parent && x + w > innerWidth - 8) x = r.left - w - 2;
-  if (!parent && y + ht > innerHeight - 8) y = Math.max(8, r.top - ht - 4);
+  // Too tall for below the button: above it if it fits there, else below and scrolling.
+  if (!parent && y + ht > innerHeight - 8) {
+    if (r.top - ht - 4 >= 8) y = r.top - ht - 4;
+    else if (innerHeight - y - 8 >= 200) box.style.maxHeight = (innerHeight - y - 8) + 'px';
+    else y = 8;
+  }
   if (parent && y + ht > innerHeight - 8) y = Math.max(8, innerHeight - ht - 8);
   box.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + 'px';
   box.style.top = y + 'px';

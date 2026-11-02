@@ -349,7 +349,7 @@ async function sectionPage(id, qs) {
     };
     const any = Object.keys(st).some(k => k.startsWith('f.') && st[k]);
     openMenu(anchor, [...filters.filter(f => !f.advanced).map(entry), '-', ...filters.filter(f => f.advanced).map(entry),
-      any ? '-' : null, any ? { label: t('Clear filters'), run: () => { for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } } : null]);
+      any ? '-' : null, any ? { label: t('Clear filters'), run: () => { for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } } : null], null, 'left');
   };
   const active = Object.keys(st).filter(k => k.startsWith('f.') && st[k]);
   const chips = active.length ? h('div', { class: 'chips' }, active.map(k => {
