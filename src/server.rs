@@ -535,9 +535,10 @@ impl App {
                 .iter()
                 .filter_map(|l| db.items.get(l))
                 .filter(|i| db.sections.iter().find(|s| s.id == i.section_id).is_none_or(|s| s.credits_detection))
-                .filter_map(|i| i.file.as_ref().map(|f| (i, f)))
+                // A split movie's credits are in its last part.
+                .filter_map(|i| i.last_file().map(|f| (i, f)))
                 .filter(|(_, f)| force || (f.credits_checked < db::CREDITS_DETECTOR_VERSION && f.credits_errors <= db::CREDITS_MAX_ERRORS))
-                .map(|(i, f)| (i.id, f.path.clone(), f.duration_ms.max(i.duration_ms)))
+                .map(|(i, f)| (i.id, f.path.clone(), if i.parts.is_empty() { f.duration_ms.max(i.duration_ms) } else { f.duration_ms }))
                 .collect();
             (files, db.settings.ffmpeg.clone(), db.settings.ffprobe.clone(), db.settings.credits_from_picture)
         };
@@ -552,7 +553,7 @@ impl App {
             let (mut found, mut failed) = (0, 0);
             for (n, (id, path, duration)) in files.into_iter().enumerate() {
                 let r = crate::scanner::find_credits(&ffmpeg, &ffprobe, &path, duration, picture);
-                if let Some(f) = app.db.lock().unwrap().items.get_mut(&id).and_then(|i| i.file.as_mut()) {
+                if let Some(f) = app.db.lock().unwrap().items.get_mut(&id).and_then(|i| i.last_file_mut()) {
                     match r {
                         Ok((c, how)) => {
                             found += usize::from(!c.is_empty());
@@ -593,7 +594,7 @@ impl App {
         db.items
             .values()
             .filter(|i| db.sections.iter().find(|s| s.id == i.section_id).is_none_or(|s| s.credits_detection))
-            .filter(|i| i.file.as_ref().is_some_and(|f| f.credits_checked < db::CREDITS_DETECTOR_VERSION && f.credits_errors <= db::CREDITS_MAX_ERRORS))
+            .filter(|i| i.last_file().is_some_and(|f| f.credits_checked < db::CREDITS_DETECTOR_VERSION && f.credits_errors <= db::CREDITS_MAX_ERRORS))
             .map(|i| i.id)
             .collect()
     }
@@ -1481,7 +1482,11 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
             "audioCodec": aud.map(|a| a.codec.clone()).unwrap_or_default(),
             "audioChannels": aud.map(|a| a.channels).unwrap_or(0),
             "probed": f.probed,
-            "Part": [{"key": format!("/library/parts/{}/file", it.id), "size": f.size, "container": f.container}],
+            // A split movie has a Part per file; they play one after the other.
+            "Part": it.all_files().iter().enumerate().map(|(n, p)| json!({
+                "key": if n == 0 { format!("/library/parts/{}/file", it.id) } else { format!("/library/parts/{}/file?part={n}", it.id) },
+                "part": n, "size": p.size, "container": p.container, "duration": p.duration_ms,
+            })).collect::<Vec<_>>(),
         });
         if detail {
             media["streams"] = json!(f.streams);
@@ -1501,6 +1506,18 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
             }
         }
         o["Media"] = json!([media]);
+    }
+    // Trailers, featurettes, deleted scenes … of a movie.
+    if detail && it.kind == ItemKind::Movie {
+        let mut extras: Vec<&Item> = db.items.values().filter(|x| x.parent_id == Some(it.id) && x.is_extra()).collect();
+        extras.sort_by(|a, b| (a.extra["extra_type"].as_str() != Some("trailer"), &a.sort_title).cmp(&(b.extra["extra_type"].as_str() != Some("trailer"), &b.sort_title)));
+        if !extras.is_empty() {
+            o["Extras"] = json!(extras.iter().map(|x| json!({
+                "ratingKey": x.id.to_string(), "id": x.id, "type": "clip", "title": x.title,
+                "extraType": x.extra["extra_type"], "duration": x.duration_ms,
+                "thumb": format!("/library/metadata/{}/thumb?v={}", x.id, x.updated_at),
+            })).collect::<Vec<_>>());
+        }
     }
     if !it.extra.is_empty() {
         o["extra"] = Value::Object(it.extra.clone());
@@ -1537,7 +1554,7 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
 
 pub fn section_json(db: &Db, s: &Section) -> Value {
     let top = db.items.values().filter(|i| i.section_id == s.id && i.parent_id.is_none()).count();
-    let playable = db.items.values().filter(|i| i.section_id == s.id && i.kind.playable()).count();
+    let playable = db.items.values().filter(|i| i.section_id == s.id && i.kind.playable() && !i.is_extra()).count();
     json!({
         "key": s.id.to_string(), "id": s.id, "title": s.name, "type": s.kind.as_str(),
         "Location": s.paths.iter().map(|p| json!({"path": p})).collect::<Vec<_>>(),
@@ -1641,7 +1658,7 @@ pub fn recently_added(db: &Db, user: &User, kind: Option<ItemKind>, limit: usize
         .filter(|i| match kind {
             Some(k) => i.kind == k,
             None => i.kind.playable(),
-        })
+        } && !i.is_extra())
         .collect();
     v.sort_by(|a, b| b.added_at.cmp(&a.added_at).then(b.id.cmp(&a.id)));
     v.into_iter().take(limit).map(|i| i.id).collect()
@@ -1688,7 +1705,7 @@ pub fn continue_watching(db: &Db, user: &User) -> Vec<u64> {
     let mut started: Vec<(u64, u64)> = db
         .items
         .values()
-        .filter(|i| i.kind.playable() && db.can_see_section(user, i.section_id))
+        .filter(|i| i.kind.playable() && !i.is_extra() && db.can_see_section(user, i.section_id))
         .filter_map(|i| {
             let v = db.view(user.id, i.id);
             (v.view_offset_ms > 0 && now().saturating_sub(v.last_viewed_at) <= window).then_some((i.id, v.last_viewed_at))

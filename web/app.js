@@ -281,6 +281,9 @@ async function sectionSubPage(sec, tab, tabs) {
 const plTitle = pl => pl.default ? t(pl.title) : pl.title;
 
 // ---------- details
+// Kinds of extras (trailers, featurettes …) as the scanner names them.
+const EXTRA_TYPES = { trailer: 'Trailer', behindthescenes: 'Behind the scenes', deleted: 'Deleted scene', featurette: 'Featurette', interview: 'Interview', scene: 'Scene', short: 'Short', other: 'Extra' };
+
 async function itemPage(id) {
   markNav('');
   const it = meta(await GET('/library/metadata/' + id))[0];
@@ -354,6 +357,7 @@ async function itemPage(id) {
           h('div', {}, t('Bitrate')), h('div', {}, m.bitrate ? fmtNum(m.bitrate) + ' kbit/s' : '–'),
           h('div', {}, t('Subtitles')), h('div', {}, (m.subtitles || []).map(s => s.language || s.file || s.codec).join(', ') || t('none')),
           m.file ? [h('div', {}, t('Path')), h('div', { style: 'word-break:break-all' }, m.file)] : null,
+          (m.Part || []).length > 1 ? [h('div', {}, t('Parts')), h('div', {}, t('{n} files, played one after the other', { n: m.Part.length }))] : null,
           h('div', {}, t('In your browser')), h('div', { id: 'decision', class: 'dim' }, '…')) : null)),
     cast.length ? [h('h2', {}, t('Cast')), scroller('row cast', cast.map(p => {
       const initials = () => h('div', { class: 'initials' }, (p.name || '?').split(' ').map(w => w[0]).slice(0, 2).join(''));
@@ -371,6 +375,9 @@ async function itemPage(id) {
           h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, `${e.index}. ${e.title}`)), h('div', { class: 'dim' }, [fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', e.viewOffset ? t('stopped at {time}', { time: fmtTime(e.viewOffset / 1000) }) : ''].filter(Boolean).join(' · ')),
             e.summary ? h('div', { class: 'ep-plot' }, e.summary) : null),
           h('button', { class: 'primary small', onclick: () => play(e, e.viewOffset ? e.viewOffset / 1000 : 0, kids.slice(i + 1)) }, '▶'))))] : null,
+    (it.Extras || []).length ? [h('h2', {}, t('Extras')), scroller('row extras', it.Extras.map(x => h('div', { class: 'card', onclick: () => play(x, 0) },
+      h('div', { class: 'poster' }, h('img', { src: withTok(x.thumb), loading: 'lazy', alt: '' })),
+      h('div', { class: 't', title: t(x.title) }, t(x.title)), h('div', { class: 's' }, [t(EXTRA_TYPES[x.extraType] || 'Extra'), fmtDur(x.duration)].filter(Boolean).join(' · ')))))] : null,
     related.map(hb => row(hb.title, hb.Metadata)));
   if (m) {
     try {
@@ -591,27 +598,40 @@ async function play(it, startAt, queue) {
   $('#paudio').replaceChildren(h('option', { value: '' }, t('Default audio')), ...auds.map(a => h('option', { value: a.index }, `${a.language || t('audio')} ${a.codec} ${a.channels}ch${a.title ? ' ' + a.title : ''}`)));
   $('#paudio').style.display = auds.length > 1 ? '' : 'none';
   P.audio = '';
+  // A movie split over files: its parts play one after the other.
+  P.parts = ((it.Media && it.Media[0].Part) || []).map(x => (x.duration || 0) / 1000);
+  P.part = 0; P.base = 0;
   await load(startAt || 0);
 }
+// Where part n starts in the whole movie (seconds).
+const partStart = n => P.parts.slice(0, n).reduce((a, b) => a + b, 0);
+// (Only when every part's length is known; otherwise the parts can't be told apart.)
+const split = () => P.parts.length > 1 && P.parts.every(d => d > 0);
 
 async function load(at) {
   const it = P.it, q = P.quality;
-  const extra = P.audio ? `&audio=${P.audio}` : '';
+  // Which part the position is in; `at` becomes the time inside that part.
+  P.part = 0;
+  if (split()) while (P.part < P.parts.length - 1 && at >= partStart(P.part + 1)) P.part++;
+  P.base = split() ? partStart(P.part) : 0;
+  at = Math.max(0, at - P.base);
+  const extra = (P.audio ? `&audio=${P.audio}` : '') + (P.part ? `&part=${P.part}` : '');
   const d = await GET(`/library/metadata/${it.id}/decision?quality=${q}${extra}`);
   P.method = P.audio && d.method === 'direct' ? 'remux' : d.method;
   if (!d.allowed) toast(t('Converting is switched off for your account, so this file may not play here.'), 5000);
   video.querySelectorAll('track').forEach(tr => tr.remove());
   if (P.method === 'direct') {
     P.offset = 0;
-    video.src = withTok(`/library/parts/${it.id}/file`);
+    video.src = withTok(`/library/parts/${it.id}/file${P.part ? '?part=' + P.part : ''}`);
     video.addEventListener('loadedmetadata', () => { video.currentTime = at; }, { once: true });
   } else {
     P.offset = at;
     video.src = withTok(`/video/transcode/${it.id}/stream.mp4?quality=${q}&offset=${at.toFixed(1)}${extra}`);
   }
-  ((it.Media && it.Media[0].subtitles) || []).forEach((s, i) => video.append(h('track', { kind: 'subtitles', src: withTok(s.key), label: s.language || s.file || t('Subtitles {n}', { n: i + 1 }), srclang: (s.language || 'und').slice(0, 2) })));
+  // Subtitles belong to the first file (a later part would show them at the wrong time).
+  (P.part ? [] : (it.Media && it.Media[0].subtitles) || []).forEach((s, i) => video.append(h('track', { kind: 'subtitles', src: withTok(s.key), label: s.language || s.file || t('Subtitles {n}', { n: i + 1 }), srclang: (s.language || 'und').slice(0, 2) })));
   $('#pmethod').textContent = { direct: ' · ' + t('direct play'), remux: ' · ' + t('repackaged'), transcode: ' · ' + t('converting') }[P.method] || '';
-  $('#pjump').style.display = P.method === 'direct' ? 'none' : 'flex';
+  $('#pjump').style.display = P.method === 'direct' && !split() ? 'none' : 'flex';
   $('#pseek').max = Math.floor((it.duration || 0) / 1000);
   // A new source starts at the default rate: keep the chosen speed.
   video.defaultPlaybackRate = video.playbackRate = P.speed;
@@ -619,16 +639,18 @@ async function load(at) {
   clearInterval(P.timer);
   P.timer = setInterval(() => { if (!video.paused) report('playing'); }, 10000);
 }
-const position = () => P.offset + (video.currentTime || 0);
+const position = () => (P.base || 0) + P.offset + (video.currentTime || 0);
 function report(state) {
   if (!P.it) return;
   api('POST', `/:/timeline?ratingKey=${P.it.id}&time=${Math.floor(position() * 1000)}&state=${state}&client=web`).catch(() => {});
 }
 video.addEventListener('pause', () => { if (!video.ended) report('paused'); });
 video.addEventListener('timeupdate', () => {
-  if (P.method !== 'direct' && P.it) { $('#ptime').textContent = `${fmtTime(position())} / ${fmtTime((P.it.duration || 0) / 1000)}`; if (!$('#pseek')._drag) $('#pseek').value = Math.floor(position()); }
+  if ((P.method !== 'direct' || split()) && P.it) { $('#ptime').textContent = `${fmtTime(position())} / ${fmtTime((P.it.duration || 0) / 1000)}`; if (!$('#pseek')._drag) $('#pseek').value = Math.floor(position()); }
 });
 video.addEventListener('ended', () => {
+  // The next part of a split movie.
+  if (split() && P.part < P.parts.length - 1) { load(partStart(P.part + 1)); return; }
   report('stopped');
   const next = P.queue.shift();
   if (next) play(next, 0, P.queue); else closePlayer(false);

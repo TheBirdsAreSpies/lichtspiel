@@ -630,7 +630,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let manual = it.extra.contains_key("credits_ms");
             let credits = db.credits_markers(it);
             let at = db::watched_at_ms(db.settings.played_at_behaviour, db.settings.watched_threshold_percent, it.duration_ms, &credits);
-            let f = it.file.as_ref();
+            let f = it.last_file();
             let how = f.map(|f| f.credits_source.as_str()).filter(|s| !s.is_empty()).unwrap_or("chapters");
             let checked = f.is_some_and(|f| f.credits_checked >= db::CREDITS_DETECTOR_VERSION);
             ok(json!({"credits": credits, "source": if manual { "manual" } else if !credits.is_empty() { how } else if checked { "none" } else { "pending" },
@@ -674,11 +674,15 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let Some(iid) = id(iid) else { return fail(404, "Not found") };
             let db = app.db.lock().unwrap();
             let Some(it) = db.items.get(&iid).filter(|i| db.can_see_section(&user, i.section_id)) else { return fail(404, "Not found") };
-            let Some(f) = &it.file else { return fail(400, "This entry has no video file") };
+            if it.file.is_none() { return fail(400, "This entry has no video file") }
+            // ?part=n: one file of a split movie (0 = the first).
+            let part = ctx.num("part").map(|n| n as usize).unwrap_or(0);
+            let Some(f) = it.part(part) else { return fail(404, "No such part") };
             let req = transcode_request(ctx);
             let d = transcode::decide(f, &req);
             let allowed = user.allow_transcode.unwrap_or(true);
             let tok = ctx.token.as_ref().map(|t| format!("&token={t}")).unwrap_or_default();
+            let tok = if part > 0 { format!("&part={part}{tok}") } else { tok };
             let q = ctx.param("quality").unwrap_or("original");
             let url = match d.method {
                 Method::Direct => format!("/library/parts/{iid}/file?x=1{tok}"),
@@ -808,7 +812,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let db = app.db.lock().unwrap();
             if q.is_empty() { return list_resp(&db, &user, &[], "search"); }
             let mut ids: Vec<u64> = db.items.values()
-                .filter(|i| db.can_see_section(&user, i.section_id) && i.kind != ItemKind::Season)
+                .filter(|i| db.can_see_section(&user, i.section_id) && i.kind != ItemKind::Season && !i.is_extra())
                 .filter(|i| i.title.to_lowercase().contains(&q) || i.genres.iter().any(|g| g.to_lowercase() == q))
                 .map(|i| i.id)
                 .collect();

@@ -292,6 +292,10 @@ pub struct Item {
     pub duration_ms: u64,
     #[serde(default)]
     pub file: Option<MediaFile>,
+    /// A movie split over several files ("… - pt1", "… - pt2"): the files after
+    /// `file`, in order. They play one after the other as one movie.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<MediaFile>,
     /// A poster picture found next to the media, if any.
     #[serde(default)]
     pub poster: Option<String>,
@@ -301,6 +305,37 @@ pub struct Item {
     /// Fields edited by hand through the API; a rescan never overwrites them.
     #[serde(default)]
     pub locked: Vec<String>,
+}
+
+impl Item {
+    /// A trailer, featurette, deleted scene … of the movie it belongs to
+    /// (parent_id). Shown on the movie's page, not as a video of its own.
+    pub fn is_extra(&self) -> bool {
+        self.kind == ItemKind::Video && self.extra.contains_key("extra_type")
+    }
+    /// The file and every further part, in playing order.
+    pub fn all_files(&self) -> Vec<&MediaFile> {
+        self.file.iter().chain(self.parts.iter()).collect()
+    }
+    /// Part `n` (0 = the first file).
+    pub fn part(&self, n: usize) -> Option<&MediaFile> {
+        self.all_files().get(n).copied()
+    }
+    /// The file the end credits are in: the last part of a split movie.
+    pub fn last_file(&self) -> Option<&MediaFile> {
+        self.parts.last().or(self.file.as_ref())
+    }
+    pub fn last_file_mut(&mut self) -> Option<&mut MediaFile> {
+        match self.parts.last_mut() {
+            Some(p) => Some(p),
+            None => self.file.as_mut(),
+        }
+    }
+    /// Where the last file starts in the whole movie (0 unless it is split).
+    pub fn last_file_start_ms(&self) -> u64 {
+        if self.parts.is_empty() { return 0; }
+        self.all_files().iter().rev().skip(1).map(|f| f.duration_ms).sum()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -591,7 +626,9 @@ impl Db {
         if self.settings.credits_markers_behaviour == "never" || !library_on {
             return vec![];
         }
-        it.file.as_ref().map(|f| f.credits_ms.clone()).unwrap_or_default()
+        // Found in the last file; counted from the start of the whole movie.
+        let start = it.last_file_start_ms();
+        it.last_file().map(|f| f.credits_ms.iter().map(|c| c + start).collect()).unwrap_or_default()
     }
 }
 

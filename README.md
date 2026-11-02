@@ -115,6 +115,37 @@ Wikipedia.
 - For best results name files like `Movies/The Matrix (1999)/The Matrix (1999).mkv` and
   `TV Shows/Twin Peaks/Season 1/Twin Peaks - S01E02.mkv`.
 
+## Naming files (the Plex way)
+
+Movies are read the way Plex's naming guide describes:
+
+| What | Example |
+|---|---|
+| Movie in its own folder, or on its own | `Avatar (2009)/Avatar (2009).mkv`, `Avatar (2009).mkv` |
+| Exact match by id (folder or file name; `{tvdb-…}` for shows, in the show's folder) | `Batman Begins (2005) {imdb-tt0372784}`, `{tmdb-272}` |
+| Edition | `Blade Runner (1982) {edition-Final Cut}.mkv` |
+| Split movie (up to 8 parts, played one after the other) | `The Dark Knight (2008) - pt1.mp4`, `- pt2.mp4` (also cd, disc, disk, dvd, part) |
+| Extras in a subfolder of the movie's folder | `Avatar (2009)/Trailers/Teaser.mkv` — also `Behind The Scenes`, `Deleted Scenes`, `Featurettes`, `Interviews`, `Scenes`, `Shorts`, `Other`, `Extras` |
+| Extras next to the movie | `Avatar (2009)-trailer.mkv` — also `-behindthescenes`, `-deleted`, `-featurette`, `-interview`, `-scene`, `-short`, `-other` |
+
+Extras are shown on the movie's page, not as movies of their own; an extras folder without a
+movie next to it is read as ordinary movies. When a file name finds nothing online (a release
+name like `funxd.mkv`), the name of the movie's own folder is tried. Extras in TV libraries are
+left out.
+
+**Leaving files out:** a `.lichtspielignore` file in any library folder lists what the scan
+skips in that folder and below, one pattern per line (`#` starts a comment):
+
+```
+Samples/
+*.sample.mkv
+Extras/2019/*
+```
+
+A pattern without `/` matches a file or folder name at any depth; one with `/` matches the
+path from the folder the file is in. `*` stands for any characters except `/`, `**` for any
+characters, `?` for one. Upper and lower case count the same.
+
 ## When something counts as watched
 
 A video counts as watched at **whichever comes first: 90 % or the start of

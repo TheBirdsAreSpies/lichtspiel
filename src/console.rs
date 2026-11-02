@@ -62,7 +62,7 @@ fn view_of(db: &Db, playing: Vec<String>, transcodes: usize, plugins: Vec<(Strin
         address,
         sections: db.sections.iter().map(|s| {
             let top = db.items.values().filter(|i| i.section_id == s.id && i.parent_id.is_none()).count();
-            let vids = db.items.values().filter(|i| i.section_id == s.id && i.kind.playable()).count();
+            let vids = db.items.values().filter(|i| i.section_id == s.id && i.kind.playable() && !i.is_extra()).count();
             (s.id, s.name.clone(), s.kind, top, vids)
         }).collect(),
         continue_watching: server::continue_watching(db, &admin).iter().filter_map(|i| db.items.get(i)).map(|i| {
@@ -112,7 +112,7 @@ fn demo_view(address: String) -> View {
         db.items.insert(id, Item {
             id, section_id: section, kind, parent_id: parent, title: title.into(), sort_title: db::sort_title(title), year, index,
             summary: String::new(), tagline: String::new(), genres: vec![], rating: None, content_rating: String::new(), studio: String::new(),
-            added_at: t - age_days * 86400, updated_at: t, duration_ms: if kind.playable() { 6_000_000 } else { 0 }, file: None, poster: None,
+            added_at: t - age_days * 86400, updated_at: t, duration_ms: if kind.playable() { 6_000_000 } else { 0 }, file: None, parts: vec![], poster: None,
             extra: Default::default(), locked: vec![],
         });
         id

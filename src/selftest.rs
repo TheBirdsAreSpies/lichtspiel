@@ -196,6 +196,11 @@ pub fn run(out: &Path) -> bool {
     make_clip(&movie_c, "mpeg4", "mp3", &[], have_ffmpeg);
     make_clip(&ep1, "libx264", "aac", &["-pix_fmt", "yuv420p"], have_ffmpeg);
     make_clip(&ep2, "mpeg2video", "mp2", &[], have_ffmpeg);
+    // Named the Plex way: a movie in two parts, with a trailer next to it.
+    let plex = media.join("Plex names").join("Split Film (2019)");
+    make_clip(&plex.join("Split Film (2019) - pt1.mp4"), "libx264", "aac", &["-pix_fmt", "yuv420p"], have_ffmpeg);
+    make_clip(&plex.join("Split Film (2019) - pt2.mp4"), "libx264", "aac", &["-pix_fmt", "yuv420p"], have_ffmpeg);
+    make_clip(&plex.join("Split Film (2019)-trailer.mp4"), "libx264", "aac", &["-pix_fmt", "yuv420p"], have_ffmpeg);
 
     // A plugin: the server's own built-in example, run as a separate program.
     let pdir = data.join("plugins").join("example");
@@ -251,6 +256,27 @@ pub fn run(out: &Path) -> bool {
         mlist.len() == 3 && slist.len() == 1 && seasons == 1 && elist.len() == 2 && movie_has_no_episodes && year_ok,
         format!("Movies library: {} ({}); TV library: {} show, {seasons} season, {} episodes ({}), kept in separate libraries", mlist.len(), titles.join(", "), slist.len(), elist.len(), ep_titles.join(", ")),
     );
+
+    // ---- Plex naming: a split movie is one movie, a trailer goes on its page
+    {
+        let p = c.post("/library/sections?scan=wait", json!({"name": "Plex names", "type": "movie", "paths": [media.join("Plex names").to_string_lossy()]}));
+        let pid = p.json()["id"].as_u64().unwrap_or(0);
+        let list = c.get(&format!("/library/sections/{pid}/all")).json()["MediaContainer"]["Metadata"].as_array().cloned().unwrap_or_default();
+        let film = list.first().and_then(|x| x["id"].as_u64()).unwrap_or(0);
+        let d = c.get(&format!("/library/metadata/{film}")).json()["MediaContainer"]["Metadata"][0].clone();
+        let parts = d["Media"][0]["Part"].as_array().cloned().unwrap_or_default();
+        let part_ms: Vec<u64> = parts.iter().map(|x| x["duration"].as_u64().unwrap_or(0)).collect();
+        let total = d["duration"].as_u64().unwrap_or(0);
+        let extras = d["Extras"].as_array().cloned().unwrap_or_default();
+        let second = c.call("GET", &format!("/library/parts/{film}/file?part=1"), None, &[("Range", "bytes=0-99")]);
+        let decision = c.get(&format!("/library/metadata/{film}/decision?part=1")).json();
+        let ok = list.len() == 1 && list[0]["title"] == "Split Film" && parts.len() == 2 && extras.len() == 1 && extras[0]["extraType"] == "trailer"
+            && second.status == 206 && decision["url"].as_str().is_some_and(|u| u.contains("part=1"))
+            && (!have_ffmpeg || (part_ms.iter().all(|m| *m > 0) && total == part_ms.iter().sum::<u64>()));
+        steps.add("plex naming", ok, format!("{} in the library ({}); {} parts of {:?} ms, {total} ms in all; part 2 sent: HTTP {}; extras: {}",
+            list.len(), list.iter().map(|x| x["title"].as_str().unwrap_or("")).collect::<Vec<_>>().join(", "), parts.len(), part_ms, second.status,
+            extras.iter().map(|x| format!("{} ({})", x["title"].as_str().unwrap_or(""), x["extraType"].as_str().unwrap_or(""))).collect::<Vec<_>>().join(", ")));
+    }
 
     // ---- act: streaming (direct with seeking, remux, transcode, HLS)
     let id_of = |title: &str| mlist.iter().find(|x| x["title"] == title).and_then(|x| x["id"].as_u64()).unwrap_or(0);

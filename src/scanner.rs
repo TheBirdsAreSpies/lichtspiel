@@ -31,13 +31,73 @@ pub fn ext_of(path: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// The file that lists what a scan skips in its folder and below, one pattern
+/// per line ("# …" is a comment): "Samples/" or "*.sample.mkv" match a name at
+/// any depth, "Extras/2019/*" a path from that folder, "*" any characters but
+/// "/", "**" any characters, "?" one. Upper and lower case count the same.
+pub const IGNORE_FILE: &str = ".lichtspielignore";
+
+/// The patterns of one ignore file and the folder it applies to.
+struct IgnoreRules {
+    base: PathBuf,
+    patterns: Vec<String>,
+}
+
+fn read_ignore(dir: &Path) -> Option<IgnoreRules> {
+    let text = std::fs::read_to_string(dir.join(IGNORE_FILE)).ok()?;
+    let patterns: Vec<String> = text
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| l.replace('\\', "/").trim_start_matches("./").trim_start_matches('/').trim_end_matches('/').to_lowercase())
+        .filter(|l| !l.is_empty())
+        .collect();
+    Some(IgnoreRules { base: dir.to_path_buf(), patterns })
+}
+
+/// Shell-style match: "*" (not across "/"), "**" (across "/"), "?".
+pub fn glob_match(pat: &str, text: &str) -> bool {
+    fn go(p: &[u8], t: &[u8]) -> bool {
+        match p.first() {
+            None => t.is_empty(),
+            Some(b'*') if p.get(1) == Some(&b'*') => {
+                let rest = p[2..].strip_prefix(b"/").unwrap_or(&p[2..]);
+                (0..=t.len()).any(|i| go(rest, &t[i..])) || (0..=t.len()).any(|i| go(&p[2..], &t[i..]))
+            }
+            Some(b'*') => (0..=t.len()).take_while(|&i| i == 0 || t[i - 1] != b'/').any(|i| go(&p[1..], &t[i..])),
+            Some(b'?') => !t.is_empty() && t[0] != b'/' && go(&p[1..], &t[1..]),
+            Some(c) => t.first() == Some(c) && go(&p[1..], &t[1..]),
+        }
+    }
+    go(pat.as_bytes(), text.as_bytes())
+}
+
+fn ignored(rules: &[IgnoreRules], path: &Path) -> bool {
+    let name = path.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+    rules.iter().any(|r| {
+        let Ok(rel) = path.strip_prefix(&r.base) else { return false };
+        let rel = rel.to_string_lossy().replace('\\', "/").to_lowercase();
+        r.patterns.iter().any(|p| if p.contains('/') { glob_match(p, &rel) } else { glob_match(p, &name) })
+    })
+}
+
 fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    walk_in(dir, out, depth, &mut vec![], &mut vec![]);
+}
+
+/// Like `walk`, and lists the ignore files it read (`ignore_files`).
+fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<IgnoreRules>, ignore_files: &mut Vec<PathBuf>) {
     if depth > 12 {
         return;
     }
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
+    let own = read_ignore(dir);
+    if own.is_some() {
+        ignore_files.push(dir.join(IGNORE_FILE));
+    }
+    let pushed = own.map(|r| rules.push(r)).is_some();
     let mut entries: Vec<_> = rd.flatten().collect();
     entries.sort_by_key(|e| e.file_name());
     for e in entries {
@@ -48,8 +108,11 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
             continue;
         }
         let p = e.path();
+        if ignored(rules, &p) {
+            continue;
+        }
         match e.file_type() {
-            Ok(t) if t.is_dir() => walk(&p, out, depth + 1),
+            Ok(t) if t.is_dir() => walk_in(&p, out, depth + 1, rules, ignore_files),
             Ok(_) if is_video(&p) => {
                 // Skip release "sample" clips (name is "sample", ends in "-sample"/".sample",
                 // or lies in a "Sample" folder), but not films that merely have the word.
@@ -64,6 +127,9 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
             _ => {}
         }
     }
+    if pushed {
+        rules.pop();
+    }
 }
 
 /// A fingerprint of the video files (names, sizes, change times) in a
@@ -73,12 +139,13 @@ pub fn folder_signature(paths: &[String]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     for root in paths {
-        let mut files = vec![];
-        walk(Path::new(root), &mut files, 0);
-        for f in files {
+        let (mut files, mut ignores) = (vec![], vec![]);
+        walk_in(Path::new(root), &mut files, 0, &mut vec![], &mut ignores);
+        // A changed ignore file counts as a change too.
+        for f in files.iter().chain(ignores.iter()) {
             f.hash(&mut h);
-            file_size(&f).hash(&mut h);
-            file_mtime(&f).hash(&mut h);
+            file_size(f).hash(&mut h);
+            file_mtime(f).hash(&mut h);
         }
     }
     h.finish()
@@ -611,6 +678,65 @@ fn find_subtitles(dir: &Path, stem: &str) -> Vec<String> {
     out
 }
 
+/// Folders for a movie's extras, as Plex names them, and the kind of extra.
+pub const EXTRA_FOLDERS: &[(&str, &str)] = &[
+    ("behind the scenes", "behindthescenes"), ("deleted scenes", "deleted"), ("featurettes", "featurette"),
+    ("interviews", "interview"), ("scenes", "scene"), ("shorts", "short"), ("trailers", "trailer"),
+    ("other", "other"), ("extras", "other"),
+];
+/// File name endings for extras next to the movie ("Avatar (2009)-trailer.mkv").
+pub const EXTRA_SUFFIXES: &[&str] = &["behindthescenes", "deleted", "featurette", "interview", "scene", "short", "trailer", "other"];
+
+/// A file that looks like an extra of a movie.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtraFile {
+    /// trailer, behindthescenes, deleted, featurette, interview, scene, short, other
+    pub kind: &'static str,
+    /// The folder the movie it belongs to is in.
+    pub movie_dir: PathBuf,
+    /// Its own name, shown on the movie's page.
+    pub title: String,
+    /// For "Movie (2009)-trailer": "Movie (2009)", to tell movies in one folder apart.
+    pub prefix: Option<String>,
+}
+
+/// Whether a file is an extra: it lies in an extras folder inside a movie's
+/// folder ("Avatar (2009)/Trailers/Teaser.mkv"), or its name ends in an extra
+/// word ("Avatar (2009)-trailer.mkv"). An extras folder right in the library
+/// folder does not count (that may be a folder of movies called "Shorts").
+pub fn extra_of(root: &Path, path: &Path) -> Option<ExtraFile> {
+    let rel = path.strip_prefix(root).ok()?;
+    let comps: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+    let stem = path.file_stem()?.to_string_lossy().to_string();
+    for i in 1..comps.len().saturating_sub(1) {
+        let name = comps[i].to_lowercase();
+        if let Some((_, kind)) = EXTRA_FOLDERS.iter().find(|(f, _)| *f == name) {
+            let movie_dir = comps[..i].iter().fold(root.to_path_buf(), |p, c| p.join(c));
+            return Some(ExtraFile { kind, movie_dir, title: tidy(&stem), prefix: None });
+        }
+    }
+    let lower = stem.to_lowercase();
+    for kind in EXTRA_SUFFIXES {
+        let Some(before) = lower.strip_suffix(kind).and_then(|b| b.strip_suffix('-')) else { continue };
+        let prefix = stem[..before.len()].trim_end().to_string();
+        if prefix.is_empty() {
+            continue;
+        }
+        let title = match *kind {
+            "trailer" => "Trailer",
+            "behindthescenes" => "Behind the scenes",
+            "deleted" => "Deleted scene",
+            "featurette" => "Featurette",
+            "interview" => "Interview",
+            "scene" => "Scene",
+            "short" => "Short",
+            _ => "Extra",
+        };
+        return Some(ExtraFile { kind, movie_dir: path.parent()?.to_path_buf(), title: title.into(), prefix: Some(prefix) });
+    }
+    None
+}
+
 /// What a file turned out to be.
 #[derive(Debug, Clone)]
 pub struct Parsed {
@@ -730,11 +856,21 @@ where
 
     // Which files are new or changed?
     let mut known: HashMap<String, (u64, u64, u64)> = HashMap::new();
+    // The further parts each known movie has (path, size, change time).
+    let mut known_parts: HashMap<u64, Vec<(String, u64, u64)>> = HashMap::new();
+    // Known extras: item id -> (kind of extra, movie it belongs to).
+    let mut known_extras: HashMap<u64, (String, Option<u64>)> = HashMap::new();
     // Files read by an older probe: only their streams are read again.
     let mut stale: HashSet<String> = HashSet::new();
     with_db(&mut |db: &mut Db| {
         for it in db.items.values() {
             if it.section_id == section.id {
+                if !it.parts.is_empty() {
+                    known_parts.insert(it.id, it.parts.iter().map(|f| (f.path.clone(), f.size, f.modified)).collect());
+                }
+                if it.is_extra() {
+                    known_extras.insert(it.id, (it.extra["extra_type"].as_str().unwrap_or("").to_string(), it.parent_id));
+                }
                 if let Some(f) = &it.file {
                     known.insert(f.path.clone(), (it.id, f.size, f.modified));
                     if f.probed && f.probe_version < crate::db::PROBE_VERSION {
@@ -746,113 +882,236 @@ where
     });
 
     let seen: HashSet<String> = found.iter().map(|f| f.path.to_string_lossy().to_string()).collect();
+    let key_of = |f: &Found| f.path.to_string_lossy().to_string();
+
+    // Movies split over files ("… - pt1", "… - pt2" in one folder) become one
+    // movie: the first part is its file, the others are its further parts.
+    let mut parts_of: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut later_parts: HashSet<String> = HashSet::new();
+    let mut extras: Vec<(usize, ExtraFile)> = vec![];
+    let mut main: Vec<usize> = vec![];
+    {
+        let mut groups: HashMap<(PathBuf, String), Vec<(u32, usize)>> = HashMap::new();
+        for (i, f) in found.iter().enumerate() {
+            if section.kind != SectionKind::Other {
+                if let Some(x) = extra_of(&f.root, &f.path) {
+                    // TV extras are left out (they would turn into odd episodes).
+                    if section.kind == SectionKind::Movie {
+                        extras.push((i, x));
+                    }
+                    continue;
+                }
+            }
+            main.push(i);
+            if section.kind == SectionKind::Movie {
+                let stem = f.path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                if let (base, Some(n)) = split_part(&stem) {
+                    let dir = f.path.parent().unwrap_or(Path::new("")).to_path_buf();
+                    groups.entry((dir, base.to_lowercase())).or_default().push((n, i));
+                }
+            }
+        }
+        for (_, mut g) in groups {
+            if g.len() < 2 {
+                continue;
+            }
+            g.sort();
+            // Plex stacks up to 8 parts.
+            g.truncate(8);
+            let first = key_of(&found[g[0].1]);
+            for (_, i) in &g[1..] {
+                later_parts.insert(key_of(&found[*i]));
+            }
+            parts_of.insert(first, g[1..].iter().map(|(_, i)| *i).collect());
+        }
+        main.retain(|i| !later_parts.contains(&key_of(&found[*i])));
+    }
+
     // Shows and seasons of this library by what find_or_make matches on, so
     // a new episode doesn't search the whole library twice.
     let mut containers: Option<HashMap<ContainerKey, u64>> = None;
-    for f in &found {
-        let key = f.path.to_string_lossy().to_string();
-        let changed = match known.get(&key) {
-            Some((_, size, mtime)) => *size != f.size || *mtime != f.mtime,
-            None => true,
+    // First the movies, shows and videos; then the extras, which need the movie
+    // they belong to. An extra whose movie isn't found is read as a movie itself.
+    for pass in 0..2 {
+        let list: Vec<(usize, Option<(&'static str, u64, String)>)> = if pass == 0 {
+            main.iter().map(|i| (*i, None)).collect()
+        } else {
+            let mut v = vec![];
+            with_db(&mut |db: &mut Db| {
+                for (i, x) in &extras {
+                    let movies: Vec<&Item> = db
+                        .items
+                        .values()
+                        .filter(|m| m.section_id == section.id && m.kind == ItemKind::Movie)
+                        .filter(|m| m.file.as_ref().is_some_and(|f| Path::new(&f.path).parent() == Some(x.movie_dir.as_path())))
+                        .collect();
+                    let stem_of = |m: &Item| {
+                        m.file.as_ref().and_then(|f| Path::new(&f.path).file_stem().map(|s| split_part(&s.to_string_lossy()).0.to_lowercase())).unwrap_or_default()
+                    };
+                    let parent = match &x.prefix {
+                        Some(pre) => movies.iter().find(|m| stem_of(m) == pre.to_lowercase()).or(if movies.len() == 1 { movies.first() } else { None }),
+                        None => movies.iter().min_by_key(|m| m.id),
+                    };
+                    v.push((*i, parent.map(|m| (x.kind, m.id, x.title.clone()))));
+                }
+            });
+            v
         };
-        if !changed {
-            if stale.contains(&key) {
-                let mut m = MediaFile { path: key.clone(), ..Default::default() };
-                if probe(ffprobe, &mut m) {
-                    let id = known[&key].0;
-                    with_db(&mut |db: &mut Db| {
-                        if let Some(f) = db.items.get_mut(&id).and_then(|i| i.file.as_mut()) {
-                            f.streams = m.streams.clone();
-                            f.probe_version = m.probe_version;
+        for (idx, as_extra) in list {
+            let f = &found[idx];
+            let key = key_of(f);
+            let parts_here: Vec<&Found> = parts_of.get(&key).map(|v| v.iter().map(|i| &found[*i]).collect()).unwrap_or_default();
+            let existing_id = known.get(&key).map(|k| k.0);
+            let mut changed = match known.get(&key) {
+                Some((_, size, mtime)) => *size != f.size || *mtime != f.mtime,
+                None => true,
+            };
+            if let Some(id) = existing_id {
+                // The parts changed (one added, removed or replaced)?
+                let now_parts: Vec<(String, u64, u64)> = parts_here.iter().map(|p| (key_of(p), p.size, p.mtime)).collect();
+                if known_parts.get(&id).cloned().unwrap_or_default() != now_parts {
+                    changed = true;
+                }
+                // Became an extra, or stopped being one?
+                match (&as_extra, known_extras.get(&id)) {
+                    (Some((kind, parent, _)), Some((k, p))) => {
+                        if *kind != k.as_str() || Some(*parent) != *p {
+                            let (kind, parent) = (*kind, *parent);
+                            with_db(&mut |db: &mut Db| {
+                                if let Some(it) = db.items.get_mut(&id) {
+                                    it.parent_id = Some(parent);
+                                    it.extra.insert("extra_type".into(), Value::from(kind));
+                                }
+                            });
                         }
-                    });
+                    }
+                    (None, None) => {}
+                    _ => changed = true,
                 }
             }
-            continue;
-        }
-        let mut media = MediaFile {
-            path: key.clone(),
-            size: f.size,
-            modified: f.mtime,
-            container: ext_of(&f.path),
-            ..Default::default()
-        };
-        probe(ffprobe, &mut media);
-        let dir = f.path.parent().unwrap_or(Path::new("."));
-        let stem = f.path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-        media.external_subtitles = find_subtitles(dir, &stem);
-        let poster = find_poster(dir, &stem);
-        let parsed = classify(section, &f.root, &f.path);
-        let show_poster = if section.kind == SectionKind::Show {
-            let rel = f.path.strip_prefix(&f.root).ok();
-            rel.and_then(|r| r.components().next())
-                .map(|c| f.root.join(c.as_os_str()))
-                .and_then(|d| find_poster(&d, "__none__"))
-        } else {
-            None
-        };
-
-        with_db(&mut |db: &mut Db| {
-            let t = now();
-            let parent = if let Some((show_title, show_year)) = &parsed.show {
-                let cache = containers.get_or_insert_with(|| container_index(db, section.id));
-                let show_id = find_or_make(db, cache, section.id, ItemKind::Show, None, show_title, *show_year, None, show_poster.clone());
-                let season_no = parsed.season.unwrap_or(1);
-                let season_title = if season_no == 0 { "Specials".to_string() } else { format!("Season {season_no}") };
-                Some(find_or_make(db, cache, section.id, ItemKind::Season, Some(show_id), &season_title, None, Some(season_no), None))
+            if !changed {
+                if stale.contains(&key) {
+                    let mut m = MediaFile { path: key.clone(), ..Default::default() };
+                    if probe(ffprobe, &mut m) {
+                        let id = known[&key].0;
+                        with_db(&mut |db: &mut Db| {
+                            if let Some(f) = db.items.get_mut(&id).and_then(|i| i.file.as_mut()) {
+                                f.streams = m.streams.clone();
+                                f.probe_version = m.probe_version;
+                            }
+                        });
+                    }
+                }
+                continue;
+            }
+            let read = |f: &Found| {
+                let mut media = MediaFile {
+                    path: f.path.to_string_lossy().to_string(),
+                    size: f.size,
+                    modified: f.mtime,
+                    container: ext_of(&f.path),
+                    ..Default::default()
+                };
+                probe(ffprobe, &mut media);
+                media
+            };
+            let mut media = read(f);
+            let parts: Vec<MediaFile> = parts_here.iter().map(|p| read(p)).collect();
+            let duration = media.duration_ms + parts.iter().map(|p| p.duration_ms).sum::<u64>();
+            let dir = f.path.parent().unwrap_or(Path::new("."));
+            let stem = f.path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            media.external_subtitles = find_subtitles(dir, &stem);
+            let poster = if as_extra.is_some() { None } else { find_poster(dir, &stem) };
+            let parsed = match &as_extra {
+                Some((_, _, title)) => Parsed { kind: ItemKind::Video, title: title.clone(), year: None, show: None, season: None, episode: None },
+                None => classify(section, &f.root, &f.path),
+            };
+            let show_poster = if section.kind == SectionKind::Show {
+                let rel = f.path.strip_prefix(&f.root).ok();
+                rel.and_then(|r| r.components().next())
+                    .map(|c| f.root.join(c.as_os_str()))
+                    .and_then(|d| find_poster(&d, "__none__"))
             } else {
                 None
             };
-            let existing = known.get(&key).map(|k| k.0);
-            match existing.and_then(|id| db.items.get_mut(&id)) {
-                Some(item) => {
-                    let duration = media.duration_ms;
-                    item.file = Some(media.clone());
-                    item.duration_ms = duration;
-                    item.updated_at = t;
-                    if !item.locked.contains(&"title".to_string()) {
-                        item.title = parsed.title.clone();
-                        item.sort_title = sort_title(&parsed.title);
+
+            with_db(&mut |db: &mut Db| {
+                let t = now();
+                let parent = if let Some((_, movie, _)) = &as_extra {
+                    Some(*movie)
+                } else if let Some((show_title, show_year)) = &parsed.show {
+                    let cache = containers.get_or_insert_with(|| container_index(db, section.id));
+                    let show_id = find_or_make(db, cache, section.id, ItemKind::Show, None, show_title, *show_year, None, show_poster.clone());
+                    let season_no = parsed.season.unwrap_or(1);
+                    let season_title = if season_no == 0 { "Specials".to_string() } else { format!("Season {season_no}") };
+                    Some(find_or_make(db, cache, section.id, ItemKind::Season, Some(show_id), &season_title, None, Some(season_no), None))
+                } else {
+                    None
+                };
+                let id = match existing_id.and_then(|id| db.items.get_mut(&id)) {
+                    Some(item) => {
+                        item.file = Some(media.clone());
+                        item.parts = parts.clone();
+                        item.duration_ms = duration;
+                        item.updated_at = t;
+                        item.kind = parsed.kind;
+                        if !item.locked.contains(&"title".to_string()) {
+                            item.title = parsed.title.clone();
+                            item.sort_title = sort_title(&parsed.title);
+                        }
+                        item.parent_id = parent;
+                        item.index = parsed.episode;
+                        if poster.is_some() {
+                            item.poster = poster.clone();
+                        }
+                        report.updated.push(item.id);
+                        item.id
                     }
-                    item.parent_id = parent;
-                    item.index = parsed.episode;
-                    if poster.is_some() {
-                        item.poster = poster.clone();
-                    }
-                    report.updated.push(item.id);
-                }
-                None => {
-                    let id = db.new_id();
-                    db.items.insert(
-                        id,
-                        Item {
+                    None => {
+                        let id = db.new_id();
+                        db.items.insert(
                             id,
-                            section_id: section.id,
-                            kind: parsed.kind,
-                            parent_id: parent,
-                            title: parsed.title.clone(),
-                            sort_title: sort_title(&parsed.title),
-                            year: parsed.year,
-                            index: parsed.episode,
-                            summary: String::new(),
-                            tagline: String::new(),
-                            genres: vec![],
-                            rating: None,
-                            content_rating: String::new(),
-                            studio: String::new(),
-                            added_at: t,
-                            updated_at: t,
-                            duration_ms: media.duration_ms,
-                            file: Some(media.clone()),
-                            poster: poster.clone(),
-                            extra: Default::default(),
-                            locked: vec![],
-                        },
-                    );
-                    report.added.push(id);
+                            Item {
+                                id,
+                                section_id: section.id,
+                                kind: parsed.kind,
+                                parent_id: parent,
+                                title: parsed.title.clone(),
+                                sort_title: sort_title(&parsed.title),
+                                year: parsed.year,
+                                index: parsed.episode,
+                                summary: String::new(),
+                                tagline: String::new(),
+                                genres: vec![],
+                                rating: None,
+                                content_rating: String::new(),
+                                studio: String::new(),
+                                added_at: t,
+                                updated_at: t,
+                                duration_ms: duration,
+                                file: Some(media.clone()),
+                                parts: parts.clone(),
+                                poster: poster.clone(),
+                                extra: Default::default(),
+                                locked: vec![],
+                            },
+                        );
+                        report.added.push(id);
+                        id
+                    }
+                };
+                if let Some(it) = db.items.get_mut(&id) {
+                    match &as_extra {
+                        Some((kind, _, _)) => {
+                            it.extra.insert("extra_type".into(), Value::from(*kind));
+                        }
+                        None => {
+                            it.extra.remove("extra_type");
+                        }
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     // Remove what disappeared, then empty seasons and shows.
@@ -861,7 +1120,8 @@ where
             .items
             .values()
             .filter(|i| i.section_id == section.id)
-            .filter(|i| i.file.as_ref().map(|f| !seen.contains(&f.path)).unwrap_or(false))
+            // Gone from disk, or now a later part of a split movie.
+            .filter(|i| i.file.as_ref().map(|f| !seen.contains(&f.path) || later_parts.contains(&f.path)).unwrap_or(false))
             .map(|i| i.id)
             .collect();
         for id in &gone {
@@ -990,6 +1250,7 @@ fn find_or_make(
             updated_at: t,
             duration_ms: 0,
             file: None,
+            parts: vec![],
             poster,
             extra: Default::default(),
             locked: vec![],
@@ -1023,6 +1284,74 @@ fn container_index(db: &Db, section: u64) -> HashMap<ContainerKey, u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ignore_patterns() {
+        assert!(glob_match("*.sample.mkv", "film.sample.mkv"));
+        assert!(!glob_match("*.mkv", "a/b.mkv"));
+        assert!(glob_match("extras/**", "extras/2019/a.mkv"));
+        assert!(glob_match("**/b.mkv", "a/x/b.mkv"));
+        assert!(glob_match("c?1", "cd1"));
+    }
+
+    #[test]
+    fn scan_follows_plex_naming() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-scan-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let files = [
+            "Avatar (2009)/Avatar (2009).mkv",
+            "Avatar (2009)/Avatar (2009)-trailer.mkv",
+            "Avatar (2009)/Featurettes/Making of.mkv",
+            "The Dark Knight (2008)/The Dark Knight (2008) - pt2.mkv",
+            "The Dark Knight (2008)/The Dark Knight (2008) - pt1.mkv",
+            "Shorts/Some Short (2010).mkv",
+            "Skip me/Hidden (2001).mkv",
+            "Avatar (2009)/junk.sample.mkv.part.mkv",
+            "Lonely/Trailers/Teaser (2015).mkv",
+        ];
+        for f in files {
+            let p = root.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, b"x").unwrap();
+        }
+        std::fs::write(root.join(IGNORE_FILE), "# test\nSkip me/\n*.part.mkv\n").unwrap();
+        let mut db: Db = serde_json::from_value(serde_json::json!({"version": 1, "machine_id": "x", "next_id": 1, "settings": crate::db::Settings::default(),
+            "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": [root.to_string_lossy()], "created_at": 0}],
+            "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let section = db.sections[0].clone();
+        let scan = |db: &mut Db| { scan_section(&section, "no-such-ffprobe", |f| f(db)); };
+        scan(&mut db);
+        let titles = |db: &Db| {
+            let mut v: Vec<(String, usize, Option<String>)> = db.items.values().map(|i| {
+                let parent = i.parent_id.and_then(|p| db.items.get(&p)).map(|p| p.title.clone());
+                (format!("{}:{}", if i.is_extra() { i.extra["extra_type"].as_str().unwrap() } else { i.kind.as_str() }, i.title), i.parts.len(), parent)
+            }).collect();
+            v.sort();
+            v
+        };
+        let want = vec![
+            ("featurette:Making of".to_string(), 0, Some("Avatar".to_string())),
+            ("movie:Avatar".into(), 0, None),
+            ("movie:Some Short".into(), 0, None),
+            // An extras folder without a movie next to it: read as a movie.
+            ("movie:Teaser".into(), 0, None),
+            ("movie:The Dark Knight".into(), 1, None),
+            ("trailer:Trailer".into(), 0, Some("Avatar".to_string())),
+        ];
+        assert_eq!(titles(&db), want);
+        let knight = db.items.values().find(|i| i.title == "The Dark Knight").unwrap();
+        assert!(knight.file.as_ref().unwrap().path.ends_with("pt1.mkv"));
+        // A second scan changes nothing.
+        let ids: Vec<u64> = db.items.keys().copied().collect();
+        scan(&mut db);
+        assert_eq!(titles(&db), want);
+        assert_eq!(db.items.keys().copied().collect::<Vec<_>>(), ids);
+        // A third part shows up: still one movie, now with two further parts.
+        std::fs::write(root.join("The Dark Knight (2008)/The Dark Knight (2008) - pt3.mkv"), b"x").unwrap();
+        scan(&mut db);
+        assert_eq!(db.items.values().find(|i| i.title == "The Dark Knight").unwrap().parts.len(), 2);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn plex_split_parts_and_id_tags() {

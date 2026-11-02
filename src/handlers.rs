@@ -258,17 +258,24 @@ pub fn transcode_request(ctx: &Ctx) -> transcode::Request {
     }
 }
 
-fn playable_file(app: &Arc<App>, user: &User, iid: &str) -> Result<(Item, db::MediaFile), Resp> {
+/// The item and one of its files: `part` 0 is the file, 1 … the further parts
+/// of a split movie (?part= on the streaming addresses).
+fn playable_file(app: &Arc<App>, user: &User, iid: &str, part: usize) -> Result<(Item, db::MediaFile), Resp> {
     let db = app.db.lock().unwrap();
     let it = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)).ok_or_else(|| fail(404, "Not found"))?;
     if !db.can_see_section(user, it.section_id) { return Err(fail(403, "You don't have access to this library")); }
-    let f = it.file.clone().ok_or_else(|| fail(400, "This entry has no video file"))?;
+    if it.file.is_none() { return Err(fail(400, "This entry has no video file")); }
+    let f = it.part(part).cloned().ok_or_else(|| fail(404, "No such part"))?;
     Ok((it.clone(), f))
+}
+
+fn part_of(ctx: &Ctx) -> usize {
+    ctx.num("part").map(|n| n as usize).unwrap_or(0)
 }
 
 /// Sends the original file, honouring Range requests so players can seek.
 pub fn direct_file(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
-    let (_, f) = match playable_file(app, user, iid) { Ok(x) => x, Err(r) => return r };
+    let (_, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
     serve_file(Path::new(&f.path), transcode::content_type(&f.container), ctx.range.as_deref(), ctx.param("download") == Some("1"))
 }
 
@@ -360,7 +367,7 @@ fn check_transcode_allowed(app: &Arc<App>, user: &User, method: &Method) -> Opti
 
 /// Any container in, fragmented MP4 (H.264 + AAC) out, streamed while ffmpeg works.
 pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
-    let (it, f) = match playable_file(app, user, iid) { Ok(x) => x, Err(r) => return r };
+    let (it, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
     let req = transcode_request(ctx);
     let mut d = transcode::decide(&f, &req);
     if d.method == Method::Direct {
@@ -390,7 +397,7 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
 }
 
 pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
-    let (it, f) = match playable_file(app, user, iid) { Ok(x) => x, Err(r) => return r };
+    let (it, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
     let req = transcode_request(ctx);
     let mut d = transcode::decide(&f, &req);
     if d.method == Method::Direct {
@@ -456,7 +463,7 @@ pub fn hls_file(app: &Arc<App>, sid: &str, file: &str) -> Resp {
 }
 
 pub fn subtitles(app: &Arc<App>, user: &User, iid: &str, n: &str) -> Resp {
-    let (_, f) = match playable_file(app, user, iid) { Ok(x) => x, Err(r) => return r };
+    let (_, f) = match playable_file(app, user, iid, 0) { Ok(x) => x, Err(r) => return r };
     let n = n.trim_end_matches(".vtt");
     let (source, embedded) = if let Some(x) = n.strip_prefix('x') {
         let Some(p) = x.parse::<usize>().ok().and_then(|i| f.external_subtitles.get(i)) else { return fail(404, "No such subtitle") };
@@ -491,7 +498,7 @@ pub fn art(app: &Arc<App>, user: &User, iid: &str) -> Resp {
         let online = it.extra.get("art").or_else(|| top.and_then(|t| t.extra.get("art"))).and_then(|v| v.as_str()).map(String::from);
         // No background online: a picture from the video itself (the movie's file,
         // or a show's first episode), a third of the way in, past opening titles.
-        let video = top.and_then(|t| t.file.as_ref().map(|f| (f.path.clone(), t.duration_ms)))
+        let video = top.and_then(|t| t.file.as_ref().map(|f| (f.path.clone(), f.duration_ms)))
             .or_else(|| db.leaves(top_id).first().and_then(|l| db.items.get(l)).and_then(|l| l.file.as_ref().map(|f| (f.path.clone(), l.duration_ms))));
         (online, video, top_id)
     };
@@ -547,7 +554,7 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str) -> Resp {
             poster = it.parent_id.and_then(|p| db.items.get(&p)).and_then(|s| s.poster.clone());
         }
         let first_leaf = if it.kind.playable() { None } else { db.leaves(it.id).first().copied() };
-        (poster, it.file.as_ref().map(|f| f.path.clone()), it.duration_ms, it.title.clone(), it.kind, first_leaf, it.id)
+        (poster, it.file.as_ref().map(|f| f.path.clone()), it.file.as_ref().map_or(it.duration_ms, |f| f.duration_ms), it.title.clone(), it.kind, first_leaf, it.id)
     };
     // The type is read from the file itself (a .jpg may really be a PNG);
     // something that is not a photo at all is skipped.
