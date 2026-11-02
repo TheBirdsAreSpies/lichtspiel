@@ -158,7 +158,7 @@ function posterCard(it, opts = {}) {
       it.missing ? h('span', { class: 'gone', title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null,
       prog > 0 ? h('div', { class: 'bar' }, h('i', { style: `width:${prog * 100}%` })) : null,
       it.leafCount && unseen > 0 ? h('span', { class: 'badge' }, unseen) : null,
-      seen ? h('span', { class: 'seen', title: t('Watched') }, '✓') : null,
+      seen ? h('span', { class: 'seen', title: t('Watched'), 'aria-label': t('Watched') }, icon('check')) : null,
       opts.pick ? h('span', { class: 'pick', title: t('Select'), onclick: e => { e.stopPropagation(); opts.pick(e, true); } }) : null,
       it.type === 'clip' ? null : h('button', { class: 'more', title: t('More'), 'aria-label': t('More'), onclick: more }, '⋯')),
     h('div', { class: 't', title }, title), h('div', { class: 's' }, sub));
@@ -298,6 +298,22 @@ const FILTER_NAMES = { genre: 'Genre', year: 'Year', decade: 'Decade', content_r
   video_codec: 'Video codec', audio_codec: 'Audio codec', subtitle_codec: 'Subtitle format', audio_layout: 'Audio channels', audio_language: 'Audio language',
   subtitle_language: 'Subtitle language', edition: 'Edition', label: 'Label', folder: 'Folder', duplicate: 'Duplicates' };
 const RES_NAMES = { '4k': '4K', 1080: '1080p', 720: '720p', 480: '480p', sd: 'SD' };
+// A button that opens a menu below it, as in the library bar.
+// entries: a list or a function giving one (may be async); opts: {on, title, icon}.
+function dropBtn(label, entries, opts = {}) {
+  const b = h('button', { class: 'dd' + (opts.on ? ' on' : ''), 'aria-haspopup': 'menu', title: opts.title || null,
+    onclick: async () => {
+      if (b.classList.contains('open')) return closeMenus();
+      const list = typeof entries === 'function' ? await entries() : entries;
+      if (!list || !list.length) return;
+      const m = openMenu(b, list, null, 'left');
+      b.classList.add('open');
+      new MutationObserver((_, o) => { if (!m.isConnected) { b.classList.remove('open'); o.disconnect(); } }).observe(document.body, { childList: true });
+    } },
+    opts.icon ? icon(opts.icon) : null, h('span', {}, label), icon('down'));
+  return b;
+}
+
 // Older links (and bookmarks) used ?genre= and ?watched=; they become filters.
 const OLD_WATCHED = { unwatched: ['unwatched', 'true'], watched: ['unwatched', 'false'], progress: ['in_progress', 'true'] };
 
@@ -327,7 +343,10 @@ async function sectionPage(id, qs) {
   if (st.container) q.set('container', st.container);
   for (const [k, v] of Object.entries(st)) if (k.startsWith('f.') && v) q.set(k.slice(2), v);
   const res = (await GET(`/library/sections/${id}/all?${q}`)).MediaContainer;
-  const sel = (key, opts) => h('select', { onchange: e => { st[key] = e.target.value; if (key === 'type') for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } }, opts.map(([v, l]) => h('option', { value: v, selected: st[key] === v }, l)));
+  const sel = (key, opts, title) => {
+    const cur = opts.find(o => o[0] === st[key]) || opts[0];
+    return dropBtn(cur[1], () => opts.map(([v, l]) => ({ label: l, checked: st[key] === v, run: () => { st[key] = v; if (key === 'type') for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } })), { title, on: key !== 'sort' && !!st[key] });
+  };
   const filterName = f => t(FILTER_NAMES[f] || f);
   const valueName = (f, v) => f === 'video_resolution' ? (RES_NAMES[v] || v) : f === 'decade' ? t('{v}s', { v }) : v;
   const setFilter = (f, v) => { if (v) st['f.' + f] = v; else delete st['f.' + f]; go(); };
@@ -335,21 +354,20 @@ async function sectionPage(id, qs) {
   // order, each opening its values (with how many items have them); yes/no filters
   // switch on and off. The advanced one (duplicates) sits apart at the end.
   let filters = null;
-  const filterMenu = async anchor => {
+  const filterMenu = async () => {
     try { filters = filters || (await GET(`/library/sections/${id}/filters?includeAdvanced=1${st.type ? '&type=' + st.type : ''}`)).MediaContainer.Filter; }
-    catch (e) { return toast(e.message, 6000); }
+    catch (e) { toast(e.message, 6000); return []; }
     const entry = f => {
       const cur = st['f.' + f.filter] || '';
-      const mark = cur ? '✓ ' : '';
-      if (f.type === 'boolean') return { label: `${mark}${filterName(f.filter)}${f.count != null ? ` (${f.count})` : ''}`, run: () => setFilter(f.filter, cur ? '' : 'true') };
-      return { label: mark + filterName(f.filter), sub: async () => [
+      if (f.type === 'boolean') return { label: filterName(f.filter), checked: !!cur, hint: f.count != null ? String(f.count) : null, run: () => setFilter(f.filter, cur ? '' : 'true') };
+      return { label: filterName(f.filter), checked: !!cur, hint: cur ? valueName(f.filter, cur) : null, sub: async () => [
         cur ? { label: t('Remove this filter'), run: () => setFilter(f.filter, '') } : null, cur ? '-' : null,
-        ...(f.values.length ? f.values.map(x => ({ label: `${x.value === cur ? '✓ ' : ''}${valueName(f.filter, x.value)} (${x.count})`, run: () => setFilter(f.filter, x.value) }))
+        ...(f.values.length ? f.values.map(x => ({ label: valueName(f.filter, x.value), checked: x.value === cur, hint: String(x.count), run: () => setFilter(f.filter, x.value) }))
           : [{ label: t('None found'), disabled: true, run: () => {} }])] };
     };
     const any = Object.keys(st).some(k => k.startsWith('f.') && st[k]);
-    openMenu(anchor, [...filters.filter(f => !f.advanced).map(entry), '-', ...filters.filter(f => f.advanced).map(entry),
-      any ? '-' : null, any ? { label: t('Clear filters'), run: () => { for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } } : null], null, 'left');
+    return ([...filters.filter(f => !f.advanced).map(entry), '-', ...filters.filter(f => f.advanced).map(entry),
+      any ? '-' : null, any ? { label: t('Clear filters'), run: () => { for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } } : null]);
   };
   const active = Object.keys(st).filter(k => k.startsWith('f.') && st[k]);
   const chips = active.length ? h('div', { class: 'chips' }, active.map(k => {
@@ -363,9 +381,8 @@ async function sectionPage(id, qs) {
     tabs,
     h('div', { class: 'bar-tools' },
       sec.type === 'show' ? sel('type', [['', t('Shows')], ['season', t('Seasons')], ['episode', t('Episodes')]]) : null,
-      h('button', { class: active.length ? 'small primary' : 'small', 'aria-haspopup': 'menu', onclick: e => filterMenu(e.currentTarget) },
-        active.length ? t('Filter ({n})', { n: active.length }) : t('Filter'), ' ▾'),
-      sel('sort', SORTS),
+      dropBtn(active.length ? t('Filter ({n})', { n: active.length }) : t('Filter'), filterMenu, { on: active.length > 0, icon: 'filter' }),
+      sel('sort', SORTS, t('Sort')),
       text('from', t('Year from'), 95), text('to', t('Year to'), 85),
       sel('container', [['', t('Any file type')], ...['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'].map(c => [c, c.toUpperCase()])]),
       text('q', t('Filter by title'), 150),
@@ -738,6 +755,8 @@ const ICONS = {
   mark: 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z',
   markOff: 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15-5-2.18L7 18V5h10v13z',
   restart: 'M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z',
+  down: 'M7 10l5 5 5-5z',
+  filter: 'M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z',
   more: 'M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
 };
 // A round button with just an icon; the name is in the tooltip. on (true/false) = a toggle and whether it is set.

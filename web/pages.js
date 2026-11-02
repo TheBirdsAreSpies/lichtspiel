@@ -750,23 +750,27 @@ window.addEventListener('hashchange', closeMenus);
 window.addEventListener('resize', closeMenus);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.menu')) { e.stopImmediatePropagation(); closeMenus(); } }, true);
 
-// A list of entries next to `anchor`. Entries: {label, run, sub: async () => entries, danger} or '-' (a line).
+// A list of entries next to `anchor`. Entries: {label, run, sub: async () => entries, danger, checked, hint}
+// or '-' (a line). checked (true/false) gives the menu a column of ticks; hint is shown dim on the right (a count).
 // align 'left': the menu starts at the button's left edge (default: ends at its right edge).
 function openMenu(anchor, entries, parent, align) {
   if (!parent) closeMenus();
   const box = h('div', { class: 'menu', role: 'menu' });
   let subOpen = null;
-  const closeSub = () => { if (subOpen) { subOpen.remove(); subOpen = null; } };
-  for (const e of entries.filter(Boolean)) {
+  const closeSub = () => { if (subOpen) { subOpen._from.classList.remove('sub-open'); subOpen.remove(); subOpen = null; } };
+  const list = entries.filter(Boolean);
+  if (list.some(e => e !== '-' && e.checked !== undefined)) box.classList.add('ticks');
+  for (const e of list) {
     if (e === '-') { if (box.lastChild && !box.lastChild.classList.contains('sep')) box.append(h('div', { class: 'sep' })); continue; }
-    const row = h('button', { class: 'mi' + (e.sub ? ' has-sub' : '') + (e.danger ? ' danger' : ''), role: 'menuitem', disabled: e.disabled }, h('span', {}, e.label), e.sub ? h('span', { class: 'dim' }, '›') : null);
+    const row = h('button', { class: 'mi' + (e.sub ? ' has-sub' : '') + (e.danger ? ' danger' : '') + (e.checked ? ' on' : ''), role: e.checked !== undefined ? 'menuitemcheckbox' : 'menuitem', 'aria-checked': e.checked === undefined ? null : String(!!e.checked), disabled: e.disabled },
+      h('span', { class: 'tick', 'aria-hidden': 'true' }), h('span', { class: 'lbl' }, e.label), e.hint != null ? h('span', { class: 'hint' }, e.hint) : null, e.sub ? h('span', { class: 'arrow', 'aria-hidden': 'true' }) : null);
     const openSub = async () => {
       if (subOpen && subOpen._from === row) return;
       closeSub();
       let kids;
       try { kids = await e.sub(); } catch (x) { return toast(x.message, 6000); }
       if (!box.isConnected) return;
-      subOpen = openMenu(row, kids, box); subOpen._from = row;
+      subOpen = openMenu(row, kids, box); subOpen._from = row; row.classList.add('sub-open');
     };
     if (e.sub) { row.onmouseenter = openSub; row.onclick = openSub; }
     else {
