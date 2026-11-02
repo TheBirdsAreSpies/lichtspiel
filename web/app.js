@@ -245,7 +245,7 @@ async function sectionPage(id, qs) {
       text('q', t('Filter by title'), 150),
       h('button', { class: st.more ? 'small primary' : 'small', onclick: () => { st.more = st.more ? '' : '1'; go(); } }, active ? t('More filters ({n})', { n: active }) : t('More filters')),
       h('span', { class: 'grow' }),
-      S.me.admin ? h('button', { onclick: async () => { await api('POST', `/library/sections/${id}/refresh`); toast(t('Scanning {name}', { name: sec.title })); } }, t('Scan now')) : null),
+      S.me.admin ? h('button', { onclick: async () => { await api('POST', `/library/sections/${id}/refresh`); toast(t('Scanning {name}', { name: sec.title })); pollActivity(); } }, t('Scan now')) : null),
     panel,
     res.Metadata.length ? h('div', { class: 'grid' }, res.Metadata.map(i => posterCard(i, { episodeThumb: st.type === 'episode' }))) : h('div', { class: 'empty' }, t('Nothing matches these filters.')));
 }
