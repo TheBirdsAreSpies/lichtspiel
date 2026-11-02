@@ -762,17 +762,41 @@ function fixMatch(it) {
 }
 
 // saved() runs after saving; without it the item's page opens.
+// Tabs: General, Tags, Labels, Info. Lists are typed comma separated.
 function editItem(it, saved) {
-  const f = {};
-  const field = (k, label, val, area) => formRow(label, (f[k] = h(area ? 'textarea' : 'input', { value: val ?? '', style: 'width:100%' })), null, area);
+  const f = {}, x = it.extra || {};
+  const list = v => (v || []).join(', ');
+  const field = (k, label, val, o = {}) => formRow(label, (f[k] = h(o.area ? 'textarea' : 'input', { value: val ?? '', type: o.type || 'text', style: 'width:100%' })), o.help, o.area);
+  const movie = it.type === 'movie' || it.type === 'episode';
+  const fmtAt = ts => ts ? new Date(ts * (ts < 1e12 ? 1000 : 1)).toLocaleString(I18N.lang) : '';
+  const panes = [
+    [t('General'), [
+      field('title', t('Title'), it.title), field('sort_title', t('Sort title'), it.titleSort, { help: t('Leave empty to derive it from the title.') }),
+      field('original_title', t('Original title'), x.original_title),
+      movie ? field('edition', t('Edition (e.g. Director’s Cut)'), x.edition) : null,
+      field('originally_available', t('Originally available'), (x.originally_available || '').slice(0, 10), { type: 'date' }),
+      field('year', t('Year'), it.year), field('content_rating', t('Age rating'), it.contentRating), field('rating', t('Rating (0-10)'), it.rating),
+      field('studio', t('Studio'), it.studio), field('tagline', t('Tagline'), it.tagline), field('summary', t('Summary'), it.summary, { area: true })]],
+    [t('Tags'), [
+      field('directors', t('Directors'), list(x.directors)), field('countries', t('Countries'), list(x.countries)), field('genres', t('Genres'), list(it.genres)),
+      field('writers', t('Writers'), list(x.writers)), field('producers', t('Producers'), list(x.producers)), field('collections', t('Collections'), list(x.collections))]],
+    [t('Labels'), [field('labels', t('Labels (comma separated)'), list(x.labels))]],
+    [t('Info'), [h('div', { class: 'kv' },
+      h('div', { class: 'dim' }, 'ID'), h('div', {}, String(it.id)),
+      h('div', { class: 'dim' }, t('Type')), h('div', {}, it.type),
+      it.addedAt ? [h('div', { class: 'dim' }, t('Added')), h('div', {}, fmtAt(it.addedAt))] : null,
+      it.updatedAt ? [h('div', { class: 'dim' }, t('Last updated')), h('div', {}, fmtAt(it.updatedAt))] : null,
+      ((it.Media || [])[0] || {}).file ? [h('div', { class: 'dim' }, t('Path')), h('div', { style: 'word-break:break-all' }, it.Media[0].file)] : null)]]];
+  const bodies = panes.map(([, kids], i) => h('div', { style: i ? 'display:none' : '' }, kids));
+  const links = panes.map(([name], i) => h('a', { href: '#', class: i ? '' : 'on', onclick: e => {
+    e.preventDefault(); links.forEach((l, j) => { l.classList.toggle('on', j === i); bodies[j].style.display = j === i ? '' : 'none'; });
+  } }, name));
   const box = modal(t('Edit details'), [
-    field('title', t('Title'), it.title), field('year', t('Year'), it.year), field('summary', t('Summary'), it.summary, true), field('tagline', t('Tagline'), it.tagline),
-    field('genres', t('Genres (comma separated)'), (it.genres || []).join(', ')), field('rating', t('Rating (0-10)'), it.rating), field('content_rating', t('Age rating'), it.contentRating), field('studio', t('Studio'), it.studio),
-    field('labels', t('Labels (comma separated)'), ((it.extra || {}).labels || []).join(', ')), field('collections', t('Collections (comma separated)'), ((it.extra || {}).collections || []).join(', ')),
-    it.type === 'movie' || it.type === 'episode' ? field('edition', t('Edition (e.g. Director’s Cut)'), (it.extra || {}).edition) : null,
+    h('div', { class: 'tabs' }, links), bodies,
     h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: async () => {
       const body = {}; for (const [k, el] of Object.entries(f)) body[k] = el.value;
       body.year = body.year ? Number(body.year) : null; body.rating = body.rating ? Number(String(body.rating).replace(',', '.')) : null;
+      if (!body.sort_title.trim()) delete body.sort_title;
       await api('PUT', '/library/metadata/' + it.id, body); box.remove(); saved ? saved() : itemPage(it.id);
     } }, t('Save')), h('button', { onclick: () => box.remove() }, t('Cancel')))]);
 }
