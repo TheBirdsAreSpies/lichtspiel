@@ -643,7 +643,7 @@ pub fn is_credits_title(t: &str) -> bool {
         .any(|w| t.contains(w))
 }
 
-fn find_poster(dir: &Path, stem: &str) -> Option<String> {
+pub fn find_poster(dir: &Path, stem: &str) -> Option<String> {
     for ext in ["jpg", "jpeg", "png", "webp"] {
         let own = dir.join(format!("{stem}.{ext}"));
         if own.exists() {

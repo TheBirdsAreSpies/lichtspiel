@@ -870,6 +870,10 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
     admin ? { label: t('Analyze'), run: async () => { await api('POST', `/library/metadata/${it.id}/analyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
     admin ? { label: t('Edit details'), run: async () => editItem(await fullItem(it)) } : null,
     admin && matchable ? { label: (it.extra || {}).metadata_source ? t('Fix match…') : t('Match…'), run: async () => fixMatch(await fullItem(it)) } : null,
+    admin && matchable && (it.extra || {}).metadata_source ? { label: t('Unmatch'), run: async () => {
+      if (!await sure(t('Remove the online details of "{title}"? It goes back to the file name and is not matched automatically again until you pick a match.', { title: it.title }), { ok: t('Unmatch'), danger: true })) return;
+      const r = await api('DELETE', `/library/metadata/${it.id}/match`); toast(t(r.message), 4000); changed();
+    } } : null,
     admin && play && opts.detail ? { label: t('Credits…'), run: () => creditsDialog(it) } : null,
     admin ? { label: t('Optimize…'), run: () => optimizeDialog(it) } : null,
     S.me.can_download && it.type !== 'clip' ? { label: t('Download…'), run: () => downloadDialog([it]) } : null,

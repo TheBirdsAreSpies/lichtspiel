@@ -52,6 +52,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/library/metadata/{id}/art", "Wide background picture (from the online details)"),
     ("GET", "/library/metadata/{id}/matches", "Admin: search online details for a movie or show ?title= &year= (for Fix match)"),
     ("PUT", "/library/metadata/{id}/match", "Admin: use this online match {source: tmdb|tvmaze|wikidata, id} → plot, cast, posters, episodes"),
+    ("DELETE", "/library/metadata/{id}/match", "Admin: unmatch: forget the online details and go back to the file names (also PUT …/unmatch); automatic matching then leaves it alone until a new match"),
     ("POST", "/library/metadata/{id}/refresh", "Admin: download the details again"),
     ("GET", "/library/metadata/{id}/cast/{n}", "Photo of the n-th cast member (older downloads)"),
     ("GET", "/library/people/{key}", "An actor and every movie and show you can see that they are in (with their role) ?name= "),
@@ -711,6 +712,17 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                     with_item(app, &user, &iid.to_string(), |db, it| ok(json!({"ok": true, "message": msg, "item": item_json(db, &user, it, true)})))
                 }
                 Err(e) => fail(502, &e),
+            }
+        }
+        ("DELETE", ["library", "metadata", iid, "match"]) | ("POST", ["library", "metadata", iid, "unmatch"]) | ("PUT", ["library", "metadata", iid, "unmatch"]) => {
+            if !admin { return need_admin(); }
+            let Some(iid) = id(iid) else { return fail(404, "Not found") };
+            match app.unmatch(iid) {
+                Ok(msg) => {
+                    app.save();
+                    with_item(app, &user, &iid.to_string(), |db, it| ok(json!({"ok": true, "message": msg, "item": item_json(db, &user, it, true)})))
+                }
+                Err(e) => fail(400, &e),
             }
         }
         ("GET", ["library", "metadata", iid, "markers"]) => with_item(app, &user, iid, |db, it| {

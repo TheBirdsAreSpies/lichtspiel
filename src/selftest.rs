@@ -743,15 +743,21 @@ pub fn run(out: &Path) -> bool {
         let film = c.get(&format!("/library/metadata/{avi}")).json()["MediaContainer"]["Metadata"][0].clone();
         let (film_photos, film_served) = saved_photos(&film, avi);
         let film_ok = ws == 200 && film_photos >= 1 && film_served;
+        // "Unmatch" forgets it again, and automatic matching then leaves it alone.
+        let un = c.call("DELETE", &format!("/library/metadata/{avi}/match"), None, &[]);
+        let bare = c.get(&format!("/library/metadata/{avi}")).json()["MediaContainer"]["Metadata"][0].clone();
+        let again = c.call("POST", &format!("/library/metadata/{avi}/refresh"), None, &[]);
+        let unmatch_ok = un.status == 200 && bare["extra"]["metadata_source"].is_null() && bare["extra"]["unmatched_by_hand"] == true
+            && bare["summary"].as_str().unwrap_or("").is_empty() && bare["extra"]["cast"].is_null() && again.status != 200;
         // Background: online, or a still from the video when there is none.
         let art = c.get(&format!("/library/metadata/{mp4}/art"));
         let art_ok = art.status == 200 || !crate::transcode::detect(&crate::db::Settings::default())["ffmpeg_found"].as_bool().unwrap_or(false);
         let _ = tx.send((
-            movie_ok && show_ok && film_ok && art_ok,
-            format!("movie matched online → \"{}\" ({mmsg}), plot {} characters, poster {}, background HTTP {}; show → \"{}\" ({smsg}), {cast_n} cast members, {show_photos} actor photos saved, episodes now called {:?}; film → \"{}\" ({wmsg}), {film_photos} actor photos saved from Wikimedia",
+            movie_ok && show_ok && film_ok && art_ok && unmatch_ok,
+            format!("movie matched online → \"{}\" ({mmsg}), plot {} characters, poster {}, background HTTP {}; show → \"{}\" ({smsg}), {cast_n} cast members, {show_photos} actor photos saved, episodes now called {:?}; film → \"{}\" ({wmsg}), {film_photos} actor photos saved from Wikimedia; unmatched → \"{}\" (HTTP {}, refresh then HTTP {})",
                 movie["title"].as_str().unwrap_or(""), movie["summary"].as_str().map(|s| s.chars().count()).unwrap_or(0),
                 if poster.status == 200 { "downloaded" } else { "missing" }, art.status, show["title"].as_str().unwrap_or(""), ep_titles,
-                film["title"].as_str().unwrap_or("")),
+                film["title"].as_str().unwrap_or(""), bare["title"].as_str().unwrap_or(""), un.status, again.status),
         ));
     } else {
         let _ = tx.send((true, "online details not tried: this computer is offline".into()));

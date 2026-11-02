@@ -752,7 +752,7 @@ impl App {
     pub fn match_online(self: &Arc<Self>, id: u64, choice: Option<(String, String)>, force: bool) -> Result<String, String> {
         use crate::metadata;
         let mut settings = self.settings();
-        let (kind, title, year, stored, seasons, status_recent, folder, tag) = {
+        let (kind, title, year, stored, seasons, status_recent, folder, tag, unmatched_by_hand) = {
             let db = self.db.lock().unwrap();
             let it = db.items.get(&id).ok_or("No such item")?;
             // The library's own language, else the server's.
@@ -771,7 +771,8 @@ impl App {
             let title = s("file_title").unwrap_or_else(|| it.title.clone());
             let folder = Self::folder_title(&db, it).filter(|(t, _)| !t.eq_ignore_ascii_case(&title));
             let tag = Self::id_tag_of(&db, it);
-            (it.kind, title, it.year, stored, seasons, recent, folder, tag)
+            let by_hand = it.extra.get("unmatched_by_hand").and_then(|v| v.as_bool()) == Some(true);
+            (it.kind, title, it.year, stored, seasons, recent, folder, tag, by_hand)
         };
         // An id in the file or folder name ("{imdb-tt0068646}") decides the match,
         // unless one is picked by hand in "Fix match".
@@ -785,6 +786,9 @@ impl App {
             },
             _ => None,
         };
+        if choice.is_none() && unmatched_by_hand {
+            return Err("The match was removed by hand; use Match… to pick one".into());
+        }
         if choice.is_none() && tagged.is_none() && stored.is_none() && status_recent && !force {
             return Err("No match was found recently; use Fix match".into());
         }
@@ -902,7 +906,7 @@ impl App {
             vec![]
         };
         // Forget what an earlier match said before applying this one.
-        for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes", "originally_available", "metadata_status", "metadata_checked_at", "ratings", "imdb_ratings_checked"] {
+        for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes", "originally_available", "metadata_status", "metadata_checked_at", "ratings", "imdb_ratings_checked", "unmatched_by_hand"] {
             it.extra.remove(k);
         }
         if !it.extra.contains_key("file_title") {
@@ -965,6 +969,103 @@ impl App {
         } else {
             format!("{new_title}: details from {source}")
         })
+    }
+
+    /// "Unmatch": forgets the online details of a movie or show (and of its
+    /// seasons and episodes) and goes back to what the files say. Fields edited
+    /// by hand stay. Automatic matching leaves it alone until "Match…" is used.
+    pub fn unmatch(&self, id: u64) -> Result<String, String> {
+        let mut db = self.db.lock().unwrap();
+        let it = db.items.get(&id).ok_or("No such item")?;
+        if !matches!(it.kind, ItemKind::Movie | ItemKind::Show) {
+            return Err("Details are looked up for movies and shows".into());
+        }
+        let kind = it.kind;
+        // Title and year as a scan of the files gives them.
+        let leaf = if kind == ItemKind::Movie { Some(id) } else { db.leaves(id).first().copied() };
+        let file = leaf.and_then(|l| db.items.get(&l)).and_then(|l| l.file.as_ref()).map(|f| PathBuf::from(&f.path));
+        let section = db.sections.iter().find(|s| s.id == it.section_id).cloned();
+        let root = match (&file, &section) {
+            (Some(f), Some(sec)) => sec.paths.iter().map(PathBuf::from).filter(|r| f.starts_with(r)).max_by_key(|r| r.as_os_str().len()),
+            _ => None,
+        };
+        let parsed = match (&file, &section, &root) {
+            (Some(f), Some(sec), Some(r)) => Some(scanner::classify(sec, r, f)),
+            _ => None,
+        };
+        let (scan_title, year) = match parsed {
+            Some(p) if kind == ItemKind::Show => p.show.unwrap_or((String::new(), None)),
+            Some(p) => (p.title, p.year),
+            None => (String::new(), it.year),
+        };
+        let title = it.extra.get("file_title").and_then(|v| v.as_str()).map(String::from).filter(|t| !t.trim().is_empty())
+            .or(Some(scan_title).filter(|t| !t.trim().is_empty()))
+            .unwrap_or_else(|| it.title.clone());
+        let local_poster = |db: &Db, i: u64| -> Option<String> {
+            let f = PathBuf::from(&db.items.get(&i)?.file.as_ref()?.path);
+            scanner::find_poster(f.parent()?, &f.file_stem()?.to_string_lossy())
+        };
+        let own_poster = if kind == ItemKind::Movie {
+            local_poster(&db, id)
+        } else {
+            // A show's picture lies in the show's own folder.
+            file.as_ref().zip(root.as_ref()).and_then(|(f, r)| {
+                let first = f.strip_prefix(r).ok()?.components().next()?;
+                scanner::find_poster(&r.join(first.as_os_str()), "__none__")
+            })
+        };
+        let mut ids = vec![id];
+        for s in db.children(id).iter().map(|c| c.id).collect::<Vec<_>>() {
+            ids.push(s);
+            ids.extend(db.children(s).iter().map(|e| e.id));
+        }
+        let posters: HashMap<u64, Option<String>> =
+            ids.iter().map(|i| (*i, if *i == id { own_poster.clone() } else { local_poster(&db, *i) })).collect();
+        for i in &ids {
+            let dir = self.metadata_dir(*i);
+            let Some(it) = db.items.get_mut(i) else { continue };
+            let locked = it.locked.clone();
+            let can = |f: &str| !locked.iter().any(|l| l == f);
+            if *i == id {
+                if can("title") {
+                    it.title = title.clone();
+                    it.sort_title = db::sort_title(&title);
+                }
+                if can("year") {
+                    it.year = year;
+                }
+                if can("tagline") { it.tagline.clear(); }
+                if can("content_rating") { it.content_rating.clear(); }
+                if can("studio") { it.studio.clear(); }
+                if can("genres") { it.genres.clear(); }
+                for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes",
+                    "originally_available", "ratings", "imdb_ratings_checked", "metadata_source", "metadata_id", "metadata_language", "matched_at",
+                    "pictures_version", "metadata_checked_at", "match_version"] {
+                    it.extra.remove(k);
+                }
+                it.extra.insert("metadata_status".into(), json!("unmatched"));
+                it.extra.insert("unmatched_by_hand".into(), json!(true));
+            } else if it.kind == ItemKind::Episode {
+                if can("title") {
+                    if let Some(t) = it.extra.get("file_title").and_then(|v| v.as_str()).map(String::from) {
+                        it.sort_title = db::sort_title(&t);
+                        it.title = t;
+                    }
+                }
+                it.extra.remove("originally_available");
+            }
+            if can("summary") { it.summary.clear(); }
+            if can("rating") { it.rating = None; }
+            // Pictures that came with the match go; ones next to the files come back.
+            if it.poster.as_deref().is_none_or(|p| Path::new(p).starts_with(&dir)) {
+                it.poster = posters.get(i).cloned().flatten();
+            }
+            let _ = std::fs::remove_dir_all(&dir);
+            let _ = std::fs::remove_file(self.data_dir.join("cache").join("thumbs").join(format!("{i}.jpg")));
+            let _ = std::fs::remove_file(self.data_dir.join("cache").join("art").join(format!("{i}.jpg")));
+        }
+        drop(db);
+        Ok(format!("{title}: match removed"))
     }
 
     /// Works through the queue, one item at a time, gently.
