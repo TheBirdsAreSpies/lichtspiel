@@ -40,6 +40,7 @@ pub const WEB_APP: &str = include_str!("../web/index.html");
 pub const WEB_JS: &str = include_str!("../web/app.js");
 pub const WEB_PAGES_JS: &str = include_str!("../web/pages.js");
 pub const WEB_DASHBOARD_JS: &str = include_str!("../web/dashboard.js");
+pub const WEB_DOWNLOADS_JS: &str = include_str!("../web/downloads.js");
 pub const WEB_I18N_JS: &str = include_str!("../web/i18n.js");
 /// Language packs for the web app (web/lang/<code>.js); English needs none.
 /// To add a language: put its file in web/lang, list it here and add a
@@ -1306,6 +1307,8 @@ pub fn start_background(app: &Arc<App>) {
     // Online details for new movies and shows.
     let a = app.clone();
     std::thread::spawn(move || a.metadata_worker());
+    // Converting downloads, one after the other.
+    crate::downloads::start(app);
     // Movies not found before the matcher learned more (MATCH_VERSION) get one more try.
     let retry: Vec<u64> = {
         let db = app.db.lock().unwrap();
@@ -1656,7 +1659,7 @@ pub fn page<T: Clone>(ctx: &Ctx, list: &[T]) -> (Vec<T>, usize) {
 
 pub fn user_json(u: &User) -> Value {
     json!({"id": u.id, "username": u.username, "email": u.email, "admin": u.admin, "created_at": u.created_at,
-        "allowed_sections": u.allowed_sections, "allow_transcode": u.allow_transcode.unwrap_or(true), "allow_delete": u.allow_delete, "invited_by": u.invited_by})
+        "allowed_sections": u.allowed_sections, "allow_transcode": u.allow_transcode.unwrap_or(true), "allow_delete": u.allow_delete, "allow_download": u.admin || u.allow_download.unwrap_or(true), "invited_by": u.invited_by})
 }
 
 pub fn invite_json(db: &Db, i: &Invite, base: &str) -> Value {

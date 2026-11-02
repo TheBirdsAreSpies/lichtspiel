@@ -138,6 +138,9 @@ h2{font-size:19px;margin:28px 0 12px}
 .li{display:flex;align-items:center;gap:14px;background:var(--panel);border-radius:var(--r);padding:10px 14px}
 .li .grow{flex:1;min-width:0}
 .li img{width:44px;height:66px;object-fit:cover;border-radius:4px;background:var(--panel2)}
+.dlbar{height:6px;margin-top:6px;max-width:420px;border-radius:3px;background:var(--panel2);overflow:hidden}
+#side a small.dlcount{color:var(--accent);visibility:visible}
+.dlbar i{display:block;height:100%;background:var(--accent);transition:width .4s}
 .tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:10px;background:var(--panel2);color:var(--dim);margin-right:4px}
 .tag.smart{background:#2b2312;color:var(--accent)}
 .tag.default{background:#1d2a22;color:var(--green)}
@@ -270,6 +273,7 @@ svg.viz rect.hov{fill:rgba(255,255,255,.05)}
 <nav id="side">
   <a href="#/" data-nav="home" data-t="Home">Home</a>
   <a href="#/watchlist" data-nav="watchlist" data-t="Watchlist">Watchlist</a>
+  <a href="#/downloads" data-nav="downloads" data-t="Downloads" style="display:none">Downloads</a>
   <div id="navsections"></div>
   <div class="head admin" data-t="MANAGE">MANAGE</div>
   <a class="admin" href="#/dashboard" data-nav="dashboard" data-t="Dashboard">Dashboard</a>
@@ -299,5 +303,6 @@ svg.viz rect.hov{fill:rgba(255,255,255,.05)}
 <script src="/web/app.js"></script>
 <script src="/web/pages.js"></script>
 <script src="/web/dashboard.js"></script>
+<script src="/web/downloads.js"></script>
 </body>
 </html>

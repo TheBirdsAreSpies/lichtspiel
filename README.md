@@ -36,13 +36,24 @@ Linux/Windows machine):
   plays, pauses or jumps moves everyone), Share, Add to queue, Add to (playlist or collection),
   mark watched, and for the owner Refresh metadata, Analyze (read the files again), Fix match,
   **Optimize** (a saved MP4 copy that plays directly instead of being converted), Grant access;
-  then Download file, View play history, Report a problem (the owner sees them under
+  then Download…, View play history, Report a problem (the owner sees them under
   **Reported problems**) and Media info.
 - **Watchlist** — **+ Watchlist** on a title's page, *Add to watchlist* in any poster's "⋯"
   menu, or for several picked posters at once. The **Watchlist** page (left menu) sorts by when
   you added them, title, year or rating, and the home page shows it as a row. A movie or episode
   leaves the list once you have watched it, a show once every episode is watched. Smart playlists
   can use it too (*On your watchlist*). Kept per person.
+- **Downloads** — **Download…** on a title's page, in any poster's "⋯" menu (movies,
+  episodes, seasons, whole shows) or for several picked posters. Pick a quality: *Original*
+  hands out the file as it is, right away; 1080p 8 Mbps down to 320p converts it on the server to
+  an MP4 (H.264, stereo AAC) that plays everywhere — one after the other in the background, a
+  movie in several parts joined into one file. A file that already fits the quality is sent as
+  it is. The **Downloads** page (left menu, with a count while something converts) shows each
+  one with its progress, size and a **Save** button, tries failed ones again and clears finished
+  ones; admins can see everyone's. Converted copies are deleted 7 days after they were made
+  (*Settings → Keep converted downloads*). Under **Users & invites** each person can be allowed
+  to download or not (*May download*; on by default); without it the plain
+  file download is refused too. Converting also needs *May convert*.
 - **Dashboard** (admins, under *Manage*): what is playing right now — who, on which device and
   address, direct play / direct stream / transcode, position and the bandwidth it takes — plus
   tiles and last-hour charts for bandwidth, processor (whole computer and Lichtspiel itself),
@@ -302,6 +313,7 @@ POST /playlists            {"title":"Short comedies","kind":"smart",
                              "sort":"year:desc","limit":50}}
 GET  /playlists?kind=smart&sort=updated_at:desc
 POST /api/invites          {"email":"friend@example.com","days":7,"allowed_sections":[1]}
+POST /api/downloads        {"ids":[42],"quality":"720p-4"}   → then GET /api/downloads/{id}/file
 ```
 
 The token can also go in `Authorization: Bearer <token>` or `?token=<token>`. Lists come
@@ -337,7 +349,7 @@ The plugin may print a JSON answer as its last line of output:
 
 Events: `metadata.lookup`, `library.item.added`, `library.item.removed`,
 `library.scan.finished`, `playback.started`, `playback.progress`, `playback.stopped`,
-`playback.watched`, `user.invited`, `user.joined`, `playlist.created`, `playlist.updated`,
+`playback.watched`, `item.problem`, `download.ready`, `user.invited`, `user.joined`, `playlist.created`, `playlist.updated`,
 `server.started`, `api.call`.
 
 New plugins start switched off; switch them on in the **Plugins** page (where their settings,
@@ -361,6 +373,7 @@ Python 3.
 | `lichtspiel.db` | the library, users, watch state, playlists and settings (SQLite; a save writes only what changed) |
 | `metadata/` | posters, backgrounds and actor photos |
 | `plugins/` | installed plugins |
+| `downloads/` | copies converted for the Downloads page (deleted after *Keep converted downloads* days) |
 | `cache/`, `transcode/` | thumbnails and transcoding work files; safe to delete |
 
 Older versions kept the library in `library.json`. The first start of this version moves it

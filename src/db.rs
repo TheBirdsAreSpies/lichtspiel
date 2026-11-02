@@ -359,6 +359,9 @@ pub struct User {
     /// admins always may then).
     #[serde(default)]
     pub allow_delete: bool,
+    /// May download (None = yes, "Allow downloads"); admins always may.
+    #[serde(default)]
+    pub allow_download: Option<bool>,
     /// The left menu as this person arranged it: {order: ["s12", "playlists", …], hidden: [...]}.
     #[serde(default)]
     pub sidebar: Value,
@@ -503,6 +506,30 @@ pub struct PlayEvent {
     pub manual: bool,
 }
 
+/// A movie or episode someone asked to download, in a quality. Kept until
+/// they remove it; a converted copy is deleted `download_keep_days` after it
+/// was made.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Download {
+    pub id: u64,
+    pub user_id: u64,
+    pub item_id: u64,
+    /// "original" or one of the quality names (transcode::QUALITIES).
+    pub quality: String,
+    /// queued | converting | ready | failed
+    pub state: String,
+    /// The original file is sent: asked for, or it already fits the quality.
+    #[serde(default)]
+    pub original: bool,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub error: String,
+    pub created_at: u64,
+    #[serde(default)]
+    pub finished_at: u64,
+}
+
 /// The play history keeps at most this many viewings (the oldest go first).
 pub const HISTORY_MAX: usize = 20000;
 
@@ -618,6 +645,13 @@ pub struct Settings {
     /// files from disk from the "…" menu.
     #[serde(default = "yes")]
     pub allow_media_deletion: bool,
+    /// Converted downloads are deleted this many days after they were made (0 = kept).
+    #[serde(default = "keep_days")]
+    pub download_keep_days: u64,
+}
+
+fn keep_days() -> u64 {
+    7
 }
 
 fn port() -> u16 {
@@ -757,6 +791,7 @@ impl Default for Settings {
             imdb_ratings_file: true,
             empty_trash_automatically: true,
             allow_media_deletion: true,
+            download_keep_days: keep_days(),
         }
     }
 }
@@ -780,6 +815,8 @@ pub struct Db {
     pub history: Vec<PlayEvent>,
     #[serde(default)]
     pub reports: Vec<ProblemReport>,
+    #[serde(default)]
+    pub downloads: Vec<Download>,
 }
 
 impl Default for Db {
@@ -799,6 +836,7 @@ impl Default for Db {
             plugins: BTreeMap::new(),
             history: vec![],
             reports: vec![],
+            downloads: vec![],
         };
         db.ensure_default_playlists();
         db

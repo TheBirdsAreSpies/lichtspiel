@@ -122,6 +122,7 @@ function drawChrome() {
   document.querySelectorAll('#side .admin').forEach(e => (e.style.display = S.me.admin ? '' : 'none'));
   drawQueueChip();
   drawNav();
+  drawDlChip();
 }
 function markNav(key) { NAV.cur = key; document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', a.dataset.nav === key)); }
 let searchTimer;
@@ -214,6 +215,7 @@ function pickGrid(items, cardOpts) {
       for (const i of idx) items[i].watchlist = true;
       clear();
     } }, cardOpts && cardOpts.watchlistPage ? t('Remove from watchlist') : t('+ Watchlist')),
+    S.me.can_download ? h('button', { class: 'small', onclick: () => downloadDialog(ids().map(id => items.find(x => x.id === id))) }, t('Download…')) : null,
     h('button', { class: 'small', onclick: () => { items.forEach((_, i) => picked.add(i)); draw(); } }, t('Select all')),
     h('button', { class: 'small', title: t('Clear selection'), onclick: () => clear() }, '✕'));
   const draw = () => {
@@ -447,7 +449,7 @@ async function itemPage(id) {
           h('button', { title: it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), onclick: async () => { await toggleWatchlist(it); refresh(); } }, it.watchlist ? t('✓ On watchlist') : t('+ Watchlist')),
           starRating(it),
           addTo,
-          m ? h('a', { href: withTok(`/library/parts/${it.id}/file?download=1`) }, h('button', {}, t('Download'))) : null,
+          S.me.can_download && (m || it.leafCount) ? h('button', { onclick: () => downloadDialog([it]) }, t('Download…')) : null,
           S.me.admin ? h('button', { onclick: () => editItem(it) }, t('Edit details')) : null,
           S.me.admin && matchable ? h('button', { onclick: () => fixMatch(it) }, t('Fix match…')) : null,
           S.me.admin && m ? h('button', { onclick: () => creditsDialog(it) }, t('Credits…')) : null,

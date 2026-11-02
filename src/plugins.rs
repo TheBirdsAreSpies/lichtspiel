@@ -15,7 +15,7 @@
 //! Events: metadata.lookup (answer {"metadata": {...}} to fill in details),
 //! library.item.added, library.item.removed, library.scan.finished,
 //! playback.started, playback.progress, playback.stopped, playback.watched,
-//! user.invited, user.joined, playlist.created, playlist.updated,
+//! item.problem, download.ready, user.invited, user.joined, playlist.created, playlist.updated,
 //! server.started, api.call (answer any JSON; reached through
 //! POST /api/plugins/{id}/call/{action}).
 
@@ -36,6 +36,7 @@ pub const EVENTS: &[&str] = &[
     "playback.stopped",
     "playback.watched",
     "item.problem",
+    "download.ready",
     "user.invited",
     "user.joined",
     "playlist.created",

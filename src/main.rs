@@ -12,6 +12,7 @@ mod actions;
 mod auth;
 mod dashboard;
 mod db;
+mod downloads;
 mod handlers;
 mod metadata;
 mod migrate;

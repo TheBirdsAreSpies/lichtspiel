@@ -90,6 +90,12 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("PUT", "/api/items/{id}/watchlist", "Put a movie, show, season or episode on your watchlist or take it off {watchlist: true|false}; watching it takes it off by itself (a show once every episode is watched)"),
     ("GET", "/api/watchlist", "Your watchlist ?sort=added (newest first)|oldest|title|year|rating|added_at &type=movie|show|season|episode"),
     ("POST", "/api/watchlist", "Put several on your watchlist or take them off {ids: [..], watchlist: true|false}"),
+    ("GET", "/api/downloads", "Your downloads, newest first, with state (queued|converting|ready|failed), progress and size ?all=1 (admin: everyone's)"),
+    ("POST", "/api/downloads", "Download movies or episodes (a season or show: every episode) {ids: [..], quality: original|1080p-8|720p-4|…}; the original, or a file that already fits, is ready at once, others are converted in the background"),
+    ("GET", "/api/downloads/{id}/file", "Save a ready download (?part=n for a movie in parts, original quality)"),
+    ("POST", "/api/downloads/{id}/retry", "Try a failed download again"),
+    ("DELETE", "/api/downloads/{id}", "Remove a download (stops its conversion, deletes the converted copy)"),
+    ("DELETE", "/api/downloads", "Remove several ?state=finished (ready and failed)|ready|failed|all &all=1 (admin: everyone's)"),
     ("GET", "/api/dashboard", "Admin: what is playing (who, how, bandwidth), processor and memory of the computer and the server, bytes sent, the last hour in samples, users and who is active"),
     ("GET", "/api/dashboard/history", "Admin: viewings of the last days ?days=30 &user=id as [[at, user, kind, minutes], …] to count per day, plus most played titles, top users and the latest viewings"),
     ("GET", "/hubs", "Home rows: continue watching, rows for the time of year (Halloween, Christmas, New Year's Eve, Valentine's Day; ?date=MM-DD tries a day), recently added movies and TV, pinned playlists"),
@@ -111,7 +117,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("PUT", "/playlists/{id}/items/{itemId}/move", "Reorder ?after=itemId (0 = to the top)"),
     ("POST", "/playlists/{id}/copy", "Save a playlist's current contents as a new manual playlist"),
     ("GET", "/api/users", "Admin: every user"),
-    ("PATCH", "/api/users/{id}", "Admin: {admin, allowed_sections: [ids]|null, allow_transcode, allow_delete, password, email}"),
+    ("PATCH", "/api/users/{id}", "Admin: {admin, allowed_sections: [ids]|null, allow_transcode, allow_delete, allow_download, password, email}"),
     ("DELETE", "/api/users/{id}", "Admin: remove a user"),
     ("DELETE", "/api/users/{id}/tokens", "Admin: sign a user out everywhere"),
     ("GET", "/api/invites", "Admin: open and used invites"),
@@ -154,7 +160,7 @@ pub const GROUPS: &[&str] = &[
 pub fn route_group(path: &str) -> &'static str {
     let g = if path.starts_with("/library/sections") || path.starts_with("/api/browse") || path.starts_with("/api/import") {
         1
-    } else if path.starts_with("/library/metadata/{id}/decision") || path.starts_with("/library/parts") || path.starts_with("/video") || path.starts_with("/status") {
+    } else if path.starts_with("/library/metadata/{id}/decision") || path.starts_with("/library/parts") || path.starts_with("/video") || path.starts_with("/status") || path.starts_with("/api/downloads") {
         3
     } else if path.starts_with("/library/metadata") || path.starts_with("/library/people") || path.starts_with("/api/metadata") {
         2
@@ -190,6 +196,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["web", "app.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_JS.as_bytes().to_vec()),
         ("GET", ["web", "pages.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_PAGES_JS.as_bytes().to_vec()),
         ("GET", ["web", "dashboard.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_DASHBOARD_JS.as_bytes().to_vec()),
+        ("GET", ["web", "downloads.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_DOWNLOADS_JS.as_bytes().to_vec()),
         ("GET", ["web", "i18n.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_I18N_JS.as_bytes().to_vec()),
         ("GET", ["web", "lang", file]) => {
             return match WEB_LANGS.iter().find(|l| l.0 == *file) {
@@ -239,6 +246,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["api", "me"]) => {
             let mut v = user_json(&user);
             v["can_delete"] = json!(crate::actions::may_delete(&app.db.lock().unwrap(), &user));
+            v["can_download"] = json!(crate::downloads::may_download(&user));
             v["sidebar"] = user.sidebar.clone();
             ok(v)
         }
@@ -885,6 +893,17 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             app.save();
             ok(json!({"ok": true, "changed": changed}))
         }
+        ("GET", ["api", "downloads"]) => crate::downloads::list(app, ctx, &user),
+        ("POST", ["api", "downloads"]) => {
+            let ids: Vec<u64> = ctx.body.get("ids").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_u64().or(x.as_str().and_then(|s| s.parse().ok()))).collect()).unwrap_or_default();
+            if ids.is_empty() { return fail(400, "ids are needed"); }
+            let q = ctx.body_or_param("quality").unwrap_or_else(|| "original".into());
+            crate::downloads::add(app, &user, &ids, &q)
+        }
+        ("DELETE", ["api", "downloads"]) => crate::downloads::remove_many(app, ctx, &user),
+        ("GET", ["api", "downloads", did, "file"]) | ("GET", ["api", "downloads", did, "file", _]) => match id(did) { Some(d) => crate::downloads::file(app, ctx, &user, d), None => fail(404, "No such download") },
+        ("POST", ["api", "downloads", did, "retry"]) => match id(did) { Some(d) => crate::downloads::retry(app, &user, d), None => fail(404, "No such download") },
+        ("DELETE", ["api", "downloads", did]) => match id(did) { Some(d) => crate::downloads::remove(app, &user, d), None => fail(404, "No such download") },
         ("GET", ["api", "dashboard"]) => {
             if !user.admin { return fail(403, "Only an admin can do this"); }
             crate::dashboard::dashboard(app)
@@ -1175,6 +1194,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             }
             if let Some(v) = ctx.body.get("allow_transcode").and_then(|v| v.as_bool()) { u.allow_transcode = Some(v); }
             if let Some(v) = ctx.body.get("allow_delete").and_then(|v| v.as_bool()) { u.allow_delete = v; }
+            if let Some(v) = ctx.body.get("allow_download").and_then(|v| v.as_bool()) { u.allow_download = Some(v); }
             if let Some(e) = ctx.body.get("email").and_then(|v| v.as_str()) { u.email = e.into(); }
             if let Some(pw) = ctx.body.get("password").and_then(|v| v.as_str()) {
                 if pw.chars().count() < 6 { return fail(400, "Use at least 6 characters"); }

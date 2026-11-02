@@ -373,15 +373,37 @@ pub fn optimize_args(settings: &Settings, file: &MediaFile, preset: &str, out: &
     let src_h = file.video().map(|v| v.height).unwrap_or(0);
     let height = if h > 0 && src_h > h { h } else { 0 };
     let kb = if kb > 0 { kb } else { ((file.bitrate / 1000) as u32).clamp(2000, 20000) };
+    Some(file_args(settings, file, &["-i".into(), file.path.clone()], height, kb, out))
+}
+
+/// ffmpeg arguments that write a whole MP4 file (H.264 + stereo AAC, moov at
+/// the front) at most `height` high (0 = keep) at `kb` kbit/s; `input` is
+/// the input part ("-i", path, or a concat list for a movie in parts).
+pub fn file_args(settings: &Settings, file: &MediaFile, input: &[String], height: u32, kb: u32, out: &str) -> Vec<String> {
     let d = Decision { method: Method::Transcode, reasons: vec![], height, bitrate_kbps: kb };
     let (pre, video) = video_args(settings, &d, &Method::Transcode, 99, Some(41));
     let mut a: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into(), "-y".into()];
     a.extend(pre);
-    a.extend(["-i".into(), file.path.clone()]);
+    a.extend(input.iter().cloned());
     a.extend(audio_args(file, &Request::default()));
     a.extend(video);
     a.extend(["-sn".into(), "-dn".into(), "-movflags".into(), "+faststart".into(), "-progress".into(), "pipe:1".into(), "-f".into(), "mp4".into(), out.into()]);
-    Some(a)
+    a
+}
+
+/// Downloads: the size a converted copy is made in for a quality name
+/// (height, video kbit/s), never larger than the original; None = keep the
+/// original as it is (asked for, or it already fits and plays everywhere).
+pub fn download_plan(file: &MediaFile, quality: &str) -> Option<(u32, u32)> {
+    let (h, kb) = self::quality(quality);
+    if quality == "original" || (h == 0 && kb == 0) { return None; }
+    let d = decide(file, &Request { max_height: h, max_kbps: kb, ..Default::default() });
+    if d.method == Method::Direct { return None; }
+    let src_h = file.video().map(|v| v.height).unwrap_or(0);
+    let height = if src_h > h { h } else { 0 };
+    let src_kb = (file.bitrate / 1000) as u32;
+    let kb = if src_kb > 0 { kb.min(src_kb.max(1000)) } else { kb };
+    Some((height, kb))
 }
 
 /// ffmpeg arguments for an HLS session written into `dir`.
@@ -515,6 +537,19 @@ mod tests {
         assert_eq!(decide(&file("mp4", "h264", "aac", 8, 8), &r).method, Method::Remux);
         let low = Request { max_height: 720, max_kbps: 4000, ..Default::default() };
         assert_eq!(decide(&file("mp4", "h264", "aac", 2, 8), &low).method, Method::Transcode);
+    }
+    #[test]
+    fn download_plans() {
+        let mut f = file("mp4", "h264", "aac", 2, 8);
+        f.bitrate = 3_000_000;
+        // Small enough and plays everywhere: the original is sent.
+        assert_eq!(download_plan(&f, "1080p-8"), None);
+        assert_eq!(download_plan(&f, "original"), None);
+        // 1080p is too high for 720p: scaled, never above the source's bitrate.
+        assert_eq!(download_plan(&f, "720p-4"), Some((720, 3000)));
+        let mkv = MediaFile { bitrate: 20_000_000, ..file("mkv", "hevc", "dts", 6, 10) };
+        assert_eq!(download_plan(&mkv, "1080p-8"), Some((0, 8000)));
+        assert_eq!(download_plan(&mkv, "480p-1.5"), Some((480, 1500)));
     }
     #[test]
     fn original_decision_codes() {

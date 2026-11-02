@@ -33,7 +33,7 @@ pub fn setup(app: &Arc<App>, ctx: &Ctx) -> Resp {
     let mut db = app.db.lock().unwrap();
     if !db.users.is_empty() { return fail(409, "This server is already set up; sign in instead"); }
     let id = db.new_id();
-    db.users.push(User { id, username, email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s, admin: true, created_at: now(), allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, sidebar: serde_json::Value::Null });
+    db.users.push(User { id, username, email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s, admin: true, created_at: now(), allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null });
     if let Some(name) = ctx.body_or_param("server_name").filter(|n| !n.trim().is_empty()) {
         db.settings.server_name = name;
     }
@@ -90,7 +90,7 @@ pub fn invite_accept(app: &Arc<App>, ctx: &Ctx, code: &str) -> Resp {
     if inv.expires_at < now() { return fail(410, "This invite has expired"); }
     let id = db.new_id();
     let email = ctx.body_or_param("email").filter(|e| !e.is_empty()).unwrap_or(inv.email.clone());
-    db.users.push(User { id, username: username.clone(), email, password_hash: h, salt: s, admin: inv.admin, created_at: now(), allowed_sections: inv.allowed_sections.clone(), invited_by: Some(inv.created_by), allow_transcode: None, allow_delete: false, sidebar: serde_json::Value::Null });
+    db.users.push(User { id, username: username.clone(), email, password_hash: h, salt: s, admin: inv.admin, created_at: now(), allowed_sections: inv.allowed_sections.clone(), invited_by: Some(inv.created_by), allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null });
     if let Some(i) = db.invites.iter_mut().find(|i| i.code == code) {
         i.used_by = Some(id);
         i.used_at = Some(now());
@@ -277,6 +277,7 @@ fn part_of(ctx: &Ctx) -> usize {
 /// Sends the original file, honouring Range requests so players can seek.
 pub fn direct_file(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let (it, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
+    if ctx.param("download") == Some("1") && !crate::downloads::may_download(user) { return decision_fail(403, 2011); }
     if ctx.param("optimized") == Some("1") {
         let Some(p) = crate::actions::optimized_file(app, &it) else { return fail(404, "There is no optimized version") };
         return serve_file(&p, "video/mp4", ctx.range.as_deref(), ctx.param("download") == Some("1"));
@@ -285,14 +286,29 @@ pub fn direct_file(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
 }
 
 pub fn serve_file(path: &Path, ctype: &str, range: Option<&str>, download: bool) -> Resp {
+    let name = download.then(|| path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
+    serve_file_as(path, ctype, range, name.as_deref())
+}
+
+/// "attachment; filename=…" for any name: a plain fallback plus the UTF-8 one.
+pub fn attachment(name: &str) -> String {
+    let plain: String = name.chars().map(|c| if c.is_ascii() && !c.is_ascii_control() && c != '"' && c != '\\' { c } else { '_' }).collect();
+    let mut enc = String::new();
+    for b in name.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { enc.push(b as char) } else { enc.push_str(&format!("%{b:02X}")) }
+    }
+    format!("attachment; filename=\"{plain}\"; filename*=UTF-8''{enc}")
+}
+
+/// Sends a file; with `download` the browser saves it under that name.
+pub fn serve_file_as(path: &Path, ctype: &str, range: Option<&str>, download: Option<&str>) -> Resp {
     let Ok(mut file) = std::fs::File::open(path) else { return decision_fail(404, 2012) };
     let size = file.metadata().map(|m| m.len()).unwrap_or(0);
     let mut h = base_headers();
     h.push(header("Content-Type", ctype));
     h.push(header("Accept-Ranges", "bytes"));
-    if download {
-        let name = path.file_name().map(|n| n.to_string_lossy().replace('"', "")).unwrap_or_default();
-        h.push(header("Content-Disposition", &format!("attachment; filename=\"{name}\"")));
+    if let Some(name) = download {
+        h.push(header("Content-Disposition", &attachment(name)));
     }
     if let Some(r) = range {
         match parse_range(r, size) {

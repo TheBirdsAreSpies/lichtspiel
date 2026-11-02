@@ -357,7 +357,7 @@ pub fn run(out: &Path) -> bool {
     let html = String::from_utf8_lossy(&web.body).to_string();
     let docs = c.get("/api/docs").json();
     let n_routes = docs["routes"].as_array().map(|a| a.len()).unwrap_or(0);
-    let parts = ["Playlists", "Users", "Plugins", "Libraries", "/web/i18n.js", "/web/lang/de.js"];
+    let parts = ["Watchlist", "Downloads", "Users", "Plugins", "Libraries", "/web/i18n.js", "/web/lang/de.js", "/web/downloads.js"];
     let mut missing: Vec<&str> = parts.iter().copied().filter(|p| !html.contains(p)).collect();
     // The texts are translated in the browser: the German pack must be served and know the home rows.
     let de = c.get("/web/lang/de.js");
@@ -421,6 +421,63 @@ pub fn run(out: &Path) -> bool {
         info.status == 200 && joined.status == 201 && visible == 1 && blocked == 403 && not_admin == 403 && reuse == 410 && login == 200 && url.contains("/#/invite/"),
         format!("invite link made ({}); friend joined (HTTP {}), sees {visible} library, TV blocked (HTTP {blocked}), admin pages blocked (HTTP {not_admin}), invite can't be reused (HTTP {reuse}), can sign in (HTTP {login})", url.replace(&code, "…"), joined.status),
     );
+
+    // ---- downloads: original at once, a converted copy in the background, the right to download
+    {
+        let orig = c.post("/api/downloads", json!({"ids": [mp4], "quality": "original"}));
+        let list = c.get("/api/downloads").json();
+        let first = list["downloads"][0].clone();
+        let saved = c.get(&format!("/api/downloads/{}/file", first["id"]));
+        let named = saved.head.contains("Sample Movie (2020).mp4");
+        let show = c.post("/api/downloads", json!({"ids": [show_id], "quality": "original"})).json();
+        let again = c.post("/api/downloads", json!({"ids": [mp4], "quality": "original"})).json();
+        let mut detail = format!("original: HTTP {} → {}, saved HTTP {} ({} KB, named: {named}); a show adds {} episodes; asking again adds {}",
+            orig.status, first["state"], saved.status, saved.body.len() / 1024, show["added"], again["added"]);
+        let mut ok = orig.status == 201 && first["state"] == "ready" && saved.status == 200 && named && show["added"] == 2 && again["added"] == 0;
+        if have_ffmpeg {
+            // The split movie (two 5 s parts) is joined into one converted file.
+            let split = c.get("/hubs/search?query=Split").json()["MediaContainer"]["Metadata"].as_array()
+                .and_then(|a| a.iter().find(|m| m["title"] == "Split Film").and_then(|m| m["id"].as_u64())).unwrap_or(0);
+            let conv = c.post("/api/downloads", json!({"ids": [avi, split], "quality": "320p-0.7"})).json();
+            let wait = |item: u64| -> (Value, Value) {
+                for _ in 0..240 {
+                    let l = c.get("/api/downloads").json();
+                    if let Some(d) = l["downloads"].as_array().and_then(|a| a.iter().find(|d| d["item"]["id"] == item && d["quality"] == "320p-0.7")) {
+                        if d["state"] == "ready" || d["state"] == "failed" { return (d["state"].clone(), d["id"].clone()); }
+                    }
+                    std::thread::sleep(Duration::from_millis(250));
+                }
+                (Value::Null, Value::Null)
+            };
+            let (state, did) = wait(avi);
+            let (split_state, split_id) = wait(split);
+            let file = c.get(&format!("/api/downloads/{did}/file"));
+            let mp4_ok = file.status == 200 && file.body.windows(4).any(|w| w == b"ftyp") && file.head.contains("Old Classic");
+            let joined = c.get(&format!("/api/downloads/{split_id}/file"));
+            let joined_ok = joined.status == 200 && joined.body.windows(4).any(|w| w == b"ftyp");
+            detail.push_str(&format!("; 320p copies: queued {}; the avi {state}, saved HTTP {} ({} KB); the split movie joined: {split_state}, saved HTTP {} ({} KB)",
+                conv["queued"], file.status, file.body.len() / 1024, joined.status, joined.body.len() / 1024));
+            ok = ok && conv["queued"] == 2 && state == "ready" && mp4_ok && split_state == "ready" && joined_ok;
+        }
+        // Someone else's download stays theirs; switching the right off blocks both kinds.
+        let theirs = friend.get(&format!("/api/downloads/{}/file", first["id"])).status;
+        let fid = c.get("/api/users").json()["users"].as_array().and_then(|a| a.iter().find(|u| u["username"] == "friend")).and_then(|u| u["id"].as_u64()).unwrap_or(0);
+        let may = friend.post("/api/downloads", json!({"ids": [mp4], "quality": "original"})).status;
+        c.call("PATCH", &format!("/api/users/{fid}"), Some(json!({"allow_download": false})), &[]);
+        let refused = friend.post("/api/downloads", json!({"ids": [mp4], "quality": "original"})).status;
+        let plain = friend.get(&format!("/library/parts/{mp4}/file?download=1")).status;
+        let fdl = friend.get("/api/downloads").json()["downloads"][0]["id"].clone();
+        let saved_blocked = friend.get(&format!("/api/downloads/{fdl}/file")).status;
+        c.call("PATCH", &format!("/api/users/{fid}"), Some(json!({"allow_download": true})), &[]);
+        let gone = c.call("DELETE", &format!("/api/downloads/{}", first["id"]), None, &[]).status;
+        let cleared = c.call("DELETE", "/api/downloads?state=finished", None, &[]).json()["removed"].clone();
+        let left = c.get("/api/downloads").json()["size"].clone();
+        detail.push_str(&format!("; someone else's: HTTP {theirs}; friend may download (HTTP {may}), with the right off: HTTP {refused}, plain file HTTP {plain}, saving HTTP {saved_blocked}; removed one (HTTP {gone}), cleared {cleared}, {left} left"));
+        ok = ok && theirs == 404 && may == 201 && refused == 403 && plain == 403 && saved_blocked == 403 && gone == 200 && left == 0;
+        steps.add("downloads", ok, detail);
+        // A few stay for the picture of the Downloads page.
+        c.post("/api/downloads", json!({"ids": [mp4, show_id], "quality": "original"}));
+    }
 
     // ---- plugins
     let pl = c.get("/api/plugins").json();
@@ -624,6 +681,7 @@ pub fn run(out: &Path) -> bool {
         ("playlist", format!("playlist/{manual_id}")),
         ("users", "users".to_string()),
         ("settings", "settings".to_string()),
+        ("downloads", "downloads".to_string()),
     ];
     match find_browser() {
         _ if started.elapsed() + Duration::from_secs(8 * 4) > BUDGET => steps.add("ui", true, format!(

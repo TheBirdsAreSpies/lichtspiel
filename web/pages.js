@@ -379,7 +379,7 @@ async function usersPage() {
           h('button', { onclick: () => copy(r.url) }, t('Copy link')), ' ', r.email ? h('a', { href: mail }, h('button', {}, t('Open in email'))) : null));
       } }, t('Create invite link'))), result),
     h('h2', {}, t('People')),
-    h('table', {}, h('tr', {}, h('th', {}, t('User')), h('th', {}, t('Libraries')), h('th', {}, t('Admin')), h('th', {}, t('May convert')), h('th', {}, t('May delete files')), h('th', {}, '')),
+    h('table', {}, h('tr', {}, h('th', {}, t('User')), h('th', {}, t('Libraries')), h('th', {}, t('Admin')), h('th', {}, t('May convert')), h('th', {}, t('May delete files')), h('th', {}, t('May download')), h('th', {}, '')),
       users.users.map(u => h('tr', {},
         h('td', {}, h('b', {}, u.username), h('div', { class: 'dim' }, u.email || ''), h('div', { class: 'dim', style: 'font-size:12px' }, t('joined {date}', { date: fmtDate(u.created_at) }))),
         h('td', {}, u.admin ? t('all (admin)') : u.allowed_sections === null ? t('all') : u.allowed_sections.map(secName).join(', ') || t('none'), ' ',
@@ -389,6 +389,9 @@ async function usersPage() {
         h('td', {}, h('input', { type: 'checkbox', checked: u.admin || u.allow_delete, disabled: u.admin,
           title: u.admin ? t('Admins may always delete files (when media deletion is allowed in the settings)') : t('May delete movie and episode files from disk in the libraries they can see'),
           onchange: async e => { await api('PATCH', '/api/users/' + u.id, { allow_delete: e.target.checked }); toast(t('Saved')); } })),
+        h('td', {}, h('input', { type: 'checkbox', checked: u.allow_download, disabled: u.admin,
+          title: u.admin ? t('Admins may always download') : t('May download movies and episodes, as they are or converted to a smaller quality'),
+          onchange: async e => { await api('PATCH', '/api/users/' + u.id, { allow_download: e.target.checked }); toast(t('Saved')); } })),
         h('td', {}, u.id === S.me.id ? h('span', { class: 'dim' }, t('you')) : [
           h('button', { class: 'small', onclick: async () => { const pw = await ask(t('New password for {name}', { name: u.username }), { password: true }); if (pw) { try { await api('PATCH', '/api/users/' + u.id, { password: pw }); toast(t('Password changed')); } catch (x) { toast(x.message); } } } }, t('Password')), ' ',
           h('button', { class: 'small danger', onclick: async () => { if (await sure(t('Remove {name}?', { name: u.username }), { ok: t('Remove'), danger: true })) { await api('DELETE', '/api/users/' + u.id); usersPage(); } } }, t('Remove'))])))),
@@ -468,7 +471,8 @@ async function settingsPage() {
       chk('continue_watching_include_premieres', t('Include season premieres in Continue Watching'), t('New season premieres always appear no matter how many weeks have passed since watching.')),
       inp('invite_default_days', t('Invite links last (days)'), 'number'),
       chk('empty_trash_automatically', t('Empty trash automatically after every scan'), t('Files gone from disk leave the library right away. Off: they stay as unavailable (with their watched state and details) until you choose "Empty trash" in the library’s menu. A library folder that cannot be read never empties anything.')),
-      chk('allow_media_deletion', t('Allow media deletion'), t('Admins, and people you allow under Users & invites, may delete movie and episode files from disk with "Delete" in the "⋯" menu.'))),
+      chk('allow_media_deletion', t('Allow media deletion'), t('Admins, and people you allow under Users & invites, may delete movie and episode files from disk with "Delete" in the "⋯" menu.')),
+      inp('download_keep_days', t('Keep converted downloads (days)'), 'number', t('Copies converted for “Download…” are kept in the server’s data folder (downloads) and deleted this many days after they were made. 0 = until they are removed from the Downloads page.'))),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Movie and show details')),
       chk('metadata_enabled', t('Download plot, cast, posters and episode titles from the internet')),
       sel('metadata_language', t('Language of titles, plots and episode names'), r.languages.map(l => [l.code, l.name]), t('Used by every library that is set to "Same as server" on the Libraries page (each library can have its own). Changing it downloads the details again in the background — watch the progress at the top of the page. Show episode names are only translated with a TMDB key.')),
@@ -665,7 +669,7 @@ function itemMenu(it, anchor, changed = () => {}) {
     admin ? { label: t('Analyze'), run: async () => { await api('POST', `/library/metadata/${it.id}/analyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
     admin && matchable ? { label: t('Fix match…'), run: async () => fixMatch(await fullItem(it)) } : null,
     admin ? { label: t('Optimize…'), run: () => optimizeDialog(it) } : null,
-    play ? { label: t('Download file'), run: () => { location.href = withTok(`/library/parts/${it.id}/file?download=1`); } } : null,
+    S.me.can_download && it.type !== 'clip' ? { label: t('Download…'), run: () => downloadDialog([it]) } : null,
     admin && it.librarySectionID ? { label: t('Grant access…'), run: () => grantAccess(it) } : null,
     '-',
     { label: t('View play history'), run: () => historyDialog(it) },
@@ -1138,6 +1142,7 @@ async function render() {
       case 'api': return await apiPage();
       case 'reports': return await reportsPage();
       case 'watchlist': return await watchlistPage(qs);
+      case 'downloads': return await downloadsPage();
       case 'dashboard': return await dashboardPage();
       case 'together': return await joinTogether(parts[1]);
       case 'login': location.hash = '#/'; return;
