@@ -118,7 +118,15 @@ function drawChrome() {
   $('#search').style.visibility = signed ? '' : 'hidden';
   $('#main').style.marginLeft = signed && innerWidth > 760 ? '220px' : '0';
   if (!signed) return;
-  who.append(h('span', {}, S.me.username), h('button', { class: 'small', onclick: logout }, t('Sign out')));
+  // Settings, the API page and signing out sit behind one button at the top right.
+  const gear = iconBtn('gear', t('Settings'), () => openMenu(gear, [
+    { label: t('Settings'), run: () => { location.hash = '#/settings'; } },
+    { label: 'API', run: () => { location.hash = '#/api'; } },
+    '-',
+    { label: t('Sign out'), run: logout },
+  ]));
+  gear.setAttribute('aria-haspopup', 'menu');
+  who.append(h('span', {}, S.me.username), gear);
   document.querySelectorAll('#side .admin').forEach(e => (e.style.display = S.me.admin ? '' : 'none'));
   drawQueueChip();
   drawNav();
