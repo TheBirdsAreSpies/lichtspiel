@@ -218,6 +218,7 @@ I18N.add('de', 'Deutsch', {
     '{n} stars (click the left half for {half})': '{n} Sterne (linke Hälfte klicken für {half})',
     '{half} or {n} of 5': '{half} oder {n} von 5',
     '{n} votes': '{n} Stimmen',
+    '{n} reviews': '{n} Kritiken',
 
     // ---------- credits, fix match, edit details
     'e.g. 1:52:30': 'z. B. 1:52:30',
@@ -252,6 +253,9 @@ I18N.add('de', 'Deutsch', {
     'Jump': 'Springen',
     'Quality': 'Qualität',
     'Audio track': 'Tonspur',
+    'Playback speed': 'Wiedergabegeschwindigkeit',
+    'Normal speed': 'Normal',
+    'Speed: {speed}': 'Geschwindigkeit: {speed}',
     'Original quality': 'Originalqualität',
     'Default audio': 'Standard-Tonspur',
     'audio': 'Audio',
@@ -341,6 +345,10 @@ I18N.add('de', 'Deutsch', {
     'Everything you marked with a heart.': 'Alles, was du mit einem Herz markiert hast.',
     'Related Movies': 'Ähnliche Filme',
     'Related Shows': 'Ähnliche Serien',
+    'Halloween': 'Halloween',
+    'Christmas': 'Weihnachten',
+    "New Year's Eve": 'Silvester',
+    "Valentine's Day": 'Valentinstag',
 
     // smart playlist fields (labels from GET /api/filters)
     'movie, show, season, episode or video': 'Art (movie, show, season, episode oder video)',

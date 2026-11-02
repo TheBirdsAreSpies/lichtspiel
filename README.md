@@ -9,7 +9,8 @@ Linux/Windows machine):
 - **Plays every video container** — mkv, avi, mp4, ts, m2ts, wmv, flv, vob, webm, mov and
   about 40 more. Files a browser can play are sent as they are (with seeking); everything else
   is converted on the fly (H.264/AAC) by ffmpeg, as a progressive MP4 or as HLS. Quality
-  choices from Original down to 320p, audio track choice, subtitles (embedded and `.srt` /
+  choices from Original down to 320p, playback speed (0.5× to 2×, also with the < and > keys),
+  audio track choice, subtitles (embedded and `.srt` /
   `.vtt` / `.ass` side files), hardware conversion (Intel Quick Sync / VAAPI on Synology,
   NVIDIA NVENC).
 - **Playlists** — your own (hand-picked, drag order), **smart playlists** (rules such as
@@ -31,6 +32,11 @@ Linux/Windows machine):
   **Categories** tabs. A movie page shows rows of other editions of the same
   film, related movies, **More by** the director and **More with** each of the first two actors
   (shows: related shows and More with).
+- **Rows for the time of year** — the home page adds a row while the season lasts:
+  **Halloween** (1 Oct – 2 Nov: horror and anything with Halloween in it), **Christmas**
+  (1–26 Dec), **New Year's Eve** (27 Dec – 1 Jan) and **Valentine's Day** (7–14 Feb). Titles
+  that name the day come first, then fitting genres by rating; a show's episode joins when its
+  own title fits. `GET /hubs?date=12-24` shows the rows of another day.
 - **Users and invites** — create an invite link (valid 7 days by default, single use),
   choose which libraries the person may see and whether the server may convert video for
   them, then send them the link. They pick their own name and password. Each user has their
@@ -85,7 +91,9 @@ Wikipedia.
   updated) the top bar shows what is happening and how much is left, and open pages update
   themselves when new details arrive.
 - **Ratings:** the page shows scores from **IMDb**, **Rotten Tomatoes** (Tomatometer),
-  **Metacritic** and **TMDB** as plain text badges. Rotten Tomatoes and Metacritic come from
+  **Metacritic** and **TMDB**, each with the site's mark (drawn by the web app; Rotten
+  Tomatoes shows the tomato from 60 % and the splat below, Metacritic's square takes the
+  colour of the score). Rotten Tomatoes and Metacritic come from
   Wikidata; IMDb from IMDb's free ratings file (about 9 MB, downloaded once a week; can be
   switched off in Settings); TMDB needs a TMDB key. Your own rating is given with **five
   stars, half stars included**: click the left half of a star for a half star (each half star

@@ -408,7 +408,19 @@ function starRating(it) {
   return h('span', { style: 'display:inline-flex;align-items:center' }, box, clear);
 }
 
-// Scores from review sites (text only, no logos). Values are as the source gives them.
+// Marks for the review sites, drawn here (no pictures are fetched). Rotten
+// Tomatoes shows its tomato for 60 % and more and the green splat below, and
+// Metacritic's square takes the site's colour for the score.
+const SCORE_MARKS = {
+  imdb: () => '<svg viewBox="0 0 64 32" aria-hidden="true"><rect width="64" height="32" rx="5" fill="#f5c518"/><text x="32" y="23" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="900" font-size="19" fill="#000">IMDb</text></svg>',
+  rotten_tomatoes: pct => pct >= 60
+    ? '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="18.5" r="12" fill="#fa320a"/><path fill="#00912d" d="M10 5.5c2.6.4 4.6 1.8 5.8 4 .9-2.3 2.8-3.6 5.4-3.7-.8 1.6-1.9 2.7-3.3 3.5 2 .1 3.8.8 5.1 2.2-2.4.5-4.8.3-7-.6-1.9 1.3-4.2 1.8-6.8 1.4 1.4-1.2 2.9-2 4.6-2.3-1.6-1-2.9-2.5-3.8-4.5z"/></svg>'
+    : '<svg viewBox="0 0 32 32" aria-hidden="true"><path fill="#0ac855" d="M16 2.5l2.6 6.4 5.9-3.3-1.6 6.7 6.6 1.6-5.6 4 3.8 5.8-6.8-.9-.5 6.9-4.4-5.2-4.4 5.2-.5-6.9-6.8.9 3.8-5.8-5.6-4 6.6-1.6-1.6-6.7 5.9 3.3z"/></svg>',
+  metacritic: n => `<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6" fill="${n >= 61 ? '#00ce7a' : n >= 40 ? '#ffbd3f' : '#ff6874'}"/><text x="16" y="23" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="900" font-size="19" fill="#1a1a1a">M</text></svg>`,
+  tmdb: () => '<svg viewBox="0 0 70 32" aria-hidden="true"><defs><linearGradient id="tmdb-mark" x1="0" x2="1"><stop offset="0" stop-color="#90cea1"/><stop offset=".56" stop-color="#3cbec9"/><stop offset="1" stop-color="#00b3e5"/></linearGradient></defs><rect width="70" height="32" rx="16" fill="url(#tmdb-mark)"/><text x="35" y="22" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="900" font-size="16" fill="#0d253f">TMDB</text></svg>',
+};
+
+// Scores from review sites with their marks. Values are as the source gives them.
 function scoreBadges(r) {
   if (!r) return null;
   const names = [['imdb', 'IMDb'], ['rotten_tomatoes', 'Rotten Tomatoes'], ['metacritic', 'Metacritic'], ['tmdb', 'TMDB']];
@@ -416,8 +428,14 @@ function scoreBadges(r) {
   if (!shown.length) return null;
   return h('div', { class: 'scores' }, shown.map(([k, n]) => {
     const s = r[k];
-    const kids = [h('b', {}, s.score), h('span', {}, n + (s.votes ? ' · ' + t('{n} votes', { n: Number(s.votes).toLocaleString(I18N.lang) }) : ''))];
-    return s.url ? h('a', { class: 'score', href: s.url, target: '_blank', rel: 'noopener', title: s.note || n }, kids) : h('div', { class: 'score', title: s.note || n }, kids);
+    const count = s.count ?? s.votes;
+    const many = count ? t(s.count_label === 'reviews' ? '{n} reviews' : '{n} votes', { n: Number(count).toLocaleString(I18N.lang) }) : '';
+    const mark = h('span', { class: 'mark' });
+    mark.innerHTML = SCORE_MARKS[k](parseFloat(String(s.score)) || 0);
+    const kids = [mark, h('span', { class: 'num' }, h('b', {}, s.score), h('span', {}, many || n))];
+    const title = `${n}: ${s.score}${many ? ' · ' + many : ''}${s.note ? ' — ' + s.note : ''}`;
+    return s.url ? h('a', { class: 'score', href: s.url, target: '_blank', rel: 'noopener', title, 'aria-label': title }, kids)
+      : h('div', { class: 'score', title, 'aria-label': title }, kids);
   }));
 }
 
@@ -525,7 +543,8 @@ function editItem(it) {
 }
 
 // ---------- player
-const P = { it: null, offset: 0, method: 'direct', timer: null, queue: [], quality: localStorage.getItem('quality') || 'original', audio: '' };
+const P = { it: null, offset: 0, method: 'direct', timer: null, queue: [], quality: localStorage.getItem('quality') || 'original', audio: '', speed: Number(localStorage.getItem('speed')) || 1 };
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 const QUALITIES = [['original', t('Original quality')], ['1080p-20', '1080p 20 Mbps'], ['1080p-12', '1080p 12 Mbps'], ['1080p-8', '1080p 8 Mbps'], ['720p-4', '720p 4 Mbps'], ['720p-3', '720p 3 Mbps'], ['720p-2', '720p 2 Mbps'], ['480p-1.5', '480p ' + fmtNum(1.5) + ' Mbps'], ['320p-0.7', '320p ' + fmtNum(0.7) + ' Mbps']];
 const video = $('#video');
 
@@ -536,6 +555,7 @@ async function play(it, startAt, queue) {
   $('#player').style.display = 'flex';
   $('#ptitle').textContent = it.type === 'episode' ? `${it.grandparentTitle} · ${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} ${it.title}` : it.title;
   $('#pquality').replaceChildren(...QUALITIES.map(([v, l]) => h('option', { value: v, selected: v === P.quality }, l)));
+  $('#pspeed').replaceChildren(...SPEEDS.map(v => h('option', { value: v, selected: v === P.speed }, v === 1 ? t('Normal speed') : fmtNum(v) + '×')));
   const auds = ((it.Media && it.Media[0].streams) || []).filter(s => s.kind === 'audio');
   $('#paudio').replaceChildren(h('option', { value: '' }, t('Default audio')), ...auds.map(a => h('option', { value: a.index }, `${a.language || t('audio')} ${a.codec} ${a.channels}ch${a.title ? ' ' + a.title : ''}`)));
   $('#paudio').style.display = auds.length > 1 ? '' : 'none';
@@ -562,6 +582,8 @@ async function load(at) {
   $('#pmethod').textContent = { direct: ' · ' + t('direct play'), remux: ' · ' + t('repackaged'), transcode: ' · ' + t('converting') }[P.method] || '';
   $('#pjump').style.display = P.method === 'direct' ? 'none' : 'flex';
   $('#pseek').max = Math.floor((it.duration || 0) / 1000);
+  // A new source starts at the default rate: keep the chosen speed.
+  video.defaultPlaybackRate = video.playbackRate = P.speed;
   video.play().catch(() => {});
   clearInterval(P.timer);
   P.timer = setInterval(() => { if (!video.paused) report('playing'); }, 10000);
@@ -584,6 +606,15 @@ $('#pseek').addEventListener('input', e => { e.target._drag = true; $('#ptime').
 $('#pseek').addEventListener('change', e => { e.target._drag = false; load(+e.target.value); });
 $('#pquality').addEventListener('change', e => { P.quality = e.target.value; localStorage.setItem('quality', P.quality); load(position()); });
 $('#paudio').addEventListener('change', e => { P.audio = e.target.value; load(position()); });
+function setSpeed(v) {
+  P.speed = v;
+  try { localStorage.setItem('speed', String(v)); } catch (e) { /* private window */ }
+  video.defaultPlaybackRate = video.playbackRate = v;
+  $('#pspeed').value = String(v);
+}
+$('#pspeed').addEventListener('change', e => setSpeed(Number(e.target.value)));
+// The browser's own menu can change the speed too: keep the list in step.
+video.addEventListener('ratechange', () => { if (P.it && SPEEDS.includes(video.playbackRate) && video.playbackRate !== P.speed) setSpeed(video.playbackRate); });
 function closePlayer(send) {
   if (send) report('stopped');
   clearInterval(P.timer);
@@ -593,4 +624,13 @@ function closePlayer(send) {
   render();
 }
 $('#pclose').addEventListener('click', () => closePlayer(true));
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && P.it) closePlayer(true); });
+document.addEventListener('keydown', e => {
+  if (!P.it) return;
+  if (e.key === 'Escape') closePlayer(true);
+  // < and > step the speed, as in many players.
+  if ((e.key === '>' || e.key === '<') && !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) {
+    const i = SPEEDS.indexOf(P.speed), next = SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, (i < 0 ? 2 : i) + (e.key === '>' ? 1 : -1)))];
+    setSpeed(next);
+    toast(t('Speed: {speed}', { speed: next === 1 ? t('Normal speed') : fmtNum(next) + '×' }));
+  }
+});
