@@ -108,7 +108,10 @@ h2{font-size:19px;margin:28px 0 12px}
 .poster .edit{position:absolute;left:6px;bottom:10px;width:30px;height:30px;padding:0;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s}
 .poster .edit svg{width:16px;height:16px;fill:currentColor}
 .poster .edit:hover,.poster .edit:focus-visible{background:var(--accent);color:#16120a}
-.card:hover .more,.poster .more:focus-visible,.card:hover .edit,.poster .edit:focus-visible{opacity:1}
+.poster .play{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;padding:0;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s,transform .15s,background .15s}
+.poster .play svg{width:30px;height:30px;fill:currentColor}
+.poster .play:hover,.poster .play:focus-visible{background:var(--accent);color:#16120a;transform:scale(1.08)}
+.card:hover .more,.poster .more:focus-visible,.card:hover .edit,.poster .edit:focus-visible,.card:hover .play,.poster .play:focus-visible{opacity:1}
 @media (hover:none){.poster .more,.poster .edit{opacity:1}}
 .menu{position:fixed;z-index:30;min-width:200px;max-width:min(360px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;background:#22272d;border:1px solid #353c44;border-radius:10px;padding:5px;box-shadow:0 12px 32px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.3);animation:menu-in .12s ease-out;scrollbar-width:thin;scrollbar-color:#3d454e transparent}
 @keyframes menu-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}

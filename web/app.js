@@ -168,6 +168,7 @@ function posterCard(it, opts = {}) {
       it.leafCount && unseen > 0 ? h('span', { class: 'badge' }, unseen) : null,
       seen ? h('span', { class: 'seen', title: t('Watched'), 'aria-label': t('Watched') }, icon('check')) : null,
       opts.pick ? h('span', { class: 'pick', title: t('Select'), onclick: e => { e.stopPropagation(); opts.pick(e, true); } }) : null,
+      isPlayable(it) && !it.missing ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: e => { e.stopPropagation(); play(it, (it.viewOffset || 0) / 1000); } }, icon('play')) : null,
       S.me.admin && it.type !== 'clip' ? h('button', { class: 'edit', title: t('Edit details'), 'aria-label': t('Edit details'), onclick: edit }, icon('edit')) : null,
       it.type === 'clip' ? null : h('button', { class: 'more', title: t('More'), 'aria-label': t('More'), onclick: more }, '⋯')),
     h('div', { class: 't', title }, title), h('div', { class: 's' }, sub));
