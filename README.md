@@ -283,3 +283,17 @@ Python 3.
 | `plugins/` | the two bundled plugins (copied into the data folder on first start) |
 | `Dockerfile`, `docker-compose.yml` | Synology / Docker install |
 | `shots/` | status-window picture and the last self-test report |
+
+## The data folder
+
+| Path | What |
+|---|---|
+| `lichtspiel.db` | the library, users, watch state, playlists and settings (SQLite; a save writes only what changed) |
+| `metadata/` | posters, backgrounds and actor photos |
+| `plugins/` | installed plugins |
+| `cache/`, `transcode/` | thumbnails and transcoding work files; safe to delete |
+
+Older versions kept the library in `library.json`. The first start of this version moves it
+into `lichtspiel.db` and renames the old file to `library.json.migrated`.
+For a backup, stop the server and copy the folder. While the server is running,
+`lichtspiel.db-wal` belongs to `lichtspiel.db` and must be copied with it.

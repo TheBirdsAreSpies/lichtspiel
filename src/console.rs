@@ -350,8 +350,7 @@ fn draw(v: &View, frame: u32) -> Targets {
 
 pub fn screenshot(out: PathBuf, opts: crate::Options) {
     // Read the real library if there is one; otherwise show the sample.
-    let db_path = opts.data.join("library.json");
-    let saved = if db_path.exists() { Some(Db::load(&db_path)) } else { None };
+    let saved = crate::store::read_library(&opts.data);
     let port = opts.port.or(saved.as_ref().map(|d| d.settings.port)).unwrap_or(crate::server::DEFAULT_PORT);
     let address = format!("http://{}:{}", crate::lan_address(), port);
     let view = if let Some(db) = saved {

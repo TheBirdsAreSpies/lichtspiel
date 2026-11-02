@@ -1,11 +1,12 @@
 //! The server's stored data: libraries, items, users, invites, playlists,
-//! watch state and plugin settings. Everything lives in one JSON file
-//! (data/library.json) that is written atomically after each change.
+//! watch state and plugin settings. All of it is held in memory; it is kept
+//! in an SQLite file (see crate::store), which a save updates row by row.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use crate::store::Tracked;
+use std::path::Path;
 
 /// Today's date (UTC) as YYYY-MM-DD.
 pub fn today() -> String {
@@ -677,13 +678,13 @@ pub struct Db {
     pub next_id: u64,
     pub settings: Settings,
     pub sections: Vec<Section>,
-    pub items: BTreeMap<u64, Item>,
+    pub items: Tracked<u64, Item>,
     pub users: Vec<User>,
     pub invites: Vec<Invite>,
     pub tokens: Vec<Token>,
     pub playlists: Vec<Playlist>,
     /// key "user_id:item_id"
-    pub views: BTreeMap<String, ViewState>,
+    pub views: Tracked<String, ViewState>,
     pub plugins: BTreeMap<String, PluginState>,
 }
 
@@ -695,12 +696,12 @@ impl Default for Db {
             next_id: 1,
             settings: Settings::default(),
             sections: vec![],
-            items: BTreeMap::new(),
+            items: Tracked::default(),
             users: vec![],
             invites: vec![],
             tokens: vec![],
             playlists: vec![],
-            views: BTreeMap::new(),
+            views: Tracked::default(),
             plugins: BTreeMap::new(),
         };
         db.ensure_default_playlists();
@@ -709,7 +710,8 @@ impl Default for Db {
 }
 
 impl Db {
-    pub fn load(path: &Path) -> Db {
+    /// Reads an older version's JSON library file.
+    pub fn load_json(path: &Path) -> Db {
         let mut db = match std::fs::read(path) {
             Ok(bytes) => match serde_json::from_slice::<Db>(&bytes) {
                 Ok(db) => db,
@@ -725,20 +727,18 @@ impl Db {
             },
             Err(_) => Db::default(),
         };
-        // Servers still called by the old default name get the new one; a name
-        // chosen by the owner stays.
-        if matches!(db.settings.server_name.trim(), "Home Media Server" | "Media Server") {
-            db.settings.server_name = crate::server::APP_NAME.into();
-        }
-        db.ensure_default_playlists();
+        db.after_load();
         db
     }
 
-    pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        let tmp: PathBuf = path.with_extension("json.tmp");
-        let bytes = serde_json::to_vec(self).map_err(std::io::Error::other)?;
-        std::fs::write(&tmp, bytes)?;
-        std::fs::rename(&tmp, path)
+    /// Updates that apply to a library however it was read.
+    pub fn after_load(&mut self) {
+        // Servers still called by the old default name get the new one; a name
+        // chosen by the owner stays.
+        if matches!(self.settings.server_name.trim(), "Home Media Server" | "Media Server") {
+            self.settings.server_name = crate::server::APP_NAME.into();
+        }
+        self.ensure_default_playlists();
     }
 
     pub fn new_id(&mut self) -> u64 {

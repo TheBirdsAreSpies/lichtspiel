@@ -855,7 +855,7 @@ fn find_or_make(
     poster: Option<String>,
 ) -> u64 {
     let key = sort_title(title);
-    if let Some(it) = db.items.values_mut().find(|i| {
+    let found = db.items.values().find(|i| {
         i.section_id == section
             && i.kind == kind
             && i.parent_id == parent
@@ -863,11 +863,15 @@ fn find_or_make(
                 ItemKind::Season => i.index == index,
                 _ => i.sort_title == key,
             }
-    }) {
+    });
+    if let Some(it) = found {
+        let id = it.id;
         if it.poster.is_none() && poster.is_some() {
-            it.poster = poster;
+            if let Some(it) = db.items.get_mut(&id) {
+                it.poster = poster;
+            }
         }
-        return it.id;
+        return id;
     }
     let id = db.new_id();
     let t = now();

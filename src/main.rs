@@ -18,6 +18,7 @@ mod query;
 mod related;
 mod routes;
 mod scanner;
+mod store;
 mod selftest;
 mod server;
 mod transcode;

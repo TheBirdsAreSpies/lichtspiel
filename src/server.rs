@@ -9,6 +9,7 @@ use crate::db::{self, now, Db, Invite, Item, ItemKind, Playlist, PlaylistKind, S
 use crate::plugins::{self, Plugins};
 use crate::query;
 use crate::scanner;
+use crate::store::{self, Changes, Store};
 use crate::transcode::Method;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -67,7 +68,8 @@ pub struct Playing {
 
 pub struct App {
     pub data_dir: PathBuf,
-    pub db_path: PathBuf,
+    /// The library file. Locked before `db` when both are needed (only `save` does).
+    pub store: Mutex<Store>,
     pub db: Mutex<Db>,
     pub plugins: Mutex<Plugins>,
     pub hls: Mutex<HashMap<String, HlsSession>>,
@@ -98,6 +100,34 @@ pub struct MetaProgress {
 /// number get their pictures fetched again on start (2 = actor photos saved).
 pub const PICTURES_VERSION: u64 = 2;
 
+/// Opens the library file in a data folder. A first start after an older
+/// version reads its JSON file (returned third, to be renamed once saved).
+/// A library file that can't be read stops the server instead of starting
+/// it with an empty library.
+fn open_library(data_dir: &Path) -> (Store, Db, Option<PathBuf>) {
+    let file = data_dir.join(store::FILE_NAME);
+    let stop = |e: String| -> ! {
+        eprintln!("the library can't be opened: {e}");
+        eprintln!("nothing was changed; move {} away to start with an empty library", file.display());
+        std::process::exit(1);
+    };
+    let mut st = Store::open(&file).unwrap_or_else(|e| stop(e));
+    match st.load() {
+        Ok(Some(mut db)) => {
+            db.after_load();
+            (st, db, None)
+        }
+        Ok(None) => {
+            let json = data_dir.join(store::OLD_JSON);
+            let mut db = if json.exists() { Db::load_json(&json) } else { Db::default() };
+            db.items.mark_all();
+            db.views.mark_all();
+            (st, db, json.exists().then_some(json))
+        }
+        Err(e) => stop(e),
+    }
+}
+
 impl App {
     pub fn open(data_dir: &Path) -> Arc<App> {
         // A full path, so saved picture paths still work when the server is
@@ -109,14 +139,21 @@ impl App {
             let _ = std::fs::create_dir_all(data_dir.join(sub));
         }
         install_bundled_plugins(&data_dir.join("plugins"));
-        let db_path = data_dir.join("library.json");
-        let mut db = Db::load(&db_path);
+        let (store, mut db, from_json) = open_library(data_dir);
         // Older versions saved picture paths relative to the start folder.
-        for it in db.items.values_mut() {
-            if let Some(p) = it.poster.as_ref().filter(|p| Path::new(p).is_relative() && Path::new(p).exists()) {
+        let relative = |p: &str| Path::new(p).is_relative() && Path::new(p).exists();
+        let ids: Vec<u64> = db
+            .items
+            .values()
+            .filter(|it| it.poster.as_deref().is_some_and(relative) || it.extra.get("art").and_then(|v| v.as_str()).is_some_and(relative))
+            .map(|it| it.id)
+            .collect();
+        for id in ids {
+            let Some(it) = db.items.get_mut(&id) else { continue };
+            if let Some(p) = it.poster.as_ref().filter(|p| relative(p)) {
                 it.poster = std::path::absolute(p).ok().map(|a| a.to_string_lossy().to_string()).or(it.poster.clone());
             }
-            if let Some(p) = it.extra.get("art").and_then(|v| v.as_str()).filter(|p| Path::new(p).is_relative() && Path::new(p).exists()) {
+            if let Some(p) = it.extra.get("art").and_then(|v| v.as_str()).filter(|p| relative(p)) {
                 if let Ok(a) = std::path::absolute(p) {
                     it.extra.insert("art".into(), json!(a.to_string_lossy()));
                 }
@@ -125,7 +162,7 @@ impl App {
         let plugins = Plugins::load(&data_dir.join("plugins"));
         let app = Arc::new(App {
             data_dir: data_dir.to_path_buf(),
-            db_path,
+            store: Mutex::new(store),
             db: Mutex::new(db),
             plugins: Mutex::new(plugins),
             hls: Mutex::new(HashMap::new()),
@@ -140,7 +177,24 @@ impl App {
             job: Mutex::new(None),
         });
         app.sync_plugin_states();
-        app.save();
+        match app.try_save() {
+            Ok(()) => {
+                // Taken over from an older version's file: keep it, but out of the way.
+                if let Some(json) = from_json {
+                    let kept = json.with_extension("json.migrated");
+                    match std::fs::rename(&json, &kept) {
+                        Ok(()) => eprintln!("the library was moved into {}; the old file is kept as {}", store::FILE_NAME, kept.display()),
+                        Err(e) => eprintln!("the library was moved into {}, but {} could not be renamed: {e}", store::FILE_NAME, json.display()),
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("could not save the library: {e}");
+                if from_json.is_some() {
+                    eprintln!("the old library file is left as it is and will be read again on the next start");
+                }
+            }
+        }
         // Items matched before actor photos were downloaded: fetch their pictures again.
         let stale: Vec<u64> = {
             let db = app.db.lock().unwrap();
@@ -213,11 +267,27 @@ impl App {
         v
     }
 
+    /// Writes what changed since the last save. Callers must not hold `db`.
     pub fn save(&self) {
-        let db = self.db.lock().unwrap();
-        if let Err(e) = db.save(&self.db_path) {
+        if let Err(e) = self.try_save() {
             eprintln!("could not save the library: {e}");
         }
+    }
+
+    pub fn try_save(&self) -> Result<(), String> {
+        // The file is locked first and kept until the write is done, so saves
+        // reach it in the order their changes were taken; the library itself
+        // is only locked while the changes are taken out.
+        let mut st = self.store.lock().unwrap();
+        let changes = Changes::take(&mut self.db.lock().unwrap());
+        st.write(&changes).map_err(|e| {
+            // Nothing of it was written: the next save writes everything.
+            st.forget_written();
+            let mut db = self.db.lock().unwrap();
+            db.items.mark_all();
+            db.views.mark_all();
+            e.to_string()
+        })
     }
 
     pub fn sync_plugin_states(&self) {
