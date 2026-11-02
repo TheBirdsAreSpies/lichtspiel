@@ -649,6 +649,7 @@ function itemMenu(it, anchor, changed = () => {}) {
     { label: t('Watch together'), run: () => watchTogether(it) },
     { label: t('Share'), run: () => shareItem(it) },
     { label: t('Add to queue'), run: () => addToQueue(it) },
+    it.type === 'clip' ? null : { label: it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), run: async () => { await toggleWatchlist(it); changed(); } },
     { label: t('Add to …'), sub: () => addToEntries(it, changed) },
     { label: watched ? t('Mark as unwatched') : t('Mark as watched'), run: async () => {
       await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${it.id}`);
@@ -1136,6 +1137,8 @@ async function render() {
       case 'settings': return await settingsPage();
       case 'api': return await apiPage();
       case 'reports': return await reportsPage();
+      case 'watchlist': return await watchlistPage(qs);
+      case 'dashboard': return await dashboardPage();
       case 'together': return await joinTogether(parts[1]);
       case 'login': location.hash = '#/'; return;
       default: return set(h('div', { class: 'empty' }, t('Page not found.')));

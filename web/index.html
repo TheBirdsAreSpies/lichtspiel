@@ -6,7 +6,7 @@
 <title>Lichtspiel</title>
 <link rel="icon" href="/favicon.ico">
 <style>
-:root{--bg:#13161a;--panel:#1c2025;--panel2:#252a30;--line:#2e343b;--text:#eceef1;--dim:#9aa1aa;--accent:#f2a516;--accent2:#ffbf3f;--red:#e5534b;--green:#55c773;--r:8px}
+:root{--s1:#3987e5;--s2:#d95926;--s3:#199e70;--bg:#13161a;--panel:#1c2025;--panel2:#252a30;--line:#2e343b;--text:#eceef1;--dim:#9aa1aa;--accent:#f2a516;--accent2:#ffbf3f;--red:#e5534b;--green:#55c773;--r:8px}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 a{color:inherit;text-decoration:none}
@@ -205,6 +205,57 @@ code.m-get{color:#6cb6ff}code.m-post{color:var(--green)}code.m-put,code.m-patch{
 .score .num{display:flex;flex-direction:column;line-height:1.2}
 .score b{font-size:17px}
 .score span{font-size:11px;color:var(--dim);letter-spacing:.03em}
+/* dashboard: series colors --s1..--s3 are the validated dark categorical slots */
+.dash-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px 16px;margin-bottom:12px}
+.dash-head h1{margin:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:8px}
+.tile{background:var(--panel);border-radius:var(--r);padding:14px 16px;min-width:0}
+.tile .lbl{font-size:13px}
+.tile .val{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.25;margin:2px 0}
+.tile .note{font-size:12px;overflow-wrap:anywhere}
+.np-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
+.np{display:flex;gap:14px;background:var(--panel);border-radius:var(--r);padding:12px;min-width:0}
+.np-img img{width:70px;height:105px;object-fit:cover;border-radius:6px;background:var(--panel2);display:block}
+.np-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.np-body b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.np-who{font-size:14px}
+.np-who b{display:inline}
+.np-prog{display:flex;align-items:center;gap:10px;font-size:13px;margin-top:auto}
+.np-prog .pbar{flex:1;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+.np-prog .pbar i{display:block;height:100%;background:var(--accent)}
+.chip{display:inline-block;font-size:12px;padding:1px 8px;border-radius:10px;background:var(--panel2);color:var(--dim);margin:0 4px 2px 0}
+.chip.warn{color:var(--accent);background:#2b2312}
+.status{display:inline-flex;align-items:center;gap:6px}
+.status i{width:8px;height:8px;border-radius:50%;background:#4a525b}
+.status.on i{background:var(--green)}
+.status.off{color:var(--dim)}
+.dash-charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:0 16px;margin-top:20px}
+.ch-title{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-size:14px}
+.chart{min-width:0}
+svg.viz{display:block;overflow:visible}
+svg.viz .grid{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4}
+svg.viz .axis{stroke:#3a4148;stroke-width:1}
+svg.viz .tick{fill:var(--dim);font-size:11px;font-variant-numeric:tabular-nums}
+svg.viz .cross{stroke:var(--dim);stroke-width:1}
+svg.viz rect.hov{fill:rgba(255,255,255,.05)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--dim);margin-top:6px}
+.legend i,.viztip i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.viztip{position:fixed;z-index:40;display:none;pointer-events:none;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.5);min-width:150px}
+.viztip .tl{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.viztip .tl span{flex:1;color:var(--dim)}
+.viztip .tl:first-child span{color:var(--text);font-weight:600}
+.viztip .tl b{margin-left:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.hist-tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:none;color:var(--dim)}
+.seg button.on{background:var(--panel2);color:var(--text);font-weight:600}
+.dash-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:0 16px}
+.ranked{margin:8px 0 0;padding:0;list-style:none;counter-reset:r}
+.ranked li{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);counter-increment:r;min-width:0}
+.ranked li::before{content:counter(r);color:var(--dim);width:18px;text-align:right;font-size:13px}
+.ranked li img{width:30px;height:45px;object-fit:cover;border-radius:3px;background:var(--panel2)}
+.ranked .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:760px){.np-list,.dash-charts,.dash-cols{grid-template-columns:minmax(0,1fr)}}
 .empty{padding:40px;text-align:center;color:var(--dim);background:var(--panel);border-radius:var(--r)}
 @media (max-width:760px){.field,.modal .field{grid-template-columns:minmax(0,1fr);gap:4px}.field>.help{grid-column:1}.field.top>label{padding-top:0}#side{display:none}#main{margin-left:0;padding:18px}.pickbar{left:50%;max-width:calc(100vw - 32px)}#top .logo{min-width:0}.detail{flex-direction:column}.detail .poster{width:180px;flex-basis:auto}}
 </style>
@@ -218,8 +269,10 @@ code.m-get{color:#6cb6ff}code.m-post{color:var(--green)}code.m-put,code.m-patch{
 </div>
 <nav id="side">
   <a href="#/" data-nav="home" data-t="Home">Home</a>
+  <a href="#/watchlist" data-nav="watchlist" data-t="Watchlist">Watchlist</a>
   <div id="navsections"></div>
   <div class="head admin" data-t="MANAGE">MANAGE</div>
+  <a class="admin" href="#/dashboard" data-nav="dashboard" data-t="Dashboard">Dashboard</a>
   <a class="admin" href="#/libraries" data-nav="libraries" data-t="Libraries">Libraries</a>
   <a class="admin" href="#/users" data-nav="users" data-t="Users &amp; invites">Users &amp; invites</a>
   <a class="admin" href="#/plugins" data-nav="plugins" data-t="Plugins">Plugins</a>
@@ -245,5 +298,6 @@ code.m-get{color:#6cb6ff}code.m-post{color:var(--green)}code.m-put,code.m-patch{
 <script src="/web/lang/de.js"></script>
 <script src="/web/app.js"></script>
 <script src="/web/pages.js"></script>
+<script src="/web/dashboard.js"></script>
 </body>
 </html>

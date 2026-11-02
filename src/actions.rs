@@ -21,7 +21,7 @@ fn with_leaves(db: &Db, id: u64) -> Vec<u64> {
 }
 
 /// A short description of an item for lists (history, reports).
-fn brief(it: Option<&Item>, id: u64, db: &Db) -> Value {
+pub fn brief(it: Option<&Item>, id: u64, db: &Db) -> Value {
     let Some(it) = it else { return json!({"id": id, "title": null}) };
     let parent = it.parent_id.and_then(|p| db.items.get(&p));
     let show = parent.and_then(|p| p.parent_id).and_then(|g| db.items.get(&g));

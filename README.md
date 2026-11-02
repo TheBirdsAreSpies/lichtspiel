@@ -38,6 +38,18 @@ Linux/Windows machine):
   **Optimize** (a saved MP4 copy that plays directly instead of being converted), Grant access;
   then Download file, View play history, Report a problem (the owner sees them under
   **Reported problems**) and Media info.
+- **Watchlist** — **+ Watchlist** on a title's page, *Add to watchlist* in any poster's "⋯"
+  menu, or for several picked posters at once. The **Watchlist** page (left menu) sorts by when
+  you added them, title, year or rating, and the home page shows it as a row. A movie or episode
+  leaves the list once you have watched it, a show once every episode is watched. Smart playlists
+  can use it too (*On your watchlist*). Kept per person.
+- **Dashboard** (admins, under *Manage*): what is playing right now — who, on which device and
+  address, direct play / direct stream / transcode, position and the bandwidth it takes — plus
+  tiles and last-hour charts for bandwidth, processor (whole computer and Lichtspiel itself),
+  memory and streams, a list of users with who is active (seen in the last 5 minutes), and the
+  **play history** as a chart per day (per week for a year): viewings or hours, movies and
+  episodes stacked, for everyone or one person, with the most played titles, top users and the
+  latest viewings. Processor and memory are read on Linux (Synology) and Windows.
 - **The left menu is yours**: "⋯" next to *Libraries* → **Edit the menu** to sort it (drag, or
   the arrows) and to unpin libraries or Playlists; unpinned ones wait under **More**. Kept per
   person on the server.

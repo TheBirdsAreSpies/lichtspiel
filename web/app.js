@@ -206,6 +206,14 @@ function pickGrid(items, cardOpts) {
     h('button', { class: 'small', onclick: mark(true) }, t('Mark watched')),
     h('button', { class: 'small', onclick: mark(false) }, t('Mark unwatched')),
     playlistMenu,
+    h('button', { class: 'small', onclick: async () => {
+      const on = !(cardOpts && cardOpts.watchlistPage), idx = [...picked];
+      const r = await api('POST', '/api/watchlist', { ids: ids(), watchlist: on });
+      toast(on ? t('{n} added to your watchlist', { n: r.changed }) : t('{n} removed from your watchlist', { n: idx.length }));
+      if (!on) return render();
+      for (const i of idx) items[i].watchlist = true;
+      clear();
+    } }, cardOpts && cardOpts.watchlistPage ? t('Remove from watchlist') : t('+ Watchlist')),
     h('button', { class: 'small', onclick: () => { items.forEach((_, i) => picked.add(i)); draw(); } }, t('Select all')),
     h('button', { class: 'small', title: t('Clear selection'), onclick: () => clear() }, '✕'));
   const draw = () => {
@@ -436,6 +444,7 @@ async function itemPage(id) {
           !m && it.leafCount ? h('button', { class: 'primary', onclick: nextEp }, t('▶ Play next episode')) : null,
           h('button', { onclick: async () => { await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${it.id}`); refresh(); } }, watched ? t('Mark unwatched') : t('Mark watched')),
           h('button', { onclick: async () => { await api('PUT', `/api/items/${it.id}/favorite`, { favorite: !it.favorite }); refresh(); } }, it.favorite ? t('♥ Favorite') : t('♡ Favorite')),
+          h('button', { title: it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), onclick: async () => { await toggleWatchlist(it); refresh(); } }, it.watchlist ? t('✓ On watchlist') : t('+ Watchlist')),
           starRating(it),
           addTo,
           m ? h('a', { href: withTok(`/library/parts/${it.id}/file?download=1`) }, h('button', {}, t('Download'))) : null,

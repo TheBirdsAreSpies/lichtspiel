@@ -87,6 +87,11 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/:/unscrobble", "Mark unwatched ?key= (several: key=1,2,3)"),
     ("POST", "/:/rate", "Your rating ?key= &rating=0-10"),
     ("PUT", "/api/items/{id}/favorite", "{favorite: true|false}"),
+    ("PUT", "/api/items/{id}/watchlist", "Put a movie, show, season or episode on your watchlist or take it off {watchlist: true|false}; watching it takes it off by itself (a show once every episode is watched)"),
+    ("GET", "/api/watchlist", "Your watchlist ?sort=added (newest first)|oldest|title|year|rating|added_at &type=movie|show|season|episode"),
+    ("POST", "/api/watchlist", "Put several on your watchlist or take them off {ids: [..], watchlist: true|false}"),
+    ("GET", "/api/dashboard", "Admin: what is playing (who, how, bandwidth), processor and memory of the computer and the server, bytes sent, the last hour in samples, users and who is active"),
+    ("GET", "/api/dashboard/history", "Admin: viewings of the last days ?days=30 &user=id as [[at, user, kind, minutes], …] to count per day, plus most played titles, top users and the latest viewings"),
     ("GET", "/hubs", "Home rows: continue watching, rows for the time of year (Halloween, Christmas, New Year's Eve, Valentine's Day; ?date=MM-DD tries a day), recently added movies and TV, pinned playlists"),
     ("GET", "/hubs/home/continueWatching", "Started but not finished, plus next episodes"),
     ("GET", "/hubs/home/onDeck", "Next episode of shows you are watching"),
@@ -143,6 +148,7 @@ pub const GROUPS: &[&str] = &[
     "Users and invites",
     "Plugins",
     "Settings",
+    "Dashboard",
 ];
 
 pub fn route_group(path: &str) -> &'static str {
@@ -152,7 +158,9 @@ pub fn route_group(path: &str) -> &'static str {
         3
     } else if path.starts_with("/library/metadata") || path.starts_with("/library/people") || path.starts_with("/api/metadata") {
         2
-    } else if path.starts_with("/:/") || path.starts_with("/api/items") {
+    } else if path.starts_with("/api/dashboard") {
+        10
+    } else if path.starts_with("/:/") || path.starts_with("/api/items") || path.starts_with("/api/watchlist") {
         4
     } else if path.starts_with("/hubs") || path.starts_with("/api/filters") {
         5
@@ -181,6 +189,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
     match (m, segs.as_slice()) {
         ("GET", ["web", "app.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_JS.as_bytes().to_vec()),
         ("GET", ["web", "pages.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_PAGES_JS.as_bytes().to_vec()),
+        ("GET", ["web", "dashboard.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_DASHBOARD_JS.as_bytes().to_vec()),
         ("GET", ["web", "i18n.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_I18N_JS.as_bytes().to_vec()),
         ("GET", ["web", "lang", file]) => {
             return match WEB_LANGS.iter().find(|l| l.0 == *file) {
@@ -852,11 +861,47 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             app.save();
             ok(json!({"ok": true, "favorite": fav}))
         }
+        ("PUT", ["api", "items", iid, "watchlist"]) | ("POST", ["api", "items", iid, "watchlist"]) => {
+            let Some(iid) = id(iid) else { return fail(404, "Not found") };
+            let on = ctx.body.get("watchlist").and_then(|v| v.as_bool()).or(ctx.param("watchlist").map(|v| v == "1" || v == "true")).unwrap_or(true);
+            let mut db = app.db.lock().unwrap();
+            if let Err(r) = crate::dashboard::set_watchlist(&mut db, &user, &[iid], on) { return r; }
+            drop(db);
+            app.save();
+            ok(json!({"ok": true, "watchlist": on}))
+        }
+        ("GET", ["api", "watchlist"]) => {
+            let db = app.db.lock().unwrap();
+            let ids = crate::dashboard::watchlist_ids(&db, &user, ctx.param("sort").unwrap_or(""), ctx.param("type").and_then(ItemKind::parse));
+            list_resp(&db, &user, &ids, "watchlist")
+        }
+        ("POST", ["api", "watchlist"]) => {
+            let ids: Vec<u64> = ctx.body.get("ids").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_u64().or(x.as_str().and_then(|s| s.parse().ok()))).collect()).unwrap_or_default();
+            if ids.is_empty() { return fail(400, "ids are needed"); }
+            let on = ctx.body.get("watchlist").and_then(|v| v.as_bool()).unwrap_or(true);
+            let mut db = app.db.lock().unwrap();
+            let changed = match crate::dashboard::set_watchlist(&mut db, &user, &ids, on) { Ok(n) => n, Err(r) => return r };
+            drop(db);
+            app.save();
+            ok(json!({"ok": true, "changed": changed}))
+        }
+        ("GET", ["api", "dashboard"]) => {
+            if !user.admin { return fail(403, "Only an admin can do this"); }
+            crate::dashboard::dashboard(app)
+        }
+        ("GET", ["api", "dashboard", "history"]) => {
+            if !user.admin { return fail(403, "Only an admin can do this"); }
+            let db = app.db.lock().unwrap();
+            crate::dashboard::history(&db, ctx.num("days").unwrap_or(30), ctx.num("user"))
+        }
 
         // ---------------- hubs and search
         ("GET", ["hubs"]) | ("GET", ["hubs", "home"]) => {
             let db = app.db.lock().unwrap();
             let mut hubs = vec![hub(&db, &user, "continueWatching", "Continue Watching", continue_watching(&db, &user))];
+            let mut wl = crate::dashboard::watchlist_ids(&db, &user, "", None);
+            wl.truncate(20);
+            hubs.push(hub(&db, &user, "watchlist", "Watchlist", wl));
             // Rows for the time of year (Halloween, Christmas ...); ?date=MM-DD tries another day.
             let day = ctx.param("date").and_then(related::month_day).or_else(|| related::month_day(&db::today())).unwrap_or((1, 1));
             for o in related::occasion_rows(&db, &user, day, 20) {

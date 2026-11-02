@@ -479,10 +479,17 @@ pub struct ViewState {
     pub rating: Option<f32>,
     #[serde(default)]
     pub favorite: bool,
+    /// On this person's watchlist since (unix seconds); 0 = not on it.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub watchlist_at: u64,
     /// Set once the played threshold was passed in the current viewing,
     /// so one viewing counts once.
     #[serde(default)]
     pub finished: bool,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// One viewing in the play history: counted when the played threshold is
@@ -837,8 +844,25 @@ impl Db {
     }
 
     /// Adds a viewing to the play history.
+    /// A watched movie or episode leaves the watchlist; a season or show once
+    /// every episode of it is watched.
     pub fn record_play(&mut self, user_id: u64, item_id: u64, manual: bool) {
         self.history.push(PlayEvent { user_id, item_id, at: now(), manual });
+        let mut up = vec![item_id];
+        let mut at = self.items.get(&item_id).and_then(|i| i.parent_id);
+        while let Some(p) = at {
+            up.push(p);
+            at = self.items.get(&p).and_then(|i| i.parent_id);
+        }
+        for (n, id) in up.into_iter().enumerate() {
+            if self.views.get(&format!("{user_id}:{id}")).is_none_or(|v| v.watchlist_at == 0) {
+                continue;
+            }
+            let done = n == 0 || self.leaves(id).iter().all(|l| *l == item_id || self.view(user_id, *l).view_count > 0);
+            if done {
+                self.view_mut(user_id, id).watchlist_at = 0;
+            }
+        }
         if self.history.len() > HISTORY_MAX {
             let extra = self.history.len() - HISTORY_MAX;
             self.history.drain(..extra);

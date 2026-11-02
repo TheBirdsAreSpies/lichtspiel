@@ -39,6 +39,7 @@ pub static WATCH_SECONDS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atom
 pub const WEB_APP: &str = include_str!("../web/index.html");
 pub const WEB_JS: &str = include_str!("../web/app.js");
 pub const WEB_PAGES_JS: &str = include_str!("../web/pages.js");
+pub const WEB_DASHBOARD_JS: &str = include_str!("../web/dashboard.js");
 pub const WEB_I18N_JS: &str = include_str!("../web/i18n.js");
 /// Language packs for the web app (web/lang/<code>.js); English needs none.
 /// To add a language: put its file in web/lang, list it here and add a
@@ -89,6 +90,8 @@ pub struct App {
     pub meta_progress: Mutex<MetaProgress>,
     /// Background jobs other than details (credits detection): (label, done, total).
     pub job: Mutex<Option<(String, usize, usize)>>,
+    /// Processor, memory and bandwidth samples and who was here lately (the dashboard).
+    pub stats: crate::stats::Stats,
 }
 
 /// Counts finished details lookups since the server started, so the web app
@@ -179,6 +182,7 @@ impl App {
             meta_busy: Mutex::new(0),
             meta_progress: Mutex::new(MetaProgress::default()),
             job: Mutex::new(None),
+            stats: Default::default(),
         });
         app.sync_plugin_states();
         match app.try_save() {
@@ -936,6 +940,16 @@ impl App {
         }
     }
 
+    /// Videos being played or streamed right now (players that report progress,
+    /// converted streams and HLS sessions; one person playing counts once).
+    pub fn stream_count(&self) -> usize {
+        let mut keys: HashSet<(u64, u64)> = HashSet::new();
+        for p in self.playing.lock().unwrap().values() { keys.insert((p.user_id, p.item_id)); }
+        for p in self.progressive.lock().unwrap().values() { keys.insert((p.user_id, p.item_id)); }
+        for s in self.hls.lock().unwrap().values() { keys.insert((s.user_id, s.item_id)); }
+        keys.len()
+    }
+
     pub fn active_transcodes(&self) -> usize {
         self.hls.lock().unwrap().values().filter(|h| h.method == Method::Transcode).count()
             + self.progressive.lock().unwrap().values().filter(|p| p.method == "transcode").count()
@@ -1230,6 +1244,44 @@ pub fn serve(app: Arc<App>, server: Arc<tiny_http::Server>) {
 }
 
 pub fn start_background(app: &Arc<App>) {
+    // Dashboard samples: processor, memory, bytes sent, streams.
+    let a = app.clone();
+    std::thread::spawn(move || {
+        let mut last_t = crate::stats::times();
+        let mut last_bytes = a.stats.bytes_out.load(std::sync::atomic::Ordering::Relaxed);
+        let mut last_user: HashMap<u64, u64> = HashMap::new();
+        let mut last_at = Instant::now();
+        loop {
+            std::thread::sleep(Duration::from_secs(crate::stats::SAMPLE_SECONDS));
+            let secs = last_at.elapsed().as_secs_f64().max(0.001);
+            last_at = Instant::now();
+            let t = crate::stats::times();
+            let cpu = match (last_t, t) { (Some(x), Some(y)) => crate::stats::cpu_between(x, y), _ => None };
+            last_t = t;
+            let mem = crate::stats::memory();
+            let bytes = a.stats.bytes_out.load(std::sync::atomic::Ordering::Relaxed);
+            let out_bps = (bytes.saturating_sub(last_bytes) as f64 / secs) as u64;
+            last_bytes = bytes;
+            let mut per_user = HashMap::new();
+            for (uid, c) in a.stats.user_bytes.lock().unwrap().iter() {
+                let b = c.load(std::sync::atomic::Ordering::Relaxed);
+                let before = last_user.insert(*uid, b).unwrap_or(b);
+                per_user.insert(*uid, (b.saturating_sub(before) as f64 / secs) as u64);
+            }
+            *a.stats.user_bps.lock().unwrap() = per_user;
+            a.stats.push(crate::stats::Sample {
+                at: now(),
+                cpu: cpu.map(|c| c.0),
+                cpu_server: cpu.map(|c| c.1),
+                mem_used: mem.as_ref().map(|m| m.used),
+                mem_total: mem.as_ref().map(|m| m.total),
+                mem_server: mem.as_ref().map(|m| m.process).filter(|p| *p > 0),
+                out_bps,
+                streams: a.stream_count(),
+                transcodes: a.active_transcodes(),
+            });
+        }
+    });
     // Stop idle HLS transcodes and clean their folders.
     let a = app.clone();
     std::thread::spawn(move || loop {
@@ -1374,6 +1426,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let mut host = String::new();
     let mut token = None;
     let mut range = None;
+    let mut agent = String::new();
     for h in req.headers() {
         let f = h.field.as_str().as_str().to_ascii_lowercase();
         match f.as_str() {
@@ -1384,6 +1437,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
                 token = Some(v.strip_prefix("Bearer ").unwrap_or(v).to_string());
             }
             "range" => range = Some(h.value.as_str().to_string()),
+            "user-agent" => agent = h.value.as_str().to_string(),
             _ => {}
         }
     }
@@ -1410,8 +1464,16 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         let uid = db.tokens.iter().find(|x| &x.token == t)?.user_id;
         db.user(uid).cloned()
     });
+    let uid = user.as_ref().map(|u| u.id);
+    if let Some(id) = uid {
+        app.stats.saw(id, req.remote_addr().map(|a| a.ip().to_string()).unwrap_or_default(), &agent);
+    }
     let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token };
     let resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) } else { crate::routes::route(&app, &ctx) };
+    // Count what is sent (bandwidth on the dashboard).
+    let (status, headers, len) = (resp.status_code(), resp.headers().to_vec(), resp.data_length());
+    let body = crate::stats::Counting { inner: resp.into_reader(), all: app.stats.bytes_out.clone(), user: app.stats.counter_for(uid) };
+    let resp: Resp = Response::new(status, headers, Box::new(body) as Box<dyn Read + Send>, len, None);
     let _ = req.respond(resp);
 }
 
@@ -1438,7 +1500,9 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
         // picture fetches the new one instead of showing it from its cache.
         "thumb": format!("/library/metadata/{}/thumb?v={}", it.id, it.updated_at),
         "favorite": v.favorite,
+        "watchlist": v.watchlist_at > 0,
     });
+    if v.watchlist_at > 0 { o["watchlistedAt"] = json!(v.watchlist_at); }
     if let Some(y) = it.year { o["year"] = json!(y); }
     if it.extra.contains_key(crate::scanner::MISSING) { o["missing"] = json!(true); }
     if let Some(r) = it.rating { o["rating"] = json!(r); }

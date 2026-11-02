@@ -10,6 +10,7 @@
 
 mod actions;
 mod auth;
+mod dashboard;
 mod db;
 mod handlers;
 mod metadata;
@@ -22,6 +23,7 @@ mod scanner;
 mod store;
 mod selftest;
 mod server;
+mod stats;
 mod transcode;
 #[cfg(feature = "console")]
 mod console;
