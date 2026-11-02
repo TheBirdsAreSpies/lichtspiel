@@ -761,6 +761,27 @@ function fixMatch(it) {
   search();
 }
 
+// One picture of an item (poster, background, logo, square poster): shown, replaced from a file or an address, or removed.
+function imagePicker(it, slot, url, has) {
+  const show = h('div', { style: 'margin:6px 0 12px' });
+  const draw = on => show.replaceChildren(on && url
+    ? h('img', { src: withTok(url + (url.includes('?') ? '&' : '?') + 't=' + Date.now()), alt: '', style: 'max-width:100%;max-height:260px;border-radius:6px;background:var(--panel)', onerror: e => e.target.replaceWith(h('div', { class: 'dim' }, t('No picture'))) })
+    : h('div', { class: 'dim' }, t('No picture')));
+  const send = async body => { try { await api('PUT', `/library/metadata/${it.id}/image/${slot}`, body); url = url || `/library/metadata/${it.id}/${slot === 'poster' ? 'thumb' : slot}`; draw(true); toast(t('Picture saved')); } catch (e) { toast(e.message, 4000); } };
+  const file = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/gif', style: 'display:none', onchange: () => {
+    const f = file.files[0]; if (!f) return;
+    if (f.size > 3 * 1024 * 1024) return toast(t('The picture is too big (3 MB at most)'), 4000);
+    const r = new FileReader(); r.onload = () => send({ data: r.result }); r.readAsDataURL(f);
+  } });
+  const addr = h('input', { placeholder: 'https://…', style: 'width:100%' });
+  draw(has);
+  return h('div', {}, show,
+    h('div', { class: 'actions', style: 'justify-content:flex-start' }, h('button', { onclick: () => file.click() }, t('Upload a picture')), file,
+      h('button', { class: 'danger', onclick: async () => { try { await api('DELETE', `/library/metadata/${it.id}/image/${slot}`); draw(false); toast(t('Picture removed')); } catch (e) { toast(e.message, 4000); } } }, t('Remove'))),
+    formRow(t('From an address'), addr, null),
+    h('button', { onclick: () => addr.value.trim() && send({ url: addr.value.trim() }) }, t('Use this address')));
+}
+
 // saved() runs after saving; without it the item's page opens.
 // Tabs: General, Tags, Labels, Info. Lists are typed comma separated.
 function editItem(it, saved) {
@@ -781,6 +802,8 @@ function editItem(it, saved) {
       field('directors', t('Directors'), list(x.directors)), field('countries', t('Countries'), list(x.countries)), field('genres', t('Genres'), list(it.genres)),
       field('writers', t('Writers'), list(x.writers)), field('producers', t('Producers'), list(x.producers)), field('collections', t('Collections'), list(x.collections))]],
     [t('Labels'), [field('labels', t('Labels (comma separated)'), list(x.labels))]],
+    ...[['poster', t('Poster'), `/library/metadata/${it.id}/thumb`, true], ['art', t('Background'), `/library/metadata/${it.id}/art`, true], ['logo', t('Logo'), it.clearLogo, !!it.clearLogo], ['square', t('Square poster'), it.squareThumb, !!it.squareThumb]]
+      .map(([slot, label, url, has]) => [label, [imagePicker(it, slot, url, has)]]),
     [t('Info'), [h('div', { class: 'kv' },
       h('div', { class: 'dim' }, 'ID'), h('div', {}, String(it.id)),
       h('div', { class: 'dim' }, t('Type')), h('div', {}, it.type),

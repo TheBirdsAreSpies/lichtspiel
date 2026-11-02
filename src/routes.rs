@@ -694,6 +694,9 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }),
         ("GET", ["library", "metadata", iid, "thumb"]) | ("GET", ["library", "metadata", iid, "thumb", _]) => thumb(app, &user, iid),
         ("GET", ["library", "metadata", iid, "cast", n]) => cast_photo(app, &user, iid, n),
+        ("GET", ["library", "metadata", iid, slot @ ("logo" | "square")]) => custom_image(app, &user, iid, slot),
+        ("PUT", ["library", "metadata", iid, "image", slot]) => { if !admin { return need_admin(); } set_image(app, iid, slot, &ctx.body) }
+        ("DELETE", ["library", "metadata", iid, "image", slot]) => { if !admin { return need_admin(); } clear_image(app, iid, slot) }
         ("GET", ["library", "metadata", iid, "art"]) | ("GET", ["library", "metadata", iid, "art", _]) => art(app, &user, iid),
         ("GET", ["library", "metadata", iid, "matches"]) => {
             if !admin { return need_admin(); }

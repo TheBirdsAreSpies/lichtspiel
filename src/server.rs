@@ -941,6 +941,7 @@ impl App {
         };
         // Forget what an earlier match said before applying this one.
         for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes", "originally_available", "metadata_status", "metadata_checked_at", "ratings", "imdb_ratings_checked", "unmatched_by_hand"] {
+            if k == "art" && it.locked.iter().any(|l| l == "art") { continue; }
             it.extra.remove(k);
         }
         if !it.extra.contains_key("file_title") {
@@ -1075,6 +1076,7 @@ impl App {
                 for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes",
                     "originally_available", "ratings", "imdb_ratings_checked", "metadata_source", "metadata_id", "metadata_language", "matched_at",
                     "pictures_version", "metadata_checked_at", "match_version"] {
+                    if k == "art" && it.locked.iter().any(|l| l == "art") { continue; }
                     it.extra.remove(k);
                 }
                 it.extra.insert("metadata_status".into(), json!("unmatched"));
@@ -1344,12 +1346,15 @@ pub fn apply_metadata(it: &mut Item, meta: &Value, by_hand: bool) {
         }
     }
     if let Some(v) = meta.get("poster").and_then(|v| v.as_str()) {
-        if Path::new(v).exists() {
+        if can("poster") && Path::new(v).exists() {
             it.poster = Some(v.into());
         }
     }
     if let Some(Value::Object(extra)) = meta.get("extra") {
         for (k, v) in extra {
+            if !by_hand && locked.iter().any(|l| l == k) {
+                continue;
+            }
             it.extra.insert(k.clone(), v.clone());
         }
     }
@@ -1931,6 +1936,9 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
     if !it.content_rating.is_empty() { o["contentRating"] = json!(it.content_rating); }
     if !it.studio.is_empty() { o["studio"] = json!(it.studio); }
     if let Some(i) = it.index { o["index"] = json!(i); }
+    for (k, name) in [("logo", "clearLogo"), ("square", "squareThumb")] {
+        if it.extra.get(k).and_then(|v| v.as_str()).is_some() { o[name] = json!(format!("/library/metadata/{}/{k}?v={}", it.id, it.updated_at)); }
+    }
     if it.kind.playable() {
         o["viewOffset"] = json!(v.view_offset_ms);
         o["viewCount"] = json!(v.view_count);

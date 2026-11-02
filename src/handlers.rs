@@ -932,3 +932,115 @@ pub fn plugin_call(app: &Arc<App>, ctx: &Ctx, user: &User, pid: &str, action: &s
         }
     }
 }
+
+// ---------------------------------------------------------------- pictures chosen by hand
+
+fn b64_decode(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let (mut acc, mut bits) = (0u32, 0);
+    for c in s.bytes().filter(|c| !c.is_ascii_whitespace() && *c != b'=') {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            _ => return None,
+        };
+        acc = (acc << 6) | v as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
+}
+
+pub const IMAGE_SLOTS: [&str; 4] = ["poster", "art", "logo", "square"];
+
+/// Saves a picture for a poster, background, logo or square poster. Body: {data: base64} or {url}.
+/// Pictures set by hand are locked: refreshing the online details keeps them.
+pub fn set_image(app: &Arc<App>, iid: &str, slot: &str, body: &Value) -> Resp {
+    let Some(id) = iid.parse::<u64>().ok() else { return fail(404, "Not found") };
+    if !IMAGE_SLOTS.contains(&slot) {
+        return fail(404, "No such picture");
+    }
+    let bytes = if let Some(d) = body["data"].as_str() {
+        let d = d.split_once(',').map_or(d, |(_, rest)| rest);
+        match b64_decode(d) {
+            Some(b) => b,
+            None => return fail(400, "The picture data is not valid"),
+        }
+    } else if let Some(u) = body["url"].as_str().filter(|u| u.starts_with("http://") || u.starts_with("https://")) {
+        let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).build();
+        let mut buf = Vec::new();
+        match agent.get(u).call() {
+            Ok(r) => { let _ = r.into_reader().take(8 * 1024 * 1024).read_to_end(&mut buf); }
+            Err(e) => return fail(502, &format!("The picture could not be downloaded: {e}")),
+        }
+        buf
+    } else {
+        return fail(400, "Send the picture as {data} (base64) or {url}");
+    };
+    if crate::metadata::image_type(&bytes).is_none() {
+        return fail(415, "That is not a JPEG, PNG, WebP or GIF picture");
+    }
+    let dir = app.data_dir.join("custom").join(id.to_string());
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join(slot);
+    if let Err(e) = std::fs::write(&path, &bytes) {
+        return fail(500, &format!("The picture could not be saved: {e}"));
+    }
+    {
+        let mut db = app.db.lock().unwrap();
+        let Some(it) = db.items.get_mut(&id) else { return fail(404, "Not found") };
+        let p = path.to_string_lossy().to_string();
+        if slot == "poster" { it.poster = Some(p); } else { it.extra.insert(slot.into(), json!(p)); }
+        if !it.locked.iter().any(|l| l == slot) { it.locked.push(slot.into()); }
+        it.updated_at = now();
+    }
+    drop_picture_caches(app, id);
+    app.save();
+    ok(json!({"ok": true}))
+}
+
+/// Takes the hand-chosen picture away again (a refresh brings the online one back).
+pub fn clear_image(app: &Arc<App>, iid: &str, slot: &str) -> Resp {
+    let Some(id) = iid.parse::<u64>().ok() else { return fail(404, "Not found") };
+    if !IMAGE_SLOTS.contains(&slot) {
+        return fail(404, "No such picture");
+    }
+    {
+        let mut db = app.db.lock().unwrap();
+        let Some(it) = db.items.get_mut(&id) else { return fail(404, "Not found") };
+        if slot == "poster" { it.poster = None; } else { it.extra.remove(slot); }
+        it.locked.retain(|l| l != slot);
+        it.updated_at = now();
+    }
+    let _ = std::fs::remove_file(app.data_dir.join("custom").join(id.to_string()).join(slot));
+    drop_picture_caches(app, id);
+    app.save();
+    ok(json!({"ok": true}))
+}
+
+fn drop_picture_caches(app: &Arc<App>, id: u64) {
+    let _ = std::fs::remove_file(app.data_dir.join("cache").join("thumbs").join(format!("{id}.jpg")));
+    let _ = std::fs::remove_file(app.data_dir.join("cache").join("art").join(format!("{id}.jpg")));
+}
+
+/// The logo or square poster chosen for an item.
+pub fn custom_image(app: &Arc<App>, user: &User, iid: &str, slot: &str) -> Resp {
+    let path = {
+        let db = app.db.lock().unwrap();
+        let Some(it) = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)) else { return fail(404, "Not found") };
+        if !db.can_see_section(user, it.section_id) {
+            return fail(403, "No access");
+        }
+        it.extra.get(slot).and_then(|v| v.as_str()).map(String::from)
+    };
+    let Some(p) = path else { return fail(404, "No picture") };
+    let Some(mime) = crate::metadata::file_image_type(Path::new(&p)) else { return fail(404, "No picture") };
+    with_cache(serve_file(Path::new(&p), mime, None, false))
+}
