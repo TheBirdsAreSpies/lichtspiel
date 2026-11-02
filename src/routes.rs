@@ -141,6 +141,10 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/imdb-ratings/refresh", "Admin: download IMDb's ratings file now and update every rating (in the background; progress in /api/metadata/status)"),
     ("GET", "/api/import/old-server", "Admin: is the old server's data found here, is an import running, and the last import's report"),
     ("GET", "/api/import/old-server/preview", "Admin: what the old server's database holds ?db=folder or file: libraries with suggested folders here, accounts, counts"),
+    ("GET", "/api/plex-sync", "Admin: syncing with a Plex server: address, interval, what is synced, folder translations, Plex accounts (tokens shown as their last letters), whether it runs and the last run's report"),
+    ("PUT", "/api/plex-sync", "Admin: change {enabled, url, interval_minutes, watched, resume, ratings, path_map: [{from, to}], accounts: [{id?, token?, user_id}]} (a known id without a token keeps its token)"),
+    ("POST", "/api/plex-sync/test", "Admin: check {url?, token? or account_id?}: the Plex server's name, its movie and show libraries and their folders with the folder here"),
+    ("POST", "/api/plex-sync/run", "Admin: sync with Plex now (in the background; the report is in GET /api/plex-sync)"),
     ("POST", "/api/import/old-server", "Admin: import {db, path_map: [{from, to}], accounts: {oldAccountId: userId}, libraries, watched, playlists, markers, details} (in the background; progress in /api/metadata/status)"),
 ];
 
@@ -160,7 +164,7 @@ pub const GROUPS: &[&str] = &[
 ];
 
 pub fn route_group(path: &str) -> &'static str {
-    let g = if path.starts_with("/library/sections") || path.starts_with("/api/browse") || path.starts_with("/api/import") {
+    let g = if path.starts_with("/library/sections") || path.starts_with("/api/browse") || path.starts_with("/api/import") || path.starts_with("/api/plex-sync") {
         1
     } else if path.starts_with("/library/metadata/{id}/decision") || path.starts_with("/library/parts") || path.starts_with("/video") || path.starts_with("/status") || path.starts_with("/api/downloads") {
         3
@@ -528,6 +532,22 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 p.last = json!({"id": null, "title": "Import", "ok": r.is_ok(), "message": match &r { Ok(v) => crate::migrate::summary(v), Err(e) => format!("Import failed: {e}") }, "at": now()});
             });
             js(202, json!({"ok": true, "started": true}))
+        }
+        ("GET", ["api", "plex-sync"]) => {
+            if !admin { return need_admin(); }
+            ok(crate::plexsync::public(app))
+        }
+        ("PUT", ["api", "plex-sync"]) => {
+            if !admin { return need_admin(); }
+            match crate::plexsync::update(app, &ctx.body) { Ok(v) => ok(v), Err(e) => fail(400, &e) }
+        }
+        ("POST", ["api", "plex-sync", "test"]) => {
+            if !admin { return need_admin(); }
+            match crate::plexsync::test(app, &ctx.body) { Ok(v) => ok(v), Err(e) => fail(400, &e) }
+        }
+        ("POST", ["api", "plex-sync", "run"]) => {
+            if !admin { return need_admin(); }
+            if crate::plexsync::start_now(app) { js(202, json!({"ok": true, "started": true})) } else { fail(409, "A sync with Plex is already running") }
         }
         ("GET", ["api", "metadata", "status"]) => {
             let q = app.meta_queue.lock().unwrap().len();

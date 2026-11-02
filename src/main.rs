@@ -16,6 +16,7 @@ mod downloads;
 mod handlers;
 mod metadata;
 mod migrate;
+mod plexsync;
 mod plugins;
 mod query;
 mod related;

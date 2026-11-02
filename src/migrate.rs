@@ -358,7 +358,7 @@ pub fn map_path(p: &str, maps: &[(String, String)]) -> String {
 /// A folder on this server for an old library folder: the same path if it
 /// exists here, else a folder with the same name under /media or next to an
 /// existing library folder.
-fn suggest(old: &str, ours: &[String]) -> String {
+pub(crate) fn suggest(old: &str, ours: &[String]) -> String {
     if Path::new(old).is_dir() {
         return old.to_string();
     }

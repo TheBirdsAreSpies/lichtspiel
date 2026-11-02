@@ -213,8 +213,109 @@ async function librariesPage() {
           try { await api('POST', '/library/sections', { name: name.value, type: type.value, paths: paths.value, language: newLang.value }); toast(t('Library added; scanning')); name.value = ''; paths.value = ''; refreshList(2); pollActivity(); }
           catch (e) { toast(e.message, 5000); }
         } }, t('Add library')))),
-    await importPanel());
+    await importPanel(), await plexSyncPanel());
   if (secs.some(s => s.scanning)) refreshList();
+}
+
+// ---------- admin: keep watched state in step with a running Plex server
+async function plexSyncPanel() {
+  const [st, users] = await Promise.all([GET('/api/plex-sync'), GET('/api/users')]);
+  const url = h('input', { value: st.url, placeholder: 'http://192.168.1.10:32400', style: 'width:100%;max-width:420px' });
+  const every = h('input', { type: 'number', min: 1, max: 1440, value: st.interval_minutes, style: 'width:90px' });
+  const on = h('input', { type: 'checkbox', checked: st.enabled });
+  const what = {};
+  const box = (k, label) => h('label', {}, (what[k] = h('input', { type: 'checkbox', checked: st[k] })), label);
+  // Plex accounts → people here.
+  const accBox = h('div', {});
+  const rows = [];
+  const addRow = a => {
+    const token = h('input', { type: 'password', placeholder: a ? t('Token {hint} (leave empty to keep)', { hint: a.token_hint }) : 'X-Plex-Token', style: 'flex:1;min-width:200px', autocomplete: 'off' });
+    const who = h('select', {}, users.users.map(u => h('option', { value: u.id, selected: a ? u.id === a.user_id : u.id === S.me.id }, u.username)));
+    const row = { id: a && a.id, token, who };
+    const el = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap' },
+      h('span', { style: 'min-width:120px' }, a && a.plex_name ? a.plex_name : h('span', { class: 'dim' }, t('Plex account'))), token, '→', who,
+      h('button', { class: 'small', onclick: () => { rows.splice(rows.indexOf(row), 1); el.remove(); } }, t('Remove')));
+    rows.push(row); accBox.append(el);
+  };
+  st.accounts.forEach(addRow);
+  // Folder translations.
+  const mapBox = h('div', {});
+  const maps = [];
+  const addMap = (from, to) => {
+    const f = h('input', { value: from || '', placeholder: t('Folder on the Plex server'), style: 'flex:1;min-width:200px' });
+    const tt = h('input', { value: to || '', placeholder: t('Same folder here'), style: 'flex:1;min-width:200px' });
+    const m = { f, tt };
+    const el = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap' }, f, '→', tt,
+      h('button', { class: 'small', onclick: () => folderPicker(p => { tt.value = p; }) }, t('Browse…')),
+      h('button', { class: 'small', onclick: () => { maps.splice(maps.indexOf(m), 1); el.remove(); } }, t('Remove')));
+    maps.push(m); mapBox.append(el);
+  };
+  st.path_map.forEach(r => addMap(r.from, r.to));
+  const body = () => ({ enabled: on.checked, url: url.value.trim(), interval_minutes: Number(every.value) || 15,
+    watched: what.watched.checked, resume: what.resume.checked, ratings: what.ratings.checked,
+    path_map: maps.map(m => ({ from: m.f.value.trim(), to: m.tt.value.trim() })).filter(m => m.from && m.to),
+    accounts: rows.map(r => ({ id: r.id || undefined, token: r.token.value.trim() || undefined, user_id: Number(r.who.value) })) });
+  // Saved tokens are kept by the server; the fields empty again.
+  const save = async () => {
+    const x = await api('PUT', '/api/plex-sync', body());
+    x.accounts.forEach((a, i) => { const r = rows[i]; if (r) { r.id = a.id; r.token.value = ''; r.token.placeholder = t('Token {hint} (leave empty to keep)', { hint: a.token_hint }); } });
+    return x;
+  };
+  const testOut = h('div', {});
+  const test = async () => {
+    testOut.replaceChildren(h('p', { class: 'dim' }, t('Asking Plex…')));
+    const first = rows[0];
+    let r;
+    try { r = await api('POST', '/api/plex-sync/test', { url: url.value.trim(), token: (first && first.token.value.trim()) || undefined, account_id: (first && first.id) || undefined }); }
+    catch (e) { return testOut.replaceChildren(h('p', { class: 'err' }, e.message)); }
+    testOut.replaceChildren(h('div', { class: 'panel', style: 'background:var(--panel2)' },
+      h('p', { style: 'margin-top:0' }, t('Connected to {server} (Plex {version})', { server: r.server || '?', version: r.version || '?' }), r.plex_name ? ' · ' + t('account {name}', { name: r.plex_name }) : ''),
+      r.libraries.map(l => h('div', { style: 'margin:8px 0' }, h('b', {}, l.title), ' ', h('span', { class: 'tag' }, sectionKind(l.type)),
+        l.folders.map(f => h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;font-size:13px' },
+          h('code', { style: 'word-break:break-all' }, f.plex),
+          f.in_a_library ? h('span', { class: 'dim' }, '✓ ' + (f.here !== f.plex ? f.here : t('same folder here')))
+            : [h('span', { class: 'err' }, t('not in a library here')),
+              h('button', { class: 'small', onclick: e => { addMap(f.plex, f.suggested || ''); e.target.disabled = true; } }, f.suggested ? t('Use {path}', { path: f.suggested }) : t('Add a translation'))]))))));
+  };
+  const lastBox = h('div', {});
+  const name = id => (users.users.find(u => u.id === id) || {}).username || '?';
+  const counts = c => c ? t('{w} watched, {u} unwatched, {r} resume points, {s} ratings', { w: c.watched, u: c.unwatched, r: c.resume, s: c.ratings }) : '';
+  const showLast = (r, running) => lastBox.replaceChildren(running ? h('p', { class: 'dim' }, t('Syncing with Plex…')) : '', !r ? '' : h('div', { class: 'panel', style: 'background:var(--panel2)' },
+    h('b', {}, t('Last sync')), ' ', h('span', { class: 'dim' }, fmtDateTime(r.finished_at)), r.error ? h('p', { class: 'err' }, t(r.error)) : null,
+    (r.accounts || []).map(a => h('div', { style: 'margin-top:8px' },
+      h('div', {}, h('b', {}, a.plex_name || t('Plex account')), ' → ', name(a.user_id)),
+      a.error ? h('div', { class: 'err' }, t(a.error)) : null,
+      a.plex_items != null ? h('div', { class: 'kv', style: 'margin-top:4px' },
+        h('div', {}, t('Found here')), h('div', {}, t('{n} of {all}', { n: a.matched, all: a.plex_items })),
+        h('div', {}, t('From Plex')), h('div', {}, counts(a.to_here)),
+        h('div', {}, t('To Plex')), h('div', {}, counts(a.to_plex))) : null,
+      a.not_found ? h('details', { style: 'margin-top:6px' }, h('summary', { class: 'dim' }, t('{n} files were not found here — check the folder translation', { n: a.not_found })),
+        h('pre', { style: 'white-space:pre-wrap;font-size:12px' }, (a.not_found_examples || []).join('\n'))) : null))));
+  showLast(st.last, st.running);
+  const wait = async () => {
+    for (let i = 0; i < 1800; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      if (!lastBox.isConnected) return;
+      const s = await GET('/api/plex-sync').catch(() => null);
+      if (s && !s.running) { showLast(s.last); toast(t('Sync with Plex finished')); return; }
+    }
+  };
+  if (st.running) wait();
+  return h('div', { class: 'panel', style: 'margin-top:20px' },
+    h('h2', { style: 'margin-top:0' }, t('Sync with Plex')),
+    h('p', { class: 'dim' }, t('Keeps watched state, resume points and ratings the same here and on a running Plex server, both ways. Videos are matched by their file. When something changed on both sides, the side watched more recently wins; the first sync loses nothing (watched on either side stays watched).')),
+    formRow(t('Plex server'), url, t('Its address with the port, usually 32400.')),
+    formRow(t('Plex accounts'), h('div', {}, accBox, h('button', { class: 'small', style: 'margin-top:6px', onclick: () => addRow(null) }, t('Add a Plex account'))),
+      t('One X-Plex-Token per person. Find it in Plex Web: ⋯ on any movie → Get info → View XML; the address ends in X-Plex-Token=….'), true),
+    formRow(t('Folder translation'), h('div', {}, mapBox, h('button', { class: 'small', style: 'margin-top:6px', onclick: () => addMap('', '') }, t('Add a translation'))),
+      t('Only needed when Plex sees the videos under other paths than this server (e.g. /data/Filme there, /media/Filme here). Test connection suggests them.'), true),
+    formRow(t('Sync'), h('div', { class: 'checks' }, box('watched', t('Watched')), box('resume', t('Resume points')), box('ratings', t('Ratings')))),
+    formRow(t('Automatically'), h('label', { style: 'display:flex;gap:8px;align-items:center;margin:0' }, on, t('every'), every, t('minutes'))),
+    h('div', { class: 'actions' },
+      h('button', { onclick: test }, t('Test connection')),
+      h('button', { onclick: async () => { try { await save(); await api('POST', '/api/plex-sync/run'); showLast(null, true); pollActivity(); wait(); } catch (e) { toast(e.message, 6000); } } }, t('Sync now')),
+      h('button', { class: 'primary', onclick: async () => { try { await save(); toast(t('Saved')); } catch (e) { toast(e.message, 6000); } } }, t('Save'))),
+    testOut, lastBox);
 }
 
 // ---------- admin: import from the old server

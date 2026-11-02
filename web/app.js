@@ -293,13 +293,13 @@ async function searchPage(q) {
 const SORTS = [['title', t('Title')], ['year:desc', t('Year (newest)')], ['year', t('Year (oldest)')], ['added_at:desc', t('Recently added')], ['rating:desc', t('Rating')], ['duration:desc', t('Length')], ['last_viewed_at:desc', t('Recently watched')], ['view_count:desc', t('Most watched')], ['random', t('Random')]];
 
 // Short names for the library filters (the list itself comes from the server).
-const FILTER_NAMES = { decade: 'Decade', content_rating: 'Age rating', collection: 'Collection', director: 'Director', actor: 'Actor', writer: 'Writer', producer: 'Producer',
-  country: 'Country', studio: 'Studio', network: 'Network', video_resolution: 'Resolution', hdr: 'HDR', hdr10plus: 'HDR10+', atmos: 'Dolby Atmos', unmatched: 'Unmatched',
+const FILTER_NAMES = { genre: 'Genre', year: 'Year', decade: 'Decade', content_rating: 'Age rating', collection: 'Collection', director: 'Director', actor: 'Actor', writer: 'Writer', producer: 'Producer',
+  country: 'Country', studio: 'Studio', network: 'Network', video_resolution: 'Resolution', hdr: 'HDR', dovi: 'Dolby Vision', hdr10plus: 'HDR10+', atmos: 'Dolby Atmos', unwatched: 'Unwatched', in_progress: 'In progress', unwatched_leaves: 'Unwatched', unmatched: 'Unmatched',
   video_codec: 'Video codec', audio_codec: 'Audio codec', subtitle_codec: 'Subtitle format', audio_layout: 'Audio channels', audio_language: 'Audio language',
   subtitle_language: 'Subtitle language', edition: 'Edition', label: 'Label', folder: 'Folder', duplicate: 'Duplicates' };
 const RES_NAMES = { '4k': '4K', 1080: '1080p', 720: '720p', 480: '480p', sd: 'SD' };
-// Covered by the genre and watched menus in the bar.
-const BAR_FILTERS = ['genre', 'unwatched', 'in_progress', 'unwatched_leaves'];
+// Older links (and bookmarks) used ?genre= and ?watched=; they become filters.
+const OLD_WATCHED = { unwatched: ['unwatched', 'true'], watched: ['unwatched', 'false'], progress: ['in_progress', 'true'] };
 
 async function sectionPage(id, qs) {
   markNav('section/' + id);
@@ -311,56 +311,68 @@ async function sectionPage(id, qs) {
   const tabs = h('div', { class: 'tabs' }, [['', t('Library')], ['collections', t('Collections')], ['playlists', t('Playlists')], ['categories', t('Categories')]]
     .map(([k, l]) => h('a', { href: `#/section/${id}${k ? '?tab=' + k : ''}`, class: tab === k ? 'on' : '' }, l)));
   if (tab) return sectionSubPage(sec, tab, tabs);
-  const st = {}; for (const k of ['type', 'sort', 'genre', 'watched', 'from', 'to', 'q', 'container', 'more']) st[k] = p.get(k) || '';
+  const st = {}; for (const k of ['type', 'sort', 'from', 'to', 'q', 'container']) st[k] = p.get(k) || '';
   for (const [k, v] of p) if (k.startsWith('f.')) st[k] = v;
+  if (p.get('genre')) st['f.genre'] = p.get('genre');
+  const ow = OLD_WATCHED[p.get('watched')];
+  if (ow) st['f.' + (ow[0] === 'unwatched' && sec.type === 'show' && !st.type ? 'unwatched_leaves' : ow[0])] = ow[1];
   if (!st.sort) st.sort = 'title';
   const go = () => { const n = new URLSearchParams(); for (const [k, v] of Object.entries(st)) if (v) n.set(k, v); location.hash = `#/section/${id}?${n}`; };
-  const genres = (await GET(`/library/sections/${id}/genres`)).MediaContainer.Directory;
-  const filters = st.more ? (await GET(`/library/sections/${id}/filters?includeAdvanced=1${st.type ? '&type=' + st.type : ''}`)).MediaContainer.Filter.filter(f => !BAR_FILTERS.includes(f.filter)) : [];
   const q = new URLSearchParams();
   if (st.type) q.set('type', st.type);
   q.set('sort', st.sort);
-  if (st.genre) q.set('genre', st.genre);
-  if (st.watched === 'unwatched') q.set('watched', 'false');
-  if (st.watched === 'watched') q.set('watched', 'true');
-  if (st.watched === 'progress') q.set('in_progress', 'true');
   if (st.from) q.set('year>', st.from);
   if (st.to) q.set('year<', st.to);
   if (st.q) q.set('q', st.q);
   if (st.container) q.set('container', st.container);
   for (const [k, v] of Object.entries(st)) if (k.startsWith('f.') && v) q.set(k.slice(2), v);
-  const active = Object.keys(st).filter(k => k.startsWith('f.') && st[k]).length;
   const res = (await GET(`/library/sections/${id}/all?${q}`)).MediaContainer;
   const sel = (key, opts) => h('select', { onchange: e => { st[key] = e.target.value; if (key === 'type') for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } }, opts.map(([v, l]) => h('option', { value: v, selected: st[key] === v }, l)));
-  const valueName = (f, v) => f.filter === 'video_resolution' ? (RES_NAMES[v] || v) : f.filter === 'decade' ? t('{v}s', { v }) : v;
-  const filterBox = f => {
-    const key = 'f.' + f.filter;
-    const opts = f.type === 'boolean' ? [['', t('Any')], ['true', t('Yes ({n})', { n: f.count })], ['false', t('No')]] : [['', f.values.length ? t('Any') : t('None found')], ...f.values.map(x => [x.value, `${valueName(f, x.value)} (${x.count})`])];
-    if (st[key] && !opts.some(o => o[0] === st[key])) opts.push([st[key], st[key]]);
-    return h('label', { class: st[key] ? 'on' : '' }, t(FILTER_NAMES[f.filter] || f.title), sel(key, opts));
+  const filterName = f => t(FILTER_NAMES[f] || f);
+  const valueName = (f, v) => f === 'video_resolution' ? (RES_NAMES[v] || v) : f === 'decade' ? t('{v}s', { v }) : v;
+  const setFilter = (f, v) => { if (v) st['f.' + f] = v; else delete st['f.' + f]; go(); };
+  // One "Filter" menu: every filter of this kind of item in its
+  // order, each opening its values (with how many items have them); yes/no filters
+  // switch on and off. The advanced one (duplicates) sits apart at the end.
+  let filters = null;
+  const filterMenu = async anchor => {
+    try { filters = filters || (await GET(`/library/sections/${id}/filters?includeAdvanced=1${st.type ? '&type=' + st.type : ''}`)).MediaContainer.Filter; }
+    catch (e) { return toast(e.message, 6000); }
+    const entry = f => {
+      const cur = st['f.' + f.filter] || '';
+      const mark = cur ? '✓ ' : '';
+      if (f.type === 'boolean') return { label: `${mark}${filterName(f.filter)}${f.count != null ? ` (${f.count})` : ''}`, run: () => setFilter(f.filter, cur ? '' : 'true') };
+      return { label: mark + filterName(f.filter), sub: async () => [
+        cur ? { label: t('Remove this filter'), run: () => setFilter(f.filter, '') } : null, cur ? '-' : null,
+        ...(f.values.length ? f.values.map(x => ({ label: `${x.value === cur ? '✓ ' : ''}${valueName(f.filter, x.value)} (${x.count})`, run: () => setFilter(f.filter, x.value) }))
+          : [{ label: t('None found'), disabled: true, run: () => {} }])] };
+    };
+    const any = Object.keys(st).some(k => k.startsWith('f.') && st[k]);
+    openMenu(anchor, [...filters.filter(f => !f.advanced).map(entry), '-', ...filters.filter(f => f.advanced).map(entry),
+      any ? '-' : null, any ? { label: t('Clear filters'), run: () => { for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } } : null]);
   };
-  // "Duplicates" stays apart as its only advanced filter.
-  const advanced = filters.filter(f => f.advanced);
-  const panel = st.more ? h('div', { class: 'filter-panel' }, filters.filter(f => !f.advanced).map(filterBox),
-    advanced.length ? h('div', { class: 'dim', style: 'grid-column:1/-1;font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-top:4px' }, t('Advanced')) : null,
-    advanced.map(filterBox), active ? h('button', { class: 'small', style: 'align-self:end', onclick: () => { for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; go(); } }, t('Clear filters')) : null) : null;
+  const active = Object.keys(st).filter(k => k.startsWith('f.') && st[k]);
+  const chips = active.length ? h('div', { class: 'chips' }, active.map(k => {
+    const f = k.slice(2), v = st[k];
+    const label = v === 'true' ? filterName(f) : v === 'false' ? t('{name}: no', { name: filterName(f) }) : `${filterName(f)}: ${valueName(f, v)}`;
+    return h('button', { class: 'chip', title: t('Remove this filter'), onclick: () => setFilter(f, '') }, label, h('span', { 'aria-hidden': 'true' }, '×'));
+  }), active.length > 1 ? h('button', { class: 'small', onclick: () => { for (const k of active) delete st[k]; go(); } }, t('Clear filters')) : null) : null;
   const text = (key, ph, w) => h('input', { placeholder: ph, value: st[key], style: `width:${w}px`, onchange: e => { st[key] = e.target.value.trim(); go(); } });
   set(h('h1', {}, sec.title, ' ', h('span', { class: 'dim', style: 'font-size:16px;font-weight:400' }, t('{n} shown', { n: res.totalSize })),
     h('button', { class: 'more', title: t('More'), 'aria-label': t('More'), onclick: e => sectionMenu(sec, e.currentTarget) }, '⋯')),
     tabs,
     h('div', { class: 'bar-tools' },
       sec.type === 'show' ? sel('type', [['', t('Shows')], ['season', t('Seasons')], ['episode', t('Episodes')]]) : null,
+      h('button', { class: active.length ? 'small primary' : 'small', 'aria-haspopup': 'menu', onclick: e => filterMenu(e.currentTarget) },
+        active.length ? t('Filter ({n})', { n: active.length }) : t('Filter'), ' ▾'),
       sel('sort', SORTS),
-      sel('genre', [['', t('All genres')], ...genres.map(g => [g.title, `${g.title} (${g.count})`])]),
-      sel('watched', [['', t('Watched or not')], ['unwatched', t('Unwatched')], ['watched', t('Watched')], ['progress', t('In progress')]]),
       text('from', t('Year from'), 95), text('to', t('Year to'), 85),
       sel('container', [['', t('Any file type')], ...['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'].map(c => [c, c.toUpperCase()])]),
       text('q', t('Filter by title'), 150),
       sizeSlider(),
-      h('button', { class: st.more ? 'small primary' : 'small', onclick: () => { st.more = st.more ? '' : '1'; go(); } }, active ? t('More filters ({n})', { n: active }) : t('More filters')),
       h('span', { class: 'grow' }),
       S.me.admin ? h('button', { onclick: async () => { await api('POST', `/library/sections/${id}/refresh`); toast(t('Scanning {name}', { name: sec.title })); pollActivity(); } }, t('Scan now')) : null),
-    panel,
+    chips,
     res.Metadata.length ? pickGrid(res.Metadata, { episodeThumb: st.type === 'episode' }) : h('div', { class: 'empty' }, t('Nothing matches these filters.')));
 }
 
@@ -380,7 +392,7 @@ async function sectionSubPage(sec, tab, tabs) {
   }
   if (tab === 'categories') {
     const list = (await GET(`/library/sections/${sec.id}/categories`)).MediaContainer.Metadata;
-    return set(head, tabs, list.length ? h('div', { class: 'cats' }, list.map(d => h('div', { class: 'cat', onclick: open('genre', d.title) },
+    return set(head, tabs, list.length ? h('div', { class: 'cats' }, list.map(d => h('div', { class: 'cat', onclick: open('f.genre', d.title) },
       d.art ? h('img', { src: withTok(d.art), loading: 'lazy', alt: '', onerror: e => { if (d.thumb && !e.target.dataset.f) { e.target.dataset.f = 1; e.target.src = withTok(d.thumb); } } }) : null,
       h('div', {}, d.title, h('small', {}, itemCount(d.childCount))))))
       : h('div', { class: 'empty' }, t('No categories yet. They come from the genres of the movies and shows.')));

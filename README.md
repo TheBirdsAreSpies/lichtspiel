@@ -34,9 +34,10 @@ Linux/Windows machine):
   writer, producer, country, studio / network, resolution (16k … SD),
   HDR, Dolby Vision, HDR10+, Dolby Atmos, unwatched, in progress, unmatched, video / audio /
   subtitle format, audio channels, audio and subtitle language, edition, label, folder and
-  duplicates. Click **More filters** on a library page; each menu shows the values found and
-  how many items have them. Labels and folder are only for the owner and
-  duplicates sits apart as the advanced filter. Labels, collections and edition can be set
+  duplicates. They sit in one **Filter ▾** menu on a library page: each
+  opens its values with how many items have them, yes/no filters switch on and off, and the
+  active ones show as chips (click one to remove it). Labels and folder are
+  only for the owner and duplicates sits apart at the end as the advanced filter. Labels, collections and edition can be set
   under **Edit details**.
 - **Library pages** — each library has **Library**, **Collections**, **Playlists** and
   **Categories** tabs. A movie page shows rows of other editions of the same
@@ -233,6 +234,17 @@ the library folders every 15 seconds. When files are added, renamed or removed i
 they stop changing (so a file that is still being copied isn't read half-way) and then scans
 that library; only new or changed files are read. Files added while the server was off are
 found right after it starts.
+
+## Keep in step with a running Plex server
+
+On the **Libraries** page, under **Sync with Plex**, enter the Plex server's address
+(e.g. `http://192.168.1.10:32400`) and one X-Plex-Token per person (Plex Web: ⋯ on a movie →
+Get info → View XML; the address ends in `X-Plex-Token=…`). Every few minutes (or with
+**Sync now**) watched state, resume points and ratings of movies and episodes go both ways.
+Videos are matched by their file path; when Plex sees the folders under other paths,
+**Test connection** suggests a folder translation. A change on one side goes to the other;
+when both sides changed, the side watched more recently wins. The first sync loses nothing:
+watched on either side stays watched and a rating set on either side is kept.
 
 ## Import everything from your old server
 

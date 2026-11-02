@@ -1359,6 +1359,8 @@ pub fn start_background(app: &Arc<App>) {
     std::thread::spawn(move || a.metadata_worker());
     // Converting downloads, one after the other.
     crate::downloads::start(app);
+    // Watched state with a Plex server, both ways (when switched on).
+    crate::plexsync::start(app);
     // Movies not found before the matcher learned more (MATCH_VERSION) get one more try.
     let retry: Vec<u64> = {
         let db = app.db.lock().unwrap();
