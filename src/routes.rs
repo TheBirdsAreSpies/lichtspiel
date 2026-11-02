@@ -110,6 +110,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, ffmpeg, ffprobe}"),
     ("GET", "/api/transcoder", "Admin: is ffmpeg there, which hardware encoders"),
     ("GET", "/api/browse", "Admin: list folders on the server ?path= (to pick library folders)"),
+    ("POST", "/api/imdb-ratings/refresh", "Admin: download IMDb's ratings file now and update every rating (in the background; progress in /api/metadata/status)"),
     ("GET", "/api/import/old-server", "Admin: is the old server's data found here, is an import running, and the last import's report"),
     ("GET", "/api/import/old-server/preview", "Admin: what the old server's database holds ?db=folder or file: libraries with suggested folders here, accounts, counts"),
     ("POST", "/api/import/old-server", "Admin: import {db, path_map: [{from, to}], accounts: {oldAccountId: userId}, libraries, watched, playlists, markers, details} (in the background; progress in /api/metadata/status)"),
@@ -416,6 +417,15 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
 
         // ---------------- import from the old server
+        ("POST", ["api", "imdb-ratings", "refresh"]) => {
+            if !admin { return need_admin(); }
+            if app.job.lock().unwrap().is_some() { return fail(409, "Another job is running; try again when it has finished"); }
+            let a = app.clone();
+            std::thread::spawn(move || {
+                if let Err(e) = a.update_imdb_ratings(true) { eprintln!("IMDb ratings: {e}"); }
+            });
+            js(202, json!({"ok": true, "started": true}))
+        }
         ("GET", ["api", "import", "old-server"]) => {
             if !admin { return need_admin(); }
             let last = std::fs::read_to_string(app.data_dir.join("cache").join("old-server").join("last-import.json")).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok());

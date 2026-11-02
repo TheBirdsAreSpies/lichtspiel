@@ -461,6 +461,9 @@ async function settingsPage() {
       chk('metadata_enabled', t('Download plot, cast, posters and episode titles from the internet')),
       sel('metadata_language', t('Language of titles, plots and episode names'), r.languages.map(l => [l.code, l.name]), t('Used by every library that is set to "Same as server" on the Libraries page (each library can have its own). Changing it downloads the details again in the background — watch the progress at the top of the page. Show episode names are only translated with a TMDB key.')),
       chk('imdb_ratings_file', t('Show IMDb ratings from IMDb’s ratings file'), t('Downloads IMDb’s free ratings list (about 9 MB) once a week. Rotten Tomatoes and Metacritic scores come from Wikidata; the TMDB score needs a TMDB key.')),
+      formRow('', h('button', { class: 'small', onclick: async () => {
+        try { await api('POST', '/api/imdb-ratings/refresh'); toast(t('Downloading IMDb ratings — progress is shown at the top'), 5000); pollActivity(); } catch (e) { toast(e.message, 6000); }
+      } }, t('Update IMDb ratings now')), t('Downloads the ratings file again right away and updates every movie and show that has an IMDb id.')),
       inp('tmdb_api_key', t('TMDB API key (optional)'), 'text', t('Without a key, movies come from Wikipedia/Wikidata and TV shows from TVmaze. A free key from themoviedb.org gives better matches, cast photos and translated plots.')),
       inp('omdb_api_key', t('OMDb API key for IMDb plots (optional)'), 'text', t('With a free key from omdbapi.com, movie and show plots are taken from IMDb (in English) instead of Wikipedia. Press Refresh details on a movie, or change the language, to load them for movies you already have.'))),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Transcoder')),
