@@ -1,0 +1,16 @@
+{
+  "id": "webhook-notify",
+  "name": "Webhook notify",
+  "version": "1.0",
+  "author": "example",
+  "description": "Sends a message to one or more web addresses when something happens: new movies and episodes, playback, invites and new users. Works with Discord, Home Assistant, ntfy and anything that accepts JSON.",
+  "command": ["python3", "main.py"],
+  "hooks": ["library.item.added", "playback.started", "playback.watched", "user.invited", "user.joined", "library.scan.finished", "api.call"],
+  "settings": {
+    "urls": [],
+    "discord_style": false,
+    "events": ["library.item.added", "playback.started", "user.joined"]
+  },
+  "timeout_seconds": 15,
+  "enabled_by_default": false
+}

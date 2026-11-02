@@ -1,0 +1,12 @@
+{
+  "id": "nfo-reader",
+  "name": "NFO reader",
+  "version": "1.0",
+  "author": "example",
+  "description": "Fills in title, plot, year, genres, rating, age rating and studio from .nfo files that sit next to your videos (movie.nfo, <file>.nfo, tvshow.nfo).",
+  "command": ["python3", "main.py"],
+  "hooks": ["metadata.lookup"],
+  "settings": {"overwrite_title": false},
+  "timeout_seconds": 10,
+  "enabled_by_default": false
+}

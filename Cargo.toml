@@ -1,0 +1,26 @@
+[package]
+name = "mediaserver"
+version = "0.1.0"
+edition = "2024"
+description = "A home media streaming server: movies and TV libraries, transcoding, playlists and smart playlists, user invites, plugins and a JSON API."
+
+[features]
+# The desktop console window (used for --screenshot and --console).
+# The Synology / Docker build leaves it out: cargo build --release --no-default-features
+default = ["console"]
+console = ["dep:macroquad"]
+
+[dependencies]
+flate2 = "1"
+getrandom = "0.2"
+rusqlite = { version = "0.41", features = ["bundled", "collation"] }
+macroquad = { version = "0.4", default-features = false, optional = true }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+tiny_http = "0.12"
+ureq = "2"
+
+[profile.release]
+opt-level = 3
+strip = true

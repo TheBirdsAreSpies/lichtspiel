@@ -1,0 +1,20 @@
+# Synology: Container Manager → Project → Create → paste this file.
+# Change the two folders on the left of each ":" to your own shared folders.
+services:
+  mediaserver:
+    build: .
+    container_name: mediaserver
+    restart: unless-stopped
+    ports:
+      - "8484:8484"   # to use another port, change only the left number
+    volumes:
+      - /volume1/docker/mediaserver:/config      # library, users, playlists, plugins, settings
+      - /volume1/video:/media:ro                 # your movies and TV shows (read-only)
+      # To import from your old media server (Libraries page → Import), uncomment
+      # the line that matches your old installation (read-only; it is not changed):
+      # - "/volume1/PlexMediaServer/AppData/Plex Media Server:/oldserver:ro"            # DSM 7 package
+      # - "/volume1/Plex/Library/Application Support/Plex Media Server:/oldserver:ro"   # DSM 6 package
+    # Hardware transcoding on Intel-based models: keep these lines and set
+    # "Hardware acceleration" to VAAPI in the web app's Settings.
+    devices:
+      - /dev/dri:/dev/dri
