@@ -61,6 +61,33 @@ pub struct Request {
     pub extra_containers: Vec<String>,
     /// The player's videoQuality, 0 … 99 (None = best, 99).
     pub video_quality: Option<u32>,
+    /// H.264 level the player asks for, ×10 (41 = 4.1); None = let the encoder pick.
+    pub h264_level: Option<u32>,
+}
+
+/// H.264 level limits (level×10, max frame size in macroblocks, max bitrate kbit/s, max buffer kbit).
+pub const H264_LEVELS: &[(u32, u32, u32, u32)] = &[
+    (10, 396, 64, 175), (11, 900, 192, 500), (12, 2376, 384, 1000), (13, 2376, 768, 2000),
+    (20, 2376, 2000, 2000), (21, 4752, 4000, 4000), (22, 8100, 4000, 4000), (30, 8100, 10000, 10000),
+    (31, 18000, 14000, 14000), (32, 20480, 20000, 20000), (40, 32768, 20000, 25000), (41, 32768, 50000, 62500),
+    (42, 34816, 50000, 62500), (50, 110400, 135000, 135000), (51, 184320, 240000, 240000), (52, 184320, 240000, 240000),
+];
+
+/// -bufsize is 2 × bitrate, but for an H.264 level from the table
+/// at most 1.25 × that level's buffer (integer maths: max_cpb*5/4).
+pub fn bufsize_kbps(kb: u32, level: Option<u32>) -> u32 {
+    let two = kb * 2;
+    match level.and_then(|l| H264_LEVELS.iter().find(|x| x.0 == l)) {
+        Some(&(_, _, _, cpb)) => two.min(cpb * 5 / 4),
+        None => two,
+    }
+}
+
+/// "level=41" or "level=4.1" → 41.
+pub fn parse_level(s: &str) -> Option<u32> {
+    let s = s.trim();
+    let v = if let Some((a, b)) = s.split_once('.') { a.parse::<u32>().ok()? * 10 + b.chars().next()?.to_digit(10)? } else { s.parse().ok()? };
+    (9..=62).contains(&v).then_some(v)
 }
 
 pub fn quality(name: &str) -> (u32, u32) {
@@ -226,7 +253,7 @@ pub fn hw_qp(quality: u32) -> u32 {
 /// `-bufsize` = 2 × bitrate and `-preset` from the x264 preset setting; "Transcoder
 /// quality" only picks presets for Quick Sync (veryfast / slower / veryslow) and
 /// NVENC (hp / hq); keyframes are forced at every segment boundary.
-fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32) -> (Vec<String>, Vec<String>) {
+fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32, level: Option<u32>) -> (Vec<String>, Vec<String>) {
     let s = |x: &str| x.to_string();
     let mut pre = vec![];
     let mut out = vec![];
@@ -279,12 +306,16 @@ fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32) 
                 s("-c:v"), s("libx264"), s("-crf"), x264_crf(settings, quality).to_string(),
                 s("-preset"), settings.h264_preset.clone(), s("-profile:v"), s("high"),
             ]);
+            // The asked-for level goes to libx264 when it is below 5.3.
+            if let Some(l) = level.filter(|l| *l < 53) {
+                out.extend([s("-level"), format!("{}.{}", l / 10, l % 10)]);
+            }
         }
     }
     let seg = settings.hls_segment_seconds.max(2);
     out.extend([
         s("-maxrate"), format!("{kb}k"),
-        s("-bufsize"), format!("{}k", kb * 2),
+        s("-bufsize"), format!("{}k", bufsize_kbps(kb, level)),
         s("-force_key_frames"), format!("expr:gte(t,n_forced*{seg})"),
     ]);
     (pre, out)
@@ -313,7 +344,7 @@ fn audio_args(file: &MediaFile, req: &Request) -> Vec<String> {
 pub fn progressive_args(settings: &Settings, item: &Item, file: &MediaFile, d: &Decision, req: &Request, offset_s: f64) -> Vec<String> {
     let _ = item;
     let method = if d.method == Method::Direct { Method::Remux } else { d.method.clone() };
-    let (pre, video) = video_args(settings, d, &method, req.video_quality.unwrap_or(99));
+    let (pre, video) = video_args(settings, d, &method, req.video_quality.unwrap_or(99), req.h264_level);
     let mut a: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into()];
     a.extend(pre);
     if offset_s > 0.0 {
@@ -333,7 +364,7 @@ pub fn progressive_args(settings: &Settings, item: &Item, file: &MediaFile, d: &
 /// ffmpeg arguments for an HLS session written into `dir`.
 pub fn hls_args(settings: &Settings, file: &MediaFile, d: &Decision, req: &Request, offset_s: f64, dir: &str) -> Vec<String> {
     let method = if d.method == Method::Direct { Method::Remux } else { d.method.clone() };
-    let (pre, video) = video_args(settings, d, &method, req.video_quality.unwrap_or(99));
+    let (pre, video) = video_args(settings, d, &method, req.video_quality.unwrap_or(99), req.h264_level);
     let mut a: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into()];
     a.extend(pre);
     if offset_s > 0.0 {
@@ -483,15 +514,30 @@ mod tests {
     fn hardware_rate_modes() {
         let d = Decision { method: Method::Transcode, reasons: vec![], height: 720, bitrate_kbps: 4000 };
         let mut st = Settings { hw_accel: "vaapi".into(), ..Settings::default() };
-        let (_, out) = video_args(&st, &d, &Method::Transcode, 99);
+        let (_, out) = video_args(&st, &d, &Method::Transcode, 99, None);
         assert!(out.windows(2).any(|w| w[0] == "-b:v" && w[1] == "4000k"));
         st.hw_constant_quality = true;
-        let (_, out) = video_args(&st, &d, &Method::Transcode, 99);
+        let (_, out) = video_args(&st, &d, &Method::Transcode, 99, None);
         assert!(out.windows(2).any(|w| w[0] == "-qp" && w[1] == "15"));
         st.hw_accel = "qsv".into();
-        let (_, out) = video_args(&st, &d, &Method::Transcode, 0);
+        let (_, out) = video_args(&st, &d, &Method::Transcode, 0, None);
         assert!(out.windows(2).any(|w| w[0] == "-q:v" && w[1] == "25"));
         assert_eq!(hw_qp(50), 20);
+    }
+    #[test]
+    fn h264_level_rules() {
+        // Level 4.0: buffer 25000 kbit → bufsize at most 31250k; 4.1: 62500 → 78125k.
+        assert_eq!(bufsize_kbps(20000, Some(40)), 31250);
+        assert_eq!(bufsize_kbps(4000, Some(41)), 8000);
+        assert_eq!(bufsize_kbps(20000, None), 40000);
+        assert_eq!(parse_level("4.1"), Some(41));
+        assert_eq!(parse_level("41"), Some(41));
+        assert_eq!(parse_level("x"), None);
+        let d = Decision { method: Method::Transcode, reasons: vec![], height: 1080, bitrate_kbps: 20000 };
+        let st = Settings::default();
+        let (_, out) = video_args(&st, &d, &Method::Transcode, 99, Some(40));
+        assert!(out.windows(2).any(|w| w[0] == "-level" && w[1] == "4.0"));
+        assert!(out.windows(2).any(|w| w[0] == "-bufsize" && w[1] == "31250k"));
     }
     #[test]
     fn watched_point() {

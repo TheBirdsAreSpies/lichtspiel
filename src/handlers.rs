@@ -254,6 +254,7 @@ pub fn transcode_request(ctx: &Ctx) -> transcode::Request {
         extra_video: list("videoCodecs"),
         extra_containers: list("containers"),
         video_quality: ctx.num("videoQuality").map(|q| q.min(99) as u32),
+        h264_level: ctx.param("level").and_then(transcode::parse_level),
     }
 }
 
