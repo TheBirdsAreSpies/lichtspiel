@@ -130,6 +130,13 @@ h2{font-size:19px;margin:28px 0 12px}
 .menu .mi[disabled]{opacity:.45;cursor:default;background:none}
 .menu .sep{height:1px;background:#353c44;margin:5px 6px}
 #qchip{white-space:nowrap}
+/* the owner's "playing now" button: grey when quiet, yellow with the count while something plays */
+#npbtn{display:inline-flex;align-items:center;gap:5px;height:34px;padding:0 9px;border-radius:17px;color:var(--dim);font-size:14px;font-variant-numeric:tabular-nums}
+#npbtn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#npbtn:hover{color:var(--text);background:var(--panel2)}
+#npbtn.on{background:var(--panel2)}
+#npbtn.live{color:var(--accent)}
+#npbtn b:empty{display:none}
 .pickbar{position:fixed;bottom:22px;left:calc(50% + 110px);transform:translateX(-50%);z-index:15;display:none;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px 14px;box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:calc(100vw - 260px)}
 .pickbar.show{display:flex}
 .pickbar b{margin-right:4px;white-space:nowrap}
@@ -321,6 +328,15 @@ code.m-get{color:#6cb6ff}code.m-post{color:var(--green)}code.m-put,code.m-patch{
 .np-prog{display:flex;align-items:center;gap:10px;font-size:13px;margin-top:auto}
 .np-prog .pbar{flex:1;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
 .np-prog .pbar i{display:block;height:100%;background:var(--accent)}
+.np-rows{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;font-size:13px;margin-top:2px}
+.np-rows>span:nth-child(odd){color:var(--dim)}
+.np-rows>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.np-rows .to{color:var(--dim)}
+.np-head{display:flex;gap:8px;align-items:flex-start}
+.np-head>div{flex:1;min-width:0}
+.np-head .ibtn{width:32px;height:32px;flex:0 0 32px}
+.np-head .ibtn svg{width:18px;height:18px}
+.np-head .ibtn:hover{color:var(--red)}
 .chip{display:inline-block;font-size:12px;padding:1px 8px;border-radius:10px;background:var(--panel2);color:var(--dim);margin:0 4px 2px 0}
 .chip.warn{color:var(--accent);background:#2b2312}
 .status{display:inline-flex;align-items:center;gap:6px}
@@ -363,6 +379,7 @@ svg.viz rect.hov{fill:rgba(255,255,255,.05)}
   <a class="logo" href="#/"><svg viewBox="0 0 32 32"><path d="M8 5l20 11-20 11z" fill="#f2a516"/></svg><span id="sname">Lichtspiel</span></a>
   <div id="search"><input id="q" placeholder="Search movies and shows" data-t-placeholder="Search movies and shows" autocomplete="off"></div>
   <div id="activity" title="Background work on the server" data-t-title="Background work on the server"></div>
+  <a id="npbtn" href="#/dashboard" style="display:none" title="Dashboard" data-t-title="Dashboard" aria-label="Dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-8 6 16 3-8h4"/></svg><b></b></a>
   <div id="who"></div>
 </div>
 <nav id="side">
@@ -371,7 +388,6 @@ svg.viz rect.hov{fill:rgba(255,255,255,.05)}
   <a href="#/downloads" data-nav="downloads" data-t="Downloads" style="display:none">Downloads</a>
   <div id="navsections"></div>
   <div class="head admin" data-t="MANAGE">MANAGE</div>
-  <a class="admin" href="#/dashboard" data-nav="dashboard" data-t="Dashboard">Dashboard</a>
   <a class="admin" href="#/libraries" data-nav="libraries" data-t="Libraries">Libraries</a>
   <a class="admin" href="#/users" data-nav="users" data-t="Users &amp; invites">Users &amp; invites</a>
   <a class="admin" href="#/plugins" data-nav="plugins" data-t="Plugins">Plugins</a>

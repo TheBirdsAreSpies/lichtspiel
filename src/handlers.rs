@@ -250,8 +250,10 @@ pub fn update_playlist(app: &Arc<App>, ctx: &Ctx, user: &User, pid: &str) -> Res
 /// Progress from a player. Passing the watched point (by default the earlier of
 /// 90 % and the first credits marker) counts one viewing and
 /// clears the resume point.
-pub fn timeline(app: &Arc<App>, user: &User, iid: u64, time_ms: u64, state: &str, client: String) -> Resp {
+pub fn timeline(app: &Arc<App>, user: &User, iid: u64, time_ms: u64, state: &str, client: String, viewer: Viewer) -> Resp {
     let mut watched_now = false;
+    // Stopped from the dashboard: the player hears it now (and may start again).
+    let stopped_by_owner = app.stop_seen(user.id, iid).filter(|_| state != "stopped");
     {
         let mut db = app.db.lock().unwrap();
         let Some(it) = db.items.get(&iid) else { return fail(404, "Not found") };
@@ -274,12 +276,18 @@ pub fn timeline(app: &Arc<App>, user: &User, iid: u64, time_ms: u64, state: &str
         if watched_now { db.record_play(user.id, iid, false); }
     }
     let key = format!("{}:{}", user.id, iid);
+    if let Some(message) = stopped_by_owner {
+        app.playing.lock().unwrap().remove(&key);
+        app.save();
+        app.fire("playback.stopped", json!({"id": iid, "user": user.username, "time": time_ms, "by_owner": true}));
+        return ok(json!({"ok": false, "stopped": true, "message": message, "watched": watched_now}));
+    }
     if state == "stopped" {
         app.playing.lock().unwrap().remove(&key);
     } else {
         let mut map = app.playing.lock().unwrap();
         let before = map.get(&key).map(|p| p.state.clone());
-        map.insert(key, Playing { user_id: user.id, item_id: iid, offset_ms: time_ms, state: state.into(), method: "player".into(), updated: Instant::now(), client });
+        map.insert(key, Playing { user_id: user.id, item_id: iid, offset_ms: time_ms, state: state.into(), method: "player".into(), updated: Instant::now(), client, height: 0, audio: None, viewer });
         drop(map);
         match before {
             None => app.fire("playback.started", json!({"id": iid, "user": user.username, "time": time_ms, "state": state})),
@@ -300,7 +308,7 @@ pub fn sessions(app: &Arc<App>, user: &User) -> Resp {
     for p in app.playing.lock().unwrap().values() { all.push((p.clone(), "player")); }
     for p in app.progressive.lock().unwrap().values() { all.push((p.clone(), "progressive")); }
     for s in app.hls.lock().unwrap().values() {
-        all.push((Playing { user_id: s.user_id, item_id: s.item_id, offset_ms: 0, state: "playing".into(), method: format!("{:?}", s.method).to_lowercase(), updated: s.last_access, client: format!("hls {}", s.id) }, "hls"));
+        all.push((Playing { user_id: s.user_id, item_id: s.item_id, offset_ms: 0, state: "playing".into(), method: format!("{:?}", s.method).to_lowercase(), updated: s.last_access, client: format!("hls {}", s.id), height: s.height, audio: s.audio, viewer: s.viewer.clone() }, "hls"));
     }
     let list: Vec<Value> = all.iter().filter(|(p, _)| user.admin || p.user_id == user.id).map(|(p, kind)| {
         let it = db.items.get(&p.item_id);
@@ -346,8 +354,17 @@ fn part_of(ctx: &Ctx) -> usize {
 }
 
 /// Sends the original file, honouring Range requests so players can seek.
+/// The owner stopped this playback a moment ago: no new stream for it yet.
+fn stop_refusal(app: &Arc<App>, user: &User, item: u64) -> Option<Resp> {
+    let m = app.stopped(user.id, item)?;
+    Some(js(403, json!({"error": if m.is_empty() { "The owner stopped this playback".to_string() } else { m.clone() }, "status": 403, "stopped": true, "message": m})))
+}
+
 pub fn direct_file(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let (it, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
+    if ctx.param("download") != Some("1") {
+        if let Some(r) = stop_refusal(app, user, it.id) { return r; }
+    }
     if ctx.param("download") == Some("1") && !crate::downloads::may_download(user) { return decision_fail(403, 2011); }
     if ctx.param("optimized") == Some("1") {
         let Some(p) = crate::actions::optimized_file(app, &it) else { return fail(404, "There is no optimized version") };
@@ -421,10 +438,18 @@ struct ChildStream {
     out: ChildStdout,
     app: Arc<App>,
     key: String,
+    user: u64,
+    item: u64,
+    reads: u32,
 }
 
 impl Read for ChildStream {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // Stopped from the dashboard? (Looked at every 64 reads, not on each one.)
+        self.reads = self.reads.wrapping_add(1);
+        if self.reads % 64 == 0 && self.app.stopped(self.user, self.item).is_some() {
+            return Err(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "stopped by the owner"));
+        }
         self.out.read(buf)
     }
 }
@@ -465,6 +490,7 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     if d.method == Method::Direct {
         d.method = Method::Remux;
     }
+    if let Some(r) = stop_refusal(app, user, it.id) { return r; }
     if let Some(r) = check_transcode_allowed(app, user, &d.method) {
         return r;
     }
@@ -479,12 +505,12 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let out = child.stdout.take().unwrap();
     let key = db::random_hex(8);
     let method = format!("{:?}", d.method).to_lowercase();
-    app.progressive.lock().unwrap().insert(key.clone(), Playing { user_id: user.id, item_id: it.id, offset_ms: (offset * 1000.0) as u64, state: "playing".into(), method: method.clone(), updated: Instant::now(), client: "browser".into() });
+    app.progressive.lock().unwrap().insert(key.clone(), Playing { user_id: user.id, item_id: it.id, offset_ms: (offset * 1000.0) as u64, state: "playing".into(), method: method.clone(), updated: Instant::now(), client: "browser".into(), height: d.height, audio: req.audio_stream, viewer: ctx.viewer() });
     let mut h = base_headers();
     h.push(header("Content-Type", "video/mp4"));
     h.push(header("X-Transcode-Method", &method));
     h.push(header("Cache-Control", "no-store"));
-    let stream = ChildStream { child, out, app: app.clone(), key };
+    let stream = ChildStream { child, out, app: app.clone(), key, user: user.id, item: it.id, reads: 0 };
     Response::new(StatusCode(200), h, Box::new(stream) as Box<dyn Read + Send>, None, None)
 }
 
@@ -495,6 +521,7 @@ pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     if d.method == Method::Direct {
         d.method = Method::Remux;
     }
+    if let Some(r) = stop_refusal(app, user, it.id) { return r; }
     if let Some(r) = check_transcode_allowed(app, user, &d.method) {
         return r;
     }
@@ -510,7 +537,7 @@ pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
         Ok(c) => c,
         Err(e) => return fail(500, &format!("ffmpeg could not be started ({e}). Install ffmpeg or set its path in the settings.")),
     };
-    app.hls.lock().unwrap().insert(sid.clone(), HlsSession { id: sid.clone(), item_id: it.id, user_id: user.id, dir, child, last_access: Instant::now(), started_at: now(), method: d.method.clone(), height: d.height });
+    app.hls.lock().unwrap().insert(sid.clone(), HlsSession { id: sid.clone(), item_id: it.id, user_id: user.id, dir, child, last_access: Instant::now(), started_at: now(), method: d.method.clone(), height: d.height, audio: req.audio_stream, viewer: ctx.viewer() });
     app.fire("playback.started", json!({"id": it.id, "user": user.username, "stream": "hls"}));
     let playlist = format!("/video/transcode/hls/{sid}/index.m3u8");
     let mut h = base_headers();

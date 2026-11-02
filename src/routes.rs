@@ -101,6 +101,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("DELETE", "/api/downloads/{id}", "Remove a download (stops its conversion, deletes the converted copy)"),
     ("DELETE", "/api/downloads", "Remove several ?state=finished (ready and failed)|ready|failed|all &all=1 (admin: everyone's)"),
     ("GET", "/api/dashboard", "Admin: what is playing (who, how, bandwidth), processor and memory of the computer and the server, bytes sent, the last hour in samples, users and who is active"),
+    ("POST", "/api/dashboard/stop", "Admin: stop what a user is playing {user, item, message}: converted streams end at once, the player shows the message on its next report, and the same video can't start again for 30 s unless the player heard it"),
     ("GET", "/api/dashboard/history", "Admin: viewings of the last days ?days=30 &user=id as [[at, user, kind, minutes], …] to count per day, plus most played titles, top users and the latest viewings"),
     ("GET", "/hubs", "Home rows: continue watching, rows for the time of year (Halloween, Christmas, New Year's Eve, Valentine's Day; ?date=MM-DD tries a day), recently added movies and TV, pinned playlists"),
     ("GET", "/hubs/home/continueWatching", "Started but not finished, plus next episodes"),
@@ -577,7 +578,9 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             };
             ok(json!({"queued": q, "scanning": scanning, "working_on": if busy == 0 { Value::Null } else { json!(busy) }, "working_title": busy_title,
                 "done": p.done, "failed": p.failed, "last": p.last,
-                "job": job.map(|(label, done, total)| json!({"label": label, "done": done, "total": total}))}))
+                "job": job.map(|(label, done, total)| json!({"label": label, "done": done, "total": total})),
+                // For the owner's "playing now" button in the top bar.
+                "playing": if user.admin { json!(app.stream_count()) } else { Value::Null }}))
         }
         ("GET", ["library", "sections", sid, "all"]) => {
             let Some(sid) = id(sid) else { return fail(404, "No such library") };
@@ -868,7 +871,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let Some(iid) = key.and_then(|k| k.rsplit('/').next().and_then(|x| x.parse().ok())) else { return fail(400, "ratingKey is needed") };
             let time = ctx.body_or_param("time").and_then(|t| t.parse::<f64>().ok()).unwrap_or(0.0).max(0.0) as u64;
             let state = ctx.body_or_param("state").unwrap_or_else(|| "playing".into());
-            timeline(app, &user, iid, time, &state, ctx.body_or_param("client").unwrap_or_default())
+            timeline(app, &user, iid, time, &state, ctx.body_or_param("client").unwrap_or_default(), ctx.viewer())
         }
         (_, [":", "scrobble"]) | (_, [":", "unscrobble"]) => {
             // One item, or several at once: key=1,2,3 (the library's multiple selection).
@@ -955,6 +958,13 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["api", "dashboard"]) => {
             if !user.admin { return fail(403, "Only an admin can do this"); }
             crate::dashboard::dashboard(app)
+        }
+        ("POST", ["api", "dashboard", "stop"]) => {
+            if !admin { return need_admin(); }
+            let (Some(uid), Some(iid)) = (ctx.body["user"].as_u64(), ctx.body["item"].as_u64()) else { return fail(400, "user and item are needed") };
+            let message: String = ctx.body["message"].as_str().unwrap_or("").chars().take(500).collect();
+            let n = app.stop_playback(uid, iid, &message);
+            ok(json!({"ok": true, "stopped": n}))
         }
         ("GET", ["api", "dashboard", "history"]) => {
             if !user.admin { return fail(403, "Only an admin can do this"); }

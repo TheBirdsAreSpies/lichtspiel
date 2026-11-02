@@ -162,19 +162,54 @@ function barChart(box, { buckets, keys, fmt, height = 220 }) {
 }
 
 const methodLabel = p => p.method === 'transcode' ? t('Transcode') + (p.height ? ` ${p.height}p` : '') : p.method === 'remux' ? t('Direct stream') : t('Direct play');
+const CODECS = { hevc: 'HEVC', h264: 'H.264', av1: 'AV1', vp9: 'VP9', vp8: 'VP8', mpeg2video: 'MPEG-2', mpeg4: 'MPEG-4', vc1: 'VC-1', ac3: 'AC3', eac3: 'EAC3', dts: 'DTS', truehd: 'TrueHD', aac: 'AAC', flac: 'FLAC', opus: 'Opus', mp3: 'MP3', vorbis: 'Vorbis', pcm_s16le: 'PCM', pcm_s24le: 'PCM' };
+const codecName = c => CODECS[c] || (c || '').toUpperCase();
+const resName = hh => !hh ? '' : hh >= 2000 ? '4K' : hh >= 1000 ? '1080p' : hh >= 700 ? '720p' : hh >= 540 ? '576p' : hh >= 470 ? '480p' : 'SD';
+const chName = n => ({ 1: 'Mono', 2: t('Stereo'), 3: '2.1', 6: '5.1', 7: '6.1', 8: '7.1' }[n] || (n ? n + ' ch' : ''));
+// "1080p (HEVC Main 10)" → "720p (H.264) — Transcode (hw)", like the player sees it.
+function videoLine(v) {
+  if (!v) return null;
+  const from = `${resName(v.height)} (${[codecName(v.codec), v.profile, v.hdr ? 'HDR' : ''].filter(Boolean).join(' ')})`;
+  return v.action === 'transcode'
+    ? [from, ' → ', h('span', {}, `${resName(v.out_height)} (${codecName(v.out_codec)}) — ${t('Transcode')}${v.hw ? ' (hw)' : ''}`)]
+    : [from, h('span', { class: 'to' }, ' — ' + t('Direct'))];
+}
+function audioLine(a) {
+  if (!a) return null;
+  const lang = a.language ? langName(a.language) : a.title || t('Unknown');
+  const from = `${lang} (${[codecName(a.codec), chName(a.channels)].filter(Boolean).join(' ')})`;
+  return a.action === 'transcode'
+    ? [from, ' → ', h('span', {}, `${codecName(a.out_codec)} ${chName(a.out_channels)} — ${t('Transcode')}`)]
+    : [from, h('span', { class: 'to' }, ' — ' + t('Direct'))];
+}
+function stopDialog(p, title) {
+  const msg = h('textarea', { rows: 3, maxlength: 500, style: 'width:100%', placeholder: t('Message to {name} (optional)', { name: p.user || '?' }) });
+  const box = modal(t('Stop playback?'), [
+    h('p', { class: 'dim' }, t('“{title}” stops for {name} right away. They see your message in the Lichtspiel web app.', { title, name: p.user || '?' })),
+    msg,
+    h('div', { class: 'actions' },
+      h('button', { class: 'primary', onclick: async e => {
+        e.target.disabled = true;
+        try { await api('POST', '/api/dashboard/stop', { user: p.user_id, item: p.id, message: msg.value }); toast(t('Playback stopped')); box.remove(); pollActivity(); }
+        catch (er) { e.target.disabled = false; toast(er.message, 6000); }
+      } }, t('Stop playback')),
+      h('button', { onclick: () => box.remove() }, t('Cancel')))]);
+  msg.focus();
+}
 function playingCard(p) {
   const pct = p.duration ? Math.min(100, (p.offset / p.duration) * 100) : 0;
   const title = p.type === 'episode' && p.grandparentTitle ? p.grandparentTitle : p.title || t('(removed)');
   const sub = p.type === 'episode' ? `${t('S{n}', { n: p.parentIndex || 0 })} ${t('E{n}', { n: p.index || 0 })} · ${p.title}` : p.year || '';
-  const src = p.source || {};
+  const where = (p.local ? t('Local') : t('Remote')) + (p.ip ? ` (${p.ip})` : '') + ' — ' + fmtBits(p.out_bps || 0);
+  const rows = [[t('Device'), p.client || '–'], [t('Connection'), where], [t('Video'), videoLine(p.video)], [t('Sound'), audioLine(p.audio)]].filter(([, v]) => v);
   return h('div', { class: 'np' },
     h('a', { href: '#/item/' + p.id, class: 'np-img' }, h('img', { src: withTok(p.thumb), alt: '', loading: 'lazy' })),
     h('div', { class: 'np-body' },
-      h('a', { href: '#/item/' + p.id }, h('b', {}, title)), h('div', { class: 'dim' }, sub),
-      h('div', { class: 'np-who' }, h('b', {}, p.user || '?'), p.client ? h('span', { class: 'dim' }, ' · ' + p.client) : null, p.ip ? h('span', { class: 'dim' }, ' · ' + p.ip) : null),
-      h('div', {}, h('span', { class: 'chip' + (p.method === 'transcode' ? ' warn' : '') }, methodLabel(p)),
-        src.height ? h('span', { class: 'chip' }, `${(src.container || '').toUpperCase()} ${src.video_codec || ''} ${src.height}p`) : null,
-        h('span', { class: 'chip' }, fmtBits(p.out_bps || 0))),
+      h('div', { class: 'np-head' },
+        h('div', {}, h('a', { href: '#/item/' + p.id }, h('b', {}, title)), h('div', { class: 'dim' }, sub)),
+        iconBtn('stop', t('Stop playback'), () => stopDialog(p, p.type === 'episode' ? `${title} · ${p.title}` : title))),
+      h('div', { class: 'np-who' }, h('b', {}, p.user || '?'), h('span', { class: 'chip' + (p.method === 'transcode' ? ' warn' : ''), style: 'margin-left:8px' }, methodLabel(p))),
+      h('div', { class: 'np-rows' }, rows.flatMap(([k, v]) => [h('span', {}, k), h('span', {}, v)])),
       h('div', { class: 'np-prog' }, h('span', {}, p.state === 'paused' ? '⏸ ' + t('Paused') : '▶ ' + t('Playing')),
         h('div', { class: 'pbar' }, h('i', { style: `width:${pct}%` })),
         h('span', { class: 'dim' }, p.duration ? `${fmtTime(p.offset / 1000)} / ${fmtTime(p.duration / 1000)}` : ''))));
@@ -198,6 +233,7 @@ async function dashLive(live, charts) {
   try { d = await GET('/api/dashboard'); } catch (e) { live.replaceChildren(h('div', { class: 'empty' }, e.message)); DB.timer = setTimeout(() => dashLive(live, charts), 10000); return; }
   if (!live.isConnected) return;
   DB.data = d;
+  drawPlayingBtn(d.playing.length);
   const c = d.current || {}, ss = d.samples || [];
   const active = d.users.filter(u => u.active);
   const tc = d.playing.filter(p => p.method === 'transcode').length;

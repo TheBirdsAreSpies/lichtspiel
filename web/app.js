@@ -166,11 +166,12 @@ function drawChrome() {
   gear.setAttribute('aria-haspopup', 'menu');
   who.append(h('span', {}, S.me.username), gear);
   document.querySelectorAll('#side .admin').forEach(e => (e.style.display = S.me.admin ? '' : 'none'));
+  $('#npbtn').style.display = S.me.admin ? '' : 'none';
   drawQueueChip();
   drawNav();
   drawDlChip();
 }
-function markNav(key) { NAV.cur = key; document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', a.dataset.nav === key)); }
+function markNav(key) { NAV.cur = key; document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', a.dataset.nav === key)); $('#npbtn').classList.toggle('on', key === 'dashboard'); }
 let searchTimer;
 $('#q').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { const v = e.target.value.trim(); location.hash = v ? '#/search/' + encodeURIComponent(v) : '#/'; }, 300); });
 
@@ -633,6 +634,7 @@ async function pollActivity() {
   if (!S.me || !S.me.admin) { el.style.display = 'none'; return; }
   let st;
   try { st = await GET('/api/metadata/status'); } catch (e) { ACT.timer = setTimeout(pollActivity, 10000); return; }
+  drawPlayingBtn(st.playing);
   const scanning = st.scanning || [];
   const busy = st.queued > 0 || st.working_on || st.job || scanning.length;
   const parts = [];
@@ -662,6 +664,16 @@ async function pollActivity() {
   }
   ACT.done = st.done;
   ACT.timer = setTimeout(pollActivity, busy ? 2500 : 8000);
+}
+
+// The owner's "playing now" button in the top bar: grey, or yellow with the count.
+function drawPlayingBtn(n) {
+  const b = $('#npbtn');
+  if (!b || n === null || n === undefined) return;
+  b.classList.toggle('live', n > 0);
+  b.lastChild.textContent = n > 0 ? String(n) : '';
+  const label = n > 0 ? t('Dashboard · {n} playing now', { n }) : t('Dashboard · nothing is playing');
+  b.title = label; b.setAttribute('aria-label', label);
 }
 
 // onclose runs however the box goes away: its buttons, a click beside it or Escape.
@@ -797,6 +809,7 @@ const ICONS = {
   pip: 'M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z',
   full: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
   exitfull: 'M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z',
+  stop: 'M6 6h12v12H6z',
   close: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
   check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
   heart: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
@@ -974,10 +987,22 @@ function setSub(i) {
 function setSubSize(v) { P.subSize = v; store.set('subSize', v); player.style.setProperty('--cue', v + '%'); }
 setSubSize(P.subSize);
 
+// The answer can say the owner stopped this playback (from the dashboard): then
+// the player closes and shows their message.
 function report(state, atMs) {
-  if (!P.it) return;
-  const ms = atMs !== undefined ? atMs : Math.floor(position() * 1000);
-  api('POST', `/:/timeline?ratingKey=${P.it.id}&time=${ms}&state=${state}&client=web`).catch(() => {});
+  if (!P.it) return Promise.resolve(null);
+  const it = P.it, ms = atMs !== undefined ? atMs : Math.floor(position() * 1000);
+  P.reported = state;
+  return api('POST', `/:/timeline?ratingKey=${it.id}&time=${ms}&state=${state}&client=web`)
+    .then(r => { if (r && r.stopped && P.it === it) stoppedByOwner(r.message); return r; })
+    .catch(() => null);
+}
+function stoppedByOwner(message) {
+  closePlayer(false);
+  const box = modal(t('Playback stopped'), [
+    h('p', {}, t('The owner of this server stopped your playback.')),
+    message ? h('blockquote', { class: 'panel', style: 'margin:0 0 12px;padding:10px 14px;white-space:pre-wrap' }, message) : null,
+    h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: () => box.remove() }, t('OK')))]);
 }
 
 // ---- drawing
@@ -1039,7 +1064,10 @@ player.addEventListener('touchstart', wake, { passive: true });
 
 // ---- video events
 video.addEventListener('play', () => { drawButtons(); wake(); });
-video.addEventListener('pause', () => { drawButtons(); wake(); if (!video.ended) report('paused'); });
+// A new source (another quality, or a jump in a converted video) pauses the old one
+// on its way: that is no pause (readyState is 0 then). Playing again is told at once.
+video.addEventListener('pause', () => { drawButtons(); wake(); if (!video.ended && video.readyState > 0) report('paused'); });
+video.addEventListener('playing', () => { if (P.reported !== 'playing') report('playing'); });
 video.addEventListener('volumechange', () => { drawButtons(); store.set('volume', video.volume); store.set('muted', video.muted ? '1' : '0'); });
 video.addEventListener('timeupdate', () => { if (!bar.classList.contains('drag')) drawBar(); });
 video.addEventListener('progress', drawBar);
@@ -1049,7 +1077,11 @@ video.addEventListener('seeking', () => spin(true));
 ['playing', 'canplay', 'loadeddata', 'seeked', 'pause', 'error'].forEach(ev => video.addEventListener(ev, () => spin(false)));
 // A button clicked with the mouse lets go of the focus, so Space keeps meaning play / pause.
 player.addEventListener('pointerup', e => { const b = e.target.closest('.pbtn'); if (b && e.pointerType === 'mouse') setTimeout(() => b.blur(), 0); });
-video.addEventListener('error', () => { if (P.it && video.getAttribute('src')) toast(t('This video could not be played. Try a lower quality in ⚙.'), 6000); });
+video.addEventListener('error', () => {
+  if (!P.it || !video.getAttribute('src')) return;
+  // Stopped by the owner? Then the report says so (and shows why).
+  report('playing').then(r => { if (!(r && r.stopped)) toast(t('This video could not be played. Try a lower quality in ⚙.'), 6000); });
+});
 video.addEventListener('ended', () => {
   // The next part of a split movie.
   if (split() && P.part < P.parts.length - 1) { load(partStart(P.part + 1)); return; }

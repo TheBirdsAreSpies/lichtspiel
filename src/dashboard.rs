@@ -77,7 +77,11 @@ fn now_playing(app: &Arc<App>, db: &Db) -> Vec<Value> {
         stream: &'static str,
         client: String,
         height: u32,
+        audio: Option<u32>,
+        viewer: Viewer,
         idle: u64,
+        /// Seconds since the stream (not the player) last did something.
+        stream_idle: Option<u64>,
     }
     let mut by: BTreeMap<(u64, u64), Entry> = BTreeMap::new();
     let mut put = |e: Entry| {
@@ -93,25 +97,42 @@ fn now_playing(app: &Arc<App>, db: &Db) -> Vec<Value> {
                     o.state = e.state;
                     o.client = e.client;
                     o.idle = o.idle.min(e.idle);
+                    if o.viewer.device.is_empty() { o.viewer = e.viewer; }
                 } else {
                     o.method = e.method;
                     o.stream = e.stream;
                     o.height = o.height.max(e.height);
+                    o.audio = o.audio.or(e.audio);
+                    o.stream_idle = Some(o.stream_idle.unwrap_or(u64::MAX).min(e.idle));
+                    // A stream's device and address are the ones that receive the picture.
+                    if !e.viewer.device.is_empty() || !e.viewer.ip.is_empty() { o.viewer = e.viewer; }
                 }
             }
         }
     };
     for p in app.progressive.lock().unwrap().values() {
-        put(Entry { user: p.user_id, item: p.item_id, offset: p.offset_ms, state: p.state.clone(), method: p.method.clone(), stream: "progressive", client: p.client.clone(), height: 0, idle: p.updated.elapsed().as_secs() });
+        put(Entry { user: p.user_id, item: p.item_id, offset: p.offset_ms, state: p.state.clone(), method: p.method.clone(), stream: "progressive", client: p.client.clone(), height: p.height, audio: p.audio, viewer: p.viewer.clone(), idle: p.updated.elapsed().as_secs(), stream_idle: Some(p.updated.elapsed().as_secs()) });
     }
     for s in app.hls.lock().unwrap().values() {
-        put(Entry { user: s.user_id, item: s.item_id, offset: 0, state: "playing".into(), method: format!("{:?}", s.method).to_lowercase(), stream: "hls", client: String::new(), height: s.height, idle: s.last_access.elapsed().as_secs() });
+        put(Entry { user: s.user_id, item: s.item_id, offset: 0, state: "playing".into(), method: format!("{:?}", s.method).to_lowercase(), stream: "hls", client: String::new(), height: s.height, audio: s.audio, viewer: s.viewer.clone(), idle: s.last_access.elapsed().as_secs(), stream_idle: Some(s.last_access.elapsed().as_secs()) });
     }
+    let mut reported: HashMap<(u64, u64), u64> = HashMap::new();
     for p in app.playing.lock().unwrap().values() {
-        put(Entry { user: p.user_id, item: p.item_id, offset: p.offset_ms, state: p.state.clone(), method: "direct".into(), stream: "player", client: p.client.clone(), height: 0, idle: p.updated.elapsed().as_secs() });
+        let idle = p.updated.elapsed().as_secs();
+        reported.insert((p.user_id, p.item_id), idle);
+        put(Entry { user: p.user_id, item: p.item_id, offset: p.offset_ms, state: p.state.clone(), method: "direct".into(), stream: "player", client: p.client.clone(), height: 0, audio: None, viewer: p.viewer.clone(), idle, stream_idle: None });
+    }
+    // A converted stream started after the player's last "paused" (it jumped to
+    // another point and plays again): it is playing.
+    for (k, e) in by.iter_mut() {
+        if e.state == "paused" && e.stream == "progressive" && e.stream_idle.zip(reported.get(k)).is_some_and(|(si, pi)| si < *pi) {
+            e.state = "playing".into();
+        }
     }
     let bps = app.stats.user_bps.lock().unwrap().clone();
     let seen = app.stats.seen.lock().unwrap().clone();
+    // Converted pictures are made by the hardware when it works (see transcode::effective_hw).
+    let hw = by.values().any(|e| e.method == "transcode") && matches!(crate::transcode::effective_hw(&db.settings).as_str(), "vaapi" | "qsv" | "nvenc");
     by.into_values()
         .map(|e| {
             let it = db.items.get(&e.item);
@@ -127,10 +148,36 @@ fn now_playing(app: &Arc<App>, db: &Db) -> Vec<Value> {
             o["state"] = json!(e.state);
             o["method"] = json!(e.method);
             o["stream"] = json!(e.stream);
-            o["client"] = json!(if e.client.is_empty() || e.client.starts_with("hls ") { who.map(|w| w.agent.clone()).unwrap_or_default() } else { e.client });
-            o["ip"] = json!(who.map(|w| w.ip.clone()));
+            let device = if !e.viewer.device.is_empty() { e.viewer.device.clone() } else if e.client.is_empty() || e.client.starts_with("hls ") || e.client == "web" || e.client == "browser" { who.map(|w| w.agent.clone()).unwrap_or_default() } else { e.client.clone() };
+            o["client"] = json!(device);
+            let ip = if e.viewer.ip.is_empty() { who.map(|w| w.ip.clone()) } else { Some(e.viewer.ip.clone()) };
+            let local = if e.viewer.ip.is_empty() { ip.as_deref().and_then(|a| a.parse().ok()).is_some_and(crate::server::ip_is_local) } else { e.viewer.local };
+            o["ip"] = json!(ip);
+            o["local"] = json!(local);
             o["height"] = json!(if e.height > 0 { Some(e.height) } else { None });
             o["source"] = json!(m.map(|f| json!({"container": f.container, "height": f.video().map(|v| v.height), "video_codec": f.video().map(|v| v.codec.clone()), "bitrate": f.bitrate})));
+            // Picture and sound: what the file has and what is sent (as the transcoder does it).
+            let transcode = e.method == "transcode";
+            let direct = e.method == "direct";
+            o["video"] = json!(m.and_then(|f| f.video()).map(|v| json!({
+                "height": v.height, "codec": v.codec, "profile": v.profile,
+                "hdr": !v.color_transfer.is_empty() && v.color_transfer != "bt709",
+                "action": if transcode { "transcode" } else { "copy" },
+                "out_codec": if transcode { "h264".to_string() } else { v.codec.clone() },
+                "out_height": if transcode && e.height > 0 { e.height.min(v.height.max(1)) } else { v.height },
+                "hw": transcode && hw,
+            })));
+            o["audio"] = json!(m.and_then(|f| {
+                let tracks: Vec<_> = f.streams.iter().filter(|s| s.kind == "audio").collect();
+                let pick = e.audio.and_then(|i| tracks.iter().position(|s| s.index == i)).or_else(|| tracks.iter().position(|s| s.default)).unwrap_or(0);
+                tracks.get(pick).map(|a| json!({
+                    "language": a.language, "title": a.title, "codec": a.codec, "profile": a.profile, "channels": a.channels,
+                    // Converted and repackaged streams always carry stereo AAC.
+                    "action": if direct { "copy" } else { "transcode" },
+                    "out_codec": if direct { a.codec.clone() } else { "aac".to_string() },
+                    "out_channels": if direct { a.channels } else { crate::transcode::TRANSCODE_AUDIO_CHANNELS },
+                }))
+            }));
             o["out_bps"] = json!(bps.get(&e.user).copied().unwrap_or(0));
             o["idle"] = json!(e.idle);
             o

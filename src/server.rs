@@ -61,6 +61,19 @@ pub struct HlsSession {
     pub started_at: u64,
     pub method: Method,
     pub height: u32,
+    /// The audio track asked for (its stream index), None = the default one.
+    pub audio: Option<u32>,
+    pub viewer: Viewer,
+}
+
+/// Where a video is played: the device and its address, for the dashboard.
+#[derive(Clone, Debug, Default)]
+pub struct Viewer {
+    /// "Plex for Samsung — TV 2020", "Chrome on Windows" …
+    pub device: String,
+    pub ip: String,
+    /// In this computer's local network (see `Ctx::is_local`).
+    pub local: bool,
 }
 
 #[derive(Clone)]
@@ -72,6 +85,10 @@ pub struct Playing {
     pub method: String,
     pub updated: Instant,
     pub client: String,
+    /// Converted streams: the picture height sent (0 = as it is).
+    pub height: u32,
+    pub audio: Option<u32>,
+    pub viewer: Viewer,
 }
 
 pub struct App {
@@ -83,6 +100,9 @@ pub struct App {
     pub hls: Mutex<HashMap<String, HlsSession>>,
     pub progressive: Mutex<HashMap<String, Playing>>,
     pub playing: Mutex<HashMap<String, Playing>>,
+    /// Playbacks the owner stopped from the dashboard: (user, item) → (message, when).
+    /// Their player is told on its next report, and new streams are refused for a short while.
+    pub stops: Mutex<HashMap<(u64, u64), (String, Instant)>>,
     pub scanning: Mutex<HashSet<u64>>,
     pub started_at: u64,
     pub port: Mutex<u16>,
@@ -178,6 +198,7 @@ impl App {
             hls: Mutex::new(HashMap::new()),
             progressive: Mutex::new(HashMap::new()),
             playing: Mutex::new(HashMap::new()),
+            stops: Mutex::new(HashMap::new()),
             scanning: Mutex::new(HashSet::new()),
             started_at: now(),
             port: Mutex::new(DEFAULT_PORT),
@@ -1122,6 +1143,47 @@ impl App {
         keys.len()
     }
 
+    /// Stops what `user` is playing of `item` (from the dashboard): converted streams
+    /// end at once, and the player hears `message` on its next report.
+    pub fn stop_playback(&self, user: u64, item: u64, message: &str) -> usize {
+        self.stops.lock().unwrap().insert((user, item), (message.trim().to_string(), Instant::now()));
+        let mut n = 0;
+        {
+            let mut map = self.playing.lock().unwrap();
+            let before = map.len();
+            map.retain(|_, p| !(p.user_id == user && p.item_id == item));
+            n += before - map.len();
+        }
+        // Converted streams notice the stop themselves on their next read (see ChildStream).
+        n += self.progressive.lock().unwrap().values().filter(|p| p.user_id == user && p.item_id == item).count();
+        let ended: Vec<HlsSession> = {
+            let mut map = self.hls.lock().unwrap();
+            let ids: Vec<String> = map.values().filter(|s| s.user_id == user && s.item_id == item).map(|s| s.id.clone()).collect();
+            ids.iter().filter_map(|id| map.remove(id)).collect()
+        };
+        n += ended.len();
+        for mut s in ended {
+            let _ = s.child.kill();
+            let _ = s.child.wait();
+            let _ = std::fs::remove_dir_all(&s.dir);
+        }
+        n
+    }
+
+    /// The owner's message when they stopped this playback lately (Some("") without one).
+    pub fn stopped(&self, user: u64, item: u64) -> Option<String> {
+        let mut map = self.stops.lock().unwrap();
+        map.retain(|_, (_, at)| at.elapsed() < STOP_HOLD);
+        map.get(&(user, item)).map(|(m, _)| m.clone())
+    }
+
+    /// The player was told: it may start again right away.
+    pub fn stop_seen(&self, user: u64, item: u64) -> Option<String> {
+        let m = self.stopped(user, item);
+        self.stops.lock().unwrap().remove(&(user, item));
+        m
+    }
+
     pub fn active_transcodes(&self) -> usize {
         self.hls.lock().unwrap().values().filter(|h| h.method == Method::Transcode).count()
             + self.progressive.lock().unwrap().values().filter(|p| p.method == "transcode").count()
@@ -1434,6 +1496,10 @@ pub fn ip_is_local(ip: IpAddr) -> bool {
 
 // ---------------------------------------------------------------- request context
 
+/// How long a stopped playback can't start again unless its player heard why
+/// (keeps players that reconnect by themselves from carrying on).
+pub const STOP_HOLD: Duration = Duration::from_secs(30);
+
 pub struct Ctx {
     pub method: String,
     pub path: String,
@@ -1447,6 +1513,9 @@ pub struct Ctx {
     pub remote: Option<IpAddr>,
     /// `remote` can be relied on (no forwarding header from an untrusted machine).
     pub remote_trusted: bool,
+    /// The device asking: Plex apps name themselves (X-Plex-Product, X-Plex-Device-Name),
+    /// browsers by their User-Agent ("Chrome on Windows").
+    pub device: String,
 }
 
 impl Ctx {
@@ -1455,6 +1524,10 @@ impl Ctx {
     /// is trusted in the settings, and then by the address it forwarded.
     pub fn is_local(&self) -> bool {
         self.remote_trusted && self.remote.is_some_and(ip_is_local)
+    }
+
+    pub fn viewer(&self) -> Viewer {
+        Viewer { device: self.device.clone(), ip: self.remote.map(|a| a.to_string()).unwrap_or_default(), local: self.is_local() }
     }
     pub fn param(&self, k: &str) -> Option<&str> {
         self.params.iter().find(|(a, _)| a.eq_ignore_ascii_case(k)).map(|(_, v)| v.as_str())
@@ -1693,6 +1766,21 @@ pub fn start_background(app: &Arc<App>) {
     });
 }
 
+/// "Plex for Samsung — TV 2020" from the X-Plex headers (or the same names in the
+/// address, as some Plex apps send them), else the browser ("Chrome on Windows").
+pub fn device_label(product: &str, device: &str, params: &[(String, String)], agent: &str) -> String {
+    let param = |k: &str| params.iter().find(|(n, _)| n.eq_ignore_ascii_case(k)).map(|(_, v)| v.trim().to_string()).unwrap_or_default();
+    let product = if product.trim().is_empty() { param("X-Plex-Product") } else { product.trim().to_string() };
+    let mut device = if device.trim().is_empty() { param("X-Plex-Device-Name") } else { device.trim().to_string() };
+    if device.is_empty() { device = param("X-Plex-Device"); }
+    match (product.is_empty(), device.is_empty() || device == product) {
+        (false, false) => format!("{product} — {device}"),
+        (false, true) => product,
+        (true, false) => device,
+        (true, true) => crate::stats::short_agent(agent),
+    }
+}
+
 fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let method = req.method().as_str().to_uppercase();
     let url = req.url().to_string();
@@ -1703,6 +1791,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let mut token = None;
     let mut range = None;
     let mut agent = String::new();
+    let (mut product, mut device_name) = (String::new(), String::new());
     let (mut xff, mut real_ip, mut forwarded) = (Vec::new(), None, Vec::new());
     for h in req.headers() {
         let f = h.field.as_str().as_str().to_ascii_lowercase();
@@ -1715,6 +1804,9 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
             }
             "range" => range = Some(h.value.as_str().to_string()),
             "user-agent" => agent = h.value.as_str().to_string(),
+            "x-plex-product" => product = h.value.as_str().to_string(),
+            "x-plex-device-name" => device_name = h.value.as_str().to_string(),
+            "x-plex-device" | "x-plex-model" if device_name.is_empty() => device_name = h.value.as_str().to_string(),
             "x-forwarded-for" => xff.push(h.value.as_str().to_string()),
             "x-real-ip" => real_ip = Some(h.value.as_str().to_string()),
             "forwarded" => forwarded.push(h.value.as_str().to_string()),
@@ -1750,7 +1842,8 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     if let Some(id) = uid {
         app.stats.saw(id, remote.map(|a| a.to_string()).unwrap_or_default(), &agent);
     }
-    let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token, remote, remote_trusted };
+    let device = device_label(&product, &device_name, &params, &agent);
+    let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token, remote, remote_trusted, device };
     let resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) } else { crate::routes::route(&app, &ctx) };
     // Count what is sent (bandwidth on the dashboard).
     let (status, headers, len) = (resp.status_code(), resp.headers().to_vec(), resp.data_length());
