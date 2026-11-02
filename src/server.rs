@@ -432,6 +432,27 @@ impl App {
         });
     }
 
+    /// An id tag ("{imdb-tt0068646}", "{tmdb-238}", "{tvdb-81189}") in the names
+    /// below the library folder: for a movie its file name and folders, for a show
+    /// its own folder (an episode's file name may carry the episode's id instead).
+    pub fn id_tag_of(db: &Db, it: &Item) -> Option<(&'static str, String)> {
+        let path = match it.kind {
+            ItemKind::Movie => it.file.as_ref()?.path.clone(),
+            ItemKind::Show => db.leaves(it.id).iter().filter_map(|l| db.items.get(l)?.file.as_ref().map(|f| f.path.clone())).next()?,
+            _ => return None,
+        };
+        let path = Path::new(&path);
+        let section = db.sections.iter().find(|s| s.id == it.section_id)?;
+        let rel = section.paths.iter().find_map(|r| path.strip_prefix(r).ok()).unwrap_or(path);
+        let names: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect();
+        let names: Vec<&String> = match it.kind {
+            ItemKind::Show if names.len() >= 2 => vec![&names[0]],
+            ItemKind::Show => vec![],
+            _ => names.iter().rev().collect(),
+        };
+        names.into_iter().find_map(|n| scanner::id_tag(n))
+    }
+
     /// Title and year from the folder a movie's file is in, when that folder holds
     /// only this movie (not the library folder itself, not a folder of many movies).
     pub fn folder_title(db: &Db, it: &Item) -> Option<(String, Option<u32>)> {
@@ -444,8 +465,12 @@ impl App {
         if section.paths.iter().any(|r| Path::new(r) == dir) {
             return None;
         }
+        // Parts of the same movie ("… - pt1", "… - pt2") do not count as other movies.
+        let base = |p: &Path| p.file_stem().map(|s| scanner::split_part(&s.to_string_lossy()).0.to_lowercase()).unwrap_or_default();
+        let mine = base(path);
         let others = db.items.values().filter(|o| o.id != it.id && o.kind == ItemKind::Movie)
-            .filter(|o| o.file.as_ref().is_some_and(|f| Path::new(&f.path).parent() == Some(dir))).count();
+            .filter_map(|o| o.file.as_ref().map(|f| Path::new(&f.path)))
+            .filter(|p| p.parent() == Some(dir) && base(p) != mine).count();
         if others > 0 {
             return None;
         }
@@ -666,7 +691,7 @@ impl App {
     pub fn match_online(self: &Arc<Self>, id: u64, choice: Option<(String, String)>, force: bool) -> Result<String, String> {
         use crate::metadata;
         let mut settings = self.settings();
-        let (kind, title, year, stored, seasons, status_recent, folder) = {
+        let (kind, title, year, stored, seasons, status_recent, folder, tag) = {
             let db = self.db.lock().unwrap();
             let it = db.items.get(&id).ok_or("No such item")?;
             // The library's own language, else the server's.
@@ -684,12 +709,25 @@ impl App {
             // Use the name from the file, not a name a previous wrong match gave it.
             let title = s("file_title").unwrap_or_else(|| it.title.clone());
             let folder = Self::folder_title(&db, it).filter(|(t, _)| !t.eq_ignore_ascii_case(&title));
-            (it.kind, title, it.year, stored, seasons, recent, folder)
+            let tag = Self::id_tag_of(&db, it);
+            (it.kind, title, it.year, stored, seasons, recent, folder, tag)
         };
-        if choice.is_none() && stored.is_none() && status_recent && !force {
+        // An id in the file or folder name ("{imdb-tt0068646}") decides the match,
+        // unless one is picked by hand in "Fix match".
+        let tagged = match (&choice, &tag) {
+            (None, Some((src, tid))) => match metadata::resolve_id(&settings, kind, src, tid) {
+                Ok(x) => Some(x),
+                Err(e) => {
+                    eprintln!("details for item {id}: {{{src}-{tid}}}: {e}");
+                    None
+                }
+            },
+            _ => None,
+        };
+        if choice.is_none() && tagged.is_none() && stored.is_none() && status_recent && !force {
             return Err("No match was found recently; use Fix match".into());
         }
-        let (source, mid) = match choice.or(stored) {
+        let (source, mid) = match choice.or(tagged).or(stored) {
             Some(x) => x,
             None => {
                 let found = metadata::search(&settings, kind, &title, year);

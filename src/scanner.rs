@@ -105,6 +105,62 @@ const STOP_WORDS: &[&str] = &[
     "atmos", "proper", "repack", "extended", "unrated", "multi", "german", "dl", "10bit",
 ];
 
+/// Splits the part marker off a movie file name, as Plex names split movies:
+/// "The Dark Knight (2008) - pt1" gives ("The Dark Knight (2008)", Some(1)).
+/// Words: cd, disc, disk, dvd, part, pt, with the number right after them, after
+/// "-", "." or "_" (so a title like "Deathly Hallows Part 2" is left alone).
+pub fn split_part(stem: &str) -> (String, Option<u32>) {
+    let lower = stem.to_lowercase();
+    for word in ["part", "disc", "disk", "dvd", "cd", "pt"] {
+        let Some(at) = lower.rfind(word) else { continue };
+        let num = &lower[at + word.len()..];
+        if num.is_empty() || num.len() > 2 || !num.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        let before = &stem[..at];
+        if !before.trim_end_matches(' ').ends_with(['.', '_', '-', '–']) {
+            continue;
+        }
+        let title = before.trim_end_matches([' ', '.', '_', '-', '–', '(', '[']).to_string();
+        if title.is_empty() {
+            continue;
+        }
+        return (title, num.parse().ok());
+    }
+    (stem.to_string(), None)
+}
+
+/// An id tag in a file or folder name: Plex's "{imdb-tt0068646}", "{tmdb-238}",
+/// "{tvdb-81189}", and Jellyfin's "[imdbid-tt0068646]" / "[tmdbid=238]".
+/// Gives the source ("imdb", "tmdb" or "tvdb") and the id.
+pub fn id_tag(name: &str) -> Option<(&'static str, String)> {
+    let lower = name.to_lowercase();
+    let mut rest = lower.as_str();
+    while let Some(open) = rest.find(['{', '[']) {
+        let close_ch = if rest[open..].starts_with('{') { '}' } else { ']' };
+        let inner_start = open + 1;
+        let Some(len) = rest[inner_start..].find(close_ch) else { break };
+        let inner = rest[inner_start..inner_start + len].trim();
+        rest = &rest[inner_start + len + 1..];
+        let Some(sep) = inner.find(['-', '=']) else { continue };
+        let (key, value) = (inner[..sep].trim(), inner[sep + 1..].trim());
+        let source = match key {
+            "imdb" | "imdbid" => "imdb",
+            "tmdb" | "tmdbid" => "tmdb",
+            "tvdb" | "tvdbid" => "tvdb",
+            _ => continue,
+        };
+        let ok = match source {
+            "imdb" => value.len() > 2 && value.starts_with("tt") && value[2..].chars().all(|c| c.is_ascii_digit()),
+            _ => !value.is_empty() && value.chars().all(|c| c.is_ascii_digit()),
+        };
+        if ok {
+            return Some((source, value.to_string()));
+        }
+    }
+    None
+}
+
 /// Turns "The.Matrix.1999.1080p.BluRay" or "The Matrix (1999)" into
 /// ("The Matrix", Some(1999)).
 pub fn parse_title_year(raw: &str) -> (String, Option<u32>) {
@@ -578,6 +634,8 @@ pub fn classify(section: &Section, root: &Path, path: &Path) -> Parsed {
         .collect();
     match section.kind {
         SectionKind::Movie => {
+            // "Movie (2008) - pt1": the title without the part marker.
+            let (stem, _) = split_part(&stem);
             // Prefer the folder name when the file has a generic name.
             let (mut title, mut year) = parse_title_year(&stem);
             if comps.len() >= 2 {
@@ -965,6 +1023,22 @@ fn container_index(db: &Db, section: u64) -> HashMap<ContainerKey, u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plex_split_parts_and_id_tags() {
+        assert_eq!(split_part("The Dark Knight (2008) - pt1"), ("The Dark Knight (2008)".into(), Some(1)));
+        assert_eq!(split_part("The Dark Knight (2008) - cd2"), ("The Dark Knight (2008)".into(), Some(2)));
+        assert_eq!(split_part("Movie.2008.part3"), ("Movie.2008".into(), Some(3)));
+        assert_eq!(split_part("Deathly Hallows Part 2"), ("Deathly Hallows Part 2".into(), None));
+        assert_eq!(split_part("Apt 2"), ("Apt 2".into(), None));
+        assert_eq!(split_part("Script1"), ("Script1".into(), None));
+        assert_eq!(id_tag("Batman Begins (2005) {imdb-tt0372784}"), Some(("imdb", "tt0372784".into())));
+        assert_eq!(id_tag("Avatar (2009) {edition-Extended} {tmdb-19995}"), Some(("tmdb", "19995".into())));
+        assert_eq!(id_tag("Show [tvdbid=81189]"), Some(("tvdb", "81189".into())));
+        assert_eq!(id_tag("Film {imdb-12}"), None);
+        assert_eq!(id_tag("Film {edition-Final Cut}"), None);
+        assert_eq!(parse_title_year("Batman Begins (2005) {imdb-tt0372784}"), ("Batman Begins".into(), Some(2005)));
+    }
     #[test]
     fn credits_in_picture() {
         let frame = |dark: u8, text_px: usize| {

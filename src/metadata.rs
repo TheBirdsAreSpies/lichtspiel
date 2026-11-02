@@ -286,6 +286,49 @@ pub fn search(settings: &Settings, kind: ItemKind, title: &str, year: Option<u32
     Ok(list)
 }
 
+/// Which entry an id tag from a file or folder name ("{imdb-tt0068646}", see
+/// scanner::id_tag) points to, as (source, id) for `fetch`. With a TMDB key
+/// TMDB is used; without one shows go to TVmaze and movies to Wikidata.
+pub fn resolve_id(settings: &Settings, kind: ItemKind, tag_source: &str, tag_id: &str) -> Result<(String, String), String> {
+    let show = kind == ItemKind::Show;
+    let not_found = || format!("Nothing found online for {{{tag_source}-{tag_id}}}");
+    if !settings.tmdb_api_key.trim().is_empty() {
+        if tag_source == "tmdb" {
+            return Ok(("tmdb".into(), tag_id.into()));
+        }
+        let ext = if tag_source == "imdb" { "imdb_id" } else { "tvdb_id" };
+        let v = tmdb_get(settings, &format!("/find/{}?external_source={ext}", enc(tag_id)))?;
+        let list = if show { &v["tv_results"] } else { &v["movie_results"] };
+        return list[0]["id"].as_u64().map(|i| ("tmdb".to_string(), i.to_string())).ok_or_else(not_found);
+    }
+    if show {
+        // TVmaze looks shows up by IMDb and TheTVDB id; a TMDB id goes through Wikidata (P4983).
+        let tvmaze = match tag_source {
+            "imdb" => get_json(&format!("{TVMAZE}/lookup/shows?imdb={}", enc(tag_id)), None).ok().and_then(|v| v["id"].as_u64()).map(|i| i.to_string()),
+            "tvdb" => get_json(&format!("{TVMAZE}/lookup/shows?thetvdb={}", enc(tag_id)), None).ok().and_then(|v| v["id"].as_u64()).map(|i| i.to_string()),
+            _ => wd_value_by(&format!("wdt:P4983 \"{tag_id}\""), "P8600"),
+        };
+        return tvmaze.map(|i| ("tvmaze".to_string(), i)).ok_or_else(not_found);
+    }
+    // Movies: the Wikidata entry with that IMDb id (P345) or TMDB movie id (P4947).
+    let prop = match tag_source { "imdb" => "P345", "tmdb" => "P4947", _ => return Err("A TheTVDB id needs a TMDB key for movies".into()) };
+    wd_item_by(prop, tag_id).map(|q| ("wikidata".to_string(), q)).ok_or_else(not_found)
+}
+
+/// The Wikidata item (Q…) whose property `prop` has the value `value`.
+fn wd_item_by(prop: &str, value: &str) -> Option<String> {
+    let q = format!("SELECT ?item WHERE {{ ?item wdt:{prop} \"{value}\" }} LIMIT 1");
+    let v = get_json(&format!("https://query.wikidata.org/sparql?format=json&query={}", enc(&q)), None).ok()?;
+    Some(v["results"]["bindings"][0]["item"]["value"].as_str()?.rsplit('/').next()?.to_string())
+}
+
+/// The value of property `want` on the Wikidata item matching `cond` ("wdt:P… \"…\"").
+fn wd_value_by(cond: &str, want: &str) -> Option<String> {
+    let q = format!("SELECT ?v WHERE {{ ?item {cond} . ?item wdt:{want} ?v }} LIMIT 1");
+    let v = get_json(&format!("https://query.wikidata.org/sparql?format=json&query={}", enc(&q)), None).ok()?;
+    v["results"]["bindings"][0]["v"]["value"].as_str().map(String::from)
+}
+
 pub fn fetch(settings: &Settings, kind: ItemKind, source: &str, id: &str, seasons_wanted: &[u32]) -> Result<Details, String> {
     let mut d = match source {
         "tmdb" => tmdb_fetch(settings, kind, id, seasons_wanted),
