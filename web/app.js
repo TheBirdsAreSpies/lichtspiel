@@ -137,13 +137,99 @@ function posterCard(it, opts = {}) {
   if (it.type === 'season') title = seasonTitle(title);
   const unseen = it.leafCount ? it.leafCount - (it.viewedLeafCount || 0) : 0;
   const img = it.type === 'episode' && it.grandparentThumb && !opts.episodeThumb ? it.grandparentThumb : it.thumb;
-  return h('div', { class: 'card', onclick: () => (location.hash = '#/item/' + it.id) },
+  const seen = it.viewCount > 0 || (it.leafCount && unseen === 0);
+  // opts.pick(e, circle) = the library's multiple selection; true when it took the click.
+  return h('div', { class: seen ? 'card watched' : 'card', onclick: e => { if (!(opts.pick && opts.pick(e, false))) location.hash = '#/item/' + it.id; } },
     h('div', { class: 'poster' }, h('img', { src: withTok(img), loading: 'lazy', alt: '' }),
       prog > 0 ? h('div', { class: 'bar' }, h('i', { style: `width:${prog * 100}%` })) : null,
       it.leafCount && unseen > 0 ? h('span', { class: 'badge' }, unseen) : null,
-      (it.viewCount > 0 || (it.leafCount && unseen === 0)) ? h('span', { class: 'seen', title: t('Watched') }) : null),
+      seen ? h('span', { class: 'seen', title: t('Watched') }, '✓') : null,
+      opts.pick ? h('span', { class: 'pick', title: t('Select'), onclick: e => { e.stopPropagation(); opts.pick(e, true); } }) : null),
     h('div', { class: 't', title }, title), h('div', { class: 's' }, sub));
 }
+// Poster size in the grids (the slider in a library's bar), kept per browser.
+const CARD = { min: 100, max: 300, def: 140 };
+function cardSize(v) {
+  if (v === undefined) { try { v = Number(localStorage.getItem('cardSize')); } catch (e) { /* storage blocked */ } }
+  v = Math.max(CARD.min, Math.min(CARD.max, Number(v) || CARD.def));
+  document.documentElement.style.setProperty('--card', v + 'px');
+  return v;
+}
+cardSize();
+function sizeSlider() {
+  return h('label', { class: 'size', title: t('Poster size') }, h('span', { class: 'dim', style: 'font-size:11px' }, '▮'),
+    h('input', { type: 'range', min: CARD.min, max: CARD.max, step: 10, value: cardSize(), 'aria-label': t('Poster size'),
+      oninput: e => { const v = cardSize(e.target.value); try { localStorage.setItem('cardSize', String(v)); } catch (er) { /* private window */ } } }),
+    h('span', { class: 'dim', style: 'font-size:18px' }, '▮'));
+}
+// Several items picked at once in a library: click the circle on a poster (or Ctrl-click),
+// Shift-click picks everything in between. A bar at the bottom acts on all of them.
+function pickGrid(items, cardOpts) {
+  const picked = new Set(); let last = -1;
+  const grid = h('div', { class: 'grid' });
+  const count = h('b', {});
+  const ids = () => [...picked].map(i => items[i].id);
+  const playlistMenu = h('select', { onchange: async e => {
+    const v = e.target.value; e.target.value = '';
+    if (!v || !picked.size) return;
+    if (v === 'new') { const name = await ask(t('Name of the new playlist')); if (name) { await api('POST', '/playlists', { title: name, kind: 'manual', ids: ids() }); toast(t('Added to {name}', { name })); } return; }
+    const r = await api('POST', `/playlists/${v}/items`, { ids: ids() }); toast(r.added ? t('Added to playlist') : t('Already in that playlist'));
+  } }, h('option', { value: '' }, t('+ Add to playlist')));
+  let menuFilled = false;
+  const fillMenu = async () => {
+    if (menuFilled) return; menuFilled = true;
+    const pls = meta(await GET('/playlists?kind=manual&owner=me&sort=title'));
+    playlistMenu.append(...pls.map(p => h('option', { value: p.id }, p.title)), h('option', { value: 'new' }, t('New playlist…')));
+  };
+  const mark = watched => async () => {
+    const idx = [...picked];
+    await api('POST', `/:/${watched ? 'scrobble' : 'unscrobble'}?key=${ids().join(',')}`);
+    for (const i of idx) {
+      const it = items[i];
+      if (it.leafCount) it.viewedLeafCount = watched ? it.leafCount : 0;
+      it.viewCount = watched ? Math.max(1, it.viewCount || 0) : 0;
+      it.viewOffset = 0;
+      const fresh = card(i); cards[i].replaceWith(fresh); cards[i] = fresh;
+    }
+    toast(watched ? t('{n} marked as watched', { n: idx.length }) : t('{n} marked as unwatched', { n: idx.length }));
+    clear();
+  };
+  const bar = h('div', { class: 'pickbar' }, count,
+    h('button', { class: 'small', onclick: mark(true) }, t('Mark watched')),
+    h('button', { class: 'small', onclick: mark(false) }, t('Mark unwatched')),
+    playlistMenu,
+    h('button', { class: 'small', onclick: () => { items.forEach((_, i) => picked.add(i)); draw(); } }, t('Select all')),
+    h('button', { class: 'small', title: t('Clear selection'), onclick: () => clear() }, '✕'));
+  const draw = () => {
+    cards.forEach((c, i) => c.classList.toggle('picked', picked.has(i)));
+    grid.classList.toggle('picking', picked.size > 0);
+    count.textContent = picked.size === 1 ? t('1 selected') : t('{n} selected', { n: picked.size });
+    bar.classList.toggle('show', picked.size > 0);
+    if (picked.size) fillMenu();
+  };
+  const clear = () => { picked.clear(); last = -1; draw(); };
+  const toggle = (i, e) => {
+    if (e.shiftKey && last >= 0) { for (let k = Math.min(last, i); k <= Math.max(last, i); k++) picked.add(k); }
+    else if (picked.has(i)) picked.delete(i); else picked.add(i);
+    last = i; draw();
+  };
+  const card = i => posterCard(items[i], { ...cardOpts, pick: (e, circle) => {
+    if (!circle && !picked.size && !e.ctrlKey && !e.metaKey && !e.shiftKey) return false;
+    e.preventDefault(); toggle(i, e); return true;
+  } });
+  const cards = items.map((_, i) => card(i));
+  grid.append(...cards);
+  grid._clear = () => { if (!picked.size) return false; clear(); return true; };
+  // The bar sits outside the page, so it goes when the page changes.
+  document.querySelectorAll('.pickbar').forEach(b => b.remove());
+  document.body.append(bar);
+  return grid;
+}
+window.addEventListener('hashchange', () => document.querySelectorAll('.pickbar').forEach(b => b.remove()));
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || P.it || document.querySelector('.modal')) return;
+  const g = document.querySelector('.grid.picking'); if (g && g._clear) g._clear();
+});
 // Season names the scanner makes ("Season 2", "Specials") follow the language; others stay.
 const seasonTitle = s => /^(Season \d+|Specials)$/.test(s || '') ? t(s) : s;
 // A sideways row without a scrollbar: arrows on the left and right (shown on
@@ -243,11 +329,12 @@ async function sectionPage(id, qs) {
       text('from', t('Year from'), 95), text('to', t('Year to'), 85),
       sel('container', [['', t('Any file type')], ...['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'].map(c => [c, c.toUpperCase()])]),
       text('q', t('Filter by title'), 150),
+      sizeSlider(),
       h('button', { class: st.more ? 'small primary' : 'small', onclick: () => { st.more = st.more ? '' : '1'; go(); } }, active ? t('More filters ({n})', { n: active }) : t('More filters')),
       h('span', { class: 'grow' }),
       S.me.admin ? h('button', { onclick: async () => { await api('POST', `/library/sections/${id}/refresh`); toast(t('Scanning {name}', { name: sec.title })); pollActivity(); } }, t('Scan now')) : null),
     panel,
-    res.Metadata.length ? h('div', { class: 'grid' }, res.Metadata.map(i => posterCard(i, { episodeThumb: st.type === 'episode' }))) : h('div', { class: 'empty' }, t('Nothing matches these filters.')));
+    res.Metadata.length ? pickGrid(res.Metadata, { episodeThumb: st.type === 'episode' }) : h('div', { class: 'empty' }, t('Nothing matches these filters.')));
 }
 
 const itemCount = n => n === 1 ? t('1 item') : t('{n} items', { n });

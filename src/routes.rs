@@ -68,8 +68,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/video/transcode/sessions", "Admin: running HLS transcodes"),
     ("DELETE", "/video/transcode/sessions/{id}", "Stop a transcode"),
     ("POST", "/:/timeline", "Report progress ?ratingKey= &time=ms &state=playing|paused|stopped"),
-    ("POST", "/:/scrobble", "Mark watched ?key="),
-    ("POST", "/:/unscrobble", "Mark unwatched ?key="),
+    ("POST", "/:/scrobble", "Mark watched ?key= (several: key=1,2,3)"),
+    ("POST", "/:/unscrobble", "Mark unwatched ?key= (several: key=1,2,3)"),
     ("POST", "/:/rate", "Your rating ?key= &rating=0-10"),
     ("PUT", "/api/items/{id}/favorite", "{favorite: true|false}"),
     ("GET", "/hubs", "Home rows: continue watching, rows for the time of year (Halloween, Christmas, New Year's Eve, Valentine's Day; ?date=MM-DD tries a day), recently added movies and TV, pinned playlists"),
@@ -727,12 +727,14 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             timeline(app, &user, iid, time, &state, ctx.body_or_param("client").unwrap_or_default())
         }
         (_, [":", "scrobble"]) | (_, [":", "unscrobble"]) => {
-            let key = ctx.body_or_param("key").or(ctx.body_or_param("ratingKey"));
-            let Some(iid) = key.and_then(|k| k.parse::<u64>().ok()) else { return fail(400, "key is needed") };
+            // One item, or several at once: key=1,2,3 (the library's multiple selection).
+            let key = ctx.body_or_param("key").or(ctx.body_or_param("ratingKey")).unwrap_or_default();
+            let ids: Vec<u64> = key.split(',').filter_map(|k| k.trim().parse::<u64>().ok()).collect();
+            if ids.is_empty() { return fail(400, "key is needed") }
             let watched = segs[1] == "scrobble";
             let mut db = app.db.lock().unwrap();
-            if !db.items.contains_key(&iid) { return fail(404, "Not found"); }
-            for leaf in db.leaves(iid) {
+            if ids.iter().any(|i| !db.items.contains_key(i)) { return fail(404, "Not found"); }
+            for leaf in ids.iter().flat_map(|i| db.leaves(*i)).collect::<Vec<_>>() {
                 let v = db.view_mut(user.id, leaf);
                 if watched {
                     v.view_count = v.view_count.max(1);
@@ -745,7 +747,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             }
             drop(db);
             app.save();
-            if watched { app.fire("playback.watched", json!({"id": iid, "user": user.username, "manual": true})); }
+            if watched { for iid in ids { app.fire("playback.watched", json!({"id": iid, "user": user.username, "manual": true})); } }
             ok(json!({"ok": true}))
         }
         (_, [":", "rate"]) => {
