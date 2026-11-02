@@ -688,6 +688,9 @@ where
     });
 
     let seen: HashSet<String> = found.iter().map(|f| f.path.to_string_lossy().to_string()).collect();
+    // Shows and seasons of this library by what find_or_make matches on, so
+    // a new episode doesn't search the whole library twice.
+    let mut containers: Option<HashMap<ContainerKey, u64>> = None;
     for f in &found {
         let key = f.path.to_string_lossy().to_string();
         let changed = match known.get(&key) {
@@ -734,10 +737,11 @@ where
         with_db(&mut |db: &mut Db| {
             let t = now();
             let parent = if let Some((show_title, show_year)) = &parsed.show {
-                let show_id = find_or_make(db, section.id, ItemKind::Show, None, show_title, *show_year, None, show_poster.clone());
+                let cache = containers.get_or_insert_with(|| container_index(db, section.id));
+                let show_id = find_or_make(db, cache, section.id, ItemKind::Show, None, show_title, *show_year, None, show_poster.clone());
                 let season_no = parsed.season.unwrap_or(1);
                 let season_title = if season_no == 0 { "Specials".to_string() } else { format!("Season {season_no}") };
-                Some(find_or_make(db, section.id, ItemKind::Season, Some(show_id), &season_title, None, Some(season_no), None))
+                Some(find_or_make(db, cache, section.id, ItemKind::Season, Some(show_id), &season_title, None, Some(season_no), None))
             } else {
                 None
             };
@@ -806,19 +810,42 @@ where
             db.items.remove(id);
         }
         report.removed.extend(gone);
+        // Which items have children (all libraries: a child is found by its parent only).
+        let children = |db: &Db| {
+            let mut m: HashMap<u64, Vec<u64>> = HashMap::new();
+            for i in db.items.values() {
+                if let Some(p) = i.parent_id {
+                    m.entry(p).or_default().push(i.id);
+                }
+            }
+            m
+        };
         for _ in 0..2 {
+            let kids = children(db);
             let empty: Vec<u64> = db
                 .items
                 .values()
-                .filter(|i| i.section_id == section.id && !i.kind.playable())
-                .filter(|i| !db.items.values().any(|c| c.parent_id == Some(i.id)))
+                .filter(|i| i.section_id == section.id && !i.kind.playable() && !kids.contains_key(&i.id))
                 .map(|i| i.id)
                 .collect();
             for id in empty {
                 db.items.remove(&id);
             }
         }
-        // Shows and seasons take the newest episode's date, so they rise in "recently added".
+        // Shows and seasons take the newest episode's date, so they rise in
+        // "recently added", and the length of all their episodes.
+        let kids = children(db);
+        fn below(db: &Db, kids: &HashMap<u64, Vec<u64>>, id: u64, newest: &mut Option<u64>, total: &mut u64) {
+            for c in kids.get(&id).into_iter().flatten() {
+                let Some(it) = db.items.get(c) else { continue };
+                if it.kind.playable() {
+                    *newest = (*newest).max(Some(it.added_at));
+                    *total += it.duration_ms;
+                } else {
+                    below(db, kids, *c, newest, total);
+                }
+            }
+        }
         let containers: Vec<u64> = db
             .items
             .values()
@@ -826,14 +853,16 @@ where
             .map(|i| i.id)
             .collect();
         for id in containers {
-            let leaves = db.leaves(id);
-            let newest = leaves.iter().filter_map(|l| db.items.get(l)).map(|l| l.added_at).max();
-            let total: u64 = leaves.iter().filter_map(|l| db.items.get(l)).map(|l| l.duration_ms).sum();
-            if let Some(it) = db.items.get_mut(&id) {
-                if let Some(n) = newest {
-                    it.updated_at = it.updated_at.max(n);
+            let (mut newest, mut total) = (None, 0u64);
+            below(db, &kids, id, &mut newest, &mut total);
+            let Some(it) = db.items.get(&id) else { continue };
+            let updated = newest.map_or(it.updated_at, |n| it.updated_at.max(n));
+            // Only what really changed is marked for saving.
+            if updated != it.updated_at || total != it.duration_ms {
+                if let Some(it) = db.items.get_mut(&id) {
+                    it.updated_at = updated;
+                    it.duration_ms = total;
                 }
-                it.duration_ms = total;
             }
         }
         if let Some(s) = db.sections.iter_mut().find(|s| s.id == section.id) {
@@ -846,6 +875,7 @@ where
 #[allow(clippy::too_many_arguments)]
 fn find_or_make(
     db: &mut Db,
+    cache: &mut HashMap<ContainerKey, u64>,
     section: u64,
     kind: ItemKind,
     parent: Option<u64>,
@@ -855,7 +885,7 @@ fn find_or_make(
     poster: Option<String>,
 ) -> u64 {
     let key = sort_title(title);
-    let found = db.items.values().find(|i| {
+    let matches = |i: &Item| {
         i.section_id == section
             && i.kind == kind
             && i.parent_id == parent
@@ -863,8 +893,14 @@ fn find_or_make(
                 ItemKind::Season => i.index == index,
                 _ => i.sort_title == key,
             }
-    });
+    };
+    let ck = container_key(kind, parent, index, &key);
+    // The cached id is checked against the item itself (it may have been
+    // renamed or removed since); only then is the whole library searched.
+    let cached = cache.get(&ck).and_then(|id| db.items.get(id)).filter(|i| matches(i));
+    let found = cached.or_else(|| db.items.values().find(|i| matches(i)));
     if let Some(it) = found {
+        cache.insert(ck, it.id);
         let id = it.id;
         if it.poster.is_none() && poster.is_some() {
             if let Some(it) = db.items.get_mut(&id) {
@@ -901,7 +937,29 @@ fn find_or_make(
             locked: vec![],
         },
     );
+    cache.insert(ck, id);
     id
+}
+
+/// What find_or_make tells shows and seasons apart by: a season by its
+/// number under its show, anything else by its sort title.
+type ContainerKey = (&'static str, Option<u64>, Option<u32>, String);
+
+fn container_key(kind: ItemKind, parent: Option<u64>, index: Option<u32>, sort_title: &str) -> ContainerKey {
+    match kind {
+        ItemKind::Season => (kind.as_str(), parent, index, String::new()),
+        _ => (kind.as_str(), parent, None, sort_title.to_string()),
+    }
+}
+
+/// The shows and seasons of a library, by their [`ContainerKey`].
+fn container_index(db: &Db, section: u64) -> HashMap<ContainerKey, u64> {
+    let mut m = HashMap::new();
+    for i in db.items.values().filter(|i| i.section_id == section && !i.kind.playable()) {
+        // The first match wins, as in a search through the library.
+        m.entry(container_key(i.kind, i.parent_id, i.index, &i.sort_title)).or_insert(i.id);
+    }
+    m
 }
 
 #[cfg(test)]
