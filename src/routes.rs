@@ -215,7 +215,15 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             };
         }
         ("GET", []) | ("GET", ["web", ..]) | ("GET", ["index.html"]) => {
-            return bytes(200, "text/html; charset=utf-8", WEB_APP.as_bytes().to_vec());
+            // The server's own name goes in right away, so a reload does not show
+            // "Lichtspiel" first and swap it for the name a moment later.
+            let name = crate::server::display_name(&app.db.lock().unwrap().settings);
+            let esc = name.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+            let tab = if name == crate::server::APP_NAME { esc.clone() } else { format!("{esc} · {}", crate::server::APP_NAME) };
+            let page = WEB_APP
+                .replacen("<title>Lichtspiel</title>", &format!("<title>{tab}</title>"), 1)
+                .replacen("<span id=\"sname\">Lichtspiel</span>", &format!("<span id=\"sname\">{esc}</span>"), 1);
+            return bytes(200, "text/html; charset=utf-8", page.into_bytes());
         }
         ("GET", ["identity"]) => {
             let db = app.db.lock().unwrap();
