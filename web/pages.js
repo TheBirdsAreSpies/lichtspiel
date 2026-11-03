@@ -670,10 +670,23 @@ async function settingsPage(tab) {
         pref('subBg', '1', t('Subtitle background'), [['1', t('Dark box')], ['0', t('None')]], '', applySubStyle),
         pref('subLift', '0', t('Subtitle position'), [['0', t('Bottom')], ['2', t('Slightly higher')], ['4', t('Higher')], ['7', t('Much higher')]], t('Applies to the next subtitle line shown.'))));
   }
-  if (tab === 'watched') return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Watched indicator')), h('p', { class: 'dim' }, t('Not available yet.'))));
-  if (tab === 'manage') return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Manage')),
-    h('p', {}, h('a', { href: '#/libraries' }, t('Libraries'))), h('p', {}, h('a', { href: '#/users' }, t('Users & invites'))),
-    h('p', {}, h('a', { href: '#/plugins' }, t('Plugins'))), h('p', {}, h('a', { href: '#/api' }, t('API')))));
+  if (tab === 'watched') return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Watched indicator')),
+    formRow(t('Show the watched mark on'), h('select', { onchange: e => { store.set('watchedMark', e.target.value); toast(t('Saved')); } },
+      [['all', t('Movies and shows')], ['movies', t('Movies')], ['shows', t('Shows')], ['none', t('Nothing')]].map(([v, l]) => h('option', { value: v, selected: store.get('watchedMark', 'all') === v }, l))),
+      t('The check mark and dimming on posters of personal media. Saved in this browser.'))));
+  if (tab === 'manage') {
+    const size = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+    const link = (path, name) => h('a', { href: `${path}?token=${encodeURIComponent(S.token)}`, download: name }, h('button', {}, name === 'report' ? t('Download report') : t('Download library file')));
+    return set(h('h1', {}, t('Settings')), nav(tab),
+      h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Manage')),
+        h('p', {}, h('a', { href: '#/libraries' }, t('Libraries'))), h('p', {}, h('a', { href: '#/users' }, t('Users & invites'))),
+        h('p', {}, h('a', { href: '#/plugins' }, t('Plugins'))), h('p', {}, h('a', { href: '#/api' }, t('API')))),
+      h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Troubleshooting')),
+        formRow(t('Optimize library file'), h('button', { onclick: async () => { try { const x = await api('POST', '/api/maintenance/optimize'); toast(t('Optimized: {a} → {b}', { a: size(x.before), b: size(x.after) }), 5000); } catch (e) { toast(e.message, 5000); } } }, t('Optimize')), t('Compacts the library file. Safe to do while the server runs.')),
+        formRow(t('Clean up bundles'), h('button', { onclick: async () => { try { const x = await api('POST', '/api/maintenance/cleanup'); toast(t('{n} freed', { n: size(x.freed) }) + (x.transcodes_kept ? ' — ' + t('conversions in use were kept') : ''), 5000); } catch (e) { toast(e.message, 5000); } } }, t('Clean up')), t('Removes leftover conversions and cache files older than a week.')),
+        formRow(t('Report'), link('/api/maintenance/report', 'report'), t('Version, system, libraries, settings (without keys) and plugin messages as a text file.')),
+        formRow(t('Library file'), link('/api/maintenance/database', 'library'), t('A copy of the whole library: items, watch states, users and settings.'))));
+  }
   const [r, tc] = await Promise.all([GET('/api/settings'), GET('/api/transcoder')]);
   const s = r.settings;
   const f = {};

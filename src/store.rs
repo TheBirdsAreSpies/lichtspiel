@@ -343,6 +343,18 @@ impl Store {
     }
 
     /// Writes the changes in one transaction.
+    /// Compacts the file and refreshes the query statistics.
+    pub fn optimize(&mut self) -> Result<(), String> {
+        let e = |e: rusqlite::Error| e.to_string();
+        self.conn.execute_batch("pragma wal_checkpoint(truncate); vacuum; pragma optimize;").map_err(e)
+    }
+
+    /// A consistent copy of the library in one file.
+    pub fn copy_to(&mut self, dest: &Path) -> Result<(), String> {
+        let _ = std::fs::remove_file(dest);
+        self.conn.execute("vacuum into ?1", [dest.to_string_lossy().as_ref()]).map(|_| ()).map_err(|e| e.to_string())
+    }
+
     pub fn write(&mut self, ch: &Changes) -> rusqlite::Result<()> {
         let tx = self.conn.transaction()?;
         {

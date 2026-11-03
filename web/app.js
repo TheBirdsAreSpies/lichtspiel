@@ -189,7 +189,8 @@ function posterCard(it, opts = {}) {
   if (it.type === 'season') title = seasonTitle(title);
   const unseen = it.leafCount ? it.leafCount - (it.viewedLeafCount || 0) : 0;
   const img = it.type === 'episode' && it.grandparentThumb && !opts.episodeThumb ? it.grandparentThumb : it.thumb;
-  const seen = it.viewCount > 0 || (it.leafCount && unseen === 0);
+  const mark = store.get('watchedMark', 'all'); // Settings → Account → Watched indicator
+  const seen = (mark === 'all' || (mark === 'movies') === (it.type === 'movie')) && mark !== 'none' && (it.viewCount > 0 || (it.leafCount && unseen === 0));
   // opts.pick(e, circle) = the library's multiple selection; true when it took the click.
   // The "…" menu redraws the card after a change; opts.onReplace learns of the new one.
   const more = e => {

@@ -70,6 +70,10 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/library/metadata/{id}/analyze", "Admin: read the files again with ffprobe (streams, length; in the background)"),
     ("POST", "/library/metadata/{id}/optimize", "Admin: save a version every browser plays directly {quality: original|tv|mobile} (in the background; played instead of converting)"),
     ("DELETE", "/library/metadata/{id}/optimize", "Admin: delete the optimized versions"),
+    ("POST", "/api/maintenance/optimize", "Admin: compact the library file → {before, after} bytes"),
+    ("POST", "/api/maintenance/cleanup", "Admin: remove leftover conversions and old cache files → {freed} bytes"),
+    ("GET", "/api/maintenance/database", "Admin: download a copy of the library file"),
+    ("GET", "/api/maintenance/report", "Admin: download a text report (version, system, libraries, settings without keys, plugin messages)"),
     ("GET", "/api/reports", "Admin: reported problems ?open=1"),
     ("PUT", "/api/reports/{id}", "Admin: {resolved: true|false}"),
     ("DELETE", "/api/reports/{id}", "Admin: delete a report"),
@@ -976,6 +980,10 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["api", "downloads", did, "file"]) | ("GET", ["api", "downloads", did, "file", _]) => match id(did) { Some(d) => crate::downloads::file(app, ctx, &user, d), None => fail(404, "No such download") },
         ("POST", ["api", "downloads", did, "retry"]) => match id(did) { Some(d) => crate::downloads::retry(app, &user, d), None => fail(404, "No such download") },
         ("DELETE", ["api", "downloads", did]) => match id(did) { Some(d) => crate::downloads::remove(app, &user, d), None => fail(404, "No such download") },
+        ("POST", ["api", "maintenance", "optimize"]) => { if !admin { return need_admin(); } crate::maintenance::optimize(app) }
+        ("POST", ["api", "maintenance", "cleanup"]) => { if !admin { return need_admin(); } crate::maintenance::cleanup(app) }
+        ("GET", ["api", "maintenance", "database"]) => { if !admin { return need_admin(); } crate::maintenance::database(app) }
+        ("GET", ["api", "maintenance", "report"]) => { if !admin { return need_admin(); } crate::maintenance::report(app) }
         ("GET", ["api", "dashboard"]) => {
             if !user.admin { return fail(403, "Only an admin can do this"); }
             crate::dashboard::dashboard(app)
