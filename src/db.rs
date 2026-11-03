@@ -765,6 +765,12 @@ pub struct Settings {
     /// addresses count (see trusted_proxies). Leave empty unless you know why you need it.
     #[serde(default)]
     pub no_auth_networks: String,
+    /// Most conversions at once while the graphics chip converts (0 = no limit).
+    #[serde(default)]
+    pub max_gpu_transcodes: usize,
+    /// Most conversions at once while the processor converts (0 = no limit).
+    #[serde(default)]
+    pub max_cpu_transcodes: usize,
     /// When each scheduled task last ran (unix seconds).
     #[serde(default)]
     pub maintenance_last: std::collections::BTreeMap<String, u64>,
@@ -927,6 +933,8 @@ impl Default for Settings {
             optimize_weekly: true,
             cleanup_weekly: true,
             remote_max_mbps: 0,
+            max_gpu_transcodes: 0,
+            max_cpu_transcodes: 0,
             max_remote_plays: 0,
             paused_stop_minutes: 0,
             no_auth_networks: String::new(),

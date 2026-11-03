@@ -839,6 +839,8 @@ async function settingsPage(tab) {
       sel('h264_preset', t('Software encoder speed (x264 preset)'), r.h264_presets.map(p => [p, p])),
       inp('h264_minimum_crf', t('Best allowed x264 quality (minimum CRF)'), 'number', t('Lower = better picture and bigger stream. The quality the player asks for is mapped between this and 24.')),
       inp('max_transcodes', t('Maximum simultaneous video transcodes (0 = no limit)'), 'number'),
+      inp('max_gpu_transcodes', t('Maximum simultaneous video transcodes with the graphics chip (0 = no limit)'), 'number'),
+      inp('max_cpu_transcodes', t('Maximum simultaneous video transcodes with the processor (0 = no limit)'), 'number'),
       inp('hls_segment_seconds', t('HLS segment length (seconds)'), 'number'), inp('segmented_transcoder_timeout_seconds', t('Segmented transcoder timeout (seconds)'), 'number'),
       inp('ffmpeg', t('ffmpeg program')), inp('ffprobe', t('ffprobe program')),
     ],

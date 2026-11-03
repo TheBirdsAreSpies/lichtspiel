@@ -551,7 +551,13 @@ fn check_transcode_allowed(app: &Arc<App>, user: &User, method: &Method) -> Opti
         // Direct play isn't possible and this account may not convert.
         return Some(decision_fail(403, 2000));
     }
-    let max = app.settings().max_transcodes;
+    let settings = app.settings();
+    let mut max = settings.max_transcodes;
+    // Separate limits for the graphics chip and the processor (every conversion uses the same one).
+    if settings.max_gpu_transcodes > 0 || settings.max_cpu_transcodes > 0 {
+        let own = if transcode::effective_hw(&settings) == "none" { settings.max_cpu_transcodes } else { settings.max_gpu_transcodes };
+        if own > 0 && (max == 0 || own < max) { max = own; }
+    }
     if max > 0 && app.active_transcodes() >= max {
         return Some(decision_fail(503, 4010));
     }

@@ -7,6 +7,8 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Maximum simultaneous video transcodes with the graphics chip (0 = no limit)': 'Maximale gleichzeitige GPU-Videotranskodierungen (0 = keine Begrenzung)',
+    'Maximum simultaneous video transcodes with the processor (0 = no limit)': 'Maximale gleichzeitige CPU-Videotranskodierungen (0 = keine Begrenzung)',
     'Sign in automatically': 'Automatisch anmelden',
     'No: you are signed out when the browser is closed.': 'Nein: Du wirst abgemeldet, sobald der Browser geschlossen wird.',
     'That code was already used; wait for the next one': 'Dieser Code wurde schon verwendet; warte auf den nächsten',
