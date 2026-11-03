@@ -712,7 +712,34 @@ pub struct Settings {
     /// addresses or ranges (192.168.1.5, 172.16.0.0/12, ::1), separated by commas or spaces.
     #[serde(default)]
     pub trusted_proxies: String,
+    /// Maintenance window (local hours): scheduled tasks only start between these.
+    #[serde(default = "maint_start")]
+    pub maintenance_start_hour: u32,
+    #[serde(default = "maint_end")]
+    pub maintenance_end_hour: u32,
+    /// The browser's offset from UTC in minutes (sent when settings are saved), so hours are local.
+    #[serde(default)]
+    pub utc_offset_minutes: i64,
+    /// A copy of the library file every 3 days, the newest few kept.
+    #[serde(default = "yes")]
+    pub backup_enabled: bool,
+    /// Empty = the "backups" folder in the data folder.
+    #[serde(default)]
+    pub backup_dir: String,
+    #[serde(default = "backups_keep")]
+    pub backups_keep: u32,
+    #[serde(default = "yes")]
+    pub optimize_weekly: bool,
+    #[serde(default = "yes")]
+    pub cleanup_weekly: bool,
+    /// When each scheduled task last ran (unix seconds).
+    #[serde(default)]
+    pub maintenance_last: std::collections::BTreeMap<String, u64>,
 }
+
+fn maint_start() -> u32 { 2 }
+fn maint_end() -> u32 { 5 }
+fn backups_keep() -> u32 { 5 }
 
 fn keep_days() -> u64 {
     7
@@ -858,6 +885,15 @@ impl Default for Settings {
             download_keep_days: keep_days(),
             home_profiles: true,
             trusted_proxies: String::new(),
+            maintenance_start_hour: maint_start(),
+            maintenance_end_hour: maint_end(),
+            utc_offset_minutes: 0,
+            backup_enabled: true,
+            backup_dir: String::new(),
+            backups_keep: backups_keep(),
+            optimize_weekly: true,
+            cleanup_weekly: true,
+            maintenance_last: Default::default(),
         }
     }
 }

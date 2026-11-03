@@ -108,3 +108,60 @@ pub fn report(app: &App) -> Resp {
     let n = out.len();
     tiny_http::Response::new(tiny_http::StatusCode(200), h, Box::new(std::io::Cursor::new(out.into_bytes())) as Box<dyn std::io::Read + Send>, Some(n), None)
 }
+
+/// Is the local hour inside the window (it may wrap past midnight; equal hours = always)?
+pub fn in_window(now_unix: u64, offset_min: i64, start: u32, end: u32) -> bool {
+    let hour = (((now_unix as i64 + offset_min * 60) / 3600).rem_euclid(24)) as u32;
+    if start == end { return true; }
+    if start < end { hour >= start && hour < end } else { hour >= start || hour < end }
+}
+
+/// Saves a copy of the library file into the backup folder and keeps the newest few.
+pub fn backup(app: &App) -> Result<String, String> {
+    app.save();
+    let (dir, keep) = {
+        let db = app.db.lock().unwrap();
+        let d = db.settings.backup_dir.trim();
+        (if d.is_empty() { app.data_dir.join("backups") } else { std::path::PathBuf::from(d) }, db.settings.backups_keep.max(1) as usize)
+    };
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let name = format!("library-{}.db", crate::db::now());
+    let path = dir.join(&name);
+    app.store.lock().unwrap().copy_to(&path)?;
+    let mut old: Vec<_> = std::fs::read_dir(&dir).map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| n.starts_with("library-") && n.ends_with(".db")).collect()).unwrap_or_default();
+    old.sort();
+    while old.len() > keep { let _ = std::fs::remove_file(dir.join(old.remove(0))); }
+    Ok(path.display().to_string())
+}
+
+/// Runs once a minute: starts the tasks that are due, but only inside the maintenance window.
+pub fn tick(app: &App) {
+    let (s, now) = (app.settings(), crate::db::now());
+    if !in_window(now, s.utc_offset_minutes, s.maintenance_start_hour, s.maintenance_end_hour) { return; }
+    let due = |key: &str, days: u64| now.saturating_sub(s.maintenance_last.get(key).copied().unwrap_or(0)) >= days * 86400 - 3600;
+    let mut ran: Vec<&str> = vec![];
+    if s.backup_enabled && due("backup", 3) {
+        match backup(app) { Ok(_) => {} Err(e) => eprintln!("backup: {e}") }
+        ran.push("backup");
+    }
+    if s.optimize_weekly && due("optimize", 7) { let _ = optimize(app); ran.push("optimize"); }
+    if s.cleanup_weekly && due("cleanup", 7) { let _ = cleanup(app); ran.push("cleanup"); }
+    if !ran.is_empty() {
+        { let mut db = app.db.lock().unwrap(); for k in ran { db.settings.maintenance_last.insert(k.to_string(), now); } }
+        app.save();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::in_window;
+    #[test]
+    fn window_follows_local_hours() {
+        // 03:00 UTC with +60 min offset = 04:00 local
+        assert!(in_window(3 * 3600, 60, 2, 5));
+        assert!(!in_window(6 * 3600, 0, 2, 5));
+        // wraps past midnight: 22:00-04:00
+        assert!(in_window(23 * 3600, 0, 22, 4) && in_window(3 * 3600, 0, 22, 4) && !in_window(12 * 3600, 0, 22, 4));
+        assert!(in_window(12 * 3600, 0, 0, 0));
+    }
+}

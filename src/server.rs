@@ -1807,6 +1807,12 @@ pub fn start_background(app: &Arc<App>) {
             }
         }
     });
+    // Scheduled maintenance: backup, optimize, clean up (inside the maintenance window).
+    let a = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(60));
+        crate::maintenance::tick(&a);
+    });
     // Scheduled library scans.
     let a = app.clone();
     std::thread::spawn(move || {

@@ -642,7 +642,7 @@ function pluginPanels() {
 const SETTINGS_TABS = [
   ['Account', [['account', 'Account'], ['watched', 'Watched indicator']]],
   ['Web', [['web', 'General']]],
-  ['Settings', [['general', 'General'], ['network', 'Network settings'], ['library', 'Library settings'], ['metadata', 'Metadata agents'], ['transcoder', 'Transcoder']]],
+  ['Settings', [['general', 'General'], ['network', 'Network settings'], ['library', 'Library settings'], ['metadata', 'Metadata agents'], ['transcoder', 'Transcoder'], ['tasks', 'Scheduled tasks']]],
   ['Manage', [['manage', 'Libraries and users']]],
 ];
 async function settingsPage(tab) {
@@ -693,6 +693,7 @@ async function settingsPage(tab) {
   const inp = (k, label, type, help) => formRow(label, (f[k] = h('input', { type: type || 'text', value: s[k], style: 'width:100%;max-width:420px' })), help);
   const sel = (k, label, opts, help) => formRow(label, (f[k] = h('select', {}, opts.map(([v, l]) => h('option', { value: v, selected: String(s[k]) === String(v) }, l)))), help);
   const chk = (k, label, help) => formRow(label, (f[k] = h('input', { type: 'checkbox', checked: !!s[k] })), help);
+  const hours = Array.from({ length: 24 }, (_, i) => [i, String(i).padStart(2, '0') + ':00']);
   const panels = {
     general: [
       inp('server_name', t('Server name')),
@@ -729,6 +730,17 @@ async function settingsPage(tab) {
       inp('tmdb_api_key', t('TMDB API key (optional)'), 'text', t('Without a key, movies come from Wikipedia/Wikidata and TV shows from TVmaze. A free key from themoviedb.org gives better matches, cast photos and translated plots.')),
       inp('omdb_api_key', t('OMDb API key for IMDb plots (optional)'), 'text', t('With a free key from omdbapi.com, movie and show plots are taken from IMDb (in English) instead of Wikipedia. Press Refresh details on a movie, or change the language, to load them for movies you already have.')),
     ],
+    tasks: [
+      sel('maintenance_start_hour', t('Maintenance starts at'), hours, t('Scheduled tasks only start between these two times (your local time).')),
+      sel('maintenance_end_hour', t('Maintenance ends at'), hours),
+      chk('backup_enabled', t('Back up the library file every 3 days')),
+      inp('backup_dir', t('Backup folder'), 'text', t('Empty = the “backups” folder in the data folder.')),
+      inp('backups_keep', t('Backups to keep'), 'number'),
+      chk('optimize_weekly', t('Optimize the library file every week')),
+      chk('cleanup_weekly', t('Remove old cache files and leftover conversions every week')),
+      formRow('', h('button', { class: 'small', onclick: async () => { try { const x = await api('POST', '/api/maintenance/backup'); toast(t('Backup saved: {path}', { path: x.path }), 6000); } catch (e) { toast(e.message, 5000); } } }, t('Back up now')),
+        s.maintenance_last && s.maintenance_last.backup ? t('Last backup: {date}', { date: fmtDateTime(s.maintenance_last.backup) }) : t('No backup yet.')),
+    ],
     transcoder: [
       h('p', { class: tc.ffmpeg_found ? 'ok' : 'err' }, tc.ffmpeg_found ? t('ffmpeg found: {version}', { version: tc.ffmpeg_version }) : t('ffmpeg was not found. Install it (the Docker image includes it) or enter its path below; without it only browser-friendly files play.')),
       tc.hardware_encoders.length ? h('p', { class: 'dim' }, t('Hardware encoders in this ffmpeg: ') + tc.hardware_encoders.join(', ') + (tc.render_device ? ' · ' + t('/dev/dri/renderD128 present') : '')) : null,
@@ -743,11 +755,11 @@ async function settingsPage(tab) {
       inp('ffmpeg', t('ffmpeg program')), inp('ffprobe', t('ffprobe program')),
     ],
   };
-  const titles = { general: 'Server', network: 'Network settings', library: 'Library settings', metadata: 'Movie and show details', transcoder: 'Transcoder' };
+  const titles = { general: 'Server', network: 'Network settings', library: 'Library settings', metadata: 'Movie and show details', transcoder: 'Transcoder', tasks: 'Scheduled tasks' };
   set(h('h1', {}, t('Settings')), nav(tab),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t(titles[tab])), panels[tab]),
     h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: async () => {
-      const body = {};
+      const body = tab === 'tasks' ? { utc_offset_minutes: -new Date().getTimezoneOffset() } : {};
       for (const [k, el] of Object.entries(f)) body[k] = typeof s[k] === 'boolean' ? el.checked : typeof s[k] === 'number' ? Number(el.value) : el.value;
       try {
         const x = await api('PUT', '/api/settings', body);

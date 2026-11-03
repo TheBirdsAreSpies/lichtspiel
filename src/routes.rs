@@ -72,6 +72,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("DELETE", "/library/metadata/{id}/optimize", "Admin: delete the optimized versions"),
     ("POST", "/api/maintenance/optimize", "Admin: compact the library file → {before, after} bytes"),
     ("POST", "/api/maintenance/cleanup", "Admin: remove leftover conversions and old cache files → {freed} bytes"),
+    ("POST", "/api/maintenance/backup", "Admin: save a copy of the library file into the backup folder now → {path}"),
     ("GET", "/api/maintenance/database", "Admin: download a copy of the library file"),
     ("GET", "/api/maintenance/report", "Admin: download a text report (version, system, libraries, settings without keys, plugin messages)"),
     ("GET", "/api/reports", "Admin: reported problems ?open=1"),
@@ -145,7 +146,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/plugins/panels", "Switched-on plugins that give each person a panel in Settings (e.g. Connect Trakt)"),
     ("POST", "/api/plugins/{id}/call/{action}", "Run a plugin's own action (any JSON body is passed on); an answer with mark_watched marks those items watched for you"),
     ("GET", "/api/settings", "Admin: server settings"),
-    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, home_profiles, trusted_proxies, ffmpeg, ffprobe}"),
+    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, home_profiles, trusted_proxies, ffmpeg, ffprobe, maintenance_start_hour, maintenance_end_hour, utc_offset_minutes, backup_enabled, backup_dir, backups_keep, optimize_weekly, cleanup_weekly}"),
     ("GET", "/api/transcoder", "Admin: is ffmpeg there, which hardware encoders"),
     ("GET", "/api/browse", "Admin: list folders on the server ?path= (to pick library folders)"),
     ("POST", "/api/imdb-ratings/refresh", "Admin: download IMDb's ratings file now and update every rating (in the background; progress in /api/metadata/status)"),
@@ -982,6 +983,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("DELETE", ["api", "downloads", did]) => match id(did) { Some(d) => crate::downloads::remove(app, &user, d), None => fail(404, "No such download") },
         ("POST", ["api", "maintenance", "optimize"]) => { if !admin { return need_admin(); } crate::maintenance::optimize(app) }
         ("POST", ["api", "maintenance", "cleanup"]) => { if !admin { return need_admin(); } crate::maintenance::cleanup(app) }
+        ("POST", ["api", "maintenance", "backup"]) => { if !admin { return need_admin(); } match crate::maintenance::backup(app) { Ok(p) => ok(json!({"ok": true, "path": p})), Err(e) => fail(500, &e) } }
         ("GET", ["api", "maintenance", "database"]) => { if !admin { return need_admin(); } crate::maintenance::database(app) }
         ("GET", ["api", "maintenance", "report"]) => { if !admin { return need_admin(); } crate::maintenance::report(app) }
         ("GET", ["api", "dashboard"]) => {
