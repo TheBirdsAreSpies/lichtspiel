@@ -44,9 +44,42 @@ pub fn setup(app: &Arc<App>, ctx: &Ctx) -> Resp {
     js(201, json!({"token": tok, "user": u}))
 }
 
+/// Wrong sign-ins per user name and per address: (count, locked until). Five wrong ones for a
+/// user name (30 for an address, which may be a whole household) lock it for five minutes.
+static LOGIN_FAILS: std::sync::Mutex<Option<std::collections::HashMap<String, (u32, u64)>>> = std::sync::Mutex::new(None);
+/// The last code step accepted per user: a code works once.
+static USED_STEPS: std::sync::Mutex<Option<std::collections::HashMap<u64, u64>>> = std::sync::Mutex::new(None);
+
+fn login_keys(ctx: &Ctx, name: &str) -> [(String, u32); 2] {
+    [(format!("user:{}", name.trim().to_lowercase()), 5), (format!("ip:{}", ctx.remote.map(|a| a.to_string()).unwrap_or_default()), 30)]
+}
+
+/// Minutes left of a lock, if one of the keys is locked.
+fn login_locked(keys: &[(String, u32)]) -> Option<u64> {
+    let g = LOGIN_FAILS.lock().unwrap();
+    let map = g.as_ref()?;
+    keys.iter().filter_map(|(k, limit)| map.get(k).filter(|(n, until)| n >= limit && *until > now()).map(|(_, until)| (until - now()).div_ceil(60))).max()
+}
+
+fn login_failed(keys: &[(String, u32)]) {
+    let mut g = LOGIN_FAILS.lock().unwrap();
+    let map = g.get_or_insert_with(Default::default);
+    if map.len() > 10_000 { map.retain(|_, (_, until)| *until > now()); }
+    for (k, limit) in keys {
+        let e = map.entry(k.clone()).or_insert((0, 0));
+        if e.1 != 0 && e.1 <= now() { *e = (0, 0); }
+        e.0 += 1;
+        if e.0 >= *limit { e.1 = now() + PIN_LOCK_SECS; }
+    }
+}
+
 pub fn login(app: &Arc<App>, ctx: &Ctx) -> Resp {
     let username = ctx.body_or_param("username").unwrap_or_default();
     let password = ctx.body_or_param("password").unwrap_or_default();
+    let keys = login_keys(ctx, &username);
+    if let Some(min) = login_locked(&keys) {
+        return fail(429, &format!("Too many wrong attempts; try again in {min} minute(s)"));
+    }
     let found = {
         let db = app.db.lock().unwrap();
         db.users.iter().find(|u| u.username.eq_ignore_ascii_case(username.trim())).cloned()
@@ -58,11 +91,16 @@ pub fn login(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 if code.trim().is_empty() {
                     return js(401, json!({"error": "Enter the code from your authenticator app", "status": 401, "needs_code": true}));
                 }
-                if !crate::totp::verify(&u.totp_secret, &code, now()) {
+                let step = crate::totp::matching_step(&u.totp_secret, &code, now());
+                let fresh = step.is_some_and(|s| USED_STEPS.lock().unwrap().get_or_insert_with(Default::default).get(&u.id).is_none_or(|last| s > *last));
+                if !fresh {
                     std::thread::sleep(Duration::from_millis(400));
-                    return js(401, json!({"error": "That code is wrong", "status": 401, "needs_code": true}));
+                    login_failed(&keys);
+                    return js(401, json!({"error": if step.is_some() { "That code was already used; wait for the next one" } else { "That code is wrong" }, "status": 401, "needs_code": true}));
                 }
+                if let Some(s) = step { USED_STEPS.lock().unwrap().get_or_insert_with(Default::default).insert(u.id, s); }
             }
+            if let Some(m) = LOGIN_FAILS.lock().unwrap().as_mut() { m.remove(&keys[0].0); }
             let mut db = app.db.lock().unwrap();
             let tok = new_token(&mut db, u.id, &ctx.body_or_param("device").unwrap_or_default());
             drop(db);
@@ -71,6 +109,7 @@ pub fn login(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         _ => {
             std::thread::sleep(Duration::from_millis(400));
+            login_failed(&keys);
             fail(401, "User name or password is wrong")
         }
     }

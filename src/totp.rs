@@ -104,13 +104,18 @@ fn code_at(secret: &[u8], step: u64) -> u32 {
 
 /// Does `code` match now (or one step before or after, for clocks that differ a little)?
 pub fn verify(secret: &str, code: &str, now_unix: u64) -> bool {
+    matching_step(secret, code, now_unix).is_some()
+}
+
+/// The 30-second step the code belongs to (so a code can be refused the second time).
+pub fn matching_step(secret: &str, code: &str, now_unix: u64) -> Option<u64> {
     let code: String = code.chars().filter(|c| c.is_ascii_digit()).collect();
     if code.len() != 6 {
-        return false;
+        return None;
     }
-    let Some(key) = unbase32(secret) else { return false };
+    let key = unbase32(secret)?;
     let step = now_unix / 30;
-    (step.saturating_sub(1)..=step + 1).any(|s| format!("{:06}", code_at(&key, s)) == code)
+    (step.saturating_sub(1)..=step + 1).find(|s| format!("{:06}", code_at(&key, *s)) == code)
 }
 
 pub fn uri(issuer: &str, user: &str, secret: &str) -> String {
