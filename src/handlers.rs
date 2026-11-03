@@ -399,12 +399,13 @@ fn transcode_request_plain(ctx: &Ctx) -> transcode::Request {
     transcode::Request {
         max_height: h,
         max_kbps: kb,
-        force_transcode: ctx.param("transcode") == Some("1"),
+        force_transcode: ctx.param("transcode") == Some("1") || ctx.num("subtitle").is_some(),
         audio_stream: ctx.num("audio").map(|a| a as u32),
         extra_video: list("videoCodecs"),
         extra_containers: list("containers"),
         video_quality: ctx.num("videoQuality").map(|q| q.min(99) as u32),
         h264_level: ctx.param("level").and_then(transcode::parse_level),
+        burn_subtitle: ctx.num("subtitle").map(|n| n as u32),
     }
 }
 

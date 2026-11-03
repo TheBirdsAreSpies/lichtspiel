@@ -7,6 +7,11 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'This subtitle is made of pictures; turn on burning in under Settings → Web.': 'Dieser Untertitel besteht aus Bildern; schalte das Einbrennen unter Einstellungen → Web ein.',
+    'burned in': 'eingebrannt',
+    'Burn in subtitles': 'Untertitel einbrennen',
+    'Only picture-based (Blu-ray, DVD)': 'Nur grafische (Blu-ray, DVD)',
+    'Picture-based subtitles can’t be shown as text, so the server paints them into the video (the video is converted for that).': 'Grafische Untertitel lassen sich nicht als Text zeigen, deshalb brennt der Server sie ins Video ein (das Video wird dafür umgewandelt).',
     'Play theme music': 'Titelmusik spielen',
     'Plays a theme.mp3 from the movie’s or show’s folder quietly on its page. Browsers may need one click on the page first.': 'Spielt eine theme.mp3 aus dem Ordner des Films oder der Serie leise auf deren Seite. Browser brauchen eventuell zuerst einen Klick auf die Seite.',
     'Skip': 'Überspringen',

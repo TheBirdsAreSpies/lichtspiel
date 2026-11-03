@@ -684,6 +684,43 @@ pub const EXTRA_FOLDERS: &[(&str, &str)] = &[
     ("interviews", "interview"), ("scenes", "scene"), ("shorts", "short"), ("trailers", "trailer"),
     ("other", "other"), ("extras", "other"),
 ];
+/// The kind of extra an extras folder holds, by its folder name
+/// ("^trailer.?$", "^deleted.?(scene.?)?$", "^behind.?the.?scenes$",
+/// "^featurette.?$", "^interview.?$", "^scene.?$", "^short.?$", "^other.?$",
+/// "\bextras?\b"); ".?" is any one character, so "Trailers" and "Trailer_" count too.
+pub fn extra_folder_kind(name: &str) -> Option<&'static str> {
+    let n = name.trim().to_lowercase();
+    // The pattern's words in order, with at most one character of any kind
+    // between them (and after the last one when it ends in "").
+    fn m(s: &str, parts: &[&str]) -> bool {
+        let Some(rest) = s.strip_prefix(parts[0]) else { return false };
+        if parts.len() == 1 {
+            return rest.is_empty();
+        }
+        if m(rest, &parts[1..]) {
+            return true;
+        }
+        let mut c = rest.chars();
+        c.next().is_some() && m(c.as_str(), &parts[1..])
+    }
+    let found = [
+        (&["trailer", ""][..], "trailer"),
+        (&["deleted", ""][..], "deleted"),
+        (&["deleted", "scene", ""][..], "deleted"),
+        (&["behind", "the", "scenes"][..], "behindthescenes"),
+        (&["featurette", ""][..], "featurette"),
+        (&["interview", ""][..], "interview"),
+        (&["scene", ""][..], "scene"),
+        (&["short", ""][..], "short"),
+        (&["other", ""][..], "other"),
+    ];
+    if let Some((_, kind)) = found.iter().find(|(parts, _)| m(&n, parts)) {
+        return Some(kind);
+    }
+    // "\bextras?\b": the word "extra" or "extras" anywhere in the name.
+    n.split(|c: char| !c.is_alphanumeric()).any(|w| w == "extra" || w == "extras").then_some("other")
+}
+
 /// File name endings for extras next to the movie ("Avatar (2009)-trailer.mkv").
 pub const EXTRA_SUFFIXES: &[&str] = &["behindthescenes", "deleted", "featurette", "interview", "scene", "short", "trailer", "other"];
 
@@ -710,12 +747,17 @@ pub fn extra_of(root: &Path, path: &Path) -> Option<ExtraFile> {
     let stem = path.file_stem()?.to_string_lossy().to_string();
     for i in 1..comps.len().saturating_sub(1) {
         let name = comps[i].to_lowercase();
-        if let Some((_, kind)) = EXTRA_FOLDERS.iter().find(|(f, _)| *f == name) {
+        if let Some(kind) = EXTRA_FOLDERS.iter().find(|(f, _)| *f == name).map(|x| x.1).or_else(|| extra_folder_kind(&name)) {
             let movie_dir = comps[..i].iter().fold(root.to_path_buf(), |p, c| p.join(c));
             return Some(ExtraFile { kind, movie_dir, title: tidy(&stem), prefix: None });
         }
     }
     let lower = stem.to_lowercase();
+    // A file called just "trailer" or "movie-trailer" is the trailer of the
+    // movie in the same folder.
+    if lower == "trailer" || lower == "movie-trailer" {
+        return Some(ExtraFile { kind: "trailer", movie_dir: path.parent()?.to_path_buf(), title: "Trailer".into(), prefix: None });
+    }
     for kind in EXTRA_SUFFIXES {
         let Some(before) = lower.strip_suffix(kind).and_then(|b| b.strip_suffix('-')) else { continue };
         let prefix = stem[..before.len()].trim_end().to_string();

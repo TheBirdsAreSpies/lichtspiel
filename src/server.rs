@@ -952,7 +952,7 @@ impl App {
             vec![]
         };
         // Forget what an earlier match said before applying this one.
-        for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes", "originally_available", "metadata_status", "metadata_checked_at", "ratings", "imdb_ratings_checked", "unmatched_by_hand"] {
+        for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes", "originally_available", "metadata_status", "metadata_checked_at", "ratings", "imdb_ratings_checked", "unmatched_by_hand", "trailers"] {
             if it.locked.iter().any(|l| l == k) { continue; }
             it.extra.remove(k);
         }
@@ -1087,7 +1087,7 @@ impl App {
                 if can("studio") { it.studio.clear(); }
                 if can("genres") { it.genres.clear(); }
                 for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes",
-                    "originally_available", "ratings", "imdb_ratings_checked", "metadata_source", "metadata_id", "metadata_language", "matched_at",
+                    "originally_available", "ratings", "imdb_ratings_checked", "trailers", "metadata_source", "metadata_id", "metadata_language", "matched_at",
                     "pictures_version", "metadata_checked_at", "match_version"] {
                     if it.locked.iter().any(|l| l == k) { continue; }
                     it.extra.remove(k);

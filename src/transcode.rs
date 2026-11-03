@@ -63,6 +63,8 @@ pub struct Request {
     pub video_quality: Option<u32>,
     /// H.264 level the player asks for, ×10 (41 = 4.1); None = let the encoder pick.
     pub h264_level: Option<u32>,
+    /// Burn this picture-based subtitle (its number among the file's subtitle streams) into the video.
+    pub burn_subtitle: Option<u32>,
 }
 
 /// H.264 level limits (level×10, max frame size in macroblocks, max bitrate kbit/s, max buffer kbit).
@@ -321,6 +323,34 @@ fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32, 
     (pre, out)
 }
 
+/// Subtitles made of pictures (Blu-ray PGS, DVD, DVB): the browser can't show them as text.
+pub fn is_picture_subtitle(codec: &str) -> bool {
+    let c = codec.to_lowercase();
+    c.contains("pgs") || c.contains("dvd_sub") || c.contains("dvb_sub") || c.contains("xsub") || c.contains("vobsub") || c.contains("hdmv")
+}
+
+/// Burning a picture subtitle in needs the software converter and an overlay: the video filter chain
+/// (`-vf X`) becomes `-filter_complex "[0:v:0][0:s:N]overlay[ov];[ov]X[v]"`, and the video comes from `[v]`.
+/// Returns the settings to convert with (software when burning).
+fn burn_settings(settings: &Settings, file: &MediaFile, req: &Request) -> Option<(Settings, u32)> {
+    let n = req.burn_subtitle?;
+    let codec = file.streams.iter().filter(|s| s.kind == "subtitle").nth(n as usize).map(|s| s.codec.clone())?;
+    if !is_picture_subtitle(&codec) { return None; }
+    let mut st = settings.clone();
+    st.hw_accel = "none".into();
+    Some((st, n))
+}
+
+fn apply_burn(video: &mut Vec<String>, audio: &mut [String], n: u32) {
+    let Some(i) = video.iter().position(|a| a == "-vf") else { return };
+    let chain = video.get(i + 1).cloned().unwrap_or_default();
+    video.drain(i..=(i + 1).min(video.len() - 1));
+    video.extend(["-filter_complex".to_string(), format!("[0:v:0][0:s:{n}]overlay=eof_action=pass[ov];[ov]{chain}[v]")]);
+    for a in audio.iter_mut() {
+        if a == "0:v:0?" { *a = "[v]".into(); }
+    }
+}
+
 fn audio_args(file: &MediaFile, req: &Request) -> Vec<String> {
     let s = |x: &str| x.to_string();
     let mut v = vec![];
@@ -343,15 +373,18 @@ fn audio_args(file: &MediaFile, req: &Request) -> Vec<String> {
 /// ffmpeg arguments for a progressive, seekable-by-restart MP4 stream on stdout.
 pub fn progressive_args(settings: &Settings, item: &Item, file: &MediaFile, d: &Decision, req: &Request, offset_s: f64) -> Vec<String> {
     let _ = item;
-    let method = if d.method == Method::Direct { Method::Remux } else { d.method.clone() };
-    let (pre, video) = video_args(settings, d, &method, req.video_quality.unwrap_or(99), req.h264_level);
+    let burn = burn_settings(settings, file, req);
+    let method = if burn.is_some() { Method::Transcode } else if d.method == Method::Direct { Method::Remux } else { d.method.clone() };
+    let (pre, mut video) = video_args(burn.as_ref().map(|b| &b.0).unwrap_or(settings), d, &method, req.video_quality.unwrap_or(99), req.h264_level);
     let mut a: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into()];
     a.extend(pre);
     if offset_s > 0.0 {
         a.extend(["-ss".into(), format!("{offset_s:.3}")]);
     }
     a.extend(["-i".into(), file.path.clone()]);
-    a.extend(audio_args(file, req));
+    let mut audio = audio_args(file, req);
+    if let Some((_, n)) = &burn { apply_burn(&mut video, &mut audio, *n); }
+    a.extend(audio);
     a.extend(video);
     a.extend([
         "-sn".into(), "-dn".into(),
@@ -408,15 +441,18 @@ pub fn download_plan(file: &MediaFile, quality: &str) -> Option<(u32, u32)> {
 
 /// ffmpeg arguments for an HLS session written into `dir`.
 pub fn hls_args(settings: &Settings, file: &MediaFile, d: &Decision, req: &Request, offset_s: f64, dir: &str) -> Vec<String> {
-    let method = if d.method == Method::Direct { Method::Remux } else { d.method.clone() };
-    let (pre, video) = video_args(settings, d, &method, req.video_quality.unwrap_or(99), req.h264_level);
+    let burn = burn_settings(settings, file, req);
+    let method = if burn.is_some() { Method::Transcode } else if d.method == Method::Direct { Method::Remux } else { d.method.clone() };
+    let (pre, mut video) = video_args(burn.as_ref().map(|b| &b.0).unwrap_or(settings), d, &method, req.video_quality.unwrap_or(99), req.h264_level);
     let mut a: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into()];
     a.extend(pre);
     if offset_s > 0.0 {
         a.extend(["-ss".into(), format!("{offset_s:.3}")]);
     }
     a.extend(["-i".into(), file.path.clone()]);
-    a.extend(audio_args(file, req));
+    let mut audio = audio_args(file, req);
+    if let Some((_, n)) = &burn { apply_burn(&mut video, &mut audio, *n); }
+    a.extend(audio);
     a.extend(video);
     let seg = settings.hls_segment_seconds.max(2);
     a.extend([

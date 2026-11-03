@@ -402,14 +402,47 @@ fn tmdb_search(settings: &Settings, kind: ItemKind, title: &str, year: Option<u3
     }).collect())
 }
 
+/// The languages asked for with a title's videos: the library's language,
+/// then English (when "Also look for English trailers" is on), then videos without a language.
+fn video_langs(lang: &str) -> String {
+    let short = lang.split(['-', '_']).next().unwrap_or("en").to_lowercase();
+    if short == "en" { "en,null".into() } else { format!("{short},en,null") }
+}
+
+/// Order of the kinds of online videos (trailers first).
+pub const VIDEO_KINDS: &[&str] = &["Trailer", "Teaser", "Clip", "Featurette", "Behind the Scenes"];
+
+/// Online trailers and other videos of a movie or show: YouTube only (the
+/// web app plays them in place), red band trailers left out (unless
+/// "Allow red band trailers" is on), trailers first, the
+/// library's language before English, official ones before the rest, newest first.
+pub fn tmdb_trailers(results: &Value, lang: &str) -> Vec<Value> {
+    let short = lang.split(['-', '_']).next().unwrap_or("en").to_lowercase();
+    let mut v: Vec<&Value> = results.as_array().map(|a| a.iter().collect()).unwrap_or_default();
+    v.retain(|x| x["site"] == "YouTube" && x["key"].as_str().is_some_and(|k| !k.is_empty())
+        && VIDEO_KINDS.contains(&x["type"].as_str().unwrap_or(""))
+        && !x["name"].as_str().unwrap_or("").to_lowercase().contains("red band"));
+    let rank = |x: &Value| {
+        let kind = VIDEO_KINDS.iter().position(|k| *k == x["type"].as_str().unwrap_or("")).unwrap_or(9);
+        let l = x["iso_639_1"].as_str().unwrap_or("");
+        let lang_rank = if l == short { 0 } else if l == "en" { 1 } else { 2 };
+        (kind, lang_rank, !x["official"].as_bool().unwrap_or(false))
+    };
+    v.sort_by(|a, b| rank(a).cmp(&rank(b)).then(b["published_at"].as_str().unwrap_or("").cmp(a["published_at"].as_str().unwrap_or(""))));
+    v.into_iter().take(12).map(|x| json!({
+        "name": x["name"], "type": x["type"], "site": "YouTube", "key": x["key"], "language": x["iso_639_1"],
+        "official": x["official"].as_bool().unwrap_or(false), "source": "tmdb",
+    })).collect()
+}
+
 fn tmdb_fetch(settings: &Settings, kind: ItemKind, id: &str, seasons_wanted: &[u32]) -> Result<Details, String> {
     let lang = lang_of(settings);
     let reg = region(&lang);
     let show = kind == ItemKind::Show;
     let v = if show {
-        tmdb_get(settings, &format!("/tv/{id}?language={lang}&append_to_response=aggregate_credits,content_ratings,external_ids"))?
+        tmdb_get(settings, &format!("/tv/{id}?language={lang}&append_to_response=aggregate_credits,content_ratings,external_ids,videos&include_video_language={}", video_langs(&lang)))?
     } else {
-        tmdb_get(settings, &format!("/movie/{id}?language={lang}&append_to_response=credits,release_dates,external_ids"))?
+        tmdb_get(settings, &format!("/movie/{id}?language={lang}&append_to_response=credits,release_dates,external_ids,videos&include_video_language={}", video_langs(&lang)))?
     };
     let mut summary = v["overview"].as_str().unwrap_or("").to_string();
     if summary.is_empty() && lang != "en" {
@@ -467,6 +500,7 @@ fn tmdb_fetch(settings: &Settings, kind: ItemKind, id: &str, seasons_wanted: &[u
             "url": format!("https://www.themoviedb.org/{}/{id}", if show { "tv" } else { "movie" }), "as_of": crate::db::today()});
     }
     extra["ratings"] = ratings;
+    extra["trailers"] = json!(tmdb_trailers(&v["videos"]["results"], &lang));
     // Country, producer and collection, for the library filters.
     extra["countries"] = json!(names(&v["production_countries"], "name"));
     if !show {
@@ -1036,6 +1070,10 @@ fn wiki_fetch(settings: &Settings, q: &str) -> Result<Details, String> {
     });
     if let Some(y) = claim_year(&e) { meta["year"] = json!(y); }
     meta["extra"]["ratings"] = scores_from_entity(&e);
+    // Wikidata's "YouTube video ID" (P1651) on a film is usually its trailer.
+    if let Some(k) = claim_str(&e, "P1651").filter(|k| !k.is_empty()) {
+        meta["extra"]["trailers"] = json!([{"name": "Trailer", "type": "Trailer", "site": "YouTube", "key": k, "language": null, "official": false, "source": "wikidata"}]);
+    }
     Ok(Details { meta, poster_url: poster, ..Default::default() })
 }
 

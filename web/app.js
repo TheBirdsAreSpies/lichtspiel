@@ -941,6 +941,7 @@ async function play(it, startAt, queue, together) {
   const auds = ((it.Media && it.Media[0].streams) || []).filter(s => s.kind === 'audio');
   P.audios = auds;
   P.audio = '';
+  P.burn = null;
   P.subs = (it.Media && it.Media[0].subtitles) || [];
   // Preferred audio language (Settings → Web), when the file has it and it isn't the first track.
   const prefAudio = store.get('audioLang', '');
@@ -956,6 +957,8 @@ async function play(it, startAt, queue, together) {
     if (subMode === 'always' || foreign) P.sub = P.subs.findIndex(x => lang2(x.language) === prefSub);
   }
   P.lastSub = P.sub >= 0 ? P.sub : undefined;
+  // A picture-based subtitle (Blu-ray, DVD) can't be shown as text: it is burned into the video.
+  if (P.sub >= 0 && isPictureSub(P.subs[P.sub])) { if (store.get('burnSubs', 'auto') === 'auto') { P.burn = P.sub; } P.sub = -1; }
   P.credits = (it.credits || []).map(ms => ms / 1000);
   // A movie split over files: its parts play one after the other.
   P.parts = ((it.Media && it.Media[0].Part) || []).map(x => (x.duration || 0) / 1000);
@@ -1052,7 +1055,7 @@ async function load(at) {
   if (split()) while (P.part < P.parts.length - 1 && at >= partStart(P.part + 1)) P.part++;
   P.base = split() ? partStart(P.part) : 0;
   at = Math.max(0, at - P.base);
-  const extra = (P.audio ? `&audio=${P.audio}` : '') + (P.part ? `&part=${P.part}` : '');
+  const extra = (P.audio ? `&audio=${P.audio}` : '') + (P.part ? `&part=${P.part}` : '') + (P.burn !== null && P.burn !== undefined ? `&subtitle=${P.burn}` : '');
   const d = await GET(`/library/metadata/${it.id}/decision?quality=${q}${extra}`);
   if (P.it !== it) return;
   P.method = P.audio && d.method === 'direct' ? 'remux' : d.method;
@@ -1109,13 +1112,22 @@ function showSub() {
       if (up) for (const c of Array.from(tr.activeCues || [])) { c.snapToLines = true; c.line = -(1 + up); }
     }); }
   });
-  $('#psubs').classList.toggle('on', P.sub >= 0);
+  $('#psubs').classList.toggle('on', P.sub >= 0 || P.burn !== null);
   $('#psubs').hidden = !P.subs.length;
 }
+const PICTURE_SUBS = ['pgs', 'dvd_sub', 'dvb_sub', 'xsub', 'vobsub', 'hdmv'];
+const isPictureSub = s => !!s && s.embedded && PICTURE_SUBS.some(k => String(s.codec || '').toLowerCase().includes(k));
 function setSub(i) {
+  const before = P.burn;
+  P.burn = null;
+  if (i >= 0 && isPictureSub(P.subs[i])) {
+    if (store.get('burnSubs', 'auto') !== 'auto') { toast(t('This subtitle is made of pictures; turn on burning in under Settings → Web.'), 5000); i = -1; }
+    else { P.burn = i; P.sub = -1; P.lastSub = i; store.set('subLang', P.subs[i].language || P.subs[i].file || ''); showSub(); if (before !== P.burn) load(position()); return; }
+  }
   P.sub = i;
   if (i >= 0) { P.lastSub = i; store.set('subLang', P.subs[i].language || P.subs[i].file || ''); } else store.set('subLang', '');
   showSub();
+  if (before !== null) load(position()); // the burned-in picture has to go
 }
 function setSubSize(v) { P.subSize = v; store.set('subSize', v); player.style.setProperty('--cue', v + '%'); }
 setSubSize(P.subSize);
@@ -1346,8 +1358,8 @@ function playerMenu(name, page) {
   const back = title => h('div', { class: 'mh back', onclick: e => { e.stopPropagation(); playerMenu('settings', 'main'); } }, '‹ ' + title);
   let kids = [];
   if (name === 'subs') {
-    kids = [h('div', { class: 'mh' }, t('Subtitles')), choice(t('Off'), P.sub < 0, () => { setSub(-1); closePlayerMenu(); }),
-      ...P.subs.map((s, i) => choice(subName(s, i), P.sub === i, () => { setSub(i); closePlayerMenu(); })),
+    kids = [h('div', { class: 'mh' }, t('Subtitles')), choice(t('Off'), P.sub < 0 && P.burn === null, () => { setSub(-1); closePlayerMenu(); }),
+      ...P.subs.map((s, i) => choice(subName(s, i) + (isPictureSub(s) ? ' · ' + t('burned in') : ''), P.sub === i || P.burn === i, () => { setSub(i); closePlayerMenu(); })),
       h('div', { class: 'mh' }, t('Subtitle size')), ...SUB_SIZES.map(([v, l]) => choice(l, P.subSize === v, () => { setSubSize(v); playerMenu('subs', 'again'); }))];
   } else if (!page || page === 'main') {
     const q = QUALITIES.find(x => x[0] === P.quality), a = P.audios.find(x => String(x.index) === String(P.audio));

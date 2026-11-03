@@ -708,6 +708,7 @@ async function settingsPage(tab) {
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Audio and subtitles')),
         pref('audioLang', '', t('Preferred audio language'), langs, t('Used when a video has that audio track. Saved in this browser.')),
         pref('subPrefLang', '', t('Preferred subtitle language'), langs),
+        pref('burnSubs', 'auto', t('Burn in subtitles'), [['auto', t('Only picture-based (Blu-ray, DVD)')], ['never', t('Never')]], t('Picture-based subtitles can’t be shown as text, so the server paints them into the video (the video is converted for that).')),
         pref('subMode', 'manual', t('Subtitle mode'), [['manual', t('Manually selected')], ['foreign', t('Shown with foreign audio')], ['always', t('Always on')]], t('“Shown with foreign audio” turns subtitles on when the audio is not in your preferred subtitle language.')),
         pref('subSize', '100', t('Subtitle size'), SUB_SIZES, '', () => setSubSize(store.get('subSize', '100'))),
         formRow(t('Subtitle color'), color),
