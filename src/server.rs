@@ -2128,6 +2128,7 @@ pub fn playlist_json(db: &Db, user: &User, p: &Playlist) -> (Value, usize, u64) 
     let v = json!({
         "ratingKey": p.id.to_string(), "id": p.id, "key": format!("/playlists/{}/items", p.id),
         "type": "playlist", "playlistType": "video", "title": p.title, "summary": p.summary,
+    if let Some(l) = it.extra.get("loudness_lufs").filter(|v| v.is_number()) { o["loudness"] = l.clone(); }
         "smart": p.kind == PlaylistKind::Smart, "kind": kind,
         "default": p.is_default(), "defaultKey": p.default_key, "query": p.query,
         "leafCount": items.len(), "duration": duration, "thumb": thumb, "composite": thumb,

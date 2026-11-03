@@ -134,6 +134,50 @@ pub fn backup(app: &App) -> Result<String, String> {
     Ok(path.display().to_string())
 }
 
+/// The integrated loudness (LUFS) from the summary ffmpeg's ebur128 filter prints at the end.
+pub fn parse_loudness(log: &str) -> Option<f64> {
+    log.lines().rev().find_map(|l| {
+        let l = l.trim();
+        let rest = l.strip_prefix("I:")?;
+        rest.trim().strip_suffix("LUFS")?.trim().parse::<f64>().ok().filter(|v| v.is_finite() && *v > -120.0)
+    })
+}
+
+/// Measures the loudness of the first audio track (the first 20 minutes are enough).
+pub fn measure_loudness(ffmpeg: &str, path: &str) -> Result<f64, String> {
+    use std::process::{Command, Stdio};
+    let out = Command::new(ffmpeg)
+        .args(["-nostdin", "-hide_banner", "-t", "1200", "-i"]).arg(path)
+        .args(["-map", "0:a:0", "-vn", "-sn", "-dn", "-af", "ebur128", "-f", "null", "-"])
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped())
+        .output().map_err(|e| format!("ffmpeg could not be started: {e}"))?;
+    parse_loudness(&String::from_utf8_lossy(&out.stderr)).ok_or_else(|| "no loudness in the output of ffmpeg".to_string())
+}
+
+/// Measures up to `max` videos that have not been measured yet; returns how many were done.
+pub fn analyze_loudness(app: &App, max: usize) -> usize {
+    let ffmpeg = app.settings().ffmpeg;
+    let todo: Vec<(u64, String)> = {
+        let db = app.db.lock().unwrap();
+        db.items.values()
+            .filter(|i| i.kind.playable() && !i.extra.contains_key("loudness_lufs") && !i.extra.contains_key("loudness_failed"))
+            .filter_map(|i| i.file.as_ref().filter(|f| i.parts.is_empty() && std::path::Path::new(&f.path).is_file()).map(|f| (i.id, f.path.clone())))
+            .take(max).collect()
+    };
+    for (id, path) in &todo {
+        let r = measure_loudness(&ffmpeg, path);
+        let mut db = app.db.lock().unwrap();
+        if let Some(it) = db.items.get_mut(id) {
+            match r {
+                Ok(v) => { it.extra.insert("loudness_lufs".into(), json!((v * 10.0).round() / 10.0)); }
+                Err(_) => { it.extra.insert("loudness_failed".into(), json!(crate::db::now())); }
+            }
+        }
+    }
+    if !todo.is_empty() { app.save(); }
+    todo.len()
+}
+
 /// Runs once a minute: starts the tasks that are due, but only inside the maintenance window.
 pub fn tick(app: &std::sync::Arc<App>) {
     let (s, now) = (app.settings(), crate::db::now());
@@ -151,6 +195,7 @@ pub fn tick(app: &std::sync::Arc<App>) {
         for id in ids { app.scan_in_background(id); }
         ran.push("refresh");
     }
+    if s.analyze_loudness { analyze_loudness(app, 5); }
     if !ran.is_empty() {
         { let mut db = app.db.lock().unwrap(); for k in ran { db.settings.maintenance_last.insert(k.to_string(), now); } }
         app.save();
@@ -159,7 +204,35 @@ pub fn tick(app: &std::sync::Arc<App>) {
 
 #[cfg(test)]
 mod tests {
-    use super::in_window;
+    use super::{in_window, parse_loudness};
+    #[test]
+    fn loudness_of_a_real_file() {
+        let dir = std::env::temp_dir().join("lichtspiel-loudness-test");
+        let _ = std::fs::create_dir_all(&dir);
+        let mk = |name: &str, db: &str| {
+            let f = dir.join(name);
+            let ok = std::process::Command::new("ffmpeg").args(["-nostdin", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=6", "-af", &format!("volume={db}dB")]).arg(&f).status().map(|s| s.success()).unwrap_or(false);
+            ok.then(|| super::measure_loudness("ffmpeg", &f.to_string_lossy()))
+        };
+        let (Some(quiet), Some(loud)) = (mk("quiet.wav", "-20"), mk("loud.wav", "-6")) else { return }; // no ffmpeg here
+        let (q, l) = (quiet.unwrap(), loud.unwrap());
+        assert!((l - q - 14.0).abs() < 1.0, "quiet {q}, loud {l}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn loudness_is_read_from_the_summary() {
+        let log = "[Parsed_ebur128_0 @ 0x1] Summary:
+
+  Integrated loudness:
+    I:         -23.4 LUFS
+    Threshold: -33.4 LUFS
+
+  Loudness range:
+    LRA:         5.2 LU
+";
+        assert_eq!(parse_loudness(log), Some(-23.4));
+        assert_eq!(parse_loudness("nothing"), None);
+    }
     #[test]
     fn window_follows_local_hours() {
         // 03:00 UTC with +60 min offset = 04:00 local

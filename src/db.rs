@@ -768,6 +768,9 @@ pub struct Settings {
     #[serde(default)]
     pub paused_stop_minutes: u32,
     /// Addresses and networks that need no sign-in: they act as the first admin. Only believed
+    /// Measure how loud each video is (during maintenance) so the player can level the volume.
+    #[serde(default)]
+    pub analyze_loudness: bool,
     /// addresses count (see trusted_proxies). Leave empty unless you know why you need it.
     #[serde(default)]
     pub no_auth_networks: String,
@@ -984,6 +987,7 @@ pub struct Db {
     #[serde(default)]
     pub downloads: Vec<Download>,
 }
+            analyze_loudness: false,
 
 impl Default for Db {
     fn default() -> Self {

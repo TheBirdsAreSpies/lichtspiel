@@ -7,6 +7,10 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Level the volume': 'Lautstärke angleichen',
+    'Quiet and loud videos are brought to a similar loudness. Works for videos the server has measured (Settings → Scheduled tasks).': 'Leise und laute Videos werden auf eine ähnliche Lautstärke gebracht. Funktioniert bei Videos, die der Server gemessen hat (Einstellungen → Geplante Aufgaben).',
+    'Measure the loudness of videos': 'Lautstärke von Videos messen',
+    'Looks at 5 videos per minute inside the maintenance window until all are measured. Needs ffmpeg.': 'Misst im Wartungsfenster 5 Videos pro Minute, bis alle gemessen sind. Braucht ffmpeg.',
     'Address in the home network': 'Adresse im Heimnetz',
     'Where devices at home reach the server. For access from outside, forward this port on your router and enter the address people use below.': 'Hier erreichen Geräte zu Hause den Server. Für den Zugriff von außen leitest du diesen Port im Router weiter und trägst bei „Adresse in Einladungslinks“ die Adresse ein, die andere benutzen.',
     'Show new episodes on the home page as their show': 'Neue Folgen auf der Startseite als Serie zeigen',

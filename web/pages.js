@@ -704,6 +704,7 @@ async function settingsPage(tab) {
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Quality')),
         pref('quality', 'original', t('Video quality'), QUALITIES, t('The quality used when a video starts; you can still change it in the player. Saved in this browser.'), () => { P.quality = store.get('quality', 'original'); }),
         pref('keepSmall', '1', t('Play smaller videos in original quality'), [['1', t('Yes')], ['0', t('No')]], t('A video that is not bigger than the chosen quality is not converted.')),
+        pref('levelVolume', '0', t('Level the volume'), [['0', t('No')], ['1', t('Yes')]], t('Quiet and loud videos are brought to a similar loudness. Works for videos the server has measured (Settings → Scheduled tasks).')),
         pref('directPlay', '1', t('Direct play'), [['1', t('Allowed')], ['0', t('Always convert')]], t('Direct play sends the file as it is. Turn it off to always have the server convert, e.g. when a browser plays a file badly.'))),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Audio and subtitles')),
         pref('audioLang', '', t('Preferred audio language'), langs, t('Used when a video has that audio track. Saved in this browser.')),
@@ -837,6 +838,7 @@ async function settingsPage(tab) {
     ],
     transcoder: [
       h('p', { class: tc.ffmpeg_found ? 'ok' : 'err' }, tc.ffmpeg_found ? t('ffmpeg found: {version}', { version: tc.ffmpeg_version }) : t('ffmpeg was not found. Install it (the Docker image includes it) or enter its path below; without it only browser-friendly files play.')),
+      chk('analyze_loudness', t('Measure the loudness of videos'), t('Looks at 5 videos per minute inside the maintenance window until all are measured. Needs ffmpeg.')),
       tc.hardware_encoders.length ? h('p', { class: 'dim' }, t('Hardware encoders in this ffmpeg: ') + tc.hardware_encoders.join(', ') + (tc.render_device ? ' · ' + t('/dev/dri/renderD128 present') : '')) : null,
       h('p', { class: 'dim' }, t('Converting with: ') + (tc.hw_in_use === 'none' ? t('the processor (software)') : tc.hw_in_use)),
       sel('transcoder_quality', t('Transcoder quality'), [['automatic', t('Automatic')], ['speed', t('Prefer higher speed encoding')], ['quality', t('Prefer higher quality encoding')], ['max', t('Make my CPU hurt')]], t('Applies to Intel Quick Sync and NVIDIA hardware encoding.')),

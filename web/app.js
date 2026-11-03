@@ -1063,8 +1063,25 @@ const partStart = n => P.parts.slice(0, n).reduce((a, b) => a + b, 0);
 const split = () => P.parts.length > 1 && P.parts.every(d => d > 0);
 
 async function load(at) {
+// Settings -> Web -> level the volume: videos the server has measured are brought to about -23 LUFS.
+const LEVEL = { ctx: null, gain: null };
+function levelVolume(it) {
+  try {
+    const on = store.get('levelVolume', '0') === '1' && typeof it.loudness === 'number';
+    if (!on && !LEVEL.gain) return;
+    if (!LEVEL.gain) {
+      LEVEL.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      LEVEL.gain = LEVEL.ctx.createGain();
+      LEVEL.ctx.createMediaElementSource(video).connect(LEVEL.gain);
+      LEVEL.gain.connect(LEVEL.ctx.destination);
+    }
+    LEVEL.gain.gain.value = on ? Math.min(2, Math.max(0.3, Math.pow(10, (-23 - it.loudness) / 20))) : 1;
+    LEVEL.ctx.resume();
+  } catch (e) { /* the video just plays at its own volume */ }
+}
   const it = P.it;
   let q = P.quality;
+  levelVolume(it);
   // Settings → Web → quality: a video that is not bigger than the chosen quality plays as it is.
   const want = Number((/^(\d+)p/.exec(q) || [])[1]) || 0, have = Number(it.Media && it.Media[0] && it.Media[0].height) || 0;
   if (want && have && have <= want && store.get('keepSmall', '1') === '1') q = 'original';
