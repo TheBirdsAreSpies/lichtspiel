@@ -620,7 +620,7 @@ function accountPanel(dataDir) {
 }
 function accountPasswordPanel(dataDir) {
   return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Password')),
-    formRow(t('Language of this app'), langSelect(), t('Saved in this browser.')),
+    formRow(t('Language of this app'), langSelect(), t('Saved with your account.')),
     h('div', { style: 'margin-top:14px' }, h('button', { onclick: async () => { const old = await ask(t('Current password'), { password: true }); if (!old) return; const nw = await ask(t('New password (at least 6 characters)'), { password: true }); if (!nw) return; try { await api('POST', '/api/me/password', { old, new: nw }); toast(t('Password changed')); } catch (e) { toast(e.message); } } }, t('Change my password'))),
     dataDir ? h('p', { class: 'dim' }, t('Data folder on the server: '), h('code', {}, dataDir)) : null);
 }
@@ -706,18 +706,18 @@ async function settingsPage(tab) {
     const color = h('input', { type: 'color', value: store.get('subColor', '#ffffff'), onchange: e => { store.set('subColor', e.target.value); applySubStyle(); toast(t('Saved')); } });
     return set(h('h1', {}, t('Settings')), nav(tab),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Web')),
-        formRow(t('Language of this app'), langSelect(), t('Saved in this browser.')),
-        pref('timeFormat', 'auto', t('Time format'), [['auto', t('Automatic')], ['24', t('24-hour')], ['12', t('12-hour')]], t('Saved in this browser.')),
+        formRow(t('Language of this app'), langSelect(), t('Saved with your account.')),
+        pref('timeFormat', 'auto', t('Time format'), [['auto', t('Automatic')], ['24', t('24-hour')], ['12', t('12-hour')]], t('Saved with your account.')),
         pref('autoLogin', '1', t('Sign in automatically'), [['1', t('Yes')], ['0', t('No')]], t('No: you are signed out when the browser is closed.'), () => { saveToken(S.token); }),
         pref('levelVolume', '0', t('Level the volume'), [['0', t('No')], ['1', t('Yes')]], t('Quiet and loud videos are brought to a similar loudness. Works for videos the server has measured (Settings → Scheduled tasks).')),
         pref('themeMusic', '0', t('Play theme music'), [['0', t('No')], ['1', t('Yes')]], t('Plays a theme.mp3 from the movie’s or show’s folder quietly on its page. Browsers may need one click on the page first.'), () => { if (store.get('themeMusic', '0') !== '1') stopTheme(); }),
         pref('rememberTab', '0', t('Remember the last page'), [['0', t('No')], ['1', t('Yes')]], t('When the app is opened without an address, it continues where you left off.'))),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Quality')),
-        pref('quality', 'original', t('Video quality'), QUALITIES, t('The quality used when a video starts; you can still change it in the player. Saved in this browser.'), () => { P.quality = store.get('quality', 'original'); }),
+        pref('quality', 'original', t('Video quality'), QUALITIES, t('The quality used when a video starts; you can still change it in the player. Saved with your account.'), () => { P.quality = store.get('quality', 'original'); }),
         pref('keepSmall', '1', t('Play smaller videos in original quality'), [['1', t('Yes')], ['0', t('No')]], t('A video that is not bigger than the chosen quality is not converted.')),
         pref('directPlay', '1', t('Direct play'), [['1', t('Allowed')], ['0', t('Always convert')]], t('Direct play sends the file as it is. Turn it off to always have the server convert, e.g. when a browser plays a file badly.'))),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Audio and subtitles')),
-        pref('audioLang', '', t('Preferred audio language'), langs, t('Used when a video has that audio track. Saved in this browser.')),
+        pref('audioLang', '', t('Preferred audio language'), langs, t('Used when a video has that audio track. Saved with your account.')),
         pref('subPrefLang', '', t('Preferred subtitle language'), langs),
         pref('subSdh', 'any', t('Subtitles for the hard of hearing (SDH)'), [['any', t('No preference')], ['prefer', t('Prefer them')], ['avoid', t('Avoid them')]], t('SDH subtitles also describe sounds. Needs a library that was read again after this version.')),
         pref('subForced', '1', t('Forced subtitles'), [['1', t('Show with audio in the preferred language')], ['0', t('Off')]], t('Forced subtitles only translate foreign lines, e.g. when characters speak another language.')),
@@ -769,7 +769,7 @@ async function settingsPage(tab) {
   if (tab === 'watched') return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Watched indicator')),
     formRow(t('Show the watched mark on'), h('select', { onchange: e => { store.set('watchedMark', e.target.value); toast(t('Saved')); } },
       [['all', t('Movies and shows')], ['movies', t('Movies')], ['shows', t('Shows')], ['none', t('Nothing')]].map(([v, l]) => h('option', { value: v, selected: store.get('watchedMark', 'all') === v }, l))),
-      t('The check mark and dimming on posters of personal media. Saved in this browser.'))));
+      t('The check mark and dimming on posters of personal media. Saved with your account.'))));
   if (tab === 'manage') {
     const size = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
     const link = (path, name) => h('a', { href: `${path}?token=${encodeURIComponent(S.token)}`, download: name }, h('button', {}, name === 'report' ? t('Download report') : t('Download library file')));

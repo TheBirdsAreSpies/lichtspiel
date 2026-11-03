@@ -889,7 +889,8 @@ const store = {
 };
 // Audio, subtitle and watched-mark settings follow the account from browser to browser: they are kept on the
 // server too (POST /api/me/prefs); at start the server's values win, and values only this browser has go up once.
-const SYNCED = ['audioLang', 'subLang', 'subMode', 'subPrefLang', 'subSdh', 'subForced', 'subSize', 'subColor', 'subBg', 'subLift', 'burnSubs', 'watchedMark'];
+const SYNCED = ['audioLang', 'subLang', 'subMode', 'subPrefLang', 'subSdh', 'subForced', 'subSize', 'subColor', 'subBg', 'subLift', 'burnSubs', 'watchedMark',
+  'timeFormat', 'quality', 'directPlay', 'keepSmall', 'levelVolume', 'themeMusic', 'rememberTab', 'autoNext', 'timeLeft', 'speed'];
 let prefQueue = {}, prefTimer = null;
 function syncPref(k, v) {
   if (!S.me) return;
@@ -902,8 +903,16 @@ function pullPrefs() {
     if (k in server) { try { localStorage.setItem(k, server[k]); } catch (e) { /* none */ } }
     else { const v = store.get(k, null); if (v !== null) up[k] = v; }
   }
+  // The app's language travels along too (a changed language reloads the page once).
+  let mine = null; try { mine = localStorage.getItem('lang'); } catch (e) { /* none */ }
+  if (server.lang && server.lang !== mine && I18N.packs[server.lang]) { try { localStorage.setItem('lang', server.lang); } catch (e) { /* none */ } location.reload(); return; }
+  if (!server.lang && mine) up.lang = mine;
   if (Object.keys(up).length) api('POST', '/api/me/prefs', up).catch(() => {});
+  // What the player read when this file loaded.
+  P.quality = store.get('quality', 'original'); P.speed = Number(store.get('speed', 1)) || 1;
+  P.autoNext = store.get('autoNext', '1') === '1'; P.remaining = store.get('timeLeft', '0') === '1';
 }
+window.saveLangPref = code => (S.me ? api('POST', '/api/me/prefs', { lang: code }).catch(() => {}) : null);
 const P = { it: null, offset: 0, method: 'direct', timer: null, queue: [], quality: store.get('quality', 'original'), audio: '', speed: Number(store.get('speed', 1)) || 1,
   sub: -1, subSize: store.get('subSize', '100'), autoNext: store.get('autoNext', '1') === '1', remaining: store.get('timeLeft', '0') === '1',
   next: null, credits: [], intro: null, pending: null, pendingTimer: null, countdown: null, menu: null };

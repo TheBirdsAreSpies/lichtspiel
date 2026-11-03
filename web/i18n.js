@@ -8,7 +8,7 @@
 //   strings  – { 'English text': 'translation' }
 //   patterns – [[/regex on the English text/, 'replacement' or function], …] for
 //              text the server builds itself ("More by Christopher Nolan").
-// English needs no pack. The choice is kept per browser (localStorage "lang");
+// English needs no pack. The choice is kept in the account (and in localStorage "lang", which is read first);
 // without one the browser's own language is used when a pack for it exists.
 'use strict';
 const I18N = {
@@ -31,7 +31,7 @@ const I18N = {
   },
   set(code) {
     try { localStorage.setItem('lang', code); } catch (e) { /* storage blocked */ }
-    location.reload();
+    Promise.resolve(window.saveLangPref ? window.saveLangPref(code) : null).finally(() => location.reload());
   },
   // Elements in index.html carry data-t (their text), data-t-title / data-t-placeholder.
   applyStatic(root = document) {
