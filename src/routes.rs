@@ -146,7 +146,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/plugins/panels", "Switched-on plugins that give each person a panel in Settings (e.g. Connect Trakt)"),
     ("POST", "/api/plugins/{id}/call/{action}", "Run a plugin's own action (any JSON body is passed on); an answer with mark_watched marks those items watched for you"),
     ("GET", "/api/settings", "Admin: server settings"),
-    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, home_profiles, trusted_proxies, ffmpeg, ffprobe, maintenance_start_hour, maintenance_end_hour, utc_offset_minutes, backup_enabled, backup_dir, backups_keep, optimize_weekly, cleanup_weekly}"),
+    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, home_profiles, trusted_proxies, ffmpeg, ffprobe, remote_max_mbps (0 = no limit for people outside the home network), maintenance_start_hour, maintenance_end_hour, utc_offset_minutes, backup_enabled, backup_dir, backups_keep, optimize_weekly, cleanup_weekly}"),
     ("GET", "/api/transcoder", "Admin: is ffmpeg there, which hardware encoders"),
     ("GET", "/api/browse", "Admin: list folders on the server ?path= (to pick library folders)"),
     ("POST", "/api/imdb-ratings/refresh", "Admin: download IMDb's ratings file now and update every rating (in the background; progress in /api/metadata/status)"),
@@ -842,7 +842,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             // ?part=n: one file of a split movie (0 = the first).
             let part = ctx.num("part").map(|n| n as usize).unwrap_or(0);
             let Some(f) = it.part(part) else { return fail(404, "No such part") };
-            let req = transcode_request(ctx);
+            let req = transcode_request(app, ctx);
             let d = transcode::decide(f, &req);
             let allowed = user.allow_transcode.unwrap_or(true);
             let tok = ctx.token.as_ref().map(|t| format!("&token={t}")).unwrap_or_default();

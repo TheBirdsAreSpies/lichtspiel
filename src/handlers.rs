@@ -331,7 +331,18 @@ pub fn sessions(app: &Arc<App>, user: &User) -> Resp {
 
 // ---------------------------------------------------------------- streaming
 
-pub fn transcode_request(ctx: &Ctx) -> transcode::Request {
+/// The player's request, held to the bitrate limit for people outside the home network.
+pub fn transcode_request(app: &Arc<App>, ctx: &Ctx) -> transcode::Request {
+    let mut req = transcode_request_plain(ctx);
+    let limit = app.db.lock().unwrap().settings.remote_max_mbps;
+    if limit > 0 && !ctx.is_local() {
+        let cap = limit.saturating_mul(1000);
+        if req.max_kbps == 0 || req.max_kbps > cap { req.max_kbps = cap; }
+    }
+    req
+}
+
+fn transcode_request_plain(ctx: &Ctx) -> transcode::Request {
     let (mut h, mut kb) = transcode::quality(ctx.param("quality").unwrap_or("original"));
     if let Some(x) = ctx.num("maxVideoHeight").or(ctx.num("height")) { h = x as u32; }
     if let Some(x) = ctx.num("maxVideoBitrate").or(ctx.num("bitrate")) { kb = x as u32; }
@@ -495,7 +506,7 @@ fn check_transcode_allowed(app: &Arc<App>, user: &User, method: &Method) -> Opti
 /// Any container in, fragmented MP4 (H.264 + AAC) out, streamed while ffmpeg works.
 pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let (it, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
-    let req = transcode_request(ctx);
+    let req = transcode_request(app, ctx);
     let mut d = transcode::decide(&f, &req);
     if d.method == Method::Direct {
         d.method = Method::Remux;
@@ -526,7 +537,7 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
 
 pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let (it, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
-    let req = transcode_request(ctx);
+    let req = transcode_request(app, ctx);
     let mut d = transcode::decide(&f, &req);
     if d.method == Method::Direct {
         d.method = Method::Remux;

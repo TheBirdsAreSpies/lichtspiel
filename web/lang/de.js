@@ -7,6 +7,9 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Limit streams over the internet': 'Streambitrate über das Internet begrenzen',
+    '{n} Mbit/s': '{n} Mbit/s',
+    'Videos watched from outside your home network are converted to stay below this. Home network viewers are not limited.': 'Videos, die außerhalb deines Heimnetzwerks geschaut werden, werden umgewandelt, damit sie darunter bleiben. Im Heimnetzwerk gilt keine Begrenzung.',
     'Remember the last page': 'Reiter merken',
     'When the app is opened without an address, it continues where you left off.': 'Wenn die App ohne Adresse geöffnet wird, geht es dort weiter, wo du aufgehört hast.',
     'Video quality': 'Videoqualität',
