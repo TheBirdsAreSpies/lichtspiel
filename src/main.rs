@@ -154,6 +154,8 @@ fn main() {
             std::process::exit(2);
         }
     }
+    let _ = std::fs::create_dir_all(&opts.data);
+    log::init(&opts.data);
     let (app, http) = match start(&opts) {
         Ok(x) => x,
         Err(e) => {
