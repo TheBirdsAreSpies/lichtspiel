@@ -744,6 +744,16 @@ pub struct Settings {
     /// Where converted downloads are kept (empty = the "downloads" folder in the data folder).
     #[serde(default)]
     pub downloads_dir: String,
+    /// People outside the home network may play this many different videos at once (0 = no limit).
+    #[serde(default)]
+    pub max_remote_plays: u32,
+    /// A play that stays paused this many minutes is ended (0 = never).
+    #[serde(default)]
+    pub paused_stop_minutes: u32,
+    /// Addresses and networks that need no sign-in: they act as the first admin. Only believed
+    /// addresses count (see trusted_proxies). Leave empty unless you know why you need it.
+    #[serde(default)]
+    pub no_auth_networks: String,
     /// When each scheduled task last ran (unix seconds).
     #[serde(default)]
     pub maintenance_last: std::collections::BTreeMap<String, u64>,
@@ -906,6 +916,9 @@ impl Default for Settings {
             optimize_weekly: true,
             cleanup_weekly: true,
             remote_max_mbps: 0,
+            max_remote_plays: 0,
+            paused_stop_minutes: 0,
+            no_auth_networks: String::new(),
             transcoding_enabled: true,
             transcode_dir: String::new(),
             downloads_dir: String::new(),

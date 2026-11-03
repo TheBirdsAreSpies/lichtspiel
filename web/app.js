@@ -140,7 +140,7 @@ async function boot() {
   try { S.status = await GET('/api/status'); } catch (e) { S.status = null; }
   if (S.status) { $('#sname').textContent = S.status.name; document.title = S.status.name === 'Lichtspiel' ? 'Lichtspiel' : `${S.status.name} · Lichtspiel`; }
   S.me = null;
-  if (S.token) {
+  { // (Also without a token: networks set to need no sign-in are let in by the server.)
     try {
       S.me = await GET('/api/me');
       S.sections = (await GET('/library/sections')).MediaContainer.Directory;

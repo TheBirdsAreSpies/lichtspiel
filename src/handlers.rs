@@ -376,6 +376,11 @@ fn part_of(ctx: &Ctx) -> usize {
 
 /// Sends the original file, honouring Range requests so players can seek.
 /// The owner stopped this playback a moment ago: no new stream for it yet.
+fn remote_refusal(app: &Arc<App>, ctx: &Ctx, user: &User, item: u64) -> Option<Resp> {
+    if user.admin || !app.remote_plays_over_limit(user.id, item, !ctx.is_local()) { return None; }
+    Some(js(403, json!({"error": "You are already playing as many videos outside the home network as is allowed", "status": 403})))
+}
+
 fn stop_refusal(app: &Arc<App>, user: &User, item: u64) -> Option<Resp> {
     let m = app.stopped(user.id, item)?;
     Some(js(403, json!({"error": if m.is_empty() { "The owner stopped this playback".to_string() } else { m.clone() }, "status": 403, "stopped": true, "message": m})))
@@ -385,6 +390,7 @@ pub fn direct_file(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let (it, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
     if ctx.param("download") != Some("1") {
         if let Some(r) = stop_refusal(app, user, it.id) { return r; }
+        if let Some(r) = remote_refusal(app, ctx, user, it.id) { return r; }
     }
     if ctx.param("download") == Some("1") && !crate::downloads::may_download(user) { return decision_fail(403, 2011); }
     if ctx.param("optimized") == Some("1") {
@@ -512,6 +518,7 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
         d.method = Method::Remux;
     }
     if let Some(r) = stop_refusal(app, user, it.id) { return r; }
+    if let Some(r) = remote_refusal(app, ctx, user, it.id) { return r; }
     if let Some(r) = check_transcode_allowed(app, user, &d.method) {
         return r;
     }
@@ -543,6 +550,7 @@ pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
         d.method = Method::Remux;
     }
     if let Some(r) = stop_refusal(app, user, it.id) { return r; }
+    if let Some(r) = remote_refusal(app, ctx, user, it.id) { return r; }
     if let Some(r) = check_transcode_allowed(app, user, &d.method) {
         return r;
     }

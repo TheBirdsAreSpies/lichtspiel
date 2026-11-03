@@ -7,6 +7,14 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Videos per person outside the home network': 'Max. Wiedergaben per Fernzugriff pro Benutzer',
+    'How many different videos one person may play at once from outside. Admins are not limited.': 'Wie viele verschiedene Videos eine Person gleichzeitig von außerhalb abspielen darf. Admins sind nicht begrenzt.',
+    'End paused playback after': 'Pausierte Wiedergabe-Sitzungen abbrechen nach',
+    'Never': 'Nie',
+    '{n} minutes': '{n} Minuten',
+    'Frees the converter when someone leaves a video paused.': 'Gibt den Transcoder frei, wenn jemand ein Video pausiert lässt.',
+    'Networks that need no sign-in': 'Netzwerke, die keine Authentifizierung benötigen',
+    'Addresses or ranges separated by commas, e.g. 192.168.1.0/24. People coming from there are signed in as the first admin without a password — only add networks you fully trust. Needs a believed address (see trusted proxies).': 'Adressen oder Bereiche, durch Kommas getrennt, z. B. 192.168.1.0/24. Wer von dort kommt, ist ohne Passwort als erster Admin angemeldet – trage nur Netzwerke ein, denen du voll vertraust. Braucht eine vertrauenswürdige Adresse (siehe vertrauenswürdige Proxys).',
     'Allow video conversion': 'Video-Transcoding aktivieren',
     'Off: the server never converts video; only files the player can play as they are will play.': 'Aus: Der Server wandelt nie Videos um; es werden nur Dateien abgespielt, die der Player unverändert wiedergeben kann.',
     'Folder for live conversions': 'Temporäres Verzeichnis für den Transcoder',

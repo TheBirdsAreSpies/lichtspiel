@@ -1211,6 +1211,18 @@ impl App {
     }
 
     /// The owner's message when they stopped this playback lately (Some("") without one).
+    /// People outside the home network may play only so many different videos at once.
+    pub fn remote_plays_over_limit(&self, user: u64, item: u64, remote: bool) -> bool {
+        let limit = self.settings().max_remote_plays as usize;
+        if limit == 0 || !remote { return false; }
+        let mut items: HashSet<u64> = HashSet::new();
+        for p in self.playing.lock().unwrap().values().filter(|p| p.user_id == user && !p.viewer.local) { items.insert(p.item_id); }
+        for p in self.progressive.lock().unwrap().values().filter(|p| p.user_id == user && !p.viewer.local) { items.insert(p.item_id); }
+        for s in self.hls.lock().unwrap().values().filter(|s| s.user_id == user && !s.viewer.local) { items.insert(s.item_id); }
+        items.remove(&item);
+        items.len() >= limit
+    }
+
     pub fn stopped(&self, user: u64, item: u64) -> Option<String> {
         let mut map = self.stops.lock().unwrap();
         map.retain(|_, (_, at)| at.elapsed() < STOP_HOLD);
@@ -1821,6 +1833,16 @@ pub fn start_background(app: &Arc<App>) {
         std::thread::sleep(Duration::from_secs(60));
         crate::maintenance::tick(&a);
     });
+    // Plays that stay paused too long are ended.
+    let a = app.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(30));
+        let minutes = a.settings().paused_stop_minutes;
+        if minutes == 0 { continue; }
+        let stale: Vec<(u64, u64)> = a.playing.lock().unwrap().values()
+            .filter(|p| p.state == "paused" && p.updated.elapsed() >= Duration::from_secs(minutes as u64 * 60)).map(|p| (p.user_id, p.item_id)).collect();
+        for (u, i) in stale { a.stop_playback(u, i, "Playback was ended because it stayed paused for too long"); }
+    });
     // Scheduled library scans.
     let a = app.clone();
     std::thread::spawn(move || {
@@ -1915,8 +1937,12 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         let uid = db.tokens.iter().find(|x| &x.token == t)?.user_id;
         db.user(uid).cloned()
     });
-    let trusted = app.db.lock().unwrap().settings.trusted_proxies.clone();
+    let (trusted, no_auth) = { let db = app.db.lock().unwrap(); (db.settings.trusted_proxies.clone(), db.settings.no_auth_networks.clone()) };
     let (remote, remote_trusted) = client_address(req.remote_addr().map(|a| a.ip()), &xff, real_ip.as_deref(), &forwarded, &trusted);
+    // Networks that need no sign-in act as the first admin (only with an address that is believed).
+    let user = if user.is_none() && remote_trusted && !no_auth.trim().is_empty() && remote.is_some_and(|a| ip_in_list(&no_auth, a)) {
+        app.db.lock().unwrap().users.iter().filter(|u| u.admin).min_by_key(|u| u.id).cloned()
+    } else { user };
     let uid = user.as_ref().map(|u| u.id);
     if let Some(id) = uid {
         app.stats.saw(id, remote.map(|a| a.to_string()).unwrap_or_default(), &agent);

@@ -708,6 +708,9 @@ async function settingsPage(tab) {
       chk('home_profiles', t('Profiles on the sign-in screen'), t('Home profiles (set under Users & invites) can be picked with a tap and their PIN — only from your home network.')),
     ],
     network: [
+      sel('max_remote_plays', t('Videos per person outside the home network'), [[0, t('No limit')], ...[1, 2, 3, 4, 6].map(n => [n, String(n)])], t('How many different videos one person may play at once from outside. Admins are not limited.')),
+      sel('paused_stop_minutes', t('End paused playback after'), [[0, t('Never')], ...[5, 10, 15, 30, 60, 120].map(n => [n, t('{n} minutes', { n })])], t('Frees the converter when someone leaves a video paused.')),
+      inp('no_auth_networks', t('Networks that need no sign-in'), 'text', t('Addresses or ranges separated by commas, e.g. 192.168.1.0/24. People coming from there are signed in as the first admin without a password — only add networks you fully trust. Needs a believed address (see trusted proxies).')),
       sel('remote_max_mbps', t('Limit streams over the internet'), [[0, t('No limit')], ...[1, 2, 3, 4, 8, 10, 12, 20].map(n => [n, t('{n} Mbit/s', { n })])], t('Videos watched from outside your home network are converted to stay below this. Home network viewers are not limited.')),
       inp('trusted_proxies', t('Trusted reverse proxies'), 'text', [t('Addresses or ranges of your reverse proxy, e.g. 127.0.0.1 or 172.16.0.0/12 for Docker. Only then is the caller’s address it passes on (X-Forwarded-For) believed; requests passed on by any other machine never count as your home network.'), ' ',
         h('b', {}, r.your_address ? t('The server sees you as {ip} — {where}.', { ip: r.your_address, where: !r.your_address_trusted ? t('passed on by a proxy that isn’t trusted') : r.you_are_local ? t('home network') : t('from outside') }) : '')]),
