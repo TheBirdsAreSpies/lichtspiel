@@ -827,6 +827,15 @@ pub struct Settings {
     /// semicolons. Files the browser can play (MP4, WebM) work best.
     #[serde(default)]
     pub preroll_paths: String,
+    /// Leave articles off when sorting titles ("The Matrix" under M).
+    #[serde(default = "yes")]
+    pub sort_ignore_articles: bool,
+    /// The articles, separated by commas.
+    #[serde(default = "articles_default")]
+    pub sort_articles: String,
+    /// From this many movies of one film series a collection is made (2 = every series).
+    #[serde(default = "collection_min_default")]
+    pub collection_min_items: u32,
     /// "random" (one at random), "all" (all of them, in the order listed), "first" (always the first).
     #[serde(default = "preroll_mode_default")]
     pub preroll_mode: String,
@@ -962,6 +971,14 @@ pub const SCAN_INTERVALS: &[(u64, &str)] = &[
     (1440, "daily"),
 ];
 
+fn articles_default() -> String {
+    DEFAULT_ARTICLES.into()
+}
+
+fn collection_min_default() -> u32 {
+    2
+}
+
 fn preroll_mode_default() -> String {
     "random".into()
 }
@@ -1027,6 +1044,9 @@ impl Default for Settings {
             boost_dialogue: true,
             remote_max_mbps: 0,
             preroll_paths: String::new(),
+            sort_ignore_articles: true,
+            sort_articles: DEFAULT_ARTICLES.into(),
+            collection_min_items: 2,
             preroll_mode: preroll_mode_default(),
             max_gpu_transcodes: 0,
             max_cpu_transcodes: 0,
@@ -1369,14 +1389,27 @@ pub fn rule(field: &str, op: &str, value: Value) -> Rule {
     }
 }
 
+/// The articles left off when sorting titles (lower case, each with a trailing space); empty = none.
+static ARTICLES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+pub const DEFAULT_ARTICLES: &str = "the, a, an, der, die, das, ein, eine, le, la, les, el";
+
+/// Applies the settings "ignore articles when sorting" and their list.
+pub fn set_articles(enabled: bool, list: &str) {
+    let v: Vec<String> = if enabled {
+        list.split([',', ';', '\n']).map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty()).map(|a| format!("{a} ")).collect()
+    } else { vec![] };
+    if let Ok(mut a) = ARTICLES.lock() { *a = v; }
+}
+
 /// Lower-case title with leading articles moved off, for sorting.
 pub fn sort_title(title: &str) -> String {
     let t = title.trim();
     let lower = t.to_lowercase();
-    // The ArticleStrings default: "the,das,der,a,an,el,la".
-    for article in ["the ", "das ", "der ", "a ", "an ", "el ", "la "] {
-        if lower.starts_with(article) && lower.len() > article.len() {
-            return lower[article.len()..].to_string();
+    if let Ok(articles) = ARTICLES.lock() {
+        for article in articles.iter() {
+            if lower.starts_with(article.as_str()) && lower.len() > article.len() {
+                return lower[article.len()..].trim_start().to_string();
+            }
         }
     }
     lower

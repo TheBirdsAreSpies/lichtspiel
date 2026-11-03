@@ -811,8 +811,11 @@ async function settingsPage(tab) {
     ],
     library: [
       chk('group_recent_episodes', t('Show new episodes on the home page as their show')),
+      chk('sort_ignore_articles', t('Ignore articles when sorting titles'), t('“The Matrix” is then sorted under M.')),
+      inp('sort_articles', t('Articles to ignore'), 'text', t('Separated by commas, e.g. the, a, an, der, die, das. Sorting is updated when you save.')),
+      inp('collection_min_items', t('Make a collection from … movies'), 'number', t('A film series becomes a collection once this many of its movies are in the library (2 = every series).')),
       chk('scheduled_scans_enabled', t('Scan my library periodically'), t('Off by default. Turn it on so new files show up without pressing "Scan".')),
-      sel('scan_interval_minutes', t('Library scan interval'), r.scan_intervals.map(x => [x.minutes, t(x.label)])),
+      sel('scan_interval_minutes', t('Library scan interval'), r.scan_intervals.map(x => [x.minutes, t(x.label)]), t('Each scan only looks at folder listings and file dates, not inside the files; videos that did not change are not read again. Disks still wake up, so choose a long interval for a NAS that should sleep.')),
       sel('watched_threshold_percent', t('Video played threshold'), r.played_thresholds.map(p => [p, t('{n}%', { n: p })]), t('Set the progress percentage for video playback at which point the video will be marked as played.')),
       chk('watch_folders', t('Scan my library automatically'), t('Your library will be updated automatically when files are added to, changed in or removed from library folders (checked every 15 seconds; a file is added once copying has finished).')),
       sel('credits_markers_behaviour', t('Generate credits video markers'), r.credits_marker_choices.map(c => [c.value, t(c.label)]), t('Detects movie and episode end credits: from chapters named "Credits" in the file, otherwise by looking at the end of the video. Can also be switched off per library; the Libraries page has a "Detect credits" button to run it now.')),

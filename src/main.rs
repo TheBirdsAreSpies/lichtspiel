@@ -69,6 +69,7 @@ fn options(args: &[String]) -> Options {
 /// Opens the library and starts listening. Returns the app and the server.
 pub fn start(opts: &Options) -> Result<(Arc<server::App>, Arc<tiny_http::Server>), String> {
     let app = server::App::open(&opts.data);
+    { let st = app.settings(); db::set_articles(st.sort_ignore_articles, &st.sort_articles); }
     let want = opts.port.unwrap_or_else(|| app.db.lock().unwrap().settings.port);
     let http = tiny_http::Server::http(format!("{}:{}", opts.bind, want))
         .map_err(|e| format!("could not listen on {}:{} ({e}); is another server using that port?", opts.bind, want))?;

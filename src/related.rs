@@ -64,7 +64,8 @@ fn directory(sid: u64, title: &str, filter: &str, items: &[&Item]) -> Value {
 
 /// The library's collections (film series and the ones set by hand).
 pub fn collections(db: &Db, user: &User, sid: u64) -> Vec<Value> {
-    groups(db, user, sid, "collection").iter().map(|(t, its)| directory(sid, t, "collection", its)).collect()
+    let min = db.settings.collection_min_items.max(1) as usize;
+    groups(db, user, sid, "collection").iter().filter(|(_, its)| its.len() >= min).map(|(t, its)| directory(sid, t, "collection", its)).collect()
 }
 
 /// The library's categories: one per genre, with a picture.

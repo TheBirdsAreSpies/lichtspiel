@@ -59,6 +59,11 @@ pub const ITEM_FIELDS: &[(&str, &str, &str)] = &[
     ("unwatched_leaves", "bool", "Show or season with episodes not seen yet"),
     ("unmatched", "bool", "No online details found yet"),
     ("duplicate", "bool", "The same movie or episode is in the library more than once"),
+    ("audience_rating", "number", "Audience rating 0-10"),
+    ("critic_rating", "number", "Critics' rating 0-10 (Rotten Tomatoes or Metacritic)"),
+    ("release_date", "date", "Release date"),
+    ("progress", "number", "How far you watched it, percent"),
+    ("bitrate", "number", "Bitrate in kbit/s"),
     ("random", "sort", "Random order (sort only)"),
 ];
 
@@ -232,6 +237,38 @@ pub enum FieldValue {
     Bool(bool),
 }
 
+/// A review score from the stored online ratings, on a scale of 0 to 10 ("93%", "71/100", "7.4/10").
+fn score_of(item: &Item, sources: &[&str]) -> Option<f64> {
+    let ratings = item.extra.get("ratings")?;
+    sources.iter().find_map(|k| {
+        let raw = ratings.get(*k)?.get("score")?;
+        let text = raw.as_str().map(String::from).unwrap_or_else(|| raw.to_string());
+        let n: f64 = text.split(|c: char| !(c.is_ascii_digit() || c == '.')).find(|p| !p.is_empty())?.parse().ok()?;
+        Some(if text.contains('%') || text.contains("/100") { n / 10.0 } else { n })
+    })
+}
+
+/// Days since 1970-01-01 of a civil date.
+pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m as i64 + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
+}
+
+/// "2019-04-26" → unix seconds.
+pub fn date_to_unix(s: &str) -> Option<f64> {
+    let mut p = s.trim().split('-');
+    let y: i64 = p.next()?.parse().ok()?;
+    let m: u32 = p.next().and_then(|x| x.parse().ok()).unwrap_or(1);
+    let d: u32 = p.next().and_then(|x| x.get(..2).unwrap_or(x).parse().ok()).unwrap_or(1);
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) { return None; }
+    Some((days_from_civil(y, m, d) * 86400) as f64)
+}
+
 pub fn field(db: &Db, user_id: u64, item: &Item, name: &str) -> FieldValue {
     use FieldValue::*;
     let view = db.view(user_id, item.id);
@@ -284,6 +321,11 @@ pub fn field(db: &Db, user_id: u64, item: &Item, name: &str) -> FieldValue {
         "episode" => Num(if item.kind == ItemKind::Episode { item.index.map(|v| v as f64) } else { None }),
         "section" => Num(Some(item.section_id as f64)),
         "added_at" => Num(Some(item.added_at as f64)),
+        "audience_rating" => Num(item.rating.map(|r| r as f64).or_else(|| score_of(top(), &["imdb", "tmdb"]))),
+        "critic_rating" => Num(score_of(top(), &["rotten_tomatoes", "metacritic"])),
+        "release_date" => Num(item.extra.get("originally_available").and_then(|v| v.as_str()).and_then(date_to_unix).or(item.year.map(|y| (days_from_civil(y as i64, 1, 1) * 86400) as f64))),
+        "progress" => Num(if item.duration_ms > 0 && view.view_offset_ms > 0 { Some(view.view_offset_ms as f64 * 100.0 / item.duration_ms as f64) } else { None }),
+        "bitrate" => Num(file.map(|f| (f.bitrate / 1000) as f64).filter(|b| *b > 0.0)),
         "last_viewed_at" => Num(if view.last_viewed_at > 0 { Some(view.last_viewed_at as f64) } else { None }),
         "duration" => Num(Some(item.duration_ms as f64 / 60000.0)),
         "watched" => Bool(if item.kind.playable() { view.view_count > 0 } else { watched_container(db).0 }),
@@ -497,6 +539,16 @@ pub fn parse_sort(sort: &str) -> Vec<(String, bool)> {
                 Some(rest) => (rest, true),
                 None => (f, dir.eq_ignore_ascii_case("desc")),
             };
+            let f = match f {
+                "originally_available" | "originallyavailableat" => "release_date",
+                "rated" | "rating_by_you" => "user_rating",
+                "plays" | "play_count" | "viewcount" => "view_count",
+                "viewed" | "date_viewed" | "lastviewedat" => "last_viewed_at",
+                "addedat" | "date_added" => "added_at",
+                "audiencerating" => "audience_rating",
+                "criticrating" => "critic_rating",
+                other => other,
+            };
             (f.to_string(), desc)
         })
         .collect()
@@ -532,7 +584,17 @@ pub fn sort_items(db: &Db, user_id: u64, ids: &mut Vec<u64>, sort: &str) {
                     };
                     k(ia).cmp(&k(ib))
                 }
-                _ => cmp_field(&field(db, user_id, ia, f), &field(db, user_id, ib, f)),
+                _ => {
+                    let (x, y) = (field(db, user_id, ia, f), field(db, user_id, ib, f));
+                    // Items without a value come last, whichever way it is sorted.
+                    let empty = |v: &FieldValue| matches!(v, FieldValue::Num(None)) || matches!(v, FieldValue::Text(t) if t.iter().all(|s| s.is_empty()));
+                    match (empty(&x), empty(&y)) {
+                        (true, true) => Ordering::Equal,
+                        (true, false) => return Ordering::Greater,
+                        (false, true) => return Ordering::Less,
+                        _ => cmp_field(&x, &y),
+                    }
+                }
             };
             let o = if *desc { o.reverse() } else { o };
             if o != Ordering::Equal {
@@ -675,6 +737,10 @@ pub fn section_filters(db: &Db, user_id: u64, items: &[&Item], kind: ItemKind, o
         let mut values: Vec<(String, usize)> = counts.into_values().collect();
         if *f == "year" || *f == "decade" {
             values.reverse();
+        }
+        if *f == "collection" {
+            let min = db.settings.collection_min_items.max(1) as usize;
+            values.retain(|(_, n)| *n >= min);
         }
         if *f == "video_resolution" {
             let rank = |v: &str| RESOLUTION_STEPS.iter().position(|x| x.2 == v).unwrap_or(RESOLUTION_STEPS.len());

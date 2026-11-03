@@ -81,6 +81,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/log/download", "Admin: the whole server log as a text file (?gz=1: compressed)"),
     ("GET", "/api/maintenance/backups", "Admin: the backups in the backup folder → {backups: [{name, size, time}]}, newest first"),
     ("POST", "/api/maintenance/restore", "Admin: put a backup back in place of the library {name}; the current state is backed up first"),
+    ("GET", "/library/sections/{id}/firstCharacter", "How many items start with each letter, with the filters of /all → {Directory: [{key, size}]}"),
     ("POST", "/api/maintenance/backup", "Admin: save a copy of the library file into the backup folder now → {path}"),
     ("GET", "/api/maintenance/database", "Admin: download a copy of the library file"),
     ("GET", "/api/maintenance/report", "Admin: download a text report (version, system, libraries, settings without keys, plugin messages)"),
@@ -688,25 +689,31 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let db = app.db.lock().unwrap();
             let Some(sec) = db.sections.iter().find(|s| s.id == sid) else { return fail(404, "No such library") };
             if !db.can_see_section(&user, sid) { return fail(403, "You don't have access to this library"); }
-            let kind = ctx.param("type").and_then(ItemKind::parse).unwrap_or(match sec.kind {
-                SectionKind::Movie => ItemKind::Movie,
-                SectionKind::Show => ItemKind::Show,
-                SectionKind::Other => ItemKind::Video,
-            });
-            let rules: Vec<db::Rule> = query::rules_from_params(&ctx.params).into_iter().filter(|r| r.field != "kind").collect();
-            let any = ctx.param("match") == Some("any");
-            let text = ctx.param("q").or(ctx.param("query")).map(|s| s.to_lowercase());
-            let mut ids: Vec<u64> = db.items.values()
-                .filter(|i| i.section_id == sid && i.kind == kind)
-                .filter(|i| query::matches_all(&db, user.id, i, &rules, !any))
-                .filter(|i| text.as_ref().is_none_or(|t| i.title.to_lowercase().contains(t)))
-                .map(|i| i.id)
-                .collect();
+            let (kind, mut ids) = section_ids(&db, &user, sid, sec, ctx);
             let default_sort = if kind == ItemKind::Episode { "episode_order" } else { "title" };
             query::sort_items(&db, user.id, &mut ids, ctx.param("sort").filter(|s| !s.is_empty()).unwrap_or(default_sort));
             let (pg, off) = page(ctx, &ids);
             let list: Vec<Value> = pg.iter().filter_map(|i| db.items.get(i)).map(|i| item_json(&db, &user, i, false)).collect();
             ok(container(list, ids.len(), off, json!({"librarySectionID": sid, "librarySectionTitle": sec.name, "viewGroup": kind.as_str()})))
+        }
+        // How many items start with each letter (everything else under "#"), in A-Z order, for the
+        // alphabet at the side of the library; the same filters as /all.
+        ("GET", ["library", "sections", sid, "firstCharacter"]) => {
+            let Some(sid) = id(sid) else { return fail(404, "No such library") };
+            let db = app.db.lock().unwrap();
+            let Some(sec) = db.sections.iter().find(|s| s.id == sid) else { return fail(404, "No such library") };
+            if !db.can_see_section(&user, sid) { return fail(403, "You don't have access to this library"); }
+            let (_, ids) = section_ids(&db, &user, sid, sec, ctx);
+            let mut counts: std::collections::BTreeMap<char, usize> = Default::default();
+            for i in ids.iter().filter_map(|i| db.items.get(i)) {
+                let c = i.sort_title.chars().next().map(|c| c.to_uppercase().next().unwrap_or(c)).filter(|c| c.is_alphabetic()).unwrap_or('#');
+                let c = match c { 'Ä' => 'A', 'Ö' => 'O', 'Ü' => 'U', c => c };
+                *counts.entry(c).or_default() += 1;
+            }
+            // "#" first, as the titles sort: digits before letters.
+            let mut list: Vec<(char, usize)> = counts.into_iter().collect();
+            list.sort_by_key(|(c, _)| if *c == '#' { (0, *c) } else { (1, *c) });
+            ok(json!({"MediaContainer": {"size": list.len(), "total": ids.len(), "Directory": list.iter().map(|(c, n)| json!({"key": c.to_string(), "size": n})).collect::<Vec<_>>()}}))
         }
         ("GET", ["library", "sections", sid, "genres"]) => {
             let Some(sid) = id(sid) else { return fail(404, "No such library") };
@@ -1633,7 +1640,13 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                     let language_changed = s.metadata_language != db.settings.metadata_language;
                     let imdb_plots = !s.omdb_api_key.trim().is_empty() && s.omdb_api_key.trim() != db.settings.omdb_api_key.trim();
                     if !db::LANGUAGES.iter().any(|x| x.0 == s.metadata_language) { return fail(400, "Unknown language"); }
+                    let articles_changed = s.sort_ignore_articles != db.settings.sort_ignore_articles || s.sort_articles != db.settings.sort_articles;
                     db.settings = s;
+                    if articles_changed {
+                        db::set_articles(db.settings.sort_ignore_articles, &db.settings.sort_articles);
+                        let ids: Vec<u64> = db.items.keys().copied().collect();
+                        for id in ids { if let Some(it) = db.items.get_mut(&id) { it.sort_title = db::sort_title(&it.title); } }
+                    }
                     let mut v = json!({"ok": true, "settings": db.settings});
                     if port_changed || db.settings.port != *app.port.lock().unwrap() {
                         v["restart_needed"] = json!(format!("The server keeps using port {} until it is restarted (a --port option or LICHTSPIEL_PORT still wins over this setting).", *app.port.lock().unwrap()));
@@ -1664,6 +1677,30 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         _ => fail(404, &format!("Unknown address {} {}. See GET /api/docs", ctx.method, ctx.path)),
     }
+}
+
+/// The items of a library page: the kind asked for, the simple filters from the address, the
+/// advanced rules (`rules` = a JSON list of {field, op, value}, `rmatch=any` for "any of") and the title search.
+fn section_ids(db: &db::Db, user: &db::User, sid: u64, sec: &db::Section, ctx: &Ctx) -> (ItemKind, Vec<u64>) {
+    let kind = ctx.param("type").and_then(ItemKind::parse).unwrap_or(match sec.kind {
+        SectionKind::Movie => ItemKind::Movie,
+        SectionKind::Show => ItemKind::Show,
+        SectionKind::Other => ItemKind::Video,
+    });
+    let params: Vec<(String, String)> = ctx.params.iter().filter(|(k, _)| k != "rules" && k != "rmatch").cloned().collect();
+    let rules: Vec<db::Rule> = query::rules_from_params(&params).into_iter().filter(|r| r.field != "kind").collect();
+    let any = ctx.param("match") == Some("any");
+    let advanced: Vec<db::Rule> = ctx.param("rules").and_then(|r| serde_json::from_str::<Vec<db::Rule>>(r).ok()).unwrap_or_default();
+    let adv_any = ctx.param("rmatch") == Some("any");
+    let text = ctx.param("q").or(ctx.param("query")).map(|s| s.to_lowercase());
+    let ids = db.items.values()
+        .filter(|i| i.section_id == sid && i.kind == kind)
+        .filter(|i| query::matches_all(db, user.id, i, &rules, !any))
+        .filter(|i| query::matches_all(db, user.id, i, &advanced, !adv_any))
+        .filter(|i| text.as_ref().is_none_or(|t| i.title.to_lowercase().contains(t)))
+        .map(|i| i.id)
+        .collect();
+    (kind, ids)
 }
 
 fn list_resp(db: &db::Db, user: &db::User, ids: &[u64], hub: &str) -> Resp {
