@@ -710,7 +710,7 @@ async function settingsPage(tab) {
         pref('timeFormat', 'auto', t('Time format'), [['auto', t('Automatic')], ['24', t('24-hour')], ['12', t('12-hour')]], t('Saved with your account.')),
         pref('autoLogin', '1', t('Sign in automatically'), [['1', t('Yes')], ['0', t('No')]], t('No: you are signed out when the browser is closed.'), () => { saveToken(S.token); }),
         pref('levelVolume', '0', t('Level the volume'), [['0', t('No')], ['1', t('Yes')]], t('Quiet and loud videos are brought to a similar loudness. Works for videos the server has measured (Settings → Scheduled tasks).')),
-        pref('themeMusic', '0', t('Play theme music'), [['0', t('No')], ['1', t('Yes')]], t('Plays a theme.mp3 from the movie’s or show’s folder quietly on its page. Browsers may need one click on the page first.'), () => { if (store.get('themeMusic', '0') !== '1') stopTheme(); }),
+        pref('themeMusic', '1', t('Play theme music'), [['0', t('No')], ['1', t('Yes')]], t('Plays theme music quietly on a movie’s or show’s page: a theme.mp3 from its folder, or for shows the online theme. Browsers may need one click on the page first.'), () => { if (store.get('themeMusic', '1') !== '1') stopTheme(); }),
         pref('rememberTab', '0', t('Remember the last page'), [['0', t('No')], ['1', t('Yes')]], t('When the app is opened without an address, it continues where you left off.'))),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Quality')),
         pref('quality', 'original', t('Video quality'), QUALITIES, t('The quality used when a video starts; you can still change it in the player. Saved with your account.'), () => { P.quality = store.get('quality', 'original'); }),
@@ -836,6 +836,7 @@ async function settingsPage(tab) {
       inp('omdb_api_key', t('OMDb API key for IMDb plots (optional)'), 'text', t('With a free key from omdbapi.com, movie and show plots are taken from IMDb (in English) instead of Wikipedia. Press Refresh details on a movie, or change the language, to load them for movies you already have.')),
     ],
     extras: [
+      chk('theme_music_online', t('Download show theme music'), t('When a show’s folder has no theme.mp3, its theme is downloaded from an online list by its TheTVDB number the first time its page opens, and kept on the server.')),
       chk('trailers_online', t('Show online trailers'), t('Trailers and other videos from TMDB or Wikidata, played from YouTube. Nothing is downloaded.')),
       chk('trailers_english', t('Also look for English trailers'), t('When there is none in the library language. Applies to titles when their details are loaded again.')),
       chk('trailers_red_band', t('Allow red band trailers'), t('Trailers marked for adults only. Applies to titles when their details are loaded again.')),
@@ -1519,18 +1520,30 @@ async function editSection(sec) {
 }
 
 // ---------- router
-// Theme music (Settings -> Web): plays quietly on a movie's or show's page when the folder has a theme.mp3.
+// Theme music (Settings -> Web): plays once, at half volume, on a movie's or show's page, and
+// fades out over 2 seconds when leaving the page or near its end.
 const THEME = { audio: null, id: null };
+const THEME_VOLUME = 0.5, THEME_FADE_MS = 2000;
+function fadeTheme(a) {
+  if (a.fading) return;
+  a.fading = true;
+  const from = a.volume, start = Date.now();
+  const step = () => {
+    const v = from - from * (Date.now() - start) / THEME_FADE_MS;
+    if (v > 0) { a.volume = v; setTimeout(step, 100); } else { a.pause(); a.removeAttribute('src'); }
+  };
+  step();
+}
 function stopTheme() {
   const a = THEME.audio; THEME.audio = null; THEME.id = null;
-  if (!a) return;
-  const fade = setInterval(() => { a.volume = Math.max(0, a.volume - 0.08); if (a.volume <= 0.01) { clearInterval(fade); a.pause(); a.removeAttribute('src'); } }, 40);
+  if (a) fadeTheme(a);
 }
 function startTheme(id) {
-  if (store.get('themeMusic', '0') !== '1' || player.style.display === 'flex') return;
+  if (store.get('themeMusic', '1') !== '1' || player.style.display === 'flex') return;
   if (THEME.id === id) return;
   const a = new Audio(withTok(`/library/metadata/${id}/theme`));
-  a.loop = true; a.volume = 0.35;
+  a.volume = THEME_VOLUME;
+  a.addEventListener('timeupdate', () => { if (a.duration - a.currentTime <= THEME_FADE_MS / 1000) fadeTheme(a); });
   THEME.audio = a; THEME.id = id;
   a.addEventListener('error', () => { if (THEME.audio === a) { THEME.audio = null; THEME.id = null; } });
   a.play().catch(() => { /* the browser wants a click first, or there is no theme */ });

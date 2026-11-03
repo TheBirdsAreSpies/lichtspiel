@@ -1158,8 +1158,31 @@ pub fn preroll_file(app: &Arc<App>, ctx: &Ctx, n: &str) -> Resp {
 
 const THEME_EXTS: [&str; 6] = ["mp3", "m4a", "flac", "ogg", "wav", "aac"];
 
-/// A "theme.mp3" (or .m4a, .flac, .ogg, .wav, .aac) next to the first file of a movie or show, or one
-/// folder above it (a show's season folder).
+/// A theme file's name without its ending, by the pattern
+/// "theme-?[0-9]?": theme, theme1, theme-1.
+fn is_theme_name(stem: &str) -> bool {
+    let s = stem.to_lowercase();
+    let Some(rest) = s.strip_prefix("theme") else { return false };
+    let rest = rest.strip_prefix('-').unwrap_or(rest);
+    rest.is_empty() || (rest.len() == 1 && rest.as_bytes()[0].is_ascii_digit())
+}
+
+/// The first theme file in a folder, by name.
+fn theme_in(dir: &Path) -> Option<PathBuf> {
+    let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.file_stem().is_some_and(|s| is_theme_name(&s.to_string_lossy())))
+        .filter(|p| p.extension().is_some_and(|e| THEME_EXTS.contains(&e.to_string_lossy().to_lowercase().as_str())))
+        .filter(|p| p.is_file())
+        .collect();
+    found.sort();
+    found.into_iter().next()
+}
+
+/// A theme file (theme.mp3, theme-1.mp3 …, also .m4a, .flac, .ogg, .wav, .aac) next to the first
+/// file of a movie or show, or one folder above it (a show's season folder).
 fn theme_path(db: &Db, item: &Item) -> Option<PathBuf> {
     let first = db.leaves(item.id).first().and_then(|id| db.items.get(id))?;
     let file = first.file.as_ref().map(|f| f.path.clone()).or_else(|| first.all_files().first().map(|f| f.path.clone()))?;
@@ -1168,23 +1191,50 @@ fn theme_path(db: &Db, item: &Item) -> Option<PathBuf> {
     if first.kind != ItemKind::Movie {
         if let Some(up) = dir.parent() { dirs.push(up); }
     }
-    for d in dirs {
-        for e in THEME_EXTS {
-            let p = d.join(format!("theme.{e}"));
-            if p.is_file() { return Some(p); }
-        }
-    }
-    None
+    dirs.into_iter().find_map(theme_in)
 }
 
-/// GET /library/metadata/{id}/theme: the theme music of a movie or show, with seeking.
+/// A show's theme music from the online list, kept in data/themes. A show the
+/// list doesn't have is asked for again after a day (the helper
+/// caches its requests for a day: the setting).
+fn online_theme(app: &Arc<App>, tvdb: u64) -> Option<PathBuf> {
+    let dir = app.data_dir.join("themes");
+    let file = dir.join(format!("{tvdb}.mp3"));
+    if file.is_file() {
+        return Some(file);
+    }
+    let none = dir.join(format!("{tvdb}.none"));
+    let age = std::fs::metadata(&none).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
+    if age.is_some_and(|a| a.as_secs() < 86400) {
+        return None;
+    }
+    match crate::metadata::download_theme(tvdb, &file) {
+        Ok(true) => Some(file),
+        Ok(false) => {
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::fs::write(&none, b"");
+            None
+        }
+        Err(e) => {
+            eprintln!("theme music for TheTVDB {tvdb}: {e}");
+            None
+        }
+    }
+}
+
+/// GET /library/metadata/{id}/theme: the theme music of a movie or show, with
+/// seeking: a theme file in its folder first, else (shows) the online list.
 pub fn theme(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
-    let path = {
+    let (local, tvdb) = {
         let db = app.db.lock().unwrap();
         let Some(it) = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)).filter(|i| db.can_see_item(user, i)) else { return fail(404, "Not found") };
         if !matches!(it.kind, ItemKind::Movie | ItemKind::Show) { return fail(404, "No theme music"); }
-        match theme_path(&db, it) { Some(p) => p, None => return fail(404, "No theme music") }
+        let id = &it.extra.get("ids").cloned().unwrap_or_default()["tvdb"];
+        let tvdb = id.as_u64().or_else(|| id.as_str().and_then(|s| s.parse().ok()));
+        (theme_path(&db, it), tvdb.filter(|_| it.kind == ItemKind::Show && db.settings.theme_music_online))
     };
+    // Downloaded outside the lock: the rest of the server keeps running meanwhile.
+    let Some(path) = local.or_else(|| tvdb.and_then(|t| online_theme(app, t))) else { return fail(404, "No theme music") };
     let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let ctype = match ext.as_str() { "mp3" => "audio/mpeg", "m4a" | "aac" => "audio/mp4", "flac" => "audio/flac", "ogg" => "audio/ogg", _ => "audio/wav" };
     serve_file_as(&path, ctype, ctx.range.as_deref(), None)
@@ -1209,4 +1259,27 @@ pub fn chapters(app: &Arc<App>, user: &User, iid: &str) -> Resp {
         json!({"index": i + 1, "title": title, "start": s, "end": e, "thumb": format!("/library/parts/{}/frame?exact=1&t={at}", it.id)})
     }).collect();
     ok(json!({"MediaContainer": {"size": out.len(), "Chapter": out}}))
+}
+
+#[cfg(test)]
+mod theme_tests {
+    use super::is_theme_name;
+
+    /// Asks the real online list, so it only runs on request (cargo test -- --ignored).
+    #[test]
+    #[ignore]
+    fn theme_download() {
+        let dir = std::env::temp_dir().join(format!("lichtspiel-theme-test-{}", std::process::id()));
+        let file = dir.join("t.mp3");
+        assert_eq!(crate::metadata::download_theme(81189, &file), Ok(true));
+        assert!(std::fs::metadata(&file).unwrap().len() > 1000);
+        assert_eq!(crate::metadata::download_theme(1, &dir.join("none.mp3")), Ok(false));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn theme_file_names() {
+        for n in ["theme", "Theme", "theme1", "theme-2"] { assert!(is_theme_name(n), "{n}"); }
+        for n in ["themes", "theme12", "theme-song", "my theme"] { assert!(!is_theme_name(n), "{n}"); }
+    }
 }

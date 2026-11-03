@@ -776,6 +776,10 @@ pub struct Settings {
     /// Show online trailers (from TMDB / Wikidata) on movie and show pages.
     #[serde(default = "yes")]
     pub trailers_online: bool,
+    /// Download a show's theme music from the online list when its folder has
+    /// none (the theme music helper, by TheTVDB number).
+    #[serde(default = "yes")]
+    pub theme_music_online: bool,
     /// Also look for English trailers when the library's language has none.
     #[serde(default = "yes")]
     pub trailers_english: bool,
@@ -1006,6 +1010,7 @@ impl Default for Settings {
             cleanup_weekly: true,
             refresh_metadata: true,
             trailers_online: true,
+            theme_music_online: true,
             trailers_english: true,
             trailers_red_band: false,
             group_recent_episodes: false,

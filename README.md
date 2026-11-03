@@ -242,6 +242,15 @@ on the **Libraries** page, or **Credits… → Detect credits again** on a movie
 **Credits…** (e.g. `1:52:30`). Without a credits time, 90 % is used. **Settings → Mark videos
 as watched** offers other choices.
 
+### Theme music
+
+A movie's or show's page plays its theme music quietly, once, and fades it out when you leave.
+The music comes from a `theme.mp3` in its folder (also `theme-1.mp3`, or .m4a, .flac, .ogg, .wav,
+.aac). A show without one gets its theme from an online list, by its TheTVDB number, the first
+time its page opens; it is then kept in `data/themes`. Movies only have music from a file. Turn
+the playing off under **Settings → Web → Play theme music**, and the download off under **Download
+show theme music**. Browsers may need one click on the page first.
+
 ### Skip intro (TV shows)
 
 The server finds a show's intro by **listening**: it reads the sound of the first 10 minutes

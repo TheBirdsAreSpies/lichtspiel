@@ -359,7 +359,9 @@ pub fn run(out: &Path) -> bool {
     let docs = c.get("/api/docs").json();
     let n_routes = docs["routes"].as_array().map(|a| a.len()).unwrap_or(0);
     let parts = ["Watchlist", "Downloads", "Users", "Plugins", "Libraries", "/web/i18n.js", "/web/lang/de.js", "/web/downloads.js"];
-    let mut missing: Vec<&str> = parts.iter().copied().filter(|p| !html.contains(p)).collect();
+    // Users, Plugins and Libraries are links in Settings, which pages.js draws.
+    let pages = String::from_utf8_lossy(&c.get("/web/pages.js").body).to_string();
+    let mut missing: Vec<&str> = parts.iter().copied().filter(|p| !html.contains(p) && !pages.contains(p)).collect();
     // The texts are translated in the browser: the German pack must be served and know the home rows.
     let de = c.get("/web/lang/de.js");
     if de.status != 200 || !String::from_utf8_lossy(&de.body).contains("Weiterschauen") {
