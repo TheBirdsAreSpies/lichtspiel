@@ -118,8 +118,24 @@ pub fn uri(issuer: &str, user: &str, secret: &str) -> String {
     format!("otpauth://totp/{}:{}?secret={secret}&issuer={}&algorithm=SHA1&digits=6&period=30", enc(issuer), enc(user), enc(issuer))
 }
 
+/// The setup link as a QR code (SVG, dark squares on white, with a quiet border).
+pub fn qr_svg(uri: &str) -> String {
+    use qrcode::render::svg;
+    match qrcode::QrCode::new(uri.as_bytes()) {
+        Ok(code) => code.render::<svg::Color>().min_dimensions(220, 220).dark_color(svg::Color("#000000")).light_color(svg::Color("#ffffff")).build(),
+        Err(_) => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn qr_is_drawn() {
+        let svg = super::qr_svg(&super::uri("Lichtspiel", "admin", "JBSWY3DPEHPK3PXP"));
+        assert!(svg.starts_with("<?xml") || svg.starts_with("<svg"), "{svg}");
+        assert!(svg.contains("</svg>"));
+    }
+
     #[test]
     fn rfc_vectors() {
         // RFC 3174: SHA-1("abc")

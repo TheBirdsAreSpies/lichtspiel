@@ -504,7 +504,7 @@ async function usersPage() {
     h('h2', {}, t('People')),
     h('table', {}, h('tr', {}, h('th', {}, t('User')), h('th', {}, t('Libraries')), h('th', {}, t('Admin')), h('th', {}, t('May convert')), h('th', {}, t('May delete files')), h('th', {}, t('May download')), h('th', { title: t('Hides movies and shows rated above this age') }, t('Parental controls')), h('th', { title: t('Shown on the sign-in screen') }, t('Home profile')), h('th', {}, '')),
       users.users.map(u => h('tr', {},
-        h('td', {}, h('b', {}, u.username), h('div', { class: 'dim' }, u.email || ''), h('div', { class: 'dim', style: 'font-size:12px' }, t('joined {date}', { date: fmtDate(u.created_at) }))),
+        h('td', {}, h('b', {}, u.username), h('div', { class: 'dim' }, u.email || ''), u.two_factor ? h('div', { class: 'dim', style: 'font-size:12px' }, '🔐 ', t('Two-step sign-in'), ' ', h('a', { href: '#', onclick: async e => { e.preventDefault(); if (await sure(t('Switch off the two-step sign-in of {name}?', { name: u.username }), { ok: t('Switch off'), danger: true })) { await api('PATCH', '/api/users/' + u.id, { reset_2fa: true }); toast(t('Saved')); usersPage(); } } }, t('Reset'))) : null, h('div', { class: 'dim', style: 'font-size:12px' }, t('joined {date}', { date: fmtDate(u.created_at) }))),
         h('td', {}, u.admin ? t('all (admin)') : u.allowed_sections === null ? t('all') : u.allowed_sections.map(secName).join(', ') || t('none'), ' ',
           u.admin ? null : h('button', { class: 'small', onclick: () => accessEditor(u) }, t('Change'))),
         h('td', {}, h('input', { type: 'checkbox', checked: u.admin, disabled: u.id === S.me.id, onchange: async e => { try { await api('PATCH', '/api/users/' + u.id, { admin: e.target.checked }); } catch (x) { toast(x.message); } usersPage(); } })),
@@ -595,7 +595,10 @@ function accountPanel(dataDir) {
         h('button', { onclick: async () => {
           const x = await api('POST', '/api/me/2fa/setup');
           const code = h('input', { placeholder: '123456', inputmode: 'numeric', autocomplete: 'one-time-code', style: 'width:120px' });
-          box.replaceChildren(h('p', {}, t('Add this key to your authenticator app (type it in, or open the link on your phone):')),
+          const qr = h('div', { style: 'width:220px;height:220px;border-radius:8px;overflow:hidden;background:#fff' });
+          qr.innerHTML = x.qr; // (an SVG made by the server from the link)
+          box.replaceChildren(h('p', {}, t('Scan this picture with your authenticator app:')), qr,
+            h('p', { class: 'dim' }, t('Or type the key in, or open the link on your phone:')),
             h('p', {}, h('code', { style: 'user-select:all;font-size:16px' }, x.secret)), h('p', {}, h('a', { href: x.uri }, t('Open in authenticator app'))),
             h('p', {}, t('Then type the 6-digit code it shows:')), code, ' ',
             h('button', { class: 'primary', onclick: async () => { try { await api('POST', '/api/me/2fa/enable', { code: code.value }); toast(t('Two-step sign-in is on.')); drawTwo(); } catch (e) { toast(e.message, 5000); } } }, t('Switch on')));

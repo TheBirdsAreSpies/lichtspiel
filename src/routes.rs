@@ -98,7 +98,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("PUT", "/api/items/{id}/favorite", "{favorite: true|false}"),
     ("PUT", "/api/items/{id}/watchlist", "Put a movie, show, season or episode on your watchlist or take it off {watchlist: true|false}; watching it takes it off by itself (a show once every episode is watched)"),
     ("POST", "/api/me/profile", "Your full name {full_name}"),
-    ("POST", "/api/me/2fa/setup", "Start two-step sign-in → {secret, uri} for an authenticator app (not active yet)"),
+    ("POST", "/api/me/2fa/setup", "Start two-step sign-in → {secret, uri, qr (an SVG picture of the link)} for an authenticator app (not active yet)"),
     ("POST", "/api/me/2fa/enable", "Switch it on with a code from the app {code}"),
     ("POST", "/api/me/2fa/disable", "Switch it off {password, code}"),
     ("GET", "/api/rss", "Your watchlist feed {enabled, url}; the address holds a private key, so a feed reader needs no sign-in"),
@@ -136,7 +136,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/playlists/{id}/copy", "Save a playlist's current contents as a new manual playlist"),
     ("GET", "/api/users", "Admin: every user"),
     ("POST", "/api/users", "Admin: add a local user directly, without an invite {username, password, email, admin, allowed_sections: [ids]|null, home, pin} (a home profile needs no password)"),
-    ("PATCH", "/api/users/{id}", "Admin: {admin, allowed_sections: [ids]|null, allow_transcode, allow_delete, allow_download, max_age (age limit, null = none), block_unrated, password, email, home, pin (empty removes it)}"),
+    ("PATCH", "/api/users/{id}", "Admin: {admin, allowed_sections: [ids]|null, allow_transcode, allow_delete, allow_download, reset_2fa (true: switch off their two-step sign-in), max_age (age limit, null = none), block_unrated, password, email, home, pin (empty removes it)}"),
     ("DELETE", "/api/users/{id}", "Admin: remove a user"),
     ("DELETE", "/api/users/{id}/tokens", "Admin: sign a user out everywhere"),
     ("GET", "/api/invites", "Admin: open and used invites"),
@@ -300,7 +300,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if let Some(u) = db.users.iter_mut().find(|u| u.id == user.id) { u.totp_pending = secret.clone(); }
             drop(db);
             app.save();
-            ok(json!({"secret": secret, "uri": crate::totp::uri(&issuer, &user.username, &secret)}))
+            let uri = crate::totp::uri(&issuer, &user.username, &secret);
+            ok(json!({"secret": secret, "qr": crate::totp::qr_svg(&uri), "uri": uri}))
         }
         ("POST", ["api", "me", "2fa", "enable"]) => {
             let code = ctx.body_or_param("code").unwrap_or_default();
@@ -1377,6 +1378,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if let Some(v) = ctx.body.get("allow_transcode").and_then(|v| v.as_bool()) { u.allow_transcode = Some(v); }
             if let Some(v) = ctx.body.get("allow_delete").and_then(|v| v.as_bool()) { u.allow_delete = v; }
             if let Some(v) = ctx.body.get("allow_download").and_then(|v| v.as_bool()) { u.allow_download = Some(v); }
+            if ctx.body.get("reset_2fa").and_then(|v| v.as_bool()) == Some(true) { u.totp_secret.clear(); u.totp_pending.clear(); }
             if let Some(v) = ctx.body.get("max_age") { u.max_age = v.as_u64().map(|n| n.min(99) as u32); }
             if let Some(v) = ctx.body.get("block_unrated").and_then(|v| v.as_bool()) { u.block_unrated = v; }
             if let Some(e) = ctx.body.get("email").and_then(|v| v.as_str()) { u.email = e.into(); }

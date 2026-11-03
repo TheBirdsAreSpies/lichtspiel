@@ -118,7 +118,7 @@ fn main() {
         return;
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("lichtspiel {}\n\n  --data DIR         where the library, settings and plugins are kept (default ./data, or LICHTSPIEL_DATA)\n  --port N           port to listen on (default 8484 or the one saved in Settings, or LICHTSPIEL_PORT)\n  --bind ADDR        address to listen on (default 0.0.0.0)\n  --console          also open the optional desktop status window\n  --no-browser       don't open the web app in the browser on first start\n  --screenshot FILE  draw the status window, save it as PNG and exit\n  --self-test FILE   test every feature, write the results as JSON and exit", server::VERSION);
+        println!("lichtspiel {}\n\n  --data DIR         where the library, settings and plugins are kept (default ./data, or LICHTSPIEL_DATA)\n  --port N           port to listen on (default 8484 or the one saved in Settings, or LICHTSPIEL_PORT)\n  --bind ADDR        address to listen on (default 0.0.0.0)\n  --console          also open the optional desktop status window\n  --no-browser       don't open the web app in the browser on first start\n  --screenshot FILE  draw the status window, save it as PNG and exit\n  --reset-2fa NAME   switch off the two-step sign-in of a user (when the phone is lost) and exit\n  --self-test FILE   test every feature, write the results as JSON and exit", server::VERSION);
         return;
     }
     if let Some(out) = arg_value(&args, "--self-test") {
@@ -126,6 +126,19 @@ fn main() {
         std::process::exit(if passed { 0 } else { 1 });
     }
     let opts = options(&args);
+    // Locked out of the only admin account? `--reset-2fa NAME` switches its two-step sign-in off.
+    if let Some(name) = arg_value(&args, "--reset-2fa") {
+        let app = server::App::open(&opts.data);
+        let found = {
+            let mut db = app.db.lock().unwrap();
+            match db.users.iter_mut().find(|u| u.username.eq_ignore_ascii_case(name.trim())) {
+                Some(u) => { u.totp_secret.clear(); u.totp_pending.clear(); true }
+                None => false,
+            }
+        };
+        if found { app.save(); println!("Two-step sign-in is off for {name}."); } else { eprintln!("There is no user called {name}."); std::process::exit(1); }
+        return;
+    }
     if let Some(out) = arg_value(&args, "--screenshot") {
         #[cfg(feature = "console")]
         {

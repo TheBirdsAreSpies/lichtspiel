@@ -7,6 +7,10 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Switch off the two-step sign-in of {name}?': 'Zwei-Faktor-Anmeldung von {name} ausschalten?',
+    'Reset': 'Zurücksetzen',
+    'Scan this picture with your authenticator app:': 'Scanne dieses Bild mit deiner Authenticator-App:',
+    'Or type the key in, or open the link on your phone:': 'Oder tippe den Schlüssel ein oder öffne den Link auf dem Handy:',
     'Two-step sign-in': 'Zwei-Faktor-Anmeldung',
     'Enter the 6-digit code from your authenticator app.': 'Gib den 6-stelligen Code aus deiner Authenticator-App ein.',
     'Code': 'Code',
