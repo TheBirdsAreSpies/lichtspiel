@@ -178,6 +178,42 @@ pub fn analyze_loudness(app: &App, max: usize) -> usize {
     todo.len()
 }
 
+/// Makes the seek-bar pictures (one every 10 s) and the chapter pictures of single-file videos ahead
+/// of time, so they show at once. Returns how many videos were done.
+pub fn make_thumbnails(app: &App, max: usize) -> usize {
+    let (ffmpeg, ffprobe) = { let s = app.settings(); (s.ffmpeg, s.ffprobe) };
+    let dir = app.data_dir.join("cache").join("frames");
+    let _ = std::fs::create_dir_all(&dir);
+    let todo: Vec<(u64, String)> = {
+        let db = app.db.lock().unwrap();
+        db.items.values()
+            .filter(|i| i.kind.playable() && !i.extra.contains_key("thumbnails_done"))
+            .filter_map(|i| i.file.as_ref().filter(|f| i.parts.is_empty() && Path::new(&f.path).is_file()).map(|f| (i.id, f.path.clone())))
+            .take(max).collect()
+    };
+    for (id, path) in &todo {
+        let tmp = format!("tmp{id}-");
+        let args: Vec<String> = ["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", path, "-an", "-sn", "-dn", "-vf", "fps=1/10,scale=240:-2", "-q:v", "6"]
+            .iter().map(|x| x.to_string()).chain(std::iter::once(dir.join(format!("{tmp}%05d.jpg")).to_string_lossy().to_string())).collect();
+        let ok = std::process::Command::new(&ffmpeg).args(&args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
+        // The n-th picture (counting from 1) is the one at (n-1)*10 seconds.
+        for n in 1..100000u64 {
+            let from = dir.join(format!("{tmp}{n:05}.jpg"));
+            if !from.exists() { break; }
+            let to = dir.join(format!("{id}-{}.jpg", (n - 1) * 10));
+            if to.exists() { let _ = std::fs::remove_file(&from); } else { let _ = std::fs::rename(&from, &to); }
+        }
+        for (s, e, _) in crate::scanner::read_chapters(&ffprobe, path).unwrap_or_default() {
+            let at = crate::handlers::chapter_picture_at(s, e);
+            crate::handlers::make_frame(&ffmpeg, path, at as f64, &dir.join(format!("{id}-{at}.jpg")));
+        }
+        let mut db = app.db.lock().unwrap();
+        if let Some(it) = db.items.get_mut(id) { it.extra.insert("thumbnails_done".into(), json!(if ok { crate::db::now() } else { 0 })); }
+    }
+    if !todo.is_empty() { app.save(); }
+    todo.len()
+}
+
 /// Runs once a minute: starts the tasks that are due, but only inside the maintenance window.
 pub fn tick(app: &std::sync::Arc<App>) {
     let (s, now) = (app.settings(), crate::db::now());
@@ -196,6 +232,7 @@ pub fn tick(app: &std::sync::Arc<App>) {
         ran.push("refresh");
     }
     if s.analyze_loudness { analyze_loudness(app, 5); }
+    if s.generate_thumbnails { make_thumbnails(app, 2); }
     if !ran.is_empty() {
         { let mut db = app.db.lock().unwrap(); for k in ran { db.settings.maintenance_last.insert(k.to_string(), now); } }
         app.save();
@@ -241,5 +278,14 @@ mod tests {
         // wraps past midnight: 22:00-04:00
         assert!(in_window(23 * 3600, 0, 22, 4) && in_window(3 * 3600, 0, 22, 4) && !in_window(12 * 3600, 0, 22, 4));
         assert!(in_window(12 * 3600, 0, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod thumb_tests {
+    #[test]
+    fn chapter_picture_is_taken_after_the_start() {
+        assert_eq!(crate::handlers::chapter_picture_at(0, 4000), 2);
+        assert_eq!(crate::handlers::chapter_picture_at(60000, 600000), 63);
     }
 }

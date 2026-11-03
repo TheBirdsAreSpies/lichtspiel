@@ -770,6 +770,8 @@ pub struct Settings {
     /// Measure how loud each video is (during maintenance) so the player can level the volume.
     #[serde(default)]
     pub analyze_loudness: bool,
+    #[serde(default)]
+    pub generate_thumbnails: bool,
     /// Streams to people outside the home network are held to this many Mbit/s (0 = no limit).
     #[serde(default)]
     pub remote_max_mbps: u32,
@@ -987,6 +989,7 @@ impl Default for Settings {
             refresh_metadata: true,
             group_recent_episodes: false,
             analyze_loudness: false,
+            generate_thumbnails: false,
             remote_max_mbps: 0,
             preroll_paths: String::new(),
             max_gpu_transcodes: 0,

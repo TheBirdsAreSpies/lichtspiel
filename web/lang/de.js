@@ -12,6 +12,8 @@ I18N.add('de', 'Deutsch', {
     'Level the volume': 'Lautstärke angleichen',
     'Quiet and loud videos are brought to a similar loudness. Works for videos the server has measured (Settings → Scheduled tasks).': 'Leise und laute Videos werden auf eine ähnliche Lautstärke gebracht. Funktioniert bei Videos, die der Server gemessen hat (Einstellungen → Geplante Aufgaben).',
     'Measure the loudness of videos': 'Lautstärke von Videos messen',
+    'Create preview pictures': 'Vorschaubilder erstellen',
+    'Makes the pictures on the seek bar and the chapter pictures ahead of time, 2 videos per minute inside the maintenance window. Needs ffmpeg.': 'Erstellt die Bilder der Zeitleiste und die Kapitelbilder im Voraus, 2 Videos pro Minute im Wartungsfenster. Braucht ffmpeg.',
     'Looks at 5 videos per minute inside the maintenance window until all are measured. Needs ffmpeg.': 'Misst im Wartungsfenster 5 Videos pro Minute, bis alle gemessen sind. Braucht ffmpeg.',
     'Address in the home network': 'Adresse im Heimnetz',
     'Where devices at home reach the server. For access from outside, forward this port on your router and enter the address people use below.': 'Hier erreichen Geräte zu Hause den Server. Für den Zugriff von außen leitest du diesen Port im Router weiter und trägst bei „Adresse in Einladungslinks“ die Adresse ein, die andere benutzen.',

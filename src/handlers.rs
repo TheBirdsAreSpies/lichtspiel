@@ -798,6 +798,23 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str) -> Resp {
 /// A small still at a moment of a movie or episode, for the player's seek bar
 /// preview: ?t= seconds into the whole video (a split movie counts as one).
 /// Rounded to 10 seconds and kept in cache/frames.
+/// Takes one small picture at `at` seconds into `src` and saves it as `out` (already there = done).
+pub fn make_frame(ffmpeg: &str, src: &str, at: f64, out: &std::path::Path) -> bool {
+    if std::fs::metadata(out).map(|m| m.len() > 0).unwrap_or(false) { return true; }
+    let args: Vec<String> = vec![
+        "-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into(), "-y".into(),
+        "-ss".into(), format!("{at:.2}"), "-i".into(), src.to_string(), "-frames:v".into(), "1".into(),
+        "-vf".into(), "scale=240:-2".into(), "-q:v".into(), "6".into(), out.to_string_lossy().to_string(),
+    ];
+    let ran = Command::new(ffmpeg).args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
+    ran && out.exists()
+}
+
+/// The second whose picture stands for a chapter: a little after its start (chapters often begin black).
+pub fn chapter_picture_at(start_ms: u64, end_ms: u64) -> u64 {
+    (start_ms as f64 / 1000.0 + ((end_ms as f64 - start_ms as f64) / 1000.0).min(6.0) / 2.0).floor() as u64
+}
+
 pub fn frame(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let want = ctx.param("t").and_then(|t| t.parse::<f64>().ok()).unwrap_or(0.0).max(0.0);
     // ?exact=1 (chapter pictures) keeps the second; the seek bar's pictures are rounded to 10 s.
@@ -815,16 +832,7 @@ pub fn frame(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let dir = app.data_dir.join("cache").join("frames");
     let _ = std::fs::create_dir_all(&dir);
     let out = dir.join(format!("{}-{step}.jpg", it.id));
-    if !std::fs::metadata(&out).map(|m| m.len() > 0).unwrap_or(false) {
-        let ffmpeg = app.settings().ffmpeg;
-        let args: Vec<String> = vec![
-            "-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into(), "-y".into(),
-            "-ss".into(), format!("{at:.2}"), "-i".into(), src, "-frames:v".into(), "1".into(),
-            "-vf".into(), "scale=240:-2".into(), "-q:v".into(), "6".into(), out.to_string_lossy().to_string(),
-        ];
-        let ran = Command::new(&ffmpeg).args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
-        if !ran || !out.exists() { return fail(404, "No picture at that moment"); }
-    }
+    if !make_frame(&app.settings().ffmpeg, &src, at, &out) { return fail(404, "No picture at that moment"); }
     let mut r = serve_file(&out, "image/jpeg", None, false);
     r.add_header(header("Cache-Control", "private, max-age=86400"));
     r
@@ -1197,7 +1205,7 @@ pub fn chapters(app: &Arc<App>, user: &User, iid: &str) -> Resp {
     }
     let out: Vec<Value> = list.iter().enumerate().map(|(i, (s, e, title))| {
         // The picture is taken a little after the start (a chapter often begins on a black frame).
-        let at = (*s as f64 / 1000.0 + ((*e as f64 - *s as f64) / 1000.0).min(6.0) / 2.0).floor();
+        let at = chapter_picture_at(*s, *e);
         json!({"index": i + 1, "title": title, "start": s, "end": e, "thumb": format!("/library/parts/{}/frame?exact=1&t={at}", it.id)})
     }).collect();
     ok(json!({"MediaContainer": {"size": out.len(), "Chapter": out}}))
