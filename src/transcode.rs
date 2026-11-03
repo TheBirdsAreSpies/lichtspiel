@@ -164,9 +164,8 @@ fn default_kbps(height: u32) -> u32 {
     }
 }
 
-/// Playback decision codes and their messages (table built in
-///). 1xxx = fine, 2xxx = cannot play, 3xxx = direct
-/// play refused, 4xxx = conversion problems.
+/// Playback decision codes and their messages (1xxx = fine, 2xxx = cannot play, 3xxx = direct
+/// play refused, 4xxx = conversion problems).
 pub const DECISIONS: &[(u32, &str)] = &[
     (1000, "Direct play OK."),
     (1001, "Direct play not available; Conversion OK."),
@@ -245,14 +244,14 @@ pub fn effective_hw(settings: &Settings) -> String {
     pick
 }
 
-/// Hardware constant-quality number: calls(q, 15, 25),
+/// Hardware constant-quality number: is the quality scaled to 15..25,
 /// so 99 → 15 (best) … 0 → 25.
 pub fn hw_qp(quality: u32) -> u32 {
     quality_scale(quality, 15, 25)
 }
 
 /// Input options and the picture part of an ffmpeg command line.
-/// Follows the encoder setup:
+/// Encoder setup:
 /// libx264 gets `-crf` from the quality formula plus `-maxrate` = bitrate and
 /// `-bufsize` = 2 × bitrate and `-preset` from the x264 preset setting; "Transcoder
 /// quality" only picks presets for Quick Sync (veryfast / slower / veryslow) and

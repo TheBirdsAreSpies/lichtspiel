@@ -710,9 +710,7 @@ pub struct Settings {
     /// as a scheduled task and when media is added).
     #[serde(default = "asap")]
     pub credits_markers_behaviour: String,
-    /// "Generate intro video markers": "never", "scheduled" or "asap" (
-    /// setting, default "asap", group "library";
-    ///).
+    /// "Generate intro video markers": "never", "scheduled" or "asap" (default "asap").
     #[serde(default = "asap")]
     pub intro_markers_behaviour: String,
     /// How many actor photos are saved per movie or show.

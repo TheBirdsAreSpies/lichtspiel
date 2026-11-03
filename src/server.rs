@@ -688,8 +688,8 @@ impl App {
     }
 
     /// "Detect intros": compares the sound at the start of every episode of a
-    /// season with the others (intro.rs, after the the setting,
-    ///), on a background thread shown as a job. `ids` may be
+    /// season with the others (intro.rs),
+    /// on a background thread shown as a job. `ids` may be
     /// shows, seasons or episodes. Unless `force`, seasons whose episodes are
     /// all up to date are skipped ("Already up to date"). Returns how many
     /// episodes it will listen to.

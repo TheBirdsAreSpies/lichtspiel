@@ -2,9 +2,8 @@
 //!
 //! How it works:
 //! 1. For every episode of a season it reads the sound of the first 600
-//!    seconds ( decodes it to FLAC, a temporary FLAC file) and
-//!    turns it into an audio fingerprint: one 32-bit value per 0.1238 seconds
-//!    ( the fingerprint step; = 0.1238).
+//!    seconds (decoded to a temporary FLAC file) and
+//!    turns it into an audio fingerprint: one 32-bit value per 0.1238 seconds.
 //! 2. Every episode is compared with every other one. Both need
 //!    more than 161 values (about 20 s). Values whose top 20 bits agree
 //!    (`value >> 12`) vote for how far one episode is shifted against the other;
@@ -364,8 +363,8 @@ pub fn detect_season(prints: &[Vec<u32>]) -> Vec<Option<(u64, u64)>> {
     let mut best: Vec<Option<Part>> = parts
         .into_iter()
         .map(|mut p| {
-            // Longest first, then the first one found often enough (
-            // sorts by end − start, largest first).
+            // Longest first, then the first one found often enough
+            // (sorted by end − start, largest first).
             p.sort_by(|x, y| (y.end - y.start).total_cmp(&(x.end - x.start)));
             p.into_iter().find(|x| x.count as f64 > need)
         })
