@@ -350,6 +350,14 @@ impl App {
         }
     }
 
+    /// A folder chosen in the settings, else `<data>/<default>`.
+    pub fn work_dir(&self, chosen: &str, default: &str) -> PathBuf {
+        let c = chosen.trim();
+        if c.is_empty() { self.data_dir.join(default) } else { PathBuf::from(c) }
+    }
+    pub fn transcode_dir(&self) -> PathBuf { self.work_dir(&self.settings().transcode_dir, "transcode") }
+    pub fn downloads_dir(&self) -> PathBuf { self.work_dir(&self.settings().downloads_dir, "downloads") }
+
     pub fn settings(&self) -> db::Settings {
         self.db.lock().unwrap().settings.clone()
     }

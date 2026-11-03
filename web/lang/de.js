@@ -7,6 +7,12 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Allow video conversion': 'Video-Transcoding aktivieren',
+    'Off: the server never converts video; only files the player can play as they are will play.': 'Aus: Der Server wandelt nie Videos um; es werden nur Dateien abgespielt, die der Player unverändert wiedergeben kann.',
+    'Folder for live conversions': 'Temporäres Verzeichnis für den Transcoder',
+    'Empty = the “transcode” folder in the data folder. Pick a fast disk.': 'Leer = der Ordner „transcode“ im Datenordner. Wähle eine schnelle Platte.',
+    'Folder for converted downloads': 'Temporäres Verzeichnis für Download-Transcodes',
+    'Empty = the “downloads” folder in the data folder. Copies already made stay where they are.': 'Leer = der Ordner „downloads“ im Datenordner. Bereits erstellte Kopien bleiben, wo sie sind.',
     'Limit streams over the internet': 'Streambitrate über das Internet begrenzen',
     '{n} Mbit/s': '{n} Mbit/s',
     'Videos watched from outside your home network are converted to stay below this. Home network viewers are not limited.': 'Videos, die außerhalb deines Heimnetzwerks geschaut werden, werden umgewandelt, damit sie darunter bleiben. Im Heimnetzwerk gilt keine Begrenzung.',

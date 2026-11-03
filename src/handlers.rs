@@ -492,7 +492,7 @@ fn check_transcode_allowed(app: &Arc<App>, user: &User, method: &Method) -> Opti
     if *method != Method::Transcode {
         return None;
     }
-    if user.allow_transcode == Some(false) {
+    if user.allow_transcode == Some(false) || !app.settings().transcoding_enabled {
         // Direct play isn't possible and this account may not convert.
         return Some(decision_fail(403, 2000));
     }
@@ -548,7 +548,7 @@ pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     }
     let settings = app.settings();
     let sid = db::random_hex(16);
-    let dir = app.data_dir.join("transcode").join(&sid);
+    let dir = app.transcode_dir().join(&sid);
     if let Err(e) = std::fs::create_dir_all(&dir) {
         return fail(500, &format!("Could not make the transcode folder: {e}"));
     }

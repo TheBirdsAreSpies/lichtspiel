@@ -735,6 +735,15 @@ pub struct Settings {
     /// Streams to people outside the home network are held to this many Mbit/s (0 = no limit).
     #[serde(default)]
     pub remote_max_mbps: u32,
+    /// Off: the server never converts video (only files the player can play as they are).
+    #[serde(default = "yes")]
+    pub transcoding_enabled: bool,
+    /// Where live conversions are written (empty = the "transcode" folder in the data folder).
+    #[serde(default)]
+    pub transcode_dir: String,
+    /// Where converted downloads are kept (empty = the "downloads" folder in the data folder).
+    #[serde(default)]
+    pub downloads_dir: String,
     /// When each scheduled task last ran (unix seconds).
     #[serde(default)]
     pub maintenance_last: std::collections::BTreeMap<String, u64>,
@@ -897,6 +906,9 @@ impl Default for Settings {
             optimize_weekly: true,
             cleanup_weekly: true,
             remote_max_mbps: 0,
+            transcoding_enabled: true,
+            transcode_dir: String::new(),
+            downloads_dir: String::new(),
             maintenance_last: Default::default(),
         }
     }

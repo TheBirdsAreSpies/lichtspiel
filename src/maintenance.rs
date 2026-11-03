@@ -38,10 +38,10 @@ pub fn optimize(app: &App) -> Resp {
 
 /// Removes converted leftovers nobody is watching and cache files older than a week.
 pub fn cleanup(app: &App) -> Resp {
-    let before = dir_size(&app.data_dir.join("transcode")) + dir_size(&app.data_dir.join("cache"));
+    let before = dir_size(&app.transcode_dir()) + dir_size(&app.data_dir.join("cache"));
     let idle = app.hls.lock().unwrap().is_empty() && app.progressive.lock().unwrap().is_empty();
     if idle {
-        if let Ok(rd) = std::fs::read_dir(app.data_dir.join("transcode")) {
+        if let Ok(rd) = std::fs::read_dir(app.transcode_dir()) {
             for e in rd.flatten() {
                 let p = e.path();
                 let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
@@ -62,7 +62,7 @@ pub fn cleanup(app: &App) -> Resp {
         }
     }
     old_files(&app.data_dir.join("cache"), week);
-    let after = dir_size(&app.data_dir.join("transcode")) + dir_size(&app.data_dir.join("cache"));
+    let after = dir_size(&app.transcode_dir()) + dir_size(&app.data_dir.join("cache"));
     ok(json!({"ok": true, "freed": before.saturating_sub(after), "transcodes_kept": !idle}))
 }
 
@@ -84,7 +84,7 @@ pub fn report(app: &App) -> Resp {
     line(format!("{} {}", APP_NAME, VERSION));
     line(format!("system: {} {}", std::env::consts::OS, std::env::consts::ARCH));
     line(format!("data folder: {}", app.data_dir.display()));
-    line(format!("library file: {} bytes; cache: {} bytes; transcode: {} bytes", library_bytes(app), dir_size(&app.data_dir.join("cache")), dir_size(&app.data_dir.join("transcode"))));
+    line(format!("library file: {} bytes; cache: {} bytes; transcode: {} bytes", library_bytes(app), dir_size(&app.data_dir.join("cache")), dir_size(&app.transcode_dir())));
     line(format!("running since: {} (unix seconds)", app.started_at));
     {
         let db = app.db.lock().unwrap();

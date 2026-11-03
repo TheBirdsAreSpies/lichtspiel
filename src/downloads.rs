@@ -22,7 +22,7 @@ pub fn may_download(user: &User) -> bool {
 
 /// Where a converted copy is kept: <data>/downloads/<download id>.mp4.
 pub fn copy_path(app: &App, id: u64) -> PathBuf {
-    app.data_dir.join("downloads").join(format!("{id}.mp4"))
+    app.downloads_dir().join(format!("{id}.mp4"))
 }
 
 /// The conversion running now: (download id, percent done) and its ffmpeg.
@@ -236,7 +236,7 @@ pub fn file(app: &Arc<App>, ctx: &Ctx, user: &User, id: u64) -> Resp {
 
 /// Starts the converter. Conversions cut short by a stop start over.
 pub fn start(app: &Arc<App>) {
-    let dir = app.data_dir.join("downloads");
+    let dir = app.downloads_dir();
     if let Ok(rd) = std::fs::read_dir(&dir) {
         for e in rd.flatten() {
             let n = e.file_name().to_string_lossy().to_string();
@@ -310,7 +310,7 @@ fn convert(app: &Arc<App>, id: u64) {
         (files, db.settings.clone(), d.quality)
     };
     let Some(first) = files.first() else { set_state("failed", 0, "The movie or episode has no video file"); return };
-    let dir = app.data_dir.join("downloads");
+    let dir = app.downloads_dir();
     if let Err(e) = std::fs::create_dir_all(&dir) { set_state("failed", 0, &format!("{}: {e}", dir.display())); return; }
     let out = copy_path(app, id);
     let tmp = out.with_extension("part.mp4");
