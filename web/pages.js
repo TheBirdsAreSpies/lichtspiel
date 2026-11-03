@@ -638,20 +638,45 @@ function pluginPanels() {
   return box;
 }
 
-async function settingsPage() {
+// The settings, in order: your account, the web app, the server's settings, and management.
+const SETTINGS_TABS = [
+  ['Account', [['account', 'Account'], ['watched', 'Watched indicator']]],
+  ['Web', [['web', 'General']]],
+  ['Settings', [['general', 'General'], ['network', 'Network settings'], ['library', 'Library settings'], ['metadata', 'Metadata agents'], ['transcoder', 'Transcoder']]],
+  ['Manage', [['manage', 'Libraries and users']]],
+];
+async function settingsPage(tab) {
   markNav('settings');
-  if (!S.me.admin) return set(h('h1', {}, t('Settings')), accountPanel(), pluginPanels());
+  const nav = cur => h('div', { class: 'tabs', style: 'flex-wrap:wrap' }, SETTINGS_TABS.filter(([, items]) => S.me.admin || items.some(([k]) => k === 'account' || k === 'web')).map(([grp, items]) =>
+    [h('span', { class: 'dim', style: 'padding:7px 4px 7px 12px' }, t(grp) + ':'),
+      items.filter(([k]) => S.me.admin || ['account', 'web'].includes(k)).map(([k, label]) => h('a', { href: '#/settings/' + k, class: k === cur ? 'on' : '' }, t(label)))]));
+  if (!tab || (!S.me.admin && !['account', 'web'].includes(tab))) tab = 'account';
+  if (tab === 'account') return set(h('h1', {}, t('Settings')), nav(tab), accountPanel(), pluginPanels());
+  if (tab === 'web') return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Web')),
+    formRow(t('Language of this app'), langSelect(), t('Saved in this browser.'))));
+  if (tab === 'watched') return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Watched indicator')), h('p', { class: 'dim' }, t('Not available yet.'))));
+  if (tab === 'manage') return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Manage')),
+    h('p', {}, h('a', { href: '#/libraries' }, t('Libraries'))), h('p', {}, h('a', { href: '#/users' }, t('Users & invites'))),
+    h('p', {}, h('a', { href: '#/plugins' }, t('Plugins'))), h('p', {}, h('a', { href: '#/api' }, t('API')))));
   const [r, tc] = await Promise.all([GET('/api/settings'), GET('/api/transcoder')]);
   const s = r.settings;
   const f = {};
   const inp = (k, label, type, help) => formRow(label, (f[k] = h('input', { type: type || 'text', value: s[k], style: 'width:100%;max-width:420px' })), help);
   const sel = (k, label, opts, help) => formRow(label, (f[k] = h('select', {}, opts.map(([v, l]) => h('option', { value: v, selected: String(s[k]) === String(v) }, l)))), help);
   const chk = (k, label, help) => formRow(label, (f[k] = h('input', { type: 'checkbox', checked: !!s[k] })), help);
-  set(h('h1', {}, t('Settings')),
-    h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Server')),
+  const panels = {
+    general: [
       inp('server_name', t('Server name')),
       inp('port', t('Port'), 'number', t('Default 8484. Takes effect after a restart; right now the server listens on {port}. With Docker, change the port mapping in docker-compose.yml instead.', { port: r.port_in_use })),
       inp('public_url', t('Address used in invite links'), 'text', t('e.g. http://my-nas.example.com:8484 — leave empty to use the address you opened this page with')),
+      inp('invite_default_days', t('Invite links last (days)'), 'number'),
+      chk('home_profiles', t('Profiles on the sign-in screen'), t('Home profiles (set under Users & invites) can be picked with a tap and their PIN — only from your home network.')),
+    ],
+    network: [
+      inp('trusted_proxies', t('Trusted reverse proxies'), 'text', [t('Addresses or ranges of your reverse proxy, e.g. 127.0.0.1 or 172.16.0.0/12 for Docker. Only then is the caller’s address it passes on (X-Forwarded-For) believed; requests passed on by any other machine never count as your home network.'), ' ',
+        h('b', {}, r.your_address ? t('The server sees you as {ip} — {where}.', { ip: r.your_address, where: !r.your_address_trusted ? t('passed on by a proxy that isn’t trusted') : r.you_are_local ? t('home network') : t('from outside') }) : '')]),
+    ],
+    library: [
       chk('scheduled_scans_enabled', t('Scan my library periodically'), t('Off by default. Turn it on so new files show up without pressing "Scan".')),
       sel('scan_interval_minutes', t('Library scan interval'), r.scan_intervals.map(x => [x.minutes, t(x.label)])),
       sel('watched_threshold_percent', t('Video played threshold'), r.played_thresholds.map(p => [p, t('{n}%', { n: p })]), t('Set the progress percentage for video playback at which point the video will be marked as played.')),
@@ -661,14 +686,11 @@ async function settingsPage() {
       sel('played_at_behaviour', t('Mark videos as watched'), r.played_at_choices.map(c => [c.value, t(c.label)]), t('Credits markers come from chapters named "Credits" / "Abspann" in the file, or are set by hand on the movie or episode page. Without markers the threshold is used.')),
       inp('continue_watching_weeks', t('Weeks to consider for Continue Watching'), 'number'), inp('continue_watching_limit', t('Maximum Continue Watching items'), 'number'),
       chk('continue_watching_include_premieres', t('Include season premieres in Continue Watching'), t('New season premieres always appear no matter how many weeks have passed since watching.')),
-      inp('invite_default_days', t('Invite links last (days)'), 'number'),
-      chk('home_profiles', t('Profiles on the sign-in screen'), t('Home profiles (set under Users & invites) can be picked with a tap and their PIN — only from your home network.')),
-      inp('trusted_proxies', t('Trusted reverse proxies'), 'text', [t('Addresses or ranges of your reverse proxy, e.g. 127.0.0.1 or 172.16.0.0/12 for Docker. Only then is the caller’s address it passes on (X-Forwarded-For) believed; requests passed on by any other machine never count as your home network.'), ' ',
-        h('b', {}, r.your_address ? t('The server sees you as {ip} — {where}.', { ip: r.your_address, where: !r.your_address_trusted ? t('passed on by a proxy that isn’t trusted') : r.you_are_local ? t('home network') : t('from outside') }) : '')]),
       chk('empty_trash_automatically', t('Empty trash automatically after every scan'), t('Files gone from disk leave the library right away. Off: they stay as unavailable (with their watched state and details) until you choose "Empty trash" in the library’s menu. A library folder that cannot be read never empties anything.')),
       chk('allow_media_deletion', t('Allow media deletion'), t('Admins, and people you allow under Users & invites, may delete movie and episode files from disk with "Delete" in the "⋯" menu.')),
-      inp('download_keep_days', t('Keep converted downloads (days)'), 'number', t('Copies converted for “Download…” are kept in the server’s data folder (downloads) and deleted this many days after they were made. 0 = until they are removed from the Downloads page.'))),
-    h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Movie and show details')),
+      inp('download_keep_days', t('Keep converted downloads (days)'), 'number', t('Copies converted for “Download…” are kept in the server’s data folder (downloads) and deleted this many days after they were made. 0 = until they are removed from the Downloads page.')),
+    ],
+    metadata: [
       chk('metadata_enabled', t('Download plot, cast, posters and episode titles from the internet')),
       sel('metadata_language', t('Language of titles, plots and episode names'), r.languages.map(l => [l.code, l.name]), t('Used by every library that is set to "Same as server" on the Libraries page (each library can have its own). Changing it downloads the details again in the background — watch the progress at the top of the page. Show episode names are only translated with a TMDB key.')),
       chk('imdb_ratings_file', t('Show IMDb ratings from IMDb’s ratings file'), t('Downloads IMDb’s free ratings list (about 9 MB) once a week. Rotten Tomatoes and Metacritic scores come from Wikidata; the TMDB score needs a TMDB key.')),
@@ -676,8 +698,9 @@ async function settingsPage() {
         try { await api('POST', '/api/imdb-ratings/refresh'); toast(t('Downloading IMDb ratings — progress is shown at the top'), 5000); pollActivity(); } catch (e) { toast(e.message, 6000); }
       } }, t('Update IMDb ratings now')), t('Downloads the ratings file again right away and updates every movie and show that has an IMDb id.')),
       inp('tmdb_api_key', t('TMDB API key (optional)'), 'text', t('Without a key, movies come from Wikipedia/Wikidata and TV shows from TVmaze. A free key from themoviedb.org gives better matches, cast photos and translated plots.')),
-      inp('omdb_api_key', t('OMDb API key for IMDb plots (optional)'), 'text', t('With a free key from omdbapi.com, movie and show plots are taken from IMDb (in English) instead of Wikipedia. Press Refresh details on a movie, or change the language, to load them for movies you already have.'))),
-    h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Transcoder')),
+      inp('omdb_api_key', t('OMDb API key for IMDb plots (optional)'), 'text', t('With a free key from omdbapi.com, movie and show plots are taken from IMDb (in English) instead of Wikipedia. Press Refresh details on a movie, or change the language, to load them for movies you already have.')),
+    ],
+    transcoder: [
       h('p', { class: tc.ffmpeg_found ? 'ok' : 'err' }, tc.ffmpeg_found ? t('ffmpeg found: {version}', { version: tc.ffmpeg_version }) : t('ffmpeg was not found. Install it (the Docker image includes it) or enter its path below; without it only browser-friendly files play.')),
       tc.hardware_encoders.length ? h('p', { class: 'dim' }, t('Hardware encoders in this ffmpeg: ') + tc.hardware_encoders.join(', ') + (tc.render_device ? ' · ' + t('/dev/dri/renderD128 present') : '')) : null,
       h('p', { class: 'dim' }, t('Converting with: ') + (tc.hw_in_use === 'none' ? t('the processor (software)') : tc.hw_in_use)),
@@ -688,7 +711,12 @@ async function settingsPage() {
       inp('h264_minimum_crf', t('Best allowed x264 quality (minimum CRF)'), 'number', t('Lower = better picture and bigger stream. The quality the player asks for is mapped between this and 24.')),
       inp('max_transcodes', t('Maximum simultaneous video transcodes (0 = no limit)'), 'number'),
       inp('hls_segment_seconds', t('HLS segment length (seconds)'), 'number'), inp('segmented_transcoder_timeout_seconds', t('Segmented transcoder timeout (seconds)'), 'number'),
-      inp('ffmpeg', t('ffmpeg program')), inp('ffprobe', t('ffprobe program'))),
+      inp('ffmpeg', t('ffmpeg program')), inp('ffprobe', t('ffprobe program')),
+    ],
+  };
+  const titles = { general: 'Server', network: 'Network settings', library: 'Library settings', metadata: 'Movie and show details', transcoder: 'Transcoder' };
+  set(h('h1', {}, t('Settings')), nav(tab),
+    h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t(titles[tab])), panels[tab]),
     h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: async () => {
       const body = {};
       for (const [k, el] of Object.entries(f)) body[k] = typeof s[k] === 'boolean' ? el.checked : typeof s[k] === 'number' ? Number(el.value) : el.value;
@@ -698,7 +726,7 @@ async function settingsPage() {
         boot();
       } catch (e) { toast(e.message, 5000); }
     } }, t('Save settings'))),
-    accountPanel(r.data_dir), pluginPanels());
+    tab === 'general' ? h('p', { class: 'dim' }, t('Data folder on the server: '), h('code', {}, r.data_dir)) : null);
 }
 
 // ---------- API page
@@ -1356,7 +1384,7 @@ async function render() {
       case 'libraries': return await librariesPage();
       case 'users': return await usersPage();
       case 'plugins': return await pluginsPage();
-      case 'settings': return await settingsPage();
+      case 'settings': return await settingsPage(parts[1]);
       case 'api': return await apiPage();
       case 'reports': return await reportsPage();
       case 'watchlist': return await watchlistPage(qs);

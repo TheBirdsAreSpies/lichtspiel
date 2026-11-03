@@ -7,6 +7,16 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Account': 'Konto',
+    'Web': 'Web',
+    'Manage': 'Verwalten',
+    'Watched indicator': 'Gesehen-Anzeiger',
+    'Metadata agents': 'Metadaten-Agenten',
+    'Libraries and users': 'Mediatheken und Benutzer',
+    'Not available yet.': 'Noch nicht verfügbar.',
+    'Network settings': 'Netzwerk',
+    'Library settings': 'Mediathek',
+
     'Parental controls': 'Kindersicherung',
     'Hides movies and shows rated above this age': 'Blendet Filme und Serien aus, die ab einem höheren Alter freigegeben sind',
     'No limit': 'Keine Begrenzung',
