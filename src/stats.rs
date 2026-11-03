@@ -217,7 +217,7 @@ impl Stats {
         let Ok(text) = std::fs::read_to_string(path) else { return };
         match serde_json::from_str::<LongTerm>(&text) {
             Ok(l) => *self.long.lock().unwrap() = l,
-            Err(e) => eprintln!("{} can't be read ({e}); the dashboard starts its history again", path.display()),
+            Err(e) => elog!("{} can't be read ({e}); the dashboard starts its history again", path.display()),
         }
     }
 

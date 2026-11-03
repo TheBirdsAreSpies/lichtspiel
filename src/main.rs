@@ -8,6 +8,8 @@
 //!   lichtspiel --screenshot out.png  draw the status window, save a picture, exit
 //!   lichtspiel --self-test out.json  try every feature end to end, save results, exit
 
+#[macro_use]
+mod log;
 mod actions;
 mod auth;
 mod dashboard;
@@ -164,6 +166,7 @@ fn main() {
     println!("  Open http://{}:{port}/ in a browser (or http://localhost:{port}/ on this computer).", lan_address());
     println!("  Data folder: {}", std::fs::canonicalize(&opts.data).unwrap_or(opts.data.clone()).display());
     println!("  API list: GET /api/docs");
+    log::add(format!("{} {} started", server::APP_NAME, server::VERSION));
     // The web app is the interface. The desktop status window is optional:
     // only with --console (the Synology/Docker build has none at all).
     let want_window = args.iter().any(|a| a == "--console");

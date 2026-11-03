@@ -293,7 +293,7 @@ impl Store {
                     Ok(it) => {
                         items.insert(id as u64, it);
                     }
-                    Err(e) => eprintln!("library item {id} can't be read ({e}); it is skipped and kept in the file as it is"),
+                    Err(e) => elog!("library item {id} can't be read ({e}); it is skipped and kept in the file as it is"),
                 }
             }
         }
@@ -309,7 +309,7 @@ impl Store {
                     Ok(v) => {
                         views.insert(format!("{u}:{i}"), v);
                     }
-                    Err(e) => eprintln!("watch state {u}:{i} can't be read ({e}); it is skipped"),
+                    Err(e) => elog!("watch state {u}:{i} can't be read ({e}); it is skipped"),
                 }
             }
         }

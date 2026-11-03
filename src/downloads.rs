@@ -351,7 +351,7 @@ fn convert(app: &Arc<App>, id: u64) {
             let status = child.map(|mut c| c.wait().map(|s| s.success()).unwrap_or(false)).unwrap_or(false);
             let err = err.join().unwrap_or_default();
             if cancelled { Err(String::new()) } else if status { Ok(()) } else {
-                eprintln!("download {id}: converting failed: {}", err.trim());
+                elog!("download {id}: converting failed: {}", err.trim());
                 Err(err.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("The conversion failed").trim().chars().take(300).collect())
             }
         }

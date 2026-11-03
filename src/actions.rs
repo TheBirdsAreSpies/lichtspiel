@@ -208,10 +208,10 @@ pub fn optimize(app: &Arc<App>, iid: u64, preset: &str) -> Result<usize, String>
                     let mut err = String::new();
                     if let Some(mut se) = c.stderr.take() { let _ = std::io::Read::read_to_string(&mut se, &mut err); }
                     let st = c.wait().map(|s| s.success()).unwrap_or(false);
-                    if !st { eprintln!("optimizing item {id} failed: {}", err.trim()); }
+                    if !st { elog!("optimizing item {id} failed: {}", err.trim()); }
                     st
                 }
-                Err(e) => { eprintln!("optimizing item {id}: ffmpeg could not be started: {e}"); false }
+                Err(e) => { elog!("optimizing item {id}: ffmpeg could not be started: {e}"); false }
             };
             if ok && std::fs::rename(&tmp, &out).is_ok() {
                 let size = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
@@ -330,7 +330,7 @@ pub fn delete_media(app: &Arc<App>, user: &User, iid: u64) -> Resp {
     app.save();
     for id in removed.iter().chain(pruned.iter()) { app.fire("library.item.removed", json!({"id": id, "section_id": sid, "deleted_by": user.username})); }
     if !failed.is_empty() {
-        eprintln!("deleting item {iid}: {}", failed.join("; "));
+        elog!("deleting item {iid}: {}", failed.join("; "));
         return js(500, json!({"error": format!("{} file(s) could not be deleted: {}", failed.len(), failed.join("; ")), "deleted": files, "failed": failed}));
     }
     ok(json!({"ok": true, "deleted": files, "removed": removed.len() + pruned.len()}))

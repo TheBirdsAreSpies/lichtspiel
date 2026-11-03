@@ -73,6 +73,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/library/metadata/{id}/analyze", "Admin: read the files again with ffprobe (streams, length; in the background)"),
     ("POST", "/library/metadata/{id}/optimize", "Admin: save a version every browser plays directly {quality: original|tv|mobile} (in the background; played instead of converting)"),
     ("DELETE", "/library/metadata/{id}/optimize", "Admin: delete the optimized versions"),
+    ("GET", "/api/log", "Admin: the server's recent messages (the last 500) → {lines: [{t, msg}]}, oldest first"),
     ("GET", "/api/optimized", "Admin: every optimized version → {items: [{id, title, quality, size}]}"),
     ("DELETE", "/api/optimized", "Admin: delete all optimized versions → {removed}"),
     ("POST", "/api/maintenance/optimize", "Admin: compact the library file → {before, after} bytes"),
@@ -600,7 +601,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if app.job.lock().unwrap().is_some() { return fail(409, "Another job is running; try again when it has finished"); }
             let a = app.clone();
             std::thread::spawn(move || {
-                if let Err(e) = a.update_imdb_ratings(true) { eprintln!("IMDb ratings: {e}"); }
+                if let Err(e) = a.update_imdb_ratings(true) { elog!("IMDb ratings: {e}"); }
             });
             js(202, json!({"ok": true, "started": true}))
         }
@@ -638,7 +639,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             std::thread::spawn(move || {
                 let r = crate::migrate::run(&a, &o);
                 *a.job.lock().unwrap() = None;
-                if let Err(e) = &r { eprintln!("import: {e}"); }
+                if let Err(e) = &r { elog!("import: {e}"); }
                 let mut p = a.meta_progress.lock().unwrap();
                 p.done += 1;
                 p.last = json!({"id": null, "title": "Import", "ok": r.is_ok(), "message": match &r { Ok(v) => crate::migrate::summary(v), Err(e) => format!("Import failed: {e}") }, "at": now()});
@@ -1100,6 +1101,10 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["api", "downloads", did, "file"]) | ("GET", ["api", "downloads", did, "file", _]) => match id(did) { Some(d) => crate::downloads::file(app, ctx, &user, d), None => fail(404, "No such download") },
         ("POST", ["api", "downloads", did, "retry"]) => match id(did) { Some(d) => crate::downloads::retry(app, &user, d), None => fail(404, "No such download") },
         ("DELETE", ["api", "downloads", did]) => match id(did) { Some(d) => crate::downloads::remove(app, &user, d), None => fail(404, "No such download") },
+        ("GET", ["api", "log"]) => {
+            if !admin { return need_admin(); }
+            ok(json!({"lines": crate::log::lines().into_iter().map(|(t, m)| json!({"t": t, "msg": m})).collect::<Vec<_>>()}))
+        }
         ("GET", ["api", "optimized"]) => { if !admin { return need_admin(); } ok(crate::actions::optimized_list(app)) }
         ("DELETE", ["api", "optimized"]) => { if !admin { return need_admin(); } ok(json!({"ok": true, "removed": crate::actions::remove_all_optimized(app)})) }
         ("POST", ["api", "maintenance", "optimize"]) => { if !admin { return need_admin(); } crate::maintenance::optimize(app) }

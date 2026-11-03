@@ -370,7 +370,7 @@ pub fn start_now(app: &Arc<App>) -> bool {
     std::thread::spawn(move || {
         let r = run(&a);
         RUNNING.store(false, Ordering::SeqCst);
-        if let Err(e) = &r { eprintln!("Plex sync: {e}"); }
+        if let Err(e) = &r { elog!("Plex sync: {e}"); }
     });
     true
 }

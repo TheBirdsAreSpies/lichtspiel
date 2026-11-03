@@ -221,7 +221,7 @@ pub fn tick(app: &std::sync::Arc<App>) {
     let due = |key: &str, days: u64| now.saturating_sub(s.maintenance_last.get(key).copied().unwrap_or(0)) >= days * 86400 - 3600;
     let mut ran: Vec<&str> = vec![];
     if s.backup_enabled && due("backup", 3) {
-        match backup(app) { Ok(_) => {} Err(e) => eprintln!("backup: {e}") }
+        match backup(app) { Ok(_) => {} Err(e) => elog!("backup: {e}") }
         ran.push("backup");
     }
     if s.optimize_weekly && due("optimize", 7) { let _ = optimize(app); ran.push("optimize"); }

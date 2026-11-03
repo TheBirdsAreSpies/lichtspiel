@@ -689,9 +689,14 @@ const SETTINGS_TABS = [
 const USER_TABS = ['account', 'watched', 'watchlist', 'web'];
 async function settingsPage(tab) {
   markNav('settings');
-  const nav = cur => h('div', { class: 'tabs', style: 'flex-wrap:wrap' }, SETTINGS_TABS.filter(([, items]) => S.me.admin || items.some(([k]) => USER_TABS.includes(k))).map(([grp, items]) =>
-    [h('span', { class: 'dim', style: 'padding:7px 4px 7px 12px' }, t(grp) + ':'),
-      items.filter(([k]) => S.me.admin || USER_TABS.includes(k)).map(([k, label]) => h('a', { href: '#/settings/' + k, class: k === cur ? 'on' : '' }, t(label)))]));
+  // Two rows: the groups on top, the pages of the group you are in below.
+  const nav = cur => {
+    const mine = SETTINGS_TABS.map(([grp, items]) => [grp, items.filter(([k]) => S.me.admin || USER_TABS.includes(k))]).filter(([, items]) => items.length);
+    const here = mine.find(([, items]) => items.some(([k]) => k === cur)) || mine[0];
+    return h('div', {},
+      h('div', { class: 'tabs' }, mine.map(([grp, items]) => h('a', { href: '#/settings/' + items[0][0], class: grp === here[0] ? 'on' : '' }, t(grp)))),
+      here[1].length > 1 ? h('div', { class: 'tabs', style: 'font-size:.92em;opacity:.9' }, here[1].map(([k, label]) => h('a', { href: '#/settings/' + k, class: k === cur ? 'on' : '' }, t(label)))) : null);
+  };
   if (!tab || (!S.me.admin && !USER_TABS.includes(tab))) tab = 'account';
   if (tab === 'account') return set(h('h1', {}, t('Settings')), nav(tab), accountPanel(), pluginPanels());
   if (tab === 'web') {
@@ -773,6 +778,7 @@ async function settingsPage(tab) {
         h('p', {}, h('a', { href: '#/libraries' }, t('Libraries'))), h('p', {}, h('a', { href: '#/users' }, t('Users & invites'))),
         h('p', {}, h('a', { href: '#/plugins' }, t('Plugins'))), h('p', {}, h('a', { href: '#/api' }, t('API')))),
       await optimizedPanel(size),
+      logPanel(),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Troubleshooting')),
         formRow(t('Optimize library file'), h('button', { onclick: async () => { try { const x = await api('POST', '/api/maintenance/optimize'); toast(t('Optimized: {a} → {b}', { a: size(x.before), b: size(x.after) }), 5000); } catch (e) { toast(e.message, 5000); } } }, t('Optimize')), t('Compacts the library file. Safe to do while the server runs.')),
         formRow(t('Clean up bundles'), h('button', { onclick: async () => { try { const x = await api('POST', '/api/maintenance/cleanup'); toast(t('{n} freed', { n: size(x.freed) }) + (x.transcodes_kept ? ' — ' + t('conversions in use were kept') : ''), 5000); } catch (e) { toast(e.message, 5000); } } }, t('Clean up')), t('Removes leftover conversions and cache files older than a week.')),
@@ -1576,12 +1582,26 @@ async function optimizedPanel(size) {
   const body = h('div', {});
   const draw = async () => {
     const r = await GET('/api/optimized'), total = r.items.reduce((a, i) => a + i.size, 0);
-    body.replaceChildren(
+    body.replaceChildren(...[
       h('p', { class: 'dim' }, r.items.length ? t('{n} optimized version(s), {size} in all.', { n: r.items.length, size: size(total) }) : t('Nothing has been optimized yet. Open a title and choose More → Optimize.')),
       ...r.items.slice(0, 30).map(i => h('p', {}, h('a', { href: '#/item/' + i.id }, i.title), ' ', h('span', { class: 'dim' }, `${i.quality || ''} · ${size(i.size)}`))),
       r.items.length > 30 ? h('p', { class: 'dim' }, t('… and {n} more', { n: r.items.length - 30 })) : null,
-      r.items.length ? h('button', { class: 'danger', onclick: async () => { if (!confirm(t('Delete all optimized versions?'))) return; const x = await api('DELETE', '/api/optimized'); toast(t('{n} optimized version(s) deleted', { n: x.removed })); draw(); } }, t('Delete all optimized versions')) : null);
+      r.items.length ? h('button', { class: 'danger', onclick: async () => { if (!confirm(t('Delete all optimized versions?'))) return; const x = await api('DELETE', '/api/optimized'); toast(t('{n} optimized version(s) deleted', { n: x.removed })); draw(); } }, t('Delete all optimized versions')) : null].filter(Boolean));
   };
   try { await draw(); } catch (e) { body.textContent = e.message; }
   return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Optimized versions')), body);
+}
+
+// Settings → Manage → Server log: the server's own messages (problems with files, downloads, backups …).
+function logPanel() {
+  const pre = h('pre', { style: 'max-height:320px;overflow:auto;white-space:pre-wrap;font-size:12px;margin:8px 0' });
+  const load = async () => {
+    try {
+      const r = await GET('/api/log');
+      pre.textContent = r.lines.length ? r.lines.slice(-200).map(l => new Date(l.t * 1000).toLocaleString() + '  ' + l.msg).join('\n') : t('Nothing has been logged yet.');
+      pre.scrollTop = pre.scrollHeight;
+    } catch (e) { pre.textContent = e.message; }
+  };
+  load();
+  return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Server log')), pre, h('button', { onclick: load }, t('Refresh')));
 }

@@ -150,8 +150,8 @@ pub const PICTURES_VERSION: u64 = 2;
 fn open_library(data_dir: &Path) -> (Store, Db, Option<PathBuf>) {
     let file = data_dir.join(store::FILE_NAME);
     let stop = |e: String| -> ! {
-        eprintln!("the library can't be opened: {e}");
-        eprintln!("nothing was changed; move {} away to start with an empty library", file.display());
+        elog!("the library can't be opened: {e}");
+        elog!("nothing was changed; move {} away to start with an empty library", file.display());
         std::process::exit(1);
     };
     let mut st = Store::open(&file).unwrap_or_else(|e| stop(e));
@@ -228,15 +228,15 @@ impl App {
                 if let Some(json) = from_json {
                     let kept = json.with_extension("json.migrated");
                     match std::fs::rename(&json, &kept) {
-                        Ok(()) => eprintln!("the library was moved into {}; the old file is kept as {}", store::FILE_NAME, kept.display()),
-                        Err(e) => eprintln!("the library was moved into {}, but {} could not be renamed: {e}", store::FILE_NAME, json.display()),
+                        Ok(()) => elog!("the library was moved into {}; the old file is kept as {}", store::FILE_NAME, kept.display()),
+                        Err(e) => elog!("the library was moved into {}, but {} could not be renamed: {e}", store::FILE_NAME, json.display()),
                     }
                 }
             }
             Err(e) => {
-                eprintln!("could not save the library: {e}");
+                elog!("could not save the library: {e}");
                 if from_json.is_some() {
-                    eprintln!("the old library file is left as it is and will be read again on the next start");
+                    elog!("the old library file is left as it is and will be read again on the next start");
                 }
             }
         }
@@ -255,7 +255,7 @@ impl App {
         // SVG logo as poster.jpg): delete them and fetch the details again.
         let broken = app.remove_broken_pictures();
         if !broken.is_empty() {
-            eprintln!("{} items had a broken picture; getting their pictures again", broken.len());
+            elog!("{} items had a broken picture; getting their pictures again", broken.len());
             app.queue_online_details(&broken, true);
         }
         app
@@ -315,7 +315,7 @@ impl App {
     /// Writes what changed since the last save. Callers must not hold `db`.
     pub fn save(&self) {
         if let Err(e) = self.try_save() {
-            eprintln!("could not save the library: {e}");
+            elog!("could not save the library: {e}");
         }
     }
 
@@ -667,9 +667,9 @@ impl App {
                         Err(e) => {
                             failed += 1;
                             f.credits_errors += 1;
-                            eprintln!("credits detection for item {id}: {e}");
+                            elog!("credits detection for item {id}: {e}");
                             if f.credits_errors > db::CREDITS_MAX_ERRORS {
-                                eprintln!("credits detection for item {id} has failed too many times; it will not be retried automatically");
+                                elog!("credits detection for item {id} has failed too many times; it will not be retried automatically");
                             }
                         }
                     }
@@ -778,7 +778,7 @@ impl App {
                             failed += 1;
                             f.intro_errors += 1;
                             f.intro_ms.clear();
-                            eprintln!("intro detection for item {id}: {e}");
+                            elog!("intro detection for item {id}: {e}");
                         }
                     }
                 }
@@ -953,7 +953,7 @@ impl App {
             (None, Some((src, tid))) => match metadata::resolve_id(&settings, kind, src, tid) {
                 Ok(x) => Some(x),
                 Err(e) => {
-                    eprintln!("details for item {id}: {{{src}-{tid}}}: {e}");
+                    elog!("details for item {id}: {{{src}-{tid}}}: {e}");
                     None
                 }
             },
@@ -1269,7 +1269,7 @@ impl App {
                 p.last = json!({"id": id, "title": title, "ok": r.is_ok(), "message": match &r { Ok(m) | Err(m) => m.clone() }, "at": now()});
             }
             if let Err(e) = &r {
-                eprintln!("details for item {id}: {e}");
+                elog!("details for item {id}: {e}");
             }
             // Local information from plugins (e.g. .nfo files) wins over online details.
             let leaves = {
@@ -1963,7 +1963,7 @@ pub fn start_background(app: &Arc<App>) {
             }
             if idle && Instant::now() >= imdb_retry && a.settings().imdb_ratings_file {
                 if let Err(e) = a.update_imdb_ratings(false) {
-                    eprintln!("IMDb ratings: {e}");
+                    elog!("IMDb ratings: {e}");
                     imdb_retry = Instant::now() + Duration::from_secs(6 * 3600);
                 }
             }

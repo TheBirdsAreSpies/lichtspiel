@@ -1086,7 +1086,7 @@ impl Db {
                 Err(e) => {
                     let backup = path.with_extension("broken.json");
                     let _ = std::fs::copy(path, &backup);
-                    eprintln!(
+                    elog!(
                         "library file could not be read ({e}); a copy was kept at {}",
                         backup.display()
                     );
