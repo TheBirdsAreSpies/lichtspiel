@@ -776,7 +776,7 @@ async function settingsPage(tab) {
     return set(h('h1', {}, t('Settings')), nav(tab),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Manage')),
         h('p', {}, h('a', { href: '#/libraries' }, t('Libraries'))), h('p', {}, h('a', { href: '#/users' }, t('Users & invites'))),
-        h('p', {}, h('a', { href: '#/plugins' }, t('Plugins'))), h('p', {}, h('a', { href: '#/api' }, t('API')))),
+        h('p', {}, h('a', { href: '#/plugins' }, t('Plugins'))), h('p', {}, h('a', { href: '#/reports' }, t('Reported problems'))), h('p', {}, h('a', { href: '#/api' }, t('API')))),
       await optimizedPanel(size),
       logPanel(),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Troubleshooting')),
