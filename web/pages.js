@@ -859,6 +859,7 @@ async function settingsPage(tab) {
     transcoder: [
       h('p', { class: tc.ffmpeg_found ? 'ok' : 'err' }, tc.ffmpeg_found ? t('ffmpeg found: {version}', { version: tc.ffmpeg_version }) : t('ffmpeg was not found. Install it (the Docker image includes it) or enter its path below; without it only browser-friendly files play.')),
       tc.hardware_encoders.length ? h('p', { class: 'dim' }, t('Hardware encoders in this ffmpeg: ') + tc.hardware_encoders.join(', ') + (tc.render_device ? ' · ' + t('/dev/dri/renderD128 present') : '')) : null,
+      tc.hardware_encoders.length ? h('p', { class: (tc.hardware_working || []).length ? 'ok' : 'dim' }, (tc.hardware_working || []).length ? t('Working on this computer: ') + tc.hardware_working.join(', ') : t('None of them works on this computer, so the processor converts.')) : null,
       h('p', { class: 'dim' }, t('Converting with: ') + (tc.hw_in_use === 'none' ? t('the processor (software)') : tc.hw_in_use)),
       sel('transcoder_quality', t('Transcoder quality'), [['automatic', t('Automatic')], ['speed', t('Prefer higher speed encoding')], ['quality', t('Prefer higher quality encoding')], ['max', t('Make my CPU hurt')]], t('Applies to Intel Quick Sync and NVIDIA hardware encoding.')),
       chk('boost_dialogue', t('Lift dialogue when mixing surround sound down to stereo'), t('Voices stay clear when 5.1 or 7.1 sound is converted for browsers and phones. Takes effect with the next video you start.')),

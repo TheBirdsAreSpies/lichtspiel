@@ -904,6 +904,12 @@ const store = {
   get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
   set: (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) { /* private window */ } if (SYNCED.includes(k)) syncPref(k, String(v)); },
 };
+// The video codecs this browser plays besides H.264 (Chrome with a hardware decoder plays HEVC): sent along
+// so the server does not convert what the browser can show itself.
+const CLIENT_CODECS = (() => {
+  const v = document.createElement('video'), ok = type => { try { return !!v.canPlayType(type); } catch (e) { return false; } };
+  return [ok('video/mp4; codecs="hvc1.1.6.L153.B0"') ? 'hevc' : '', ok('video/webm; codecs="vp9"') ? 'vp9' : '', ok('video/mp4; codecs="av01.0.08M.08"') ? 'av1' : ''].filter(Boolean).join(',');
+})();
 // Audio, subtitle and watched-mark settings follow the account from browser to browser: they are kept on the
 // server too (POST /api/me/prefs); at start the server's values win, and values only this browser has go up once.
 const SYNCED = ['audioLang', 'subLang', 'subMode', 'subPrefLang', 'subSdh', 'subForced', 'subSize', 'subColor', 'subBg', 'subLift', 'burnSubs', 'watchedMark',
@@ -1146,7 +1152,7 @@ async function load(at) {
   if (split()) while (P.part < P.parts.length - 1 && at >= partStart(P.part + 1)) P.part++;
   P.base = split() ? partStart(P.part) : 0;
   at = Math.max(0, at - P.base);
-  const extra = (P.audio ? `&audio=${P.audio}` : '') + (P.part ? `&part=${P.part}` : '') + (P.burn !== null && P.burn !== undefined ? `&subtitle=${P.burn}` : '');
+  const extra = (CLIENT_CODECS ? `&videoCodecs=${CLIENT_CODECS}` : '') + (P.audio ? `&audio=${P.audio}` : '') + (P.part ? `&part=${P.part}` : '') + (P.burn !== null && P.burn !== undefined ? `&subtitle=${P.burn}` : '');
   const d = await GET(`/library/metadata/${it.id}/decision?quality=${q}${extra}`);
   if (P.it !== it) return;
   P.method = P.audio && d.method === 'direct' ? 'remux' : d.method;

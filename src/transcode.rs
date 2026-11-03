@@ -48,6 +48,9 @@ pub struct Decision {
     pub reasons: Vec<String>,
     pub height: u32,
     pub bitrate_kbps: u32,
+    /// The video is HEVC (copied into an mp4 it needs the hvc1 tag).
+    #[serde(skip)]
+    pub hevc: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -115,7 +118,9 @@ pub fn decide(file: &MediaFile, req: &Request) -> Decision {
     if !video_ok {
         reasons.push(format!("video codec {vcodec} needs converting"));
     }
-    let depth_ok = v.is_none_or(|v| v.bit_depth <= MAX_DIRECT_BIT_DEPTH);
+    // A codec the browser said it plays (HEVC in Chrome with a hardware decoder) may be 10-bit.
+    let client_codec = req.extra_video.iter().any(|c| c == vcodec);
+    let depth_ok = v.is_none_or(|v| v.bit_depth <= MAX_DIRECT_BIT_DEPTH || (client_codec && v.bit_depth <= 10));
     if !depth_ok {
         reasons.push(format!("{}-bit video needs converting to 8-bit", v.map(|v| v.bit_depth).unwrap_or(0)));
     }
@@ -139,7 +144,7 @@ pub fn decide(file: &MediaFile, req: &Request) -> Decision {
     let method = if req.force_transcode || too_big || !video_ok || !depth_ok {
         Method::Transcode
     } else if !container_ok || !audio_ok || audio_track_switch {
-        if vcodec == "h264" || vcodec.is_empty() || !file.probed {
+        if vcodec == "h264" || vcodec.is_empty() || !file.probed || client_codec {
             Method::Remux
         } else {
             // vp9 / av1 inside mkv etc.: re-encode so the mp4 stream always works.
@@ -151,7 +156,7 @@ pub fn decide(file: &MediaFile, req: &Request) -> Decision {
     let height = if req.max_height > 0 { req.max_height.min(src_h.max(1)) } else { src_h };
     let height = if req.max_height > 0 && src_h == 0 { req.max_height } else { height };
     let bitrate_kbps = if req.max_kbps > 0 { req.max_kbps } else { default_kbps(height) };
-    Decision { method, reasons, height, bitrate_kbps }
+    Decision { method, reasons, height, bitrate_kbps, hevc: vcodec == "hevc" }
 }
 
 fn default_kbps(height: u32) -> u32 {
@@ -223,25 +228,53 @@ pub fn x264_crf(settings: &Settings, quality: u32) -> u32 {
 pub fn effective_hw(settings: &Settings) -> String {
     use std::sync::{Mutex, OnceLock};
     static CACHE: OnceLock<Mutex<std::collections::HashMap<String, String>>> = OnceLock::new();
-    if settings.hw_accel != "auto" {
-        return settings.hw_accel.clone();
+    let want = settings.hw_accel.as_str();
+    if want == "none" {
+        return "none".into();
     }
+    // (The tests run on machines without such hardware: they look at the command lines only.)
+    #[cfg(test)]
+    if want != "auto" {
+        return want.into();
+    }
+    let key = format!("{}|{want}", settings.ffmpeg);
     let cache = CACHE.get_or_init(|| Mutex::new(Default::default()));
-    if let Some(v) = cache.lock().unwrap().get(&settings.ffmpeg) {
+    if let Some(v) = cache.lock().unwrap().get(&key) {
         return v.clone();
     }
-    let dev = "/dev/dri/renderD128";
-    let works = std::path::Path::new(dev).exists()
-        && std::process::Command::new(&settings.ffmpeg)
-            .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-vaapi_device", dev, "-f", "lavfi", "-i", "testsrc=size=320x240:rate=1",
-                "-frames:v", "1", "-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-f", "null", "-"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success());
-    let pick = if works { "vaapi" } else { "none" }.to_string();
-    cache.lock().unwrap().insert(settings.ffmpeg.clone(), pick.clone());
+    // "auto" tries the graphics chip; a backend that was picked by hand is tested too, because an
+    // ffmpeg may list an encoder (h264_qsv, h264_nvenc) although this computer has no such hardware.
+    let pick = if want == "auto" { if hw_works(&settings.ffmpeg, "vaapi") { "vaapi" } else { "none" }.to_string() }
+        else if hw_works(&settings.ffmpeg, want) { want.to_string() }
+        else {
+            elog!("hardware acceleration '{want}' does not work on this computer (a test encode failed); converting with the processor instead");
+            "none".to_string()
+        };
+    cache.lock().unwrap().insert(key, pick.clone());
     pick
+}
+
+/// A one-frame test encode with the hardware encoder of this backend.
+pub fn hw_works(ffmpeg: &str, backend: &str) -> bool {
+    let src = ["-hide_banner", "-loglevel", "error", "-nostdin"];
+    let mut args: Vec<String> = src.iter().map(|x| x.to_string()).collect();
+    let lavfi = ["-f", "lavfi", "-i", "testsrc=size=320x240:rate=1", "-frames:v", "1"];
+    match backend {
+        "vaapi" => {
+            let dev = "/dev/dri/renderD128";
+            if !std::path::Path::new(dev).exists() { return false; }
+            args.extend(["-vaapi_device", dev].map(String::from));
+            args.extend(lavfi.map(String::from));
+            args.extend(["-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi"].map(String::from));
+        }
+        "qsv" => { args.extend(lavfi.map(String::from)); args.extend(["-vf", "format=nv12", "-c:v", "h264_qsv"].map(String::from)); }
+        "nvenc" => { args.extend(lavfi.map(String::from)); args.extend(["-vf", "format=yuv420p", "-c:v", "h264_nvenc"].map(String::from)); }
+        _ => return false,
+    }
+    args.extend(["-f", "null", "-"].map(String::from));
+    std::process::Command::new(ffmpeg).args(&args)
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+        .status().is_ok_and(|s| s.success())
 }
 
 /// Hardware constant-quality number: is the quality scaled to 15..25,
@@ -262,6 +295,8 @@ fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32, 
     let mut out = vec![];
     if *method == Method::Remux {
         out.extend([s("-c:v"), s("copy")]);
+        // HEVC in an mp4 needs the "hvc1" tag for browsers.
+        if d.hevc { out.extend([s("-tag:v"), s("hvc1")]); }
         return (pre, out);
     }
     let kb = d.bitrate_kbps.max(300);
@@ -418,7 +453,7 @@ pub fn optimize_args(settings: &Settings, file: &MediaFile, preset: &str, out: &
 /// the front) at most `height` high (0 = keep) at `kb` kbit/s; `input` is
 /// the input part ("-i", path, or a concat list for a movie in parts).
 pub fn file_args(settings: &Settings, file: &MediaFile, input: &[String], height: u32, kb: u32, out: &str) -> Vec<String> {
-    let d = Decision { method: Method::Transcode, reasons: vec![], height, bitrate_kbps: kb };
+    let d = Decision { method: Method::Transcode, reasons: vec![], height, bitrate_kbps: kb, hevc: false };
     let (pre, video) = video_args(settings, &d, &Method::Transcode, 99, Some(41));
     let mut a: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into(), "-y".into()];
     a.extend(pre);
@@ -541,12 +576,14 @@ pub fn detect(settings: &Settings) -> Value {
         .into_iter()
         .filter(|e| encoders.contains(e))
         .collect();
+    let working: Vec<&str> = ["vaapi", "qsv", "nvenc"].into_iter().filter(|b| hw.iter().any(|e| e.ends_with(b)) && hw_works(&settings.ffmpeg, b)).collect();
     json!({
         "ffmpeg": settings.ffmpeg,
         "ffmpeg_found": version.is_some(),
         "ffmpeg_version": version.as_deref().and_then(|v| v.lines().next()).unwrap_or(""),
         "ffprobe_found": probe.is_some(),
         "hardware_encoders": hw,
+        "hardware_working": working,
         "render_device": std::path::Path::new("/dev/dri/renderD128").exists(),
         "hw_accel": settings.hw_accel,
         "hw_in_use": effective_hw(settings),
@@ -611,7 +648,7 @@ mod tests {
     }
     #[test]
     fn hardware_rate_modes() {
-        let d = Decision { method: Method::Transcode, reasons: vec![], height: 720, bitrate_kbps: 4000 };
+        let d = Decision { method: Method::Transcode, reasons: vec![], height: 720, bitrate_kbps: 4000, hevc: false };
         let mut st = Settings { hw_accel: "vaapi".into(), ..Settings::default() };
         let (_, out) = video_args(&st, &d, &Method::Transcode, 99, None);
         assert!(out.windows(2).any(|w| w[0] == "-b:v" && w[1] == "4000k"));
@@ -632,7 +669,7 @@ mod tests {
         assert_eq!(parse_level("4.1"), Some(41));
         assert_eq!(parse_level("41"), Some(41));
         assert_eq!(parse_level("x"), None);
-        let d = Decision { method: Method::Transcode, reasons: vec![], height: 1080, bitrate_kbps: 20000 };
+        let d = Decision { method: Method::Transcode, reasons: vec![], height: 1080, bitrate_kbps: 20000, hevc: false };
         let st = Settings::default();
         let (_, out) = video_args(&st, &d, &Method::Transcode, 99, Some(40));
         assert!(out.windows(2).any(|w| w[0] == "-level" && w[1] == "4.0"));

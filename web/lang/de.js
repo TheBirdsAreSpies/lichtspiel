@@ -142,6 +142,8 @@ I18N.add('de', 'Deutsch', {
     'Remove old cache files and leftover conversions every week': 'Alte Cache-Dateien und übrige Umwandlungen wöchentlich entfernen',
     'Back up now': 'Jetzt sichern',
     'Maintenance': 'Wartung',
+    'Working on this computer: ': 'Funktioniert auf diesem Computer: ',
+    'None of them works on this computer, so the processor converts.': 'Keiner davon funktioniert auf diesem Computer, deshalb wandelt der Prozessor um.',
     'Needs ffmpeg': 'Braucht ffmpeg',
     'Switch user or sign out': 'Benutzer wechseln oder abmelden',
     'Back up now and restore a backup: Maintenance.': 'Jetzt sichern und eine Sicherung zurückspielen: Wartung.',
