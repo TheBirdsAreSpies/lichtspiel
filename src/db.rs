@@ -419,6 +419,9 @@ pub struct User {
     /// A secret being set up (not active until a code from the app was typed in).
     #[serde(default)]
     pub totp_pending: String,
+    /// Settings that follow this person from browser to browser (audio, subtitles, watched mark): key → text.
+    #[serde(default)]
+    pub prefs: std::collections::BTreeMap<String, String>,
 }
 
 /// The minimum age an age rating stands for ("FSK 12", "PG-13", "TV-MA", "de/16" …).

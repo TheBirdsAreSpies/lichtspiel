@@ -160,7 +160,7 @@ async function boot() {
   S.me = null;
   { // (Also without a token: networks set to need no sign-in are let in by the server.)
     try {
-      S.me = await GET('/api/me');
+      S.me = await GET('/api/me'); pullPrefs();
       S.sections = (await GET('/library/sections')).MediaContainer.Directory;
       S.filters = await GET('/api/filters');
     } catch (e) { S.me = null; }
@@ -885,8 +885,25 @@ async function editItem(it, saved) {
 // "Skip credits", the next episode with a countdown and keyboard shortcuts (? lists them).
 const store = {
   get: (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } },
-  set: (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) { /* private window */ } },
+  set: (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) { /* private window */ } if (SYNCED.includes(k)) syncPref(k, String(v)); },
 };
+// Audio, subtitle and watched-mark settings follow the account from browser to browser: they are kept on the
+// server too (POST /api/me/prefs); at start the server's values win, and values only this browser has go up once.
+const SYNCED = ['audioLang', 'subLang', 'subMode', 'subPrefLang', 'subSdh', 'subForced', 'subSize', 'subColor', 'subBg', 'subLift', 'burnSubs', 'watchedMark'];
+let prefQueue = {}, prefTimer = null;
+function syncPref(k, v) {
+  if (!S.me) return;
+  prefQueue[k] = v; clearTimeout(prefTimer);
+  prefTimer = setTimeout(() => { const q = prefQueue; prefQueue = {}; api('POST', '/api/me/prefs', q).catch(() => {}); }, 500);
+}
+function pullPrefs() {
+  const server = (S.me && S.me.prefs) || {}, up = {};
+  for (const k of SYNCED) {
+    if (k in server) { try { localStorage.setItem(k, server[k]); } catch (e) { /* none */ } }
+    else { const v = store.get(k, null); if (v !== null) up[k] = v; }
+  }
+  if (Object.keys(up).length) api('POST', '/api/me/prefs', up).catch(() => {});
+}
 const P = { it: null, offset: 0, method: 'direct', timer: null, queue: [], quality: store.get('quality', 'original'), audio: '', speed: Number(store.get('speed', 1)) || 1,
   sub: -1, subSize: store.get('subSize', '100'), autoNext: store.get('autoNext', '1') === '1', remaining: store.get('timeLeft', '0') === '1',
   next: null, credits: [], intro: null, pending: null, pendingTimer: null, countdown: null, menu: null };

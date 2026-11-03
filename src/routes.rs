@@ -100,6 +100,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/:/rate", "Your rating ?key= &rating=0-10"),
     ("PUT", "/api/items/{id}/favorite", "{favorite: true|false}"),
     ("PUT", "/api/items/{id}/watchlist", "Put a movie, show, season or episode on your watchlist or take it off {watchlist: true|false}; watching it takes it off by itself (a show once every episode is watched)"),
+    ("POST", "/api/me/prefs", "Settings that follow you from browser to browser {key: text, …}; null removes a key (GET /api/me returns them as prefs)"),
     ("POST", "/api/me/profile", "Your full name {full_name}"),
     ("POST", "/api/me/2fa/setup", "Start two-step sign-in → {secret, uri, qr (an SVG picture of the link)} for an authenticator app (not active yet)"),
     ("POST", "/api/me/2fa/enable", "Switch it on with a code from the app {code}"),
@@ -289,6 +290,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             v["can_delete"] = json!(crate::actions::may_delete(&app.db.lock().unwrap(), &user));
             v["can_download"] = json!(crate::downloads::may_download(&user));
             v["sidebar"] = user.sidebar.clone();
+            v["prefs"] = json!(user.prefs);
             ok(v)
         }
         ("POST", ["api", "me", "profile"]) => {
@@ -298,6 +300,23 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             drop(db);
             app.save();
             ok(json!({"ok": true, "full_name": name}))
+        }
+        ("POST", ["api", "me", "prefs"]) => {
+            // {key: text, …}: merged into this person's settings; null/"" removes a key.
+            let Some(obj) = ctx.body.as_object() else { return fail(400, "Send an object") };
+            let mut db = app.db.lock().unwrap();
+            if let Some(u) = db.users.iter_mut().find(|u| u.id == user.id) {
+                for (k, v) in obj {
+                    if k.is_empty() || k.len() > 40 || !k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') { continue; }
+                    match v.as_str() {
+                        Some(s) => { if u.prefs.len() < 64 || u.prefs.contains_key(k) { u.prefs.insert(k.clone(), s.chars().take(200).collect()); } }
+                        None => { u.prefs.remove(k); }
+                    }
+                }
+            }
+            drop(db);
+            app.save();
+            ok(json!({"ok": true}))
         }
         ("POST", ["api", "me", "2fa", "setup"]) => {
             let secret = crate::totp::new_secret();
@@ -1401,7 +1420,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let id = db.new_id();
             db.users.push(db::User { id, username: username.clone(), email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s,
                 admin: as_admin, created_at: now(), allowed_sections: sections, invited_by: Some(user.id),
-                allow_transcode: None, allow_delete: false, allow_download: None, sidebar: Value::Null, home, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false, rss_key: String::new(), full_name: String::new(), totp_secret: String::new(), totp_pending: String::new() });
+                allow_transcode: None, allow_delete: false, allow_download: None, sidebar: Value::Null, home, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false, rss_key: String::new(), full_name: String::new(), totp_secret: String::new(), totp_pending: String::new(), prefs: Default::default() });
             let _ = set_pin(db.users.last_mut().unwrap(), &pin);
             let v = user_json(db.user(id).unwrap());
             drop(db);
