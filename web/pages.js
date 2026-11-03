@@ -733,12 +733,12 @@ async function settingsPage(tab) {
     const copy = url => { if (navigator.clipboard) navigator.clipboard.writeText(url); toast(t('Link copied')); };
     const box = h('div');
     const draw = x => {
-      box.replaceChildren(
+      box.replaceChildren(...(
         x.enabled ? [h('input', { value: x.url, style: 'width:100%;margin:8px 0', onclick: e => e.target.select() }),
           h('button', { onclick: () => copy(x.url) }, t('Copy link')), ' ',
           h('button', { onclick: async () => { if (await sure(t('Make a new address? The old one stops working.'))) draw(await api('POST', '/api/rss', { regenerate: true })); } }, t('New address')), ' ',
           h('button', { class: 'danger', onclick: async () => draw(await api('POST', '/api/rss', { enabled: false })) }, t('Switch off'))]
-          : h('button', { class: 'primary', onclick: async () => draw(await api('POST', '/api/rss', { enabled: true })) }, t('Switch on')));
+          : [h('button', { class: 'primary', onclick: async () => draw(await api('POST', '/api/rss', { enabled: true })) }, t('Switch on'))]));
     };
     draw(r);
     return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Watchlist feed')),

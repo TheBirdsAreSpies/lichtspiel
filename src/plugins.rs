@@ -218,7 +218,19 @@ fn resolve_program(dir: &Path, prog: &str) -> PathBuf {
     if (prog.starts_with("./") || prog.starts_with(".\\") || prog.contains('/')) && local.exists() {
         return local;
     }
+    if let Some(p) = windows_python(prog) { return p; }
     PathBuf::from(prog)
+}
+
+/// On Windows "python3" is usually only the Microsoft Store stub ("Python was not found"); look for
+/// a real Python in the search path (skipping the WindowsApps stubs), then for the "py" launcher.
+fn windows_python(prog: &str) -> Option<PathBuf> {
+    if !cfg!(windows) || !matches!(prog, "python3" | "python") { return None; }
+    let path = std::env::var_os("PATH")?;
+    let find = |name: &str| std::env::split_paths(&path)
+        .filter(|d| !d.to_string_lossy().to_lowercase().contains("windowsapps"))
+        .map(|d| d.join(name)).find(|f| f.is_file());
+    find("python.exe").or_else(|| find("py.exe"))
 }
 
 /// A tiny plugin built into the server, used as a working example and by
