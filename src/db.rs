@@ -392,6 +392,14 @@ pub struct User {
     /// Private key in the address of this person's watchlist feed; empty = no feed.
     #[serde(default)]
     pub rss_key: String,
+    #[serde(default)]
+    pub full_name: String,
+    /// Base32 secret of the authenticator app; empty = no two-step sign-in.
+    #[serde(default)]
+    pub totp_secret: String,
+    /// A secret being set up (not active until a code from the app was typed in).
+    #[serde(default)]
+    pub totp_pending: String,
 }
 
 /// The minimum age an age rating stands for ("FSK 12", "PG-13", "TV-MA", "de/16" …).

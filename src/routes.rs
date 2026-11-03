@@ -97,6 +97,10 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/:/rate", "Your rating ?key= &rating=0-10"),
     ("PUT", "/api/items/{id}/favorite", "{favorite: true|false}"),
     ("PUT", "/api/items/{id}/watchlist", "Put a movie, show, season or episode on your watchlist or take it off {watchlist: true|false}; watching it takes it off by itself (a show once every episode is watched)"),
+    ("POST", "/api/me/profile", "Your full name {full_name}"),
+    ("POST", "/api/me/2fa/setup", "Start two-step sign-in → {secret, uri} for an authenticator app (not active yet)"),
+    ("POST", "/api/me/2fa/enable", "Switch it on with a code from the app {code}"),
+    ("POST", "/api/me/2fa/disable", "Switch it off {password, code}"),
     ("GET", "/api/rss", "Your watchlist feed {enabled, url}; the address holds a private key, so a feed reader needs no sign-in"),
     ("POST", "/api/rss", "{enabled: true|false, regenerate: true} switch your watchlist feed on or off, or make a new address"),
     ("GET", "/rss/watchlist/{key}.xml", "Public: the watchlist as RSS (the key is the private part of the address)"),
@@ -280,6 +284,47 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             v["can_download"] = json!(crate::downloads::may_download(&user));
             v["sidebar"] = user.sidebar.clone();
             ok(v)
+        }
+        ("POST", ["api", "me", "profile"]) => {
+            let name: String = ctx.body.get("full_name").and_then(|v| v.as_str()).unwrap_or("").trim().chars().take(80).collect();
+            let mut db = app.db.lock().unwrap();
+            if let Some(u) = db.users.iter_mut().find(|u| u.id == user.id) { u.full_name = name.clone(); }
+            drop(db);
+            app.save();
+            ok(json!({"ok": true, "full_name": name}))
+        }
+        ("POST", ["api", "me", "2fa", "setup"]) => {
+            let secret = crate::totp::new_secret();
+            let mut db = app.db.lock().unwrap();
+            let issuer = display_name(&db.settings);
+            if let Some(u) = db.users.iter_mut().find(|u| u.id == user.id) { u.totp_pending = secret.clone(); }
+            drop(db);
+            app.save();
+            ok(json!({"secret": secret, "uri": crate::totp::uri(&issuer, &user.username, &secret)}))
+        }
+        ("POST", ["api", "me", "2fa", "enable"]) => {
+            let code = ctx.body_or_param("code").unwrap_or_default();
+            let mut db = app.db.lock().unwrap();
+            let Some(u) = db.users.iter_mut().find(|u| u.id == user.id) else { return fail(404, "No such user") };
+            if u.totp_pending.is_empty() { return fail(400, "Start the setup first"); }
+            if !crate::totp::verify(&u.totp_pending, &code, now()) { return fail(400, "That code is wrong"); }
+            u.totp_secret = std::mem::take(&mut u.totp_pending);
+            drop(db);
+            app.save();
+            ok(json!({"ok": true}))
+        }
+        ("POST", ["api", "me", "2fa", "disable"]) => {
+            let password = ctx.body_or_param("password").unwrap_or_default();
+            let code = ctx.body_or_param("code").unwrap_or_default();
+            if !auth::verify(&password, &user.salt, &user.password_hash) { return fail(403, "The password is wrong"); }
+            let mut db = app.db.lock().unwrap();
+            let Some(u) = db.users.iter_mut().find(|u| u.id == user.id) else { return fail(404, "No such user") };
+            if !u.totp_secret.is_empty() && !crate::totp::verify(&u.totp_secret, &code, now()) { return fail(403, "That code is wrong"); }
+            u.totp_secret.clear();
+            u.totp_pending.clear();
+            drop(db);
+            app.save();
+            ok(json!({"ok": true}))
         }
         ("PUT", ["api", "me", "sidebar"]) => {
             // {order: [keys], hidden: [keys]}; a key is "s<library id>" or "playlists".
@@ -1302,7 +1347,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let id = db.new_id();
             db.users.push(db::User { id, username: username.clone(), email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s,
                 admin: as_admin, created_at: now(), allowed_sections: sections, invited_by: Some(user.id),
-                allow_transcode: None, allow_delete: false, allow_download: None, sidebar: Value::Null, home, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false, rss_key: String::new() });
+                allow_transcode: None, allow_delete: false, allow_download: None, sidebar: Value::Null, home, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false, rss_key: String::new(), full_name: String::new(), totp_secret: String::new(), totp_pending: String::new() });
             let _ = set_pin(db.users.last_mut().unwrap(), &pin);
             let v = user_json(db.user(id).unwrap());
             drop(db);

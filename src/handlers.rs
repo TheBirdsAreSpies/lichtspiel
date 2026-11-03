@@ -33,7 +33,7 @@ pub fn setup(app: &Arc<App>, ctx: &Ctx) -> Resp {
     let mut db = app.db.lock().unwrap();
     if !db.users.is_empty() { return fail(409, "This server is already set up; sign in instead"); }
     let id = db.new_id();
-    db.users.push(User { id, username, email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s, admin: true, created_at: now(), allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false, rss_key: String::new() });
+    db.users.push(User { id, username, email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s, admin: true, created_at: now(), allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false, rss_key: String::new(), full_name: String::new(), totp_secret: String::new(), totp_pending: String::new() });
     if let Some(name) = ctx.body_or_param("server_name").filter(|n| !n.trim().is_empty()) {
         db.settings.server_name = name;
     }
@@ -53,6 +53,16 @@ pub fn login(app: &Arc<App>, ctx: &Ctx) -> Resp {
     };
     match found {
         Some(u) if auth::verify(&password, &u.salt, &u.password_hash) => {
+            if !u.totp_secret.is_empty() {
+                let code = ctx.body_or_param("code").unwrap_or_default();
+                if code.trim().is_empty() {
+                    return js(401, json!({"error": "Enter the code from your authenticator app", "status": 401, "needs_code": true}));
+                }
+                if !crate::totp::verify(&u.totp_secret, &code, now()) {
+                    std::thread::sleep(Duration::from_millis(400));
+                    return js(401, json!({"error": "That code is wrong", "status": 401, "needs_code": true}));
+                }
+            }
             let mut db = app.db.lock().unwrap();
             let tok = new_token(&mut db, u.id, &ctx.body_or_param("device").unwrap_or_default());
             drop(db);
@@ -156,7 +166,7 @@ pub fn invite_accept(app: &Arc<App>, ctx: &Ctx, code: &str) -> Resp {
     if inv.expires_at < now() { return fail(410, "This invite has expired"); }
     let id = db.new_id();
     let email = ctx.body_or_param("email").filter(|e| !e.is_empty()).unwrap_or(inv.email.clone());
-    db.users.push(User { id, username: username.clone(), email, password_hash: h, salt: s, admin: inv.admin, created_at: now(), allowed_sections: inv.allowed_sections.clone(), invited_by: Some(inv.created_by), allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false, rss_key: String::new() });
+    db.users.push(User { id, username: username.clone(), email, password_hash: h, salt: s, admin: inv.admin, created_at: now(), allowed_sections: inv.allowed_sections.clone(), invited_by: Some(inv.created_by), allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false, rss_key: String::new(), full_name: String::new(), totp_secret: String::new(), totp_pending: String::new() });
     if let Some(i) = db.invites.iter_mut().find(|i| i.code == code) {
         i.used_by = Some(id);
         i.used_at = Some(now());

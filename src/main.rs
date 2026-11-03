@@ -28,6 +28,7 @@ mod store;
 mod selftest;
 mod server;
 mod stats;
+mod totp;
 mod transcode;
 #[cfg(feature = "console")]
 mod console;

@@ -578,7 +578,40 @@ async function pluginsPage() {
 // ---------- admin: settings
 // Every user can pick the app's language and change their password; the server settings are for admins.
 function accountPanel(dataDir) {
-  return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Your account')),
+  const me = S.me;
+  const name = h('input', { value: me.full_name || '', style: 'width:100%;max-width:320px' });
+  const box = h('div');
+  const drawTwo = async () => {
+    const fresh = await GET('/api/me'); S.me.two_factor = fresh.two_factor;
+    if (fresh.two_factor) {
+      box.replaceChildren(h('p', { class: 'ok' }, t('Two-step sign-in is on.')),
+        h('button', { class: 'danger', onclick: async () => {
+          const pw = await ask(t('Your password'), { password: true }); if (!pw) return;
+          const code = await ask(t('Code from your authenticator app')); if (!code) return;
+          try { await api('POST', '/api/me/2fa/disable', { password: pw, code }); toast(t('Saved')); drawTwo(); } catch (e) { toast(e.message, 5000); }
+        } }, t('Switch off')));
+    } else {
+      box.replaceChildren(h('p', { class: 'dim' }, t('Ask for a code from an authenticator app (Google Authenticator, Aegis, 1Password …) when you sign in with a password.')),
+        h('button', { onclick: async () => {
+          const x = await api('POST', '/api/me/2fa/setup');
+          const code = h('input', { placeholder: '123456', inputmode: 'numeric', autocomplete: 'one-time-code', style: 'width:120px' });
+          box.replaceChildren(h('p', {}, t('Add this key to your authenticator app (type it in, or open the link on your phone):')),
+            h('p', {}, h('code', { style: 'user-select:all;font-size:16px' }, x.secret)), h('p', {}, h('a', { href: x.uri }, t('Open in authenticator app'))),
+            h('p', {}, t('Then type the 6-digit code it shows:')), code, ' ',
+            h('button', { class: 'primary', onclick: async () => { try { await api('POST', '/api/me/2fa/enable', { code: code.value }); toast(t('Two-step sign-in is on.')); drawTwo(); } catch (e) { toast(e.message, 5000); } } }, t('Switch on')));
+        } }, t('Set up')));
+    }
+  };
+  drawTwo();
+  return [h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Your account')),
+      formRow(t('User name'), h('b', {}, me.username)),
+      formRow(t('Full name'), name, ''),
+      h('div', { class: 'actions' }, h('button', { onclick: async () => { await api('POST', '/api/me/profile', { full_name: name.value }); S.me.full_name = name.value.trim(); toast(t('Saved')); } }, t('Save')))),
+    h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Two-step sign-in')), box),
+    accountPasswordPanel(dataDir)];
+}
+function accountPasswordPanel(dataDir) {
+  return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Password')),
     formRow(t('Language of this app'), langSelect(), t('Saved in this browser.')),
     h('div', { style: 'margin-top:14px' }, h('button', { onclick: async () => { const old = await ask(t('Current password'), { password: true }); if (!old) return; const nw = await ask(t('New password (at least 6 characters)'), { password: true }); if (!nw) return; try { await api('POST', '/api/me/password', { old, new: nw }); toast(t('Password changed')); } catch (e) { toast(e.message); } } }, t('Change my password'))),
     dataDir ? h('p', { class: 'dim' }, t('Data folder on the server: '), h('code', {}, dataDir)) : null);

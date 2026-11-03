@@ -55,7 +55,7 @@ async function api(method, path, body) {
   let j = null;
   try { j = await r.json(); } catch (e) { /* not JSON */ }
   if (r.status === 401 && S.token && !path.startsWith('/api/login')) { logout(); throw new Error(t('Please sign in again')); }
-  if (!r.ok) throw new Error((j && j.error) ? t(j.error) : 'HTTP ' + r.status);
+  if (!r.ok) { const e = new Error((j && j.error) ? t(j.error) : 'HTTP ' + r.status); e.data = j; throw e; }
   return j;
 }
 const GET = p => api('GET', p);
@@ -83,7 +83,15 @@ function authPage(title, intro, fields, button, submit) {
 async function signedIn(token) { S.token = token; localStorage.setItem('token', token); location.hash = '#/'; await boot(); }
 async function loginPage() {
   authPage(t('Sign in'), S.status ? S.status.name : '', [['username', t('User name'), 'text', '', 'username'], ['password', t('Password'), 'password', '', 'current-password']], t('Sign in'),
-    async v => { const r = await api('POST', '/api/login', { username: v.username, password: v.password, device: 'web' }); await signedIn(r.token); });
+    async v => {
+      try { const r = await api('POST', '/api/login', { username: v.username, password: v.password, device: 'web' }); await signedIn(r.token); }
+      catch (e) {
+        if (!(e.data && e.data.needs_code)) throw e;
+        // Two-step sign-in: the code from the authenticator app.
+        authPage(t('Two-step sign-in'), t('Enter the 6-digit code from your authenticator app.'), [['code', t('Code'), 'text', '', 'one-time-code']], t('Sign in'),
+          async w => { const r = await api('POST', '/api/login', { username: v.username, password: v.password, code: w.code, device: 'web' }); await signedIn(r.token); });
+      }
+    });
   // Home profiles (only offered in the local network): a tap, and the PIN if there is one.
   const form = main().querySelector('form.center');
   let home;
