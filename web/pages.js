@@ -190,6 +190,8 @@ async function librariesPage() {
         h('div', { style: 'display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-top:6px' },
           h('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;color:var(--text)', title: t('Detect credits and allow credits skipping for items in this library when enabled in server settings.') },
             h('input', { type: 'checkbox', checked: s.creditsDetection !== false, onchange: async e => { try { await api('PUT', '/library/sections/' + s.id, { credits_detection: e.target.checked }); toast(t('Saved')); } catch (er) { toast(er.message); } } }), t('Enable credits detection')),
+          s.type === 'show' ? h('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;color:var(--text)', title: t('Detect show intros, showing the "Skip intro" button in the player, when enabled in server settings.') },
+            h('input', { type: 'checkbox', checked: s.introDetection !== false, onchange: async e => { try { await api('PUT', '/library/sections/' + s.id, { intro_detection: e.target.checked }); toast(t('Saved')); } catch (er) { toast(er.message); } } }), t('Enable intro detection')) : null,
           h('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;color:var(--text)', title: t('Language of titles, plots and episode names downloaded for this library') }, t('Details language'),
             langSel(s.language || '', langs, async e => {
               try { const r = await api('PUT', '/library/sections/' + s.id, { language: e.target.value }); toast(r.refetching ? t('Downloading details for {n} movies and shows again — progress is shown at the top', { n: r.refetching }) : t('Saved'), 6000); }
@@ -199,6 +201,9 @@ async function librariesPage() {
       h('button', { title: t('Look for end credits in every video of this library now (from the chapters in the files)'), onclick: async () => {
         try { const r = await api('POST', `/library/sections/${s.id}/credits`); toast(t('Checking {n} videos for credits — progress is shown at the top', { n: r.videos }), 5000); pollActivity(); } catch (er) { toast(er.message, 6000); }
       } }, t('Detect credits')),
+      s.type === 'show' ? h('button', { title: t('Compare the sound at the start of the episodes of each season and mark the part they share as the intro'), onclick: async () => {
+        try { const r = await api('POST', `/library/sections/${s.id}/intros`); toast(t('Listening to {n} episodes for intros — progress is shown at the top', { n: r.episodes }), 5000); pollActivity(); } catch (er) { toast(er.message, 6000); }
+      } }, t('Detect intros')) : null,
       h('button', { onclick: () => foldersDialog(s) }, t('Folders')),
       h('button', { title: t('More'), 'aria-label': t('More'), onclick: e => sectionMenu(s, e.currentTarget) }, '⋯'),
       h('button', { class: 'danger', onclick: async () => { if (await sure(t('Remove the library "{name}"? Your files stay on disk.', { name: s.title }), { ok: t('Remove'), danger: true })) { await api('DELETE', '/library/sections/' + s.id); refreshList(); } } }, t('Remove')))))] : []));
@@ -699,12 +704,12 @@ async function settingsPage(tab) {
         formRow(t('Language of this app'), langSelect(), t('Saved in this browser.')),
         pref('timeFormat', 'auto', t('Time format'), [['auto', t('Automatic')], ['24', t('24-hour')], ['12', t('12-hour')]], t('Saved in this browser.')),
         pref('autoLogin', '1', t('Sign in automatically'), [['1', t('Yes')], ['0', t('No')]], t('No: you are signed out when the browser is closed.'), () => { saveToken(S.token); }),
+        pref('levelVolume', '0', t('Level the volume'), [['0', t('No')], ['1', t('Yes')]], t('Quiet and loud videos are brought to a similar loudness. Works for videos the server has measured (Settings → Scheduled tasks).')),
         pref('themeMusic', '0', t('Play theme music'), [['0', t('No')], ['1', t('Yes')]], t('Plays a theme.mp3 from the movie’s or show’s folder quietly on its page. Browsers may need one click on the page first.'), () => { if (store.get('themeMusic', '0') !== '1') stopTheme(); }),
         pref('rememberTab', '0', t('Remember the last page'), [['0', t('No')], ['1', t('Yes')]], t('When the app is opened without an address, it continues where you left off.'))),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Quality')),
         pref('quality', 'original', t('Video quality'), QUALITIES, t('The quality used when a video starts; you can still change it in the player. Saved in this browser.'), () => { P.quality = store.get('quality', 'original'); }),
         pref('keepSmall', '1', t('Play smaller videos in original quality'), [['1', t('Yes')], ['0', t('No')]], t('A video that is not bigger than the chosen quality is not converted.')),
-        pref('levelVolume', '0', t('Level the volume'), [['0', t('No')], ['1', t('Yes')]], t('Quiet and loud videos are brought to a similar loudness. Works for videos the server has measured (Settings → Scheduled tasks).')),
         pref('directPlay', '1', t('Direct play'), [['1', t('Allowed')], ['0', t('Always convert')]], t('Direct play sends the file as it is. Turn it off to always have the server convert, e.g. when a browser plays a file badly.'))),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Audio and subtitles')),
         pref('audioLang', '', t('Preferred audio language'), langs, t('Used when a video has that audio track. Saved in this browser.')),
@@ -802,6 +807,7 @@ async function settingsPage(tab) {
       sel('watched_threshold_percent', t('Video played threshold'), r.played_thresholds.map(p => [p, t('{n}%', { n: p })]), t('Set the progress percentage for video playback at which point the video will be marked as played.')),
       chk('watch_folders', t('Scan my library automatically'), t('Your library will be updated automatically when files are added to, changed in or removed from library folders (checked every 15 seconds; a file is added once copying has finished).')),
       sel('credits_markers_behaviour', t('Generate credits video markers'), r.credits_marker_choices.map(c => [c.value, t(c.label)]), t('Detects movie and episode end credits: from chapters named "Credits" in the file, otherwise by looking at the end of the video. Can also be switched off per library; the Libraries page has a "Detect credits" button to run it now.')),
+      sel('intro_markers_behaviour', t('Generate intro video markers'), r.credits_marker_choices.map(c => [c.value, t(c.label)]), t('Detects show intros, showing the "Skip intro" button in the player: the first 10 minutes of sound of every episode in a season are compared, and the part most episodes share is the intro. Can also be switched off per TV library; the Libraries page has a "Detect intros" button to run it now. Needs ffmpeg.')),
       chk('credits_from_picture', t('Look at the picture to find credits'), t('When a file has no "Credits" chapter, the last part of the video is checked for the typical credits look (dark screen with text). Needs ffmpeg.')),
       sel('played_at_behaviour', t('Mark videos as watched'), r.played_at_choices.map(c => [c.value, t(c.label)]), t('Credits markers come from chapters named "Credits" / "Abspann" in the file, or are set by hand on the movie or episode page. Without markers the threshold is used.')),
       inp('continue_watching_weeks', t('Weeks to consider for Continue Watching'), 'number'), inp('continue_watching_limit', t('Maximum Continue Watching items'), 'number'),
@@ -832,13 +838,13 @@ async function settingsPage(tab) {
       inp('backups_keep', t('Backups to keep'), 'number'),
       chk('optimize_weekly', t('Optimize the library file every week')),
       chk('cleanup_weekly', t('Remove old cache files and leftover conversions every week')),
+      chk('analyze_loudness', t('Measure the loudness of videos'), t('Looks at 5 videos per minute inside the maintenance window until all are measured. Needs ffmpeg.')),
       chk('refresh_metadata', t('Read all libraries again every 3 days')),
       formRow('', h('button', { class: 'small', onclick: async () => { try { const x = await api('POST', '/api/maintenance/backup'); toast(t('Backup saved: {path}', { path: x.path }), 6000); } catch (e) { toast(e.message, 5000); } } }, t('Back up now')),
         s.maintenance_last && s.maintenance_last.backup ? t('Last backup: {date}', { date: fmtDateTime(s.maintenance_last.backup) }) : t('No backup yet.')),
     ],
     transcoder: [
       h('p', { class: tc.ffmpeg_found ? 'ok' : 'err' }, tc.ffmpeg_found ? t('ffmpeg found: {version}', { version: tc.ffmpeg_version }) : t('ffmpeg was not found. Install it (the Docker image includes it) or enter its path below; without it only browser-friendly files play.')),
-      chk('analyze_loudness', t('Measure the loudness of videos'), t('Looks at 5 videos per minute inside the maintenance window until all are measured. Needs ffmpeg.')),
       tc.hardware_encoders.length ? h('p', { class: 'dim' }, t('Hardware encoders in this ffmpeg: ') + tc.hardware_encoders.join(', ') + (tc.render_device ? ' · ' + t('/dev/dri/renderD128 present') : '')) : null,
       h('p', { class: 'dim' }, t('Converting with: ') + (tc.hw_in_use === 'none' ? t('the processor (software)') : tc.hw_in_use)),
       sel('transcoder_quality', t('Transcoder quality'), [['automatic', t('Automatic')], ['speed', t('Prefer higher speed encoding')], ['quality', t('Prefer higher quality encoding')], ['max', t('Make my CPU hurt')]], t('Applies to Intel Quick Sync and NVIDIA hardware encoding.')),

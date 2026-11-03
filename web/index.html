@@ -252,6 +252,7 @@ button.profile:hover .avatar,button.profile:focus-visible .avatar{border-color:v
 #pbar .knob{position:absolute;top:3px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:var(--accent);transform:scale(0);transition:transform .1s}
 #pbar:hover .knob,#pbar.drag .knob{transform:scale(1)}
 #pbar .mark{position:absolute;top:5px;width:3px;height:8px;background:#ffd34d;border-radius:1px}
+#pbar .mark.intro{background:rgba(120,200,255,.75)}
 #pbar .tip{position:absolute;bottom:22px;transform:translateX(-50%);display:none;flex-direction:column;align-items:center;gap:4px;pointer-events:none}
 #pbar .tip img{width:200px;border-radius:4px;border:2px solid #fff;background:#000;display:none}
 #pbar .tip span{background:rgba(0,0,0,.85);padding:2px 8px;border-radius:4px;font-size:13px;font-variant-numeric:tabular-nums}
@@ -409,6 +410,7 @@ svg.viz rect.hov{fill:rgba(255,255,255,.05)}
     <div class="pt"><b id="ptitle"></b><div class="dim"><span id="psub"></span><span id="pmethod"></span><span id="ptogether"></span></div></div>
   </div>
   <button id="pskip" class="pskip"></button>
+  <button id="pskipintro" class="pskip"></button>
   <div id="pnext" class="pnext"></div>
   <div id="pmenu" class="pmenu"></div>
   <div id="pkeys" class="pkeys"></div>

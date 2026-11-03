@@ -84,6 +84,10 @@ pub struct Section {
     /// "Enable credits detection" for this library (on unless switched off).
     #[serde(default = "yes")]
     pub credits_detection: bool,
+    /// "Enable intro detection" for a TV library (on unless switched off; only
+    /// used for TV libraries).
+    #[serde(default = "yes")]
+    pub intro_detection: bool,
     /// Language for this library's movie and show details. Empty = the server's
     /// "Language for details" setting.
     #[serde(default)]
@@ -247,6 +251,15 @@ pub struct MediaFile {
     pub credits_source: String,
     #[serde(default)]
     pub credits_errors: u32,
+    /// Where the intro runs (start and end, ms; empty = none), found by
+    /// comparing the sound of a season's episodes (intro.rs); which version of
+    /// the detector looked (0 = not yet) and how often reading the file failed.
+    #[serde(default)]
+    pub intro_ms: Vec<u64>,
+    #[serde(default)]
+    pub intro_checked: u32,
+    #[serde(default)]
+    pub intro_errors: u32,
 }
 
 /// Bump when the credits detector changes, so files are looked at again.
@@ -688,6 +701,11 @@ pub struct Settings {
     /// as a scheduled task and when media is added).
     #[serde(default = "asap")]
     pub credits_markers_behaviour: String,
+    /// "Generate intro video markers": "never", "scheduled" or "asap" (
+    /// setting, default "asap", group "library";
+    ///).
+    #[serde(default = "asap")]
+    pub intro_markers_behaviour: String,
     /// How many actor photos are saved per movie or show.
     #[serde(default = "cast_photos")]
     pub cast_photos_limit: usize,
@@ -749,6 +767,9 @@ pub struct Settings {
     /// On the home page, new episodes are shown as their show (once per show).
     #[serde(default)]
     pub group_recent_episodes: bool,
+    /// Measure how loud each video is (during maintenance) so the player can level the volume.
+    #[serde(default)]
+    pub analyze_loudness: bool,
     /// Streams to people outside the home network are held to this many Mbit/s (0 = no limit).
     #[serde(default)]
     pub remote_max_mbps: u32,
@@ -768,9 +789,6 @@ pub struct Settings {
     #[serde(default)]
     pub paused_stop_minutes: u32,
     /// Addresses and networks that need no sign-in: they act as the first admin. Only believed
-    /// Measure how loud each video is (during maintenance) so the player can level the volume.
-    #[serde(default)]
-    pub analyze_loudness: bool,
     /// addresses count (see trusted_proxies). Leave empty unless you know why you need it.
     #[serde(default)]
     pub no_auth_networks: String,
@@ -858,6 +876,26 @@ impl Db {
         let start = it.last_file_start_ms();
         it.last_file().map(|f| f.credits_ms.iter().map(|c| c + start).collect()).unwrap_or_default()
     }
+
+    /// Intro detection for an item: a TV library with "Enable intro
+    /// detection" on, and the server setting not "never" (only
+    /// schedules it for show libraries).
+    pub fn intro_on(&self, it: &Item) -> bool {
+        self.settings.intro_markers_behaviour != "never"
+            && self.sections.iter().find(|s| s.id == it.section_id).is_some_and(|s| s.kind == SectionKind::Show && s.intro_detection)
+    }
+
+    /// An episode's intro (start, end ms): set by hand (extra.intro_ms), else found.
+    pub fn intro_marker(&self, it: &Item) -> Option<(u64, u64)> {
+        let pair = |v: &[u64]| (v.len() == 2 && v[1] > v[0]).then(|| (v[0], v[1]));
+        if let Some(a) = it.extra.get("intro_ms").and_then(|v| v.as_array()) {
+            return pair(&a.iter().filter_map(|v| v.as_u64()).collect::<Vec<_>>());
+        }
+        if it.kind != ItemKind::Episode || !self.intro_on(it) {
+            return None;
+        }
+        it.file.as_ref().and_then(|f| pair(&f.intro_ms))
+    }
 }
 
 fn auto_quality() -> String {
@@ -927,6 +965,7 @@ impl Default for Settings {
             played_at_behaviour: played_at(),
             hw_constant_quality: false,
             credits_markers_behaviour: asap(),
+            intro_markers_behaviour: asap(),
             cast_photos_limit: cast_photos(),
             port: port(),
             watch_folders: true,
@@ -947,6 +986,7 @@ impl Default for Settings {
             cleanup_weekly: true,
             refresh_metadata: true,
             group_recent_episodes: false,
+            analyze_loudness: false,
             remote_max_mbps: 0,
             preroll_paths: String::new(),
             max_gpu_transcodes: 0,
@@ -987,7 +1027,6 @@ pub struct Db {
     #[serde(default)]
     pub downloads: Vec<Download>,
 }
-            analyze_loudness: false,
 
 impl Default for Db {
     fn default() -> Self {

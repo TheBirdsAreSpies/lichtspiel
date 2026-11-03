@@ -14,6 +14,7 @@ mod dashboard;
 mod db;
 mod downloads;
 mod handlers;
+mod intro;
 mod maintenance;
 mod metadata;
 mod migrate;

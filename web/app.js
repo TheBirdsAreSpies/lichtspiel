@@ -884,7 +884,7 @@ const store = {
 };
 const P = { it: null, offset: 0, method: 'direct', timer: null, queue: [], quality: store.get('quality', 'original'), audio: '', speed: Number(store.get('speed', 1)) || 1,
   sub: -1, subSize: store.get('subSize', '100'), autoNext: store.get('autoNext', '1') === '1', remaining: store.get('timeLeft', '0') === '1',
-  next: null, credits: [], pending: null, pendingTimer: null, countdown: null, menu: null };
+  next: null, credits: [], intro: null, pending: null, pendingTimer: null, countdown: null, menu: null };
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 const QUALITIES = [['original', t('Original quality')], ['1080p-20', '1080p 20 Mbps'], ['1080p-12', '1080p 12 Mbps'], ['1080p-8', '1080p 8 Mbps'], ['720p-4', '720p 4 Mbps'], ['720p-3', '720p 3 Mbps'], ['720p-2', '720p 2 Mbps'], ['480p-1.5', '480p ' + fmtNum(1.5) + ' Mbps'], ['320p-0.7', '320p ' + fmtNum(0.7) + ' Mbps']];
 const SUB_SIZES = [['75', t('Small')], ['100', t('Normal')], ['130', t('Large')], ['170', t('Very large')]];
@@ -978,6 +978,7 @@ async function play(it, startAt, queue, together) {
   // A picture-based subtitle (Blu-ray, DVD) can't be shown as text: it is burned into the video.
   if (P.sub >= 0 && isPictureSub(P.subs[P.sub])) { if (store.get('burnSubs', 'auto') === 'auto') { P.burn = P.sub; } P.sub = -1; }
   P.credits = (it.credits || []).map(ms => ms / 1000);
+  P.intro = it.intro && it.intro.end > it.intro.start ? [it.intro.start / 1000, it.intro.end / 1000] : null;
   // A movie split over files: its parts play one after the other.
   P.parts = ((it.Media && it.Media[0].Part) || []).map(x => (x.duration || 0) / 1000);
   P.part = 0; P.base = 0; P.pending = null;
@@ -1062,7 +1063,6 @@ const partStart = n => P.parts.slice(0, n).reduce((a, b) => a + b, 0);
 // (Only when every part's length is known; otherwise the parts can't be told apart.)
 const split = () => P.parts.length > 1 && P.parts.every(d => d > 0);
 
-async function load(at) {
 // Settings -> Web -> level the volume: videos the server has measured are brought to about -23 LUFS.
 const LEVEL = { ctx: null, gain: null };
 function levelVolume(it) {
@@ -1079,9 +1079,10 @@ function levelVolume(it) {
     LEVEL.ctx.resume();
   } catch (e) { /* the video just plays at its own volume */ }
 }
+async function load(at) {
   const it = P.it;
-  let q = P.quality;
   levelVolume(it);
+  let q = P.quality;
   // Settings → Web → quality: a video that is not bigger than the chosen quality plays as it is.
   const want = Number((/^(\d+)p/.exec(q) || [])[1]) || 0, have = Number(it.Media && it.Media[0] && it.Media[0].height) || 0;
   if (want && have && have <= want && store.get('keepSmall', '1') === '1') q = 'original';
@@ -1215,11 +1216,16 @@ function drawBar() {
     skip.textContent = !next ? t('Skip credits') : next.type === 'episode' ? t('Next episode ▸') : t('Play next ▸');
     skip.style.display = 'block';
   } else skip.style.display = 'none';
+  // "Skip intro" while the intro runs.
+  const si = $('#pskipintro');
+  if (P.intro && now >= P.intro[0] && now < P.intro[1] - 1) { si.textContent = t('Skip intro'); si.style.display = 'block'; }
+  else si.style.display = 'none';
 }
 function drawMarks() {
   const marks = $('.marks', bar); marks.replaceChildren();
   // drawn once the length is known (duration() needs the item)
   for (const c of P.credits) marks.append(h('div', { class: 'mark', style: `left:${pct(c)}%`, title: t('Credits') }));
+  if (P.intro) marks.append(h('div', { class: 'mark intro', style: `left:${pct(P.intro[0])}%;width:${Math.max(0.3, pct(P.intro[1]) - pct(P.intro[0]))}%`, title: t('Intro') }));
 }
 function drawButtons() {
   const pb = $('#pplay'), playing = !video.paused;
@@ -1300,6 +1306,10 @@ function showNext(next, secs) {
   playNow.focus();
 }
 function hideNext() { clearInterval(P.countdown); P.countdown = null; $('#pnext').style.display = 'none'; }
+$('#pskipintro').addEventListener('click', () => {
+  $('#pskipintro').style.display = 'none';
+  if (P.intro) seekTo(P.intro[1]).then(() => tgSend());
+});
 $('#pskip').addEventListener('click', () => {
   $('#pskip').style.display = 'none';
   // Counts as watched to the end, like letting the credits run.

@@ -282,7 +282,7 @@ mod tests {
     fn related_rows_cover_every_kind() {
         let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 9, "settings": crate::db::Settings::default(),
             "sections": [], "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
-        db.sections.push(Section { id: 1, name: "M".into(), kind: SectionKind::Movie, paths: vec![], created_at: 0, scanned_at: 0, credits_detection: true, language: String::new() });
+        db.sections.push(Section { id: 1, name: "M".into(), kind: SectionKind::Movie, paths: vec![], created_at: 0, scanned_at: 0, credits_detection: true, intro_detection: true, language: String::new() });
         let mk = |id: u64, title: &str, year: u32, genres: &[&str], extra: Value| -> Item {
             serde_json::from_value(json!({"id": id, "section_id": 1, "kind": "movie", "title": title, "sort_title": title.to_lowercase(), "year": year,
                 "genres": genres, "added_at": id, "updated_at": 0, "extra": extra})).unwrap()

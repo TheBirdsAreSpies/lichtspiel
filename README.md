@@ -242,6 +242,23 @@ on the **Libraries** page, or **Credits… → Detect credits again** on a movie
 **Credits…** (e.g. `1:52:30`). Without a credits time, 90 % is used. **Settings → Mark videos
 as watched** offers other choices.
 
+### Skip intro (TV shows)
+
+The server finds a show's intro by **listening**: it reads the sound of the first 10 minutes
+of every episode in a season and compares the episodes with each other. The stretch of sound
+(longer than 20 seconds) that most episodes share is the intro, even when it starts at a
+different time in each episode because of a cold open. While it plays, the player shows
+**Skip intro**, which jumps to its end; the seek bar marks it in blue.
+
+It needs at least two episodes of a season, and runs by itself like credits detection
+(**Settings → Generate intro video markers**, default "as a scheduled task and when media is
+added"). To run it now, press **Detect intros** next to a TV library on the **Libraries** page
+(API: `POST /library/sections/{id}/intros`, `POST /library/metadata/{id}/intros` for one show,
+season or episode). Each TV library has **Enable intro detection** to switch it off. When fewer
+than half of a season's episodes share an intro, the season gets none. An
+intro can also be set by hand with `PUT /library/metadata/{id}/markers` and
+`{"intro": [start ms, end ms]}`.
+
 ## New files are found by themselves
 
 With **Settings → Scan my library automatically** on (the default here), the server looks at

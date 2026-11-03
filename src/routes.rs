@@ -33,7 +33,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/library/sections", "Libraries you may see (movies and TV shows are separate libraries)"),
     ("POST", "/library/sections", "Admin: add a library {name, type: movie|show|other, paths: [..], language}"),
     ("GET", "/library/sections/{id}", "One library"),
-    ("PUT", "/library/sections/{id}", "Admin: change {name, paths, credits_detection, language} (language: details language for this library, empty = the server's; changing it downloads the details again)"),
+    ("PUT", "/library/sections/{id}", "Admin: change {name, paths, credits_detection, intro_detection, language} (language: details language for this library, empty = the server's; changing it downloads the details again)"),
     ("DELETE", "/library/sections/{id}", "Admin: remove a library (files stay on disk)"),
     ("POST", "/library/sections/{id}/refresh", "Admin: scan the library now (?wait=1 to wait for the result)"),
     ("POST", "/library/sections/{id}/analyze", "Admin: read every file of the library again with ffprobe (in the background)"),
@@ -62,6 +62,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("PUT", "/library/metadata/{id}/markers", "Admin: set credits markers {credits: [ms, …]} or {credits: null} to use the chapters again"),
     ("POST", "/library/sections/{id}/credits", "Admin: run credits detection for a library now (in the background; see /api/metadata/status)"),
     ("POST", "/library/metadata/{id}/credits", "Admin: run credits detection for one movie, show, season or episode"),
+    ("POST", "/library/sections/{id}/intros", "Admin: run intro detection for a TV library now (compares the sound at the start of each season's episodes; in the background)"),
+    ("POST", "/library/metadata/{id}/intros", "Admin: run intro detection for one show, season or episode (its whole season)"),
     ("POST", "/library/sections/{id}/refreshMetadata", "Admin: download details again for a whole library (in the background)"),
     ("GET", "/api/metadata/status", "Background work: details waiting and being downloaded, the last result, and any running job (credits detection) with progress"),
     ("GET", "/library/metadata/{id}/history", "Play history of a movie, show, season or episode, newest first (the owner sees everyone's, others their own)"),
@@ -401,7 +403,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let name = if name.trim().is_empty() {
                 match kind { SectionKind::Movie => "Movies", SectionKind::Show => "TV Shows", SectionKind::Other => "Videos" }.to_string()
             } else { name };
-            let s = Section { id: sid, name, kind, paths, created_at: now(), scanned_at: 0, credits_detection: true, language: ctx.body_or_param("language").unwrap_or_default() };
+            let s = Section { id: sid, name, kind, paths, created_at: now(), scanned_at: 0, credits_detection: true, intro_detection: true, language: ctx.body_or_param("language").unwrap_or_default() };
             let v = section_json(&db, &s);
             db.sections.push(s);
             drop(db);
@@ -434,6 +436,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let new_paths = !paths.is_empty();
             if new_paths { s.paths = paths; }
             if let Some(b) = ctx.body.get("credits_detection").and_then(|v| v.as_bool()) { s.credits_detection = b; }
+            if let Some(b) = ctx.body.get("intro_detection").and_then(|v| v.as_bool()) { s.intro_detection = b; }
             let mut language_changed = false;
             if let Some(l) = ctx.body.get("language").and_then(|v| v.as_str()) {
                 let l = l.trim().to_lowercase();
@@ -450,7 +453,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 let n = app.refetch_details(|sec| sec.id == sid);
                 return ok(json!({"ok": true, "id": sid, "refetching": n}));
             }
-            if !new_paths && ctx.body.get("credits_detection").is_some() {
+            if !new_paths && (ctx.body.get("credits_detection").is_some() || ctx.body.get("intro_detection").is_some()) {
                 // Only a switch changed: no rescan needed.
                 let sid = s.id;
                 drop(db);
@@ -512,6 +515,19 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             };
             match app.detect_credits(ids, true) {
                 Ok(total) => ok(json!({"ok": true, "videos": total})),
+                Err(e) => fail(409, &e),
+            }
+        }
+        ("POST", ["library", "sections", sid, "intros"]) | ("POST", ["library", "metadata", sid, "intros"]) => {
+            if !admin { return need_admin(); }
+            let Some(n) = id(sid) else { return fail(404, "Not found") };
+            let ids: Vec<u64> = if ctx.path.starts_with("/library/sections/") {
+                app.db.lock().unwrap().items.values().filter(|i| i.section_id == n && i.parent_id.is_none()).map(|i| i.id).collect()
+            } else {
+                vec![n]
+            };
+            match app.detect_intros(ids, true) {
+                Ok(total) => ok(json!({"ok": true, "episodes": total})),
                 Err(e) => fail(409, &e),
             }
         }
@@ -822,29 +838,52 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let f = it.last_file();
             let how = f.map(|f| f.credits_source.as_str()).filter(|s| !s.is_empty()).unwrap_or("chapters");
             let checked = f.is_some_and(|f| f.credits_checked >= db::CREDITS_DETECTOR_VERSION);
+            let intro = db.intro_marker(it);
+            let intro_source = if it.extra.contains_key("intro_ms") { "manual" } else if intro.is_some() { "sound" }
+                else if it.file.as_ref().is_some_and(|f| f.intro_checked >= crate::intro::DETECTOR_VERSION) { "none" } else { "pending" };
             ok(json!({"credits": credits, "source": if manual { "manual" } else if !credits.is_empty() { how } else if checked { "none" } else { "pending" },
-                "watchedAt": at, "duration": it.duration_ms, "errors": f.map(|f| f.credits_errors).unwrap_or(0)}))
+                "watchedAt": at, "duration": it.duration_ms, "errors": f.map(|f| f.credits_errors).unwrap_or(0),
+                "intro": intro.map(|(s, e)| json!([s, e])), "introSource": intro_source,
+                "introDetection": it.kind == ItemKind::Episode && db.intro_on(it)}))
         }),
         ("PUT", ["library", "metadata", iid, "markers"]) => {
             if !admin { return need_admin(); }
             let Some(iid) = id(iid) else { return fail(404, "Not found") };
             // {"credits": [ms, …]} sets them; {"credits": null} goes back to the chapters.
-            let list = match ctx.body.get("credits") {
-                Some(Value::Array(a)) => Some(a.iter().filter_map(|v| v.as_u64()).collect::<Vec<u64>>()),
-                Some(Value::Null) => None,
-                _ => return fail(400, "Send {\"credits\": [start in ms, …]} or {\"credits\": null}"),
+            // {"intro": [start ms, end ms]} sets the intro; {"intro": null} goes back to the found one.
+            let list: Option<Option<Vec<u64>>> = match ctx.body.get("credits") {
+                Some(Value::Array(a)) => Some(Some(a.iter().filter_map(|v| v.as_u64()).collect())),
+                Some(Value::Null) => Some(None),
+                None if ctx.body.get("intro").is_some() => None,
+                _ => return fail(400, "Send {\"credits\": [start in ms, …]} or {\"credits\": null}, and/or {\"intro\": [start ms, end ms]} or {\"intro\": null}"),
+            };
+            let intro: Option<Option<Vec<u64>>> = match ctx.body.get("intro") {
+                Some(Value::Array(a)) => {
+                    let v: Vec<u64> = a.iter().filter_map(|v| v.as_u64()).collect();
+                    if v.len() != 2 || v[1] <= v[0] { return fail(400, "intro must be [start ms, end ms] with the end after the start"); }
+                    Some(Some(v))
+                }
+                Some(Value::Null) => Some(None),
+                None => None,
+                _ => return fail(400, "intro must be [start ms, end ms] or null"),
             };
             {
                 let mut db = app.db.lock().unwrap();
                 let Some(it) = db.items.get_mut(&iid) else { return fail(404, "Not found") };
                 if !it.kind.playable() { return fail(400, "Only movies and episodes have credits"); }
                 match list {
-                    Some(l) => { it.extra.insert("credits_ms".into(), json!(l)); }
-                    None => { it.extra.remove("credits_ms"); }
+                    Some(Some(l)) => { it.extra.insert("credits_ms".into(), json!(l)); }
+                    Some(None) => { it.extra.remove("credits_ms"); }
+                    None => {}
+                }
+                match intro {
+                    Some(Some(v)) => { it.extra.insert("intro_ms".into(), json!(v)); }
+                    Some(None) => { it.extra.remove("intro_ms"); }
+                    None => {}
                 }
             }
             app.save();
-            with_item(app, &user, &iid.to_string(), |db, it| ok(json!({"ok": true, "credits": db.credits_markers(it)})))
+            with_item(app, &user, &iid.to_string(), |db, it| ok(json!({"ok": true, "credits": db.credits_markers(it), "intro": db.intro_marker(it).map(|(s, e)| json!([s, e]))})))
         }
         ("POST", ["library", "metadata", iid, "refresh"]) | ("PUT", ["library", "metadata", iid, "refresh"]) => {
             if !admin { return need_admin(); }
@@ -1534,6 +1573,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                     if !(1..=51).contains(&s.h264_minimum_crf) { return fail(400, "h264_minimum_crf must be 1-51"); }
                     if s.played_at_behaviour > 3 { return fail(400, "played_at_behaviour must be 0, 1, 2 or 3"); }
                     if !db::CREDITS_MARKER_CHOICES.iter().any(|c| c.0 == s.credits_markers_behaviour) { return fail(400, "credits_markers_behaviour must be never, scheduled or asap"); }
+                    if !db::CREDITS_MARKER_CHOICES.iter().any(|c| c.0 == s.intro_markers_behaviour) { return fail(400, "intro_markers_behaviour must be never, scheduled or asap"); }
                     if !["automatic", "speed", "quality", "max"].contains(&s.transcoder_quality.as_str()) { return fail(400, "transcoder_quality must be automatic, speed, quality or max"); }
                     if s.port == 0 { return fail(400, "port must be 1-65535"); }
                     let port_changed = s.port != db.settings.port;

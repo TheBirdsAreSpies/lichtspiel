@@ -687,6 +687,133 @@ impl App {
         Ok(total)
     }
 
+    /// "Detect intros": compares the sound at the start of every episode of a
+    /// season with the others (intro.rs, after the the setting,
+    ///), on a background thread shown as a job. `ids` may be
+    /// shows, seasons or episodes. Unless `force`, seasons whose episodes are
+    /// all up to date are skipped ("Already up to date"). Returns how many
+    /// episodes it will listen to.
+    pub fn detect_intros(self: &Arc<Self>, ids: Vec<u64>, force: bool) -> Result<usize, String> {
+        use crate::intro;
+        let mut job = self.job.lock().unwrap();
+        if job.is_some() {
+            return Err("Another job (credits or intro detection, or ratings) is already running; try again in a moment".into());
+        }
+        type Episode = (u64, String, u64, u64);
+        let (seasons, ffmpeg): (Vec<Vec<Episode>>, String) = {
+            let db = self.db.lock().unwrap();
+            if db.settings.intro_markers_behaviour == "never" {
+                return Err("Intro markers are switched off in Settings (Generate intro video markers: never)".into());
+            }
+            let mut season_ids: Vec<u64> = vec![];
+            for id in ids {
+                let Some(it) = db.items.get(&id) else { continue };
+                match it.kind {
+                    ItemKind::Show => season_ids.extend(db.children(id).iter().filter(|c| c.kind == ItemKind::Season).map(|c| c.id)),
+                    ItemKind::Season => season_ids.push(id),
+                    ItemKind::Episode => season_ids.extend(it.parent_id),
+                    _ => {}
+                }
+            }
+            season_ids.sort();
+            season_ids.dedup();
+            let mut seasons = vec![];
+            for sid in season_ids {
+                let eps: Vec<&Item> = db.children(sid).into_iter().filter(|e| e.kind == ItemKind::Episode && e.file.is_some() && db.intro_on(e)).collect();
+                // One episode has nothing to be compared with.
+                if eps.len() < 2 {
+                    continue;
+                }
+                let stale = eps.iter().any(|e| e.file.as_ref().is_some_and(|f| f.intro_checked < intro::DETECTOR_VERSION && f.intro_errors <= db::CREDITS_MAX_ERRORS));
+                if !force && !stale {
+                    continue;
+                }
+                seasons.push(eps.iter().filter_map(|e| e.file.as_ref().map(|f| (e.id, f.path.clone(), f.size, f.modified))).collect());
+            }
+            (seasons, db.settings.ffmpeg.clone())
+        };
+        let total: usize = seasons.iter().map(|s| s.len()).sum();
+        if total == 0 {
+            return Err(if force { "No season with at least two episodes to compare (or intro detection is off for this library)".into() } else { "Everything is already up to date".into() });
+        }
+        *job = Some(("Detecting intros".into(), 0, total));
+        drop(job);
+        let app = self.clone();
+        let cache = self.data_dir.join("cache").join("intro");
+        std::thread::spawn(move || {
+            let (mut done, mut found, mut failed) = (0, 0, 0);
+            for eps in seasons {
+                let (mut prints, mut errors) = (vec![], vec![]);
+                for (_, path, size, modified) in &eps {
+                    let file = cache.join(intro::cache_name(path, *size, *modified));
+                    let print = match intro::read_cached(&file) {
+                        Some(p) => Ok(p),
+                        None => intro::fingerprint_file(&ffmpeg, path).inspect(|p| intro::write_cached(&file, p)),
+                    };
+                    match print {
+                        Ok(p) => {
+                            prints.push(p);
+                            errors.push(None);
+                        }
+                        Err(e) => {
+                            prints.push(vec![]);
+                            errors.push(Some(e));
+                        }
+                    }
+                    done += 1;
+                    *app.job.lock().unwrap() = Some(("Detecting intros".into(), done, total));
+                }
+                let intros = intro::detect_season(&prints);
+                let mut db = app.db.lock().unwrap();
+                for (((id, ..), found_intro), error) in eps.iter().zip(intros).zip(errors) {
+                    let Some(f) = db.items.get_mut(id).and_then(|i| i.file.as_mut()) else { continue };
+                    match error {
+                        None => {
+                            found += usize::from(found_intro.is_some());
+                            f.intro_ms = found_intro.map(|(s, e)| vec![s, e]).unwrap_or_default();
+                            f.intro_checked = intro::DETECTOR_VERSION;
+                            f.intro_errors = 0;
+                        }
+                        Some(e) => {
+                            failed += 1;
+                            f.intro_errors += 1;
+                            f.intro_ms.clear();
+                            eprintln!("intro detection for item {id}: {e}");
+                        }
+                    }
+                }
+            }
+            app.save();
+            *app.job.lock().unwrap() = None;
+            let mut p = app.meta_progress.lock().unwrap();
+            p.done += 1;
+            let failed_txt = if failed > 0 { format!(", {failed} could not be read") } else { String::new() };
+            p.last = json!({"id": null, "title": "Intro detection", "ok": failed == 0,
+                "message": format!("Intro detection finished: intros found in {found} of {total} episodes{failed_txt}"), "at": now()});
+        });
+        Ok(total)
+    }
+
+    /// Seasons still waiting for automatic intro detection (with at least two
+    /// episodes, so there is something to compare).
+    pub fn intros_pending(&self) -> Vec<u64> {
+        let db = self.db.lock().unwrap();
+        if db.settings.intro_markers_behaviour == "never" {
+            return vec![];
+        }
+        let mut v: Vec<u64> = db
+            .items
+            .values()
+            .filter(|i| i.kind == ItemKind::Episode && db.intro_on(i))
+            .filter(|i| i.file.as_ref().is_some_and(|f| f.intro_checked < crate::intro::DETECTOR_VERSION && f.intro_errors <= db::CREDITS_MAX_ERRORS))
+            .filter_map(|i| i.parent_id)
+            .collect();
+        v.sort();
+        v.dedup();
+        v.retain(|s| db.children(*s).iter().filter(|e| e.kind == ItemKind::Episode && e.file.is_some()).count() >= 2);
+        v
+    }
+
     /// Videos still waiting for automatic credits detection.
     pub fn credits_pending(&self) -> Vec<u64> {
         let db = self.db.lock().unwrap();
@@ -1801,6 +1928,7 @@ pub fn start_background(app: &Arc<App>) {
     let a = app.clone();
     std::thread::spawn(move || {
         let mut last_scheduled = Instant::now();
+        let mut last_intro = Instant::now();
         let mut imdb_retry = Instant::now();
         loop {
             std::thread::sleep(Duration::from_secs(60));
@@ -1816,6 +1944,20 @@ pub fn start_background(app: &Arc<App>) {
                 if !pending.is_empty() {
                     last_scheduled = Instant::now();
                     let _ = a.detect_credits(pending, false);
+                    continue;
+                }
+            }
+            // Intro detection: the same choices ("Generate intro video markers").
+            let intro_due = match a.settings().intro_markers_behaviour.as_str() {
+                "asap" => true,
+                "scheduled" => last_intro.elapsed() >= Duration::from_secs(86400),
+                _ => false,
+            };
+            if intro_due && idle {
+                let pending = a.intros_pending();
+                if !pending.is_empty() {
+                    last_intro = Instant::now();
+                    let _ = a.detect_intros(pending, false);
                     continue;
                 }
             }
@@ -1986,6 +2128,7 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
     });
     if v.watchlist_at > 0 { o["watchlistedAt"] = json!(v.watchlist_at); }
     if let Some(y) = it.year { o["year"] = json!(y); }
+    if let Some(l) = it.extra.get("loudness_lufs").filter(|v| v.is_number()) { o["loudness"] = l.clone(); }
     if it.extra.contains_key(crate::scanner::MISSING) { o["missing"] = json!(true); }
     if let Some(r) = it.rating { o["rating"] = json!(r); }
     if let Some(r) = v.rating { o["userRating"] = json!(r); }
@@ -2020,6 +2163,8 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
     if detail && it.kind.playable() {
         let credits = db.credits_markers(it);
         if !credits.is_empty() { o["credits"] = json!(credits); }
+        // Where the intro runs (ms), for the player's "Skip intro".
+        if let Some((s, e)) = db.intro_marker(it) { o["intro"] = json!({"start": s, "end": e}); }
     }
     if let Some(f) = &it.file {
         let vid = f.video();
@@ -2114,7 +2259,7 @@ pub fn section_json(db: &Db, s: &Section) -> Value {
     json!({
         "key": s.id.to_string(), "id": s.id, "title": s.name, "type": s.kind.as_str(),
         "Location": s.paths.iter().map(|p| json!({"path": p})).collect::<Vec<_>>(),
-        "paths": s.paths, "createdAt": s.created_at, "scannedAt": s.scanned_at, "creditsDetection": s.credits_detection, "language": s.language,
+        "paths": s.paths, "createdAt": s.created_at, "scannedAt": s.scanned_at, "creditsDetection": s.credits_detection, "introDetection": s.intro_detection, "language": s.language,
         "count": top, "videoCount": playable, "trash": trash,
     })
 }
@@ -2128,7 +2273,6 @@ pub fn playlist_json(db: &Db, user: &User, p: &Playlist) -> (Value, usize, u64) 
     let v = json!({
         "ratingKey": p.id.to_string(), "id": p.id, "key": format!("/playlists/{}/items", p.id),
         "type": "playlist", "playlistType": "video", "title": p.title, "summary": p.summary,
-    if let Some(l) = it.extra.get("loudness_lufs").filter(|v| v.is_number()) { o["loudness"] = l.clone(); }
         "smart": p.kind == PlaylistKind::Smart, "kind": kind,
         "default": p.is_default(), "defaultKey": p.default_key, "query": p.query,
         "leafCount": items.len(), "duration": duration, "thumb": thumb, "composite": thumb,
