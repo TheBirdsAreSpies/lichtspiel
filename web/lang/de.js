@@ -7,6 +7,10 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    '▶ Trailer': '▶ Trailer',
+    'Teaser': 'Teaser',
+    'online': 'online',
+    'Online video from {site}': 'Online-Video von {site}',
     'This subtitle is made of pictures; turn on burning in under Settings → Web.': 'Dieser Untertitel besteht aus Bildern; schalte das Einbrennen unter Einstellungen → Web ein.',
     'burned in': 'eingebrannt',
     'Burn in subtitles': 'Untertitel einbrennen',

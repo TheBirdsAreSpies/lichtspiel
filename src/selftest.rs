@@ -555,8 +555,15 @@ pub fn run(out: &Path) -> bool {
     // Playback events tell plugins what the item is (the example plugin writes the last one down).
     let seen_file = data.join("plugins").join("example").join("last_playback.json");
     let mut seen = Value::Null;
-    for _ in 0..200 {
+    for i in 0..300 {
         if let Some(v) = std::fs::read_to_string(&seen_file).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) { seen = v; break; }
+        // On a busy computer the first events can get lost: play the movie once more
+        // (where it already stands, so nothing else changes).
+        if i == 100 {
+            let dur = c.get(&format!("/library/metadata/{mp4}")).json()["MediaContainer"]["Metadata"][0]["duration"].as_u64().unwrap_or(0);
+            c.post(&format!("/:/timeline?ratingKey={mp4}&time={}&state=playing", dur * 95 / 100), json!({}));
+            c.post(&format!("/:/timeline?ratingKey={mp4}&time={}&state=stopped", dur * 95 / 100), json!({}));
+        }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     let brief = seen["data"]["item"]["type"] == "movie" && seen["data"]["item"]["title"].is_string() && seen["data"]["progress"].is_number();

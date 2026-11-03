@@ -196,6 +196,13 @@ Movies are read the way Plex's naming guide describes:
 | Split movie (up to 8 parts, played one after the other) | `The Dark Knight (2008) - pt1.mp4`, `- pt2.mp4` (also cd, disc, disk, dvd, part) |
 | Extras in a subfolder of the movie's folder | `Avatar (2009)/Trailers/Teaser.mkv` — also `Behind The Scenes`, `Deleted Scenes`, `Featurettes`, `Interviews`, `Scenes`, `Shorts`, `Other`, `Extras` |
 | Extras next to the movie | `Avatar (2009)-trailer.mkv` — also `-behindthescenes`, `-deleted`, `-featurette`, `-interview`, `-scene`, `-short`, `-other` |
+| A trailer file on its own | `Avatar (2009)/trailer.mkv` or `movie-trailer.mkv` |
+
+**Trailers:** the **▶ Trailer** button on a movie or show page plays a trailer file when there
+is one. Otherwise it plays the first online trailer found while matching (from TMDB, or from
+Wikidata when no TMDB key is set). Online trailers play in the page from YouTube, nothing is
+downloaded, and they also appear in the **Extras** row marked "online". Titles matched before
+this version get their online trailers after **Refresh metadata**.
 
 Extras are shown on the movie's page, not as movies of their own; an extras folder without a
 movie next to it is read as ordinary movies. When a file name finds nothing online (a release

@@ -502,6 +502,7 @@ const plTitle = pl => pl.default ? t(pl.title) : pl.title;
 
 // ---------- details
 // Kinds of extras (trailers, featurettes …) as the scanner names them.
+const ONLINE_VIDEO_TYPES = { Trailer: 'Trailer', Teaser: 'Teaser', Clip: 'Scene', Featurette: 'Featurette', 'Behind the Scenes': 'Behind the scenes' };
 const EXTRA_TYPES = { trailer: 'Trailer', behindthescenes: 'Behind the scenes', deleted: 'Deleted scene', featurette: 'Featurette', interview: 'Interview', scene: 'Scene', short: 'Short', other: 'Extra' };
 
 async function itemPage(id) {
@@ -525,6 +526,8 @@ async function itemPage(id) {
   const links = [ids.imdb ? ['IMDb', 'https://www.imdb.com/title/' + ids.imdb] : null, ids.tmdb ? ['TMDB', `https://www.themoviedb.org/${it.type === 'movie' ? 'movie' : 'tv'}/${ids.tmdb}`] : null,
     ids.tvmaze ? ['TVmaze', 'https://www.tvmaze.com/shows/' + ids.tvmaze] : null, ids.wikipedia ? ['Wikipedia', ids.wikipedia] : null, ids.wikidata ? ['Wikidata', 'https://www.wikidata.org/wiki/' + ids.wikidata] : null].filter(Boolean);
   const matchable = it.type === 'movie' || it.type === 'show';
+  const localTrailer = (it.Extras || []).find(e => e.extraType === 'trailer');
+  const onlineVideos = matchable ? (x.trailers || []).filter(v => v && v.key) : [];
   // Rows: Other Editions, Related, More by the director, More with the first two actors.
   const related = matchable ? ((await GET(`/library/metadata/${id}/related?count=20`)).MediaContainer.Hub || []) : [];
   const hero = h('img', { class: 'hero', src: withTok(`/library/metadata/${id}/art?v=${it.updatedAt || 0}`), alt: '', onerror: e => e.target.remove() });
@@ -552,6 +555,9 @@ async function itemPage(id) {
           m && it.viewOffset ? h('button', { class: 'primary big', onclick: () => play(it, it.viewOffset / 1000) }, t('▶ Resume from {time}', { time: fmtTime(it.viewOffset / 1000) })) : null,
           m && it.viewOffset ? iconBtn('restart', t('▶ Play from start'), () => play(it, 0)) : null,
           m && !it.viewOffset ? h('button', { class: 'primary big', onclick: () => play(it, 0) }, t('▶ Play')) : null,
+          // A trailer file next to the movie first, else the first online trailer.
+          localTrailer ? h('button', { class: 'big', onclick: () => play(localTrailer, 0) }, t('▶ Trailer'))
+            : onlineVideos.length ? h('button', { class: 'big', onclick: () => playOnlineVideo(onlineVideos[0]) }, t('▶ Trailer')) : null,
           !m && it.leafCount ? h('button', { class: 'primary big', onclick: nextEp }, t('▶ Play next episode')) : null,
           iconBtn('check', watched ? t('Mark as unwatched') : t('Mark as watched'), async () => { await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${it.id}`); refresh(); }, watched),
           iconBtn(it.favorite ? 'heart' : 'heartOff', it.favorite ? t('Remove from favorites') : t('Add to favorites'), async () => { await api('PUT', `/api/items/${it.id}/favorite`, { favorite: !it.favorite }); refresh(); }, !!it.favorite),
@@ -583,9 +589,13 @@ async function itemPage(id) {
           h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, `${e.index}. ${e.title}`)), h('div', { class: 'dim' }, [fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', e.viewOffset ? t('stopped at {time}', { time: fmtTime(e.viewOffset / 1000) }) : ''].filter(Boolean).join(' · ')),
             e.summary ? h('div', { class: 'ep-plot' }, e.summary) : null),
           h('button', { class: 'primary small', onclick: () => play(e, e.viewOffset ? e.viewOffset / 1000 : 0, kids.slice(i + 1)) }, '▶'))))] : null,
-    (it.Extras || []).length ? [h('h2', {}, t('Extras')), scroller('row extras', it.Extras.map(x => h('div', { class: 'card', onclick: () => play(x, 0) },
+    (it.Extras || []).length || onlineVideos.length ? [h('h2', {}, t('Extras')), scroller('row extras', [...(it.Extras || []).map(x => h('div', { class: 'card', onclick: () => play(x, 0) },
       h('div', { class: 'poster' }, h('img', { src: withTok(x.thumb), loading: 'lazy', alt: '' })),
-      h('div', { class: 't', title: t(x.title) }, t(x.title)), h('div', { class: 's' }, [t(EXTRA_TYPES[x.extraType] || 'Extra'), fmtDur(x.duration)].filter(Boolean).join(' · ')))))] : null,
+      h('div', { class: 't', title: t(x.title) }, t(x.title)), h('div', { class: 's' }, [t(EXTRA_TYPES[x.extraType] || 'Extra'), fmtDur(x.duration)].filter(Boolean).join(' · ')))),
+      // Online videos (TMDB / Wikidata, played from YouTube), after the files.
+      ...onlineVideos.map(v => h('div', { class: 'card', onclick: () => playOnlineVideo(v) },
+        h('div', { class: 'poster' }, h('img', { src: `https://i.ytimg.com/vi/${encodeURIComponent(v.key)}/mqdefault.jpg`, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer' })),
+        h('div', { class: 't', title: v.name }, v.name), h('div', { class: 's' }, [t(ONLINE_VIDEO_TYPES[v.type] || 'Extra'), t('online')].join(' · '))))])] : null,
     related.map(hb => row(hb.title, hb.Metadata)));
   if (m) {
     try {
@@ -705,6 +715,14 @@ function drawPlayingBtn(n) {
 }
 
 // onclose runs however the box goes away: its buttons, a click beside it or Escape.
+// An online trailer (YouTube) in a window; nothing is stored on the server.
+function playOnlineVideo(v) {
+  modal(v.name || t('Trailer'), [h('div', { class: 'yt' }, h('iframe', {
+    src: `https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.key)}?autoplay=1&rel=0`,
+    allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin', title: v.name || 'Trailer' })),
+    h('div', { class: 'dim', style: 'margin-top:8px;font-size:12px' }, t('Online video from {site}', { site: v.site || 'YouTube' }))]);
+}
+
 function modal(title, kids, onclose) {
   const box = h('div', { class: 'modal', onclick: e => { if (e.target === box) box.remove(); } }, h('div', { class: 'box' }, h('h2', { style: 'margin-top:0' }, title), kids));
   const remove = box.remove.bind(box);
