@@ -652,8 +652,24 @@ async function settingsPage(tab) {
       items.filter(([k]) => S.me.admin || ['account', 'web'].includes(k)).map(([k, label]) => h('a', { href: '#/settings/' + k, class: k === cur ? 'on' : '' }, t(label)))]));
   if (!tab || (!S.me.admin && !['account', 'web'].includes(tab))) tab = 'account';
   if (tab === 'account') return set(h('h1', {}, t('Settings')), nav(tab), accountPanel(), pluginPanels());
-  if (tab === 'web') return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Web')),
-    formRow(t('Language of this app'), langSelect(), t('Saved in this browser.'))));
+  if (tab === 'web') {
+    const pref = (key, def, label, opts, help, after) => formRow(label, h('select', { onchange: e => { store.set(key, e.target.value); if (after) after(); toast(t('Saved')); } },
+      opts.map(([v, l]) => h('option', { value: v, selected: store.get(key, def) === String(v) }, l))), help);
+    const langs = [['', t('Not set')], ...['en', 'de', 'fr', 'es', 'it', 'pt', 'nl', 'sv', 'da', 'no', 'fi', 'pl', 'ru', 'tr', 'ja', 'ko', 'zh'].map(c => [c, langName(c)])];
+    const color = h('input', { type: 'color', value: store.get('subColor', '#ffffff'), onchange: e => { store.set('subColor', e.target.value); applySubStyle(); toast(t('Saved')); } });
+    return set(h('h1', {}, t('Settings')), nav(tab),
+      h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Web')),
+        formRow(t('Language of this app'), langSelect(), t('Saved in this browser.')),
+        pref('timeFormat', 'auto', t('Time format'), [['auto', t('Automatic')], ['24', t('24-hour')], ['12', t('12-hour')]], t('Saved in this browser.'))),
+      h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Audio and subtitles')),
+        pref('audioLang', '', t('Preferred audio language'), langs, t('Used when a video has that audio track. Saved in this browser.')),
+        pref('subPrefLang', '', t('Preferred subtitle language'), langs),
+        pref('subMode', 'manual', t('Subtitle mode'), [['manual', t('Manually selected')], ['foreign', t('Shown with foreign audio')], ['always', t('Always on')]], t('“Shown with foreign audio” turns subtitles on when the audio is not in your preferred subtitle language.')),
+        pref('subSize', '100', t('Subtitle size'), SUB_SIZES, '', () => setSubSize(store.get('subSize', '100'))),
+        formRow(t('Subtitle color'), color),
+        pref('subBg', '1', t('Subtitle background'), [['1', t('Dark box')], ['0', t('None')]], '', applySubStyle),
+        pref('subLift', '0', t('Subtitle position'), [['0', t('Bottom')], ['2', t('Slightly higher')], ['4', t('Higher')], ['7', t('Much higher')]], t('Applies to the next subtitle line shown.'))));
+  }
   if (tab === 'watched') return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Watched indicator')), h('p', { class: 'dim' }, t('Not available yet.'))));
   if (tab === 'manage') return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Manage')),
     h('p', {}, h('a', { href: '#/libraries' }, t('Libraries'))), h('p', {}, h('a', { href: '#/users' }, t('Users & invites'))),

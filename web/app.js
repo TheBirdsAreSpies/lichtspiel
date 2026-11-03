@@ -41,7 +41,8 @@ const fmtNum = (n, digits) => Number(n).toLocaleString(I18N.lang, digits === und
 const fmtDur = ms => { if (!ms) return ''; const m = Math.round(ms / 60000); if (m < 1) return Math.max(1, Math.round(ms / 1000)) + ' s'; return m >= 60 ? t('{h} h {m} min', { h: Math.floor(m / 60), m: m % 60 }) : t('{m} min', { m }); };
 const fmtTime = s => { s = Math.max(0, Math.floor(s)); const hh = Math.floor(s / 3600), mm = Math.floor(s / 60) % 60, ss = s % 60; return (hh ? hh + ':' + String(mm).padStart(2, '0') : mm) + ':' + String(ss).padStart(2, '0'); };
 const fmtDate = sec => sec ? new Date(sec * 1000).toLocaleDateString(I18N.lang) : '';
-const fmtDateTime = sec => sec ? new Date(sec * 1000).toLocaleString(I18N.lang) : '';
+const hour12 = () => { const v = store.get('timeFormat', 'auto'); return v === '12' ? true : v === '24' ? false : undefined; };
+const fmtDateTime = sec => sec ? new Date(sec * 1000).toLocaleString(I18N.lang, { hour12: hour12() }) : '';
 const fmtSize = b => b > 1e9 ? fmtNum(b / 1e9, 1) + ' GB' : fmtNum(b / 1e6, 0) + ' MB';
 const CONTAINER_NAMES = { matroska: 'MKV', mov: 'MP4', mp4: 'MP4', mpegts: 'TS', avi: 'AVI', webm: 'WebM' };
 const friendlyContainer = m => CONTAINER_NAMES[String(m.container || '').toLowerCase()] || String(m.container || '').toUpperCase();
@@ -916,9 +917,19 @@ async function play(it, startAt, queue, together) {
   P.audios = auds;
   P.audio = '';
   P.subs = (it.Media && it.Media[0].subtitles) || [];
-  // The subtitle language picked last time comes back on its own.
+  // Preferred audio language (Settings → Web), when the file has it and it isn't the first track.
+  const prefAudio = store.get('audioLang', '');
+  const aPick = prefAudio ? auds.findIndex(a => lang2(a.language) === prefAudio) : -1;
+  if (aPick > 0) P.audio = auds[aPick].index;
+  // The subtitle language picked last time comes back on its own, else the subtitle mode decides.
   const wantLang = store.get('subLang', '');
   P.sub = wantLang ? P.subs.findIndex(s => (s.language || s.file || '') === wantLang) : -1;
+  const subMode = store.get('subMode', 'manual'), prefSub = store.get('subPrefLang', '');
+  if (P.sub < 0 && prefSub && subMode !== 'manual') {
+    const playing = auds[aPick > 0 ? aPick : 0];
+    const foreign = !playing || !playing.language || lang2(playing.language) !== prefSub;
+    if (subMode === 'always' || foreign) P.sub = P.subs.findIndex(x => lang2(x.language) === prefSub);
+  }
   P.lastSub = P.sub >= 0 ? P.sub : undefined;
   P.credits = (it.credits || []).map(ms => ms / 1000);
   // A movie split over files: its parts play one after the other.
@@ -1030,8 +1041,17 @@ const subName = (s, i) => [s.language ? langName(s.language) : '', s.title, !s.l
 function langName(code) {
   try { return new Intl.DisplayNames([I18N.lang], { type: 'language' }).of(code.length === 3 ? ({ ger: 'de', deu: 'de', eng: 'en', fre: 'fr', fra: 'fr', spa: 'es', ita: 'it', jpn: 'ja', por: 'pt', rus: 'ru', dut: 'nl', nld: 'nl', pol: 'pl', tur: 'tr', swe: 'sv', dan: 'da', nor: 'no', fin: 'fi', kor: 'ko', chi: 'zh', zho: 'zh' }[code] || code) : code) || code; } catch (e) { return code; }
 }
+// "ger", "deu", "de-DE" → "de" (for comparing a stream's language with a preference).
+const L3 = { ger: 'de', deu: 'de', eng: 'en', fre: 'fr', fra: 'fr', spa: 'es', ita: 'it', jpn: 'ja', por: 'pt', rus: 'ru', dut: 'nl', nld: 'nl', pol: 'pl', tur: 'tr', swe: 'sv', dan: 'da', nor: 'no', fin: 'fi', zho: 'zh', chi: 'zh', kor: 'ko' };
+const lang2 = c => { c = String(c || '').toLowerCase().split(/[-_]/)[0]; return c.length === 3 ? (L3[c] || c) : c; };
 function showSub() {
-  Array.from(video.textTracks).forEach((tr, i) => { tr.mode = i === P.sub ? 'showing' : 'disabled'; });
+  Array.from(video.textTracks).forEach((tr, i) => {
+    tr.mode = i === P.sub ? 'showing' : 'disabled';
+    if (!tr._lifted) { tr._lifted = true; tr.addEventListener('cuechange', () => { // Settings → Web → subtitle position: lines above the bottom
+      const up = Number(store.get('subLift', '0')) || 0;
+      if (up) for (const c of Array.from(tr.activeCues || [])) { c.snapToLines = true; c.line = -(1 + up); }
+    }); }
+  });
   $('#psubs').classList.toggle('on', P.sub >= 0);
   $('#psubs').hidden = !P.subs.length;
 }
@@ -1042,6 +1062,11 @@ function setSub(i) {
 }
 function setSubSize(v) { P.subSize = v; store.set('subSize', v); player.style.setProperty('--cue', v + '%'); }
 setSubSize(P.subSize);
+function applySubStyle() {
+  player.style.setProperty('--cue-color', store.get('subColor', '#ffffff'));
+  player.style.setProperty('--cue-bg', store.get('subBg', '1') === '1' ? 'rgba(0,0,0,.55)' : 'transparent');
+}
+applySubStyle();
 
 // The answer can say the owner stopped this playback (from the dashboard): then
 // the player closes and shows their message.
@@ -1077,7 +1102,7 @@ function drawBar() {
   const d = duration();
   $('#ptime').textContent = P.remaining && d ? `−${fmtTime(d - now)}` : `${fmtTime(now)} / ${fmtTime(d)}`;
   const ends = d && !video.paused ? new Date(Date.now() + (d - now) / (video.playbackRate || 1) * 1000) : null;
-  $('#psub').textContent = [P.subLine, ends ? t('ends at {time}', { time: ends.toLocaleTimeString(I18N.lang, { hour: '2-digit', minute: '2-digit' }) }) : ''].filter(Boolean).join(' · ');
+  $('#psub').textContent = [P.subLine, ends ? t('ends at {time}', { time: ends.toLocaleTimeString(I18N.lang, { hour: '2-digit', minute: '2-digit', hour12: hour12() }) }) : ''].filter(Boolean).join(' · ');
   // "Skip credits" while the credits run.
   const inCredits = P.credits.some(c => now >= c) && now < d - 3;
   const skip = $('#pskip');
