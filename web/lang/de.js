@@ -7,6 +7,8 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Address in the home network': 'Adresse im Heimnetz',
+    'Where devices at home reach the server. For access from outside, forward this port on your router and enter the address people use below.': 'Hier erreichen Geräte zu Hause den Server. Für den Zugriff von außen leitest du diesen Port im Router weiter und trägst bei „Adresse in Einladungslinks“ die Adresse ein, die andere benutzen.',
     'Show new episodes on the home page as their show': 'Neue Folgen auf der Startseite als Serie zeigen',
     'Read all libraries again every 3 days': 'Alle Mediatheken alle 3 Tage neu einlesen',
     '▶ Trailer': '▶ Trailer',

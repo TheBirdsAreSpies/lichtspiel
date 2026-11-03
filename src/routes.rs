@@ -1509,7 +1509,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["api", "settings"]) => {
             if !admin { return need_admin(); }
             let db = app.db.lock().unwrap();
-            ok(json!({"settings": db.settings, "scan_intervals": db::SCAN_INTERVALS.iter().map(|s| json!({"minutes": s.0, "label": s.1})).collect::<Vec<_>>(),
+            ok(json!({"settings": db.settings, "lan_url": format!("http://{}:{}", crate::lan_address(), *app.port.lock().unwrap()), "scan_intervals": db::SCAN_INTERVALS.iter().map(|s| json!({"minutes": s.0, "label": s.1})).collect::<Vec<_>>(),
                 "data_dir": app.data_dir.to_string_lossy(), "transcoder_qualities": ["automatic", "speed", "quality", "max"], "hw_accel": ["auto", "none", "vaapi", "qsv", "nvenc"],
                 "played_thresholds": db::PLAYED_THRESHOLDS, "h264_presets": transcode::X264_PRESETS,
                 "played_at_choices": db::PLAYED_AT_CHOICES.iter().map(|c| json!({"value": c.0, "label": c.1})).collect::<Vec<_>>(),
