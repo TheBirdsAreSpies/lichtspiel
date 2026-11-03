@@ -764,6 +764,15 @@ pub struct Settings {
     /// Every three days, inside the maintenance window, all libraries are read again.
     #[serde(default = "yes")]
     pub refresh_metadata: bool,
+    /// Show online trailers (from TMDB / Wikidata) on movie and show pages.
+    #[serde(default = "yes")]
+    pub trailers_online: bool,
+    /// Also look for English trailers when the library's language has none.
+    #[serde(default = "yes")]
+    pub trailers_english: bool,
+    /// Allow red band (restricted) trailers.
+    #[serde(default)]
+    pub trailers_red_band: bool,
     /// On the home page, new episodes are shown as their show (once per show).
     #[serde(default)]
     pub group_recent_episodes: bool,
@@ -987,6 +996,9 @@ impl Default for Settings {
             optimize_weekly: true,
             cleanup_weekly: true,
             refresh_metadata: true,
+            trailers_online: true,
+            trailers_english: true,
+            trailers_red_band: false,
             group_recent_episodes: false,
             analyze_loudness: false,
             generate_thumbnails: false,

@@ -2221,6 +2221,7 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
     }
     if !it.extra.is_empty() {
         o["extra"] = Value::Object(it.extra.clone());
+        if !db.settings.trailers_online { o["extra"].as_object_mut().map(|m| m.remove("trailers")); }
         // Each person on a detail page carries
         // how many items of the same library they appear in.
         if detail {

@@ -827,6 +827,9 @@ async function settingsPage(tab) {
       inp('omdb_api_key', t('OMDb API key for IMDb plots (optional)'), 'text', t('With a free key from omdbapi.com, movie and show plots are taken from IMDb (in English) instead of Wikipedia. Press Refresh details on a movie, or change the language, to load them for movies you already have.')),
     ],
     extras: [
+      chk('trailers_online', t('Show online trailers'), t('Trailers and other videos from TMDB or Wikidata, played from YouTube. Nothing is downloaded.')),
+      chk('trailers_english', t('Also look for English trailers'), t('When there is none in the library language. Applies to titles when their details are loaded again.')),
+      chk('trailers_red_band', t('Allow red band trailers'), t('Trailers marked for adults only. Applies to titles when their details are loaded again.')),
       formRow(t('Pre-roll videos'), (f.preroll_paths = h('textarea', { rows: 4, style: 'width:100%;max-width:520px', placeholder: 'D:\\Videos\\intro.mp4' }, s.preroll_paths)),
         t('Played before every movie, one picked at random. One path per line (or separated by semicolons). MP4 or WebM files that the browser plays directly work best; the video can be skipped.'), true),
     ],
