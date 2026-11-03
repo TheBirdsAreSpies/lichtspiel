@@ -134,6 +134,52 @@ pub fn backup(app: &App) -> Result<String, String> {
     Ok(path.display().to_string())
 }
 
+/// The backups in the backup folder, newest first: (file name, bytes, modified as unix seconds).
+pub fn backups(app: &App) -> Vec<(String, u64, u64)> {
+    let dir = backup_dir(app);
+    let mut v: Vec<(String, u64, u64)> = std::fs::read_dir(&dir).map(|rd| rd.flatten().filter_map(|e| {
+        let n = e.file_name().to_string_lossy().to_string();
+        if !(n.starts_with("library-") && n.ends_with(".db")) { return None; }
+        let m = e.metadata().ok()?;
+        let t = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+        Some((n, m.len(), t))
+    }).collect()).unwrap_or_default();
+    v.sort_by(|a, b| b.0.cmp(&a.0));
+    v
+}
+
+fn backup_dir(app: &App) -> std::path::PathBuf {
+    let db = app.db.lock().unwrap();
+    let d = db.settings.backup_dir.trim();
+    if d.is_empty() { app.data_dir.join("backups") } else { std::path::PathBuf::from(d) }
+}
+
+/// Puts a backup in place of the current library: everything (libraries, users, settings, watch
+/// history) goes back to how it was then. The current state is backed up first.
+pub fn restore(app: &App, name: &str) -> Result<(), String> {
+    if !(name.starts_with("library-") && name.ends_with(".db")) || name.contains(['/', '\\']) { return Err("That is not a backup file".into()); }
+    let src = backup_dir(app).join(name);
+    if !src.is_file() { return Err("That backup does not exist any more".into()); }
+    // Read from a copy: opening a file can write next to it.
+    let tmp = app.data_dir.join("restore-check.db");
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::copy(&src, &tmp).map_err(|e| e.to_string())?;
+    let loaded = (|| {
+        let mut st = crate::store::Store::open(&tmp)?;
+        st.load()?.ok_or_else(|| "That backup file holds no library".to_string())
+    })();
+    for ext in ["", "-wal", "-shm"] { let _ = std::fs::remove_file(app.data_dir.join(format!("restore-check.db{ext}"))); }
+    let mut loaded = loaded?;
+    backup(app)?;
+    loaded.items.mark_all();
+    loaded.views.mark_all();
+    *app.db.lock().unwrap() = loaded;
+    app.store.lock().unwrap().forget_written();
+    app.save();
+    elog!("restored the library from {name}");
+    Ok(())
+}
+
 /// The integrated loudness (LUFS) from the summary ffmpeg's ebur128 filter prints at the end.
 pub fn parse_loudness(log: &str) -> Option<f64> {
     log.lines().rev().find_map(|l| {

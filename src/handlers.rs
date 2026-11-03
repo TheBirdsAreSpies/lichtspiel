@@ -1139,13 +1139,20 @@ fn preroll_files(app: &Arc<App>) -> Vec<String> {
     list.split(|c| c == ';' || c == '\n').map(|p| p.trim().trim_matches('"').to_string()).filter(|p| !p.is_empty() && Path::new(p).is_file()).collect()
 }
 
-/// GET /api/preroll → {url} of one of them (or {url: null}).
+/// GET /api/preroll → {url, urls}: what to play before a movie, by the setting "preroll_mode"
+/// (one at random, all in the order listed, or always the first); {url: null} when there is none.
 pub fn preroll(app: &Arc<App>, ctx: &Ctx) -> Resp {
     let files = preroll_files(app);
-    if files.is_empty() { return ok(json!({"url": null})); }
-    let n = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0) as usize) % files.len();
+    if files.is_empty() { return ok(json!({"url": null, "urls": []})); }
     let tok = ctx.token.as_ref().map(|t| format!("?token={t}")).unwrap_or_default();
-    ok(json!({"url": format!("/api/preroll/{n}/file{tok}"), "count": files.len()}))
+    let url = |n: usize| format!("/api/preroll/{n}/file{tok}");
+    let picked: Vec<usize> = match app.settings().preroll_mode.as_str() {
+        "all" => (0..files.len()).collect(),
+        "first" => vec![0],
+        _ => vec![(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0) as usize) % files.len()],
+    };
+    let urls: Vec<String> = picked.into_iter().map(url).collect();
+    ok(json!({"url": urls.first(), "urls": urls, "count": files.len()}))
 }
 
 /// GET /api/preroll/{n}/file: the n-th pre-roll video, with seeking.

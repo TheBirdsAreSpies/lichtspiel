@@ -827,6 +827,9 @@ pub struct Settings {
     /// semicolons. Files the browser can play (MP4, WebM) work best.
     #[serde(default)]
     pub preroll_paths: String,
+    /// "random" (one at random), "all" (all of them, in the order listed), "first" (always the first).
+    #[serde(default = "preroll_mode_default")]
+    pub preroll_mode: String,
     /// When each scheduled task last ran (unix seconds).
     #[serde(default)]
     pub maintenance_last: std::collections::BTreeMap<String, u64>,
@@ -959,6 +962,10 @@ pub const SCAN_INTERVALS: &[(u64, &str)] = &[
     (1440, "daily"),
 ];
 
+fn preroll_mode_default() -> String {
+    "random".into()
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Settings {
@@ -1020,6 +1027,7 @@ impl Default for Settings {
             boost_dialogue: true,
             remote_max_mbps: 0,
             preroll_paths: String::new(),
+            preroll_mode: preroll_mode_default(),
             max_gpu_transcodes: 0,
             max_cpu_transcodes: 0,
             max_remote_plays: 0,

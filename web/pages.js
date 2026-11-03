@@ -76,7 +76,7 @@ async function playlistPage(id, qs) {
       pl.editable ? h('button', { onclick: async () => { await api('PUT', '/playlists/' + id, { pinned: !pl.pinned }); reload(); } }, pl.pinned ? t('Remove from home') : t('Show on home')) : null,
       pl.editable && !pl.default ? h('button', { onclick: async () => { await api('PUT', '/playlists/' + id, { shared: !pl.shared }); reload(); } }, pl.shared ? t('Stop sharing') : t('Share with everyone')) : null,
       pl.smart ? h('button', { onclick: async () => { const r = await api('POST', `/playlists/${id}/copy`, {}); location.hash = '#/playlist/' + r.id; } }, t('Save as normal playlist')) : null,
-      pl.editable && !pl.default ? h('button', { class: 'danger', onclick: async () => { if (await sure(t('Delete this playlist?'), { ok: t('Delete'), danger: true })) { await api('DELETE', '/playlists/' + id); location.hash = '#/playlists'; } } }, t('Delete')) : null),
+      pl.editable && !pl.default ? h('button', { class: 'danger', onclick: async () => { if (await sureTyped(t('Delete this playlist?'), pl.title)) { await api('DELETE', '/playlists/' + id); location.hash = '#/playlists'; } } }, t('Delete')) : null),
     h('div', { class: 'bar-tools' },
       sel('sort', [['', manual ? t('Playlist order') : t('Rule order')], ...SORTS, ['episode_order', t('Show, season, episode')]]),
       sel('type', [['', t('Movies and episodes')], ['movie', t('Movies')], ['episode', t('Episodes')]]),
@@ -88,7 +88,7 @@ async function playlistPage(id, qs) {
       h('div', { class: 'grow' }, h('a', { href: '#/item/' + it.id }, h('b', {}, it.type === 'episode' ? `${it.grandparentTitle} · ${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} ${it.title}` : it.title)),
         h('div', { class: 'dim' }, [it.year, fmtDur(it.duration), it.viewCount ? t('✓ watched') : '', it.viewOffset ? t('stopped at {time}', { time: fmtTime(it.viewOffset / 1000) }) : ''].filter(Boolean).join(' · '))),
       reorder ? [h('button', { class: 'small', title: t('Move up'), onclick: () => move(i, -1) }, '↑'), h('button', { class: 'small', title: t('Move down'), onclick: () => move(i, 1) }, '↓')] : null,
-      manual && pl.editable ? h('button', { class: 'small danger', onclick: async () => { await api('DELETE', `/playlists/${id}/items/${it.id}`); reload(); } }, t('Remove')) : null,
+      manual && pl.editable ? h('button', { class: 'small danger', onclick: async () => { if (!(await sure(t('Remove “{title}” from this playlist?', { title: it.title }), { ok: t('Remove'), danger: true }))) return; await api('DELETE', `/playlists/${id}/items/${it.id}`); reload(); } }, t('Remove')) : null,
       h('button', { class: 'primary small', onclick: () => play(it, it.viewOffset ? it.viewOffset / 1000 : 0, items.slice(i + 1)) }, '▶')))) :
       h('div', { class: 'empty' }, manual ? t('Empty. Open a movie or episode and use "Add to playlist".') : t('Nothing matches these rules right now.')));
 }
@@ -206,7 +206,7 @@ async function librariesPage() {
       } }, t('Detect intros')) : null,
       h('button', { onclick: () => foldersDialog(s) }, t('Folders')),
       h('button', { title: t('More'), 'aria-label': t('More'), onclick: e => sectionMenu(s, e.currentTarget) }, '⋯'),
-      h('button', { class: 'danger', onclick: async () => { if (await sure(t('Remove the library "{name}"? Your files stay on disk.', { name: s.title }), { ok: t('Remove'), danger: true })) { await api('DELETE', '/library/sections/' + s.id); refreshList(); } } }, t('Remove')))))] : []));
+      h('button', { class: 'danger', onclick: async () => { if (await sureTyped(t('Remove the library "{name}"? Your files stay on disk.', { name: s.title }), s.title, { ok: t('Remove') })) { await api('DELETE', '/library/sections/' + s.id); refreshList(); } } }, t('Remove')))))] : []));
   drawList(secs);
   set(h('h1', {}, t('Libraries')),
     h('p', { class: 'dim' }, t('Movies and TV shows are kept in separate libraries. Name TV files like "Show/Season 01/Show - S01E02 - Title.mkv" and movies like "Title (Year).mkv". Every video container is picked up: '), h('code', {}, 'mkv mp4 avi mov ts m2ts wmv webm mpg vob flv ogv 3gp …')),
@@ -530,7 +530,7 @@ async function usersPage() {
           ' ', h('button', { class: 'small', title: u.has_pin ? t('PIN is set') : t('No PIN'), onclick: () => pinEditor(u) }, u.has_pin ? t('PIN') + ' 🔒' : t('PIN'))),
         h('td', {}, u.id === S.me.id ? h('span', { class: 'dim' }, t('you')) : [
           h('button', { class: 'small', onclick: async () => { const pw = await ask(t('New password for {name}', { name: u.username }), { password: true }); if (pw) { try { await api('PATCH', '/api/users/' + u.id, { password: pw }); toast(t('Password changed')); } catch (x) { toast(x.message); } } } }, t('Password')), ' ',
-          h('button', { class: 'small danger', onclick: async () => { if (await sure(t('Remove {name}?', { name: u.username }), { ok: t('Remove'), danger: true })) { await api('DELETE', '/api/users/' + u.id); usersPage(); } } }, t('Remove'))])))),
+          h('button', { class: 'small danger', onclick: async () => { if (await sureTyped(t('Remove {name}?', { name: u.username }), u.username, { ok: t('Remove') })) { await api('DELETE', '/api/users/' + u.id); usersPage(); } } }, t('Remove'))])))),
     h('h2', {}, t('Invites')),
     invites.invites.length ? h('table', {}, h('tr', {}, h('th', {}, t('For')), h('th', {}, t('Status')), h('th', {}, t('Libraries')), h('th', {}, t('Link')), h('th', {}, '')),
       invites.invites.map(i => h('tr', {},
@@ -538,7 +538,7 @@ async function usersPage() {
         h('td', {}, i.status === 'used' ? t('used by {name}', { name: i.used_by }) : i.status === 'open' ? t('open until {date}', { date: fmtDate(i.expires_at) }) : t('expired')),
         h('td', {}, i.allowed_sections ? i.allowed_sections.map(secName).join(', ') : t('all')),
         h('td', {}, i.status === 'open' ? h('button', { class: 'small', onclick: () => copy(i.url) }, t('Copy link')) : ''),
-        h('td', {}, h('button', { class: 'small danger', onclick: async () => { await api('DELETE', '/api/invites/' + i.code); usersPage(); } }, i.status === 'open' ? t('Cancel') : t('Delete')))))) : h('p', { class: 'dim' }, t('No invites yet.')));
+        h('td', {}, h('button', { class: 'small danger', onclick: async () => { if (!(await sure(i.status === 'open' ? t('Cancel this invite?') : t('Delete this invite?'), { ok: i.status === 'open' ? t('Cancel') : t('Delete'), danger: true }))) return; await api('DELETE', '/api/invites/' + i.code); usersPage(); } }, i.status === 'open' ? t('Cancel') : t('Delete')))))) : h('p', { class: 'dim' }, t('No invites yet.')));
 }
 
 async function pinEditor(u) {
@@ -684,19 +684,21 @@ const SETTINGS_TABS = [
   ['Account', [['account', 'Account'], ['watched', 'Watched indicator'], ['watchlist', 'Watchlist feed'], ['webhooks', 'Webhooks']]],
   ['Web', [['web', 'General']]],
   ['Settings', [['general', 'General'], ['network', 'Network settings'], ['library', 'Library settings'], ['metadata', 'Metadata agents'], ['transcoder', 'Transcoder'], ['tasks', 'Scheduled tasks'], ['extras', 'Extras']]],
-  ['Manage', [['manage', 'Libraries and users']]],
+  ['Manage', [['libraries', 'Libraries', '#/libraries'], ['users', 'Users & invites', '#/users'], ['plugins', 'Plugins', '#/plugins'], ['reports', 'Reported problems', '#/reports'], ['api', 'API', '#/api'], ['manage', 'Maintenance']]],
 ];
 const USER_TABS = ['account', 'watched', 'watchlist', 'web'];
+// Two rows: the groups on top, the pages of the group you are in below.
+function settingsNav(cur) {
+  const to = ([k, , href]) => href || '#/settings/' + k;
+  const mine = SETTINGS_TABS.map(([grp, items]) => [grp, items.filter(([k]) => S.me.admin || USER_TABS.includes(k))]).filter(([, items]) => items.length);
+  const here = mine.find(([, items]) => items.some(([k]) => k === cur)) || mine[0];
+  return h('div', {},
+    h('div', { class: 'tabs' }, mine.map(([grp, items]) => h('a', { href: to(items[0]), class: grp === here[0] ? 'on' : '' }, t(grp)))),
+    here[1].length > 1 ? h('div', { class: 'tabs', style: 'font-size:.92em;opacity:.9' }, here[1].map(it => h('a', { href: to(it), class: it[0] === cur ? 'on' : '' }, t(it[1])))) : null);
+}
 async function settingsPage(tab) {
   markNav('settings');
-  // Two rows: the groups on top, the pages of the group you are in below.
-  const nav = cur => {
-    const mine = SETTINGS_TABS.map(([grp, items]) => [grp, items.filter(([k]) => S.me.admin || USER_TABS.includes(k))]).filter(([, items]) => items.length);
-    const here = mine.find(([, items]) => items.some(([k]) => k === cur)) || mine[0];
-    return h('div', {},
-      h('div', { class: 'tabs' }, mine.map(([grp, items]) => h('a', { href: '#/settings/' + items[0][0], class: grp === here[0] ? 'on' : '' }, t(grp)))),
-      here[1].length > 1 ? h('div', { class: 'tabs', style: 'font-size:.92em;opacity:.9' }, here[1].map(([k, label]) => h('a', { href: '#/settings/' + k, class: k === cur ? 'on' : '' }, t(label)))) : null);
-  };
+  const nav = settingsNav;
   if (!tab || (!S.me.admin && !USER_TABS.includes(tab))) tab = 'account';
   if (tab === 'account') return set(h('h1', {}, t('Settings')), nav(tab), accountPanel(), pluginPanels());
   if (tab === 'web') {
@@ -774,9 +776,7 @@ async function settingsPage(tab) {
     const size = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
     const link = (path, name) => h('a', { href: `${path}?token=${encodeURIComponent(S.token)}`, download: name }, h('button', {}, name === 'report' ? t('Download report') : t('Download library file')));
     return set(h('h1', {}, t('Settings')), nav(tab),
-      h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Manage')),
-        h('p', {}, h('a', { href: '#/libraries' }, t('Libraries'))), h('p', {}, h('a', { href: '#/users' }, t('Users & invites'))),
-        h('p', {}, h('a', { href: '#/plugins' }, t('Plugins'))), h('p', {}, h('a', { href: '#/reports' }, t('Reported problems'))), h('p', {}, h('a', { href: '#/api' }, t('API')))),
+      await backupPanel(size),
       await optimizedPanel(size),
       logPanel(),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Troubleshooting')),
@@ -803,7 +803,7 @@ async function settingsPage(tab) {
     network: [
       sel('max_remote_plays', t('Videos per person outside the home network'), [[0, t('No limit')], ...[1, 2, 3, 4, 6].map(n => [n, String(n)])], t('How many different videos one person may play at once from outside. Admins are not limited.')),
       sel('paused_stop_minutes', t('End paused playback after'), [[0, t('Never')], ...[5, 10, 15, 30, 60, 120].map(n => [n, t('{n} minutes', { n })])], t('Frees the converter when someone leaves a video paused.')),
-      formRow(t('Address in the home network'), h('b', {}, r.lan_url || ''), t('Where devices at home reach the server. For access from outside, forward this port on your router and enter the address people use in “Address used in invite links”.')),
+      formRow(t('Address in the home network'), h('b', {}, r.lan_url || ''), t('Where devices at home reach the server. For access from outside, forward this port on your router and enter the address people use below.')),
       inp('no_auth_networks', t('Networks that need no sign-in'), 'text', t('Addresses or ranges separated by commas, e.g. 192.168.1.0/24. People coming from there are signed in as the first admin without a password — only add networks you fully trust. Needs a believed address (see trusted proxies).')),
       sel('remote_max_mbps', t('Limit streams over the internet'), [[0, t('No limit')], ...[1, 2, 3, 4, 8, 10, 12, 20].map(n => [n, t('{n} Mbit/s', { n })])], t('Videos watched from outside your home network are converted to stay below this. Home network viewers are not limited.')),
       inp('trusted_proxies', t('Trusted reverse proxies'), 'text', [t('Addresses or ranges of your reverse proxy, e.g. 127.0.0.1 or 172.16.0.0/12 for Docker. Only then is the caller’s address it passes on (X-Forwarded-For) believed; requests passed on by any other machine never count as your home network.'), ' ',
@@ -840,13 +840,14 @@ async function settingsPage(tab) {
       chk('trailers_online', t('Show online trailers'), t('Trailers and other videos from TMDB or Wikidata, played from YouTube. Nothing is downloaded.')),
       chk('trailers_english', t('Also look for English trailers'), t('When there is none in the library language. Applies to titles when their details are loaded again.')),
       chk('trailers_red_band', t('Allow red band trailers'), t('Trailers marked for adults only. Applies to titles when their details are loaded again.')),
+      sel('preroll_mode', t('Pre-roll: which to play'), [['random', t('One, picked at random')], ['all', t('All of them, in the order listed')], ['first', t('Always the first')]], t('Used when several pre-roll videos are listed below. Pre-roll videos are not the online trailers: those appear on the movie’s page.')),
       formRow(t('Pre-roll videos'), (f.preroll_paths = h('textarea', { rows: 4, style: 'width:100%;max-width:520px', placeholder: 'D:\\Videos\\intro.mp4' }, s.preroll_paths)),
-        t('Played before every movie, one picked at random. One path per line (or separated by semicolons). MP4 or WebM files that the browser plays directly work best; the video can be skipped.'), true),
+        t('Played before every movie. One path per line (or separated by semicolons). MP4 or WebM files that the browser plays directly work best; the video can be skipped.'), true),
     ],
     tasks: [
       sel('maintenance_start_hour', t('Maintenance starts at'), hours, t('Scheduled tasks only start between these two times (your local time).')),
       sel('maintenance_end_hour', t('Maintenance ends at'), hours),
-      chk('backup_enabled', t('Back up the library file every 3 days')),
+      chk('backup_enabled', t('Back up the library file every 3 days'), t('Back up now and restore a backup: Maintenance.')),
       inp('backup_dir', t('Backup folder'), 'text', t('Empty = the “backups” folder in the data folder.')),
       inp('backups_keep', t('Backups to keep'), 'number'),
       chk('optimize_weekly', t('Optimize the library file every week')),
@@ -854,8 +855,6 @@ async function settingsPage(tab) {
       chk('analyze_loudness', t('Measure the loudness of videos'), t('Looks at 5 videos per minute inside the maintenance window until all are measured. Needs ffmpeg.')),
       chk('generate_thumbnails', t('Create preview pictures'), t('Makes the pictures on the seek bar and the chapter pictures ahead of time, 2 videos per minute inside the maintenance window. Needs ffmpeg.')),
       chk('refresh_metadata', t('Read all libraries again every 3 days')),
-      formRow('', h('button', { class: 'small', onclick: async () => { try { const x = await api('POST', '/api/maintenance/backup'); toast(t('Backup saved: {path}', { path: x.path }), 6000); } catch (e) { toast(e.message, 5000); } } }, t('Back up now')),
-        s.maintenance_last && s.maintenance_last.backup ? t('Last backup: {date}', { date: fmtDateTime(s.maintenance_last.backup) }) : t('No backup yet.')),
     ],
     transcoder: [
       h('p', { class: tc.ffmpeg_found ? 'ok' : 'err' }, tc.ffmpeg_found ? t('ffmpeg found: {version}', { version: tc.ffmpeg_version }) : t('ffmpeg was not found. Install it (the Docker image includes it) or enter its path below; without it only browser-friendly files play.')),
@@ -877,6 +876,13 @@ async function settingsPage(tab) {
       inp('ffmpeg', t('ffmpeg program')), inp('ffprobe', t('ffprobe program')),
     ],
   };
+  // Without ffmpeg these do nothing: they are switched off and say why.
+  if (!tc.ffmpeg_found) for (const k of ['credits_from_picture', 'analyze_loudness', 'generate_thumbnails', 'boost_dialogue', 'transcoder_quality', 'hw_accel', 'hw_constant_quality', 'h264_preset', 'h264_minimum_crf',
+    'max_transcodes', 'max_gpu_transcodes', 'max_cpu_transcodes', 'hls_segment_seconds', 'segmented_transcoder_timeout_seconds']) {
+    const el = f[k]; if (!el) continue;
+    el.disabled = true; el.title = t('Needs ffmpeg');
+    const row = el.closest('.field'); if (row) row.style.opacity = '.5';
+  }
   const titles = { general: 'Server', network: 'Network settings', library: 'Library settings', metadata: 'Movie and show details', transcoder: 'Transcoder', tasks: 'Scheduled tasks', extras: 'Extras' };
   set(h('h1', {}, t('Settings')), nav(tab),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t(titles[tab])), panels[tab]),
@@ -924,7 +930,7 @@ async function apiPage() {
     tokens.replaceChildren(h('table', {}, tk.tokens.map(k => h('tr', {},
       h('td', {}, h('code', {}, k.id)), h('td', {}, k.device || t('Web app'), k.current ? h('span', { class: 'badge' }, t('this one')) : ''),
       h('td', { class: 'dim' }, fmtDateTime(k.created_at)),
-      h('td', {}, k.current ? '' : h('button', { class: 'small', onclick: async () => { await api('DELETE', '/api/tokens/' + k.id); toast(t('Token revoked')); loadTokens(); } }, t('Revoke')))))));
+      h('td', {}, k.current ? '' : h('button', { class: 'small', onclick: async () => { if (!(await sure(t('Revoke this token? The device using it is signed out.'), { ok: t('Revoke'), danger: true }))) return; await api('DELETE', '/api/tokens/' + k.id); toast(t('Token revoked')); loadTokens(); } }, t('Revoke')))))));
   };
   const rotate = async all => {
     if (!await sure(all ? t('Make a new token and sign out every other device and script?') : t('Make a new token? Scripts using the old one stop working.'))) return;
@@ -1089,7 +1095,7 @@ async function deleteItem(it) {
   const n = isPlayable(it) ? 1 : (it.leafCount || (await leavesOf(it)).length);
   const msg = isPlayable(it) ? t('Delete “{title}” from disk? The file is deleted for good; this cannot be undone.', { title: name })
     : t('Delete all {n} episodes of “{title}” from disk? The files are deleted for good; this cannot be undone.', { n, title: name });
-  if (!(await sure(msg, { ok: t('Delete'), danger: true }))) return;
+  if (!(await sureTyped(msg, it.type === 'episode' ? it.title : name))) return;
   const r = await api('DELETE', '/library/metadata/' + it.id);
   toast(t('{n} file(s) deleted', { n: r.deleted }), 4000);
   // Its own page (or that of a season or show it took along) no longer exists.
@@ -1191,7 +1197,7 @@ async function optimizeDialog(it) {
       h('button', { class: 'primary', onclick: async () => {
         try { const r = await api('POST', `/library/metadata/${it.id}/optimize`, { quality: sel.value }); toast(t('Optimizing {n} video(s) — progress is shown at the top', { n: r.videos }), 5000); box.remove(); pollActivity(); } catch (e) { toast(e.message, 6000); }
       } }, t('Optimize')),
-      has || !isPlayable(it) ? h('button', { class: 'danger', onclick: async () => { const r = await api('DELETE', `/library/metadata/${it.id}/optimize`); toast(t('{n} optimized version(s) deleted', { n: r.removed })); box.remove(); } }, t('Delete optimized versions')) : null,
+      has || !isPlayable(it) ? h('button', { class: 'danger', onclick: async () => { if (!(await sure(t('Delete the optimized versions of this video?'), { ok: t('Delete'), danger: true }))) return; const r = await api('DELETE', `/library/metadata/${it.id}/optimize`); toast(t('{n} optimized version(s) deleted', { n: r.removed })); box.remove(); } }, t('Delete optimized versions')) : null,
       h('button', { onclick: () => box.remove() }, t('Cancel')))]);
 }
 
@@ -1256,7 +1262,7 @@ async function reportsPage() {
         h('td', {}, p.user || '–'), h('td', {}, fmtDateTime(p.at)),
         h('td', { style: 'white-space:nowrap' },
           h('button', { class: 'small', onclick: async () => { await api('PUT', '/api/reports/' + p.id, { resolved: !p.resolved }); reportsPage(); } }, p.resolved ? t('Reopen') : t('Done')), ' ',
-          h('button', { class: 'small danger', onclick: async () => { await api('DELETE', '/api/reports/' + p.id); reportsPage(); } }, t('Delete'))))))
+          h('button', { class: 'small danger', onclick: async () => { if (!(await sure(t('Delete this report?'), { ok: t('Delete'), danger: true }))) return; await api('DELETE', '/api/reports/' + p.id); reportsPage(); } }, t('Delete'))))))
       : h('div', { class: 'empty' }, t('No problems reported.')));
 }
 
@@ -1600,7 +1606,7 @@ async function optimizedPanel(size) {
       h('p', { class: 'dim' }, r.items.length ? t('{n} optimized version(s), {size} in all.', { n: r.items.length, size: size(total) }) : t('Nothing has been optimized yet. Open a title and choose More → Optimize.')),
       ...r.items.slice(0, 30).map(i => h('p', {}, h('a', { href: '#/item/' + i.id }, i.title), ' ', h('span', { class: 'dim' }, `${i.quality || ''} · ${size(i.size)}`))),
       r.items.length > 30 ? h('p', { class: 'dim' }, t('… and {n} more', { n: r.items.length - 30 })) : null,
-      r.items.length ? h('button', { class: 'danger', onclick: async () => { if (!confirm(t('Delete all optimized versions?'))) return; const x = await api('DELETE', '/api/optimized'); toast(t('{n} optimized version(s) deleted', { n: x.removed })); draw(); } }, t('Delete all optimized versions')) : null].filter(Boolean));
+      r.items.length ? h('button', { class: 'danger', onclick: async () => { if (!(await sure(t('Delete all optimized versions?'), { ok: t('Delete'), danger: true }))) return; const x = await api('DELETE', '/api/optimized'); toast(t('{n} optimized version(s) deleted', { n: x.removed })); draw(); } }, t('Delete all optimized versions')) : null].filter(Boolean));
   };
   try { await draw(); } catch (e) { body.textContent = e.message; }
   return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Optimized versions')), body);
@@ -1617,5 +1623,27 @@ function logPanel() {
     } catch (e) { pre.textContent = e.message; }
   };
   load();
-  return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Server log')), pre, h('button', { onclick: load }, t('Refresh')));
+  const save = gz => { const a = h('a', { href: withTok('/api/log/download' + (gz ? '?gz=1' : '')), download: '', style: 'display:none' }); document.body.append(a); a.click(); a.remove(); };
+  return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Server log')), pre,
+    h('button', { onclick: load }, t('Refresh')), ' ', h('button', { onclick: () => save(false) }, t('Export as text')), ' ', h('button', { onclick: () => save(true) }, t('Export compressed (.gz)')));
+}
+
+// Settings → Maintenance → Backups: back up now, and put a backup back.
+async function backupPanel(size) {
+  const body = h('div', {});
+  const draw = async () => {
+    const [st, r] = await Promise.all([GET('/api/settings'), GET('/api/maintenance/backups')]);
+    const last = st.settings.maintenance_last && st.settings.maintenance_last.backup;
+    body.replaceChildren(
+      h('p', { class: 'dim' }, last ? t('Last backup: {date}', { date: fmtDateTime(last) }) : t('No backup yet.')),
+      h('button', { class: 'primary', onclick: async () => { try { const x = await api('POST', '/api/maintenance/backup'); toast(t('Backup saved: {path}', { path: x.path }), 6000); draw(); } catch (e) { toast(e.message, 5000); } } }, t('Back up now')),
+      r.backups.length ? h('table', { style: 'margin-top:10px' }, r.backups.map(b => h('tr', {},
+        h('td', {}, h('code', {}, b.name)), h('td', { class: 'dim' }, fmtDateTime(b.time)), h('td', { class: 'dim' }, size(b.size)),
+        h('td', {}, h('button', { class: 'small danger', onclick: async () => {
+          if (!(await sure(t('Put this backup back? Libraries, users, settings and watch history return to how they were then. The current state is backed up first.'), { ok: t('Restore'), danger: true }))) return;
+          try { await api('POST', '/api/maintenance/restore', { name: b.name }); toast(t('Backup restored')); boot(); } catch (e) { toast(e.message, 6000); }
+        } }, t('Restore')))))) : h('p', { class: 'dim' }, t('There are no backups in the backup folder yet.')));
+  };
+  await draw();
+  return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Backups')), body);
 }

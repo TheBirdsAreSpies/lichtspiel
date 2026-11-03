@@ -78,6 +78,9 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("DELETE", "/api/optimized", "Admin: delete all optimized versions → {removed}"),
     ("POST", "/api/maintenance/optimize", "Admin: compact the library file → {before, after} bytes"),
     ("POST", "/api/maintenance/cleanup", "Admin: remove leftover conversions and old cache files → {freed} bytes"),
+    ("GET", "/api/log/download", "Admin: the whole server log as a text file (?gz=1: compressed)"),
+    ("GET", "/api/maintenance/backups", "Admin: the backups in the backup folder → {backups: [{name, size, time}]}, newest first"),
+    ("POST", "/api/maintenance/restore", "Admin: put a backup back in place of the library {name}; the current state is backed up first"),
     ("POST", "/api/maintenance/backup", "Admin: save a copy of the library file into the backup folder now → {path}"),
     ("GET", "/api/maintenance/database", "Admin: download a copy of the library file"),
     ("GET", "/api/maintenance/report", "Admin: download a text report (version, system, libraries, settings without keys, plugin messages)"),
@@ -1104,6 +1107,26 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["api", "log"]) => {
             if !admin { return need_admin(); }
             ok(json!({"lines": crate::log::lines().into_iter().map(|(t, m)| json!({"t": t, "msg": m})).collect::<Vec<_>>()}))
+        }
+        ("GET", ["api", "log", "download"]) => {
+            if !admin { return need_admin(); }
+            let text = crate::log::export_text().into_bytes();
+            let gz = ctx.param("gz") == Some("1");
+            let (body, ctype, name) = if gz {
+                use std::io::Write;
+                let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+                let _ = e.write_all(&text);
+                (e.finish().unwrap_or_default(), "application/gzip", "lichtspiel-server-log.txt.gz")
+            } else { (text, "text/plain; charset=utf-8", "lichtspiel-server-log.txt") };
+            let mut r = crate::server::bytes(200, ctype, body);
+            r.add_header(crate::server::header("Content-Disposition", &crate::handlers::attachment(name)));
+            r
+        }
+        ("GET", ["api", "maintenance", "backups"]) => { if !admin { return need_admin(); } ok(json!({"backups": crate::maintenance::backups(app).into_iter().map(|(n, s, t)| json!({"name": n, "size": s, "time": t})).collect::<Vec<_>>()})) }
+        ("POST", ["api", "maintenance", "restore"]) => {
+            if !admin { return need_admin(); }
+            let name = ctx.body_or_param("name").unwrap_or_default();
+            match crate::maintenance::restore(app, &name) { Ok(()) => ok(json!({"ok": true})), Err(e) => fail(400, &e) }
         }
         ("GET", ["api", "optimized"]) => { if !admin { return need_admin(); } ok(crate::actions::optimized_list(app)) }
         ("DELETE", ["api", "optimized"]) => { if !admin { return need_admin(); } ok(json!({"ok": true, "removed": crate::actions::remove_all_optimized(app)})) }

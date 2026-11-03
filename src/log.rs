@@ -56,6 +56,24 @@ pub fn lines() -> Vec<(u64, String)> {
     LINES.lock().map(|l| l.iter().cloned().collect()).unwrap_or_default()
 }
 
+/// The whole log file (the older part first) as readable text: one line per message with the UTC time.
+pub fn export_text() -> String {
+    let Some(path) = FILE.lock().ok().and_then(|f| f.clone()) else { return String::new() };
+    let mut out = String::new();
+    for p in [path.with_extension("log.1"), path] {
+        let Ok(text) = std::fs::read_to_string(&p) else { continue };
+        for line in text.lines() {
+            let Some((t, msg)) = line.split_once('\t') else { continue };
+            let Ok(t) = t.parse::<i64>() else { continue };
+            let (y, m, d) = crate::rss::civil(t.div_euclid(86400));
+            let s = t.rem_euclid(86400);
+            out.push_str(&format!("{y}-{m:02}-{d:02} {:02}:{:02}:{:02} UTC  {msg}
+", s / 3600, s % 3600 / 60, s % 60));
+        }
+    }
+    out
+}
+
 macro_rules! elog { ($($a:tt)*) => { crate::log::add(format!($($a)*)) }; }
 
 #[cfg(test)]

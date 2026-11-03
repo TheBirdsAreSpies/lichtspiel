@@ -44,7 +44,13 @@ function formRow(label, control, help, top) {
   return h('div', { class: 'field' + (top ? ' top' : '') }, h('label', control && control.id ? { for: control.id } : {}, label),
     h('div', { class: 'ctl' }, control), help ? h('div', { class: 'help dim' }, help) : null);
 }
-function set(...kids) { main().replaceChildren(...kids.flat(9).filter(Boolean)); window.scrollTo(0, 0); }
+// The management pages (libraries, users, …) are tabs of the settings and show their tab bar.
+const MANAGE_PAGES = ['libraries', 'users', 'plugins', 'reports', 'api'];
+function set(...kids) {
+  const list = kids.flat(9).filter(Boolean);
+  if (typeof NAV !== 'undefined' && MANAGE_PAGES.includes(NAV.cur) && S.me && S.me.admin) list.unshift(settingsNav(NAV.cur));
+  main().replaceChildren(...list); window.scrollTo(0, 0);
+}
 function toast(msg, ms = 2600) { const el = $('#toast'); el.textContent = msg; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => (el.style.display = 'none'), ms); }
 const withTok = p => p + (p.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(S.token);
 const fmtNum = (n, digits) => Number(n).toLocaleString(I18N.lang, digits === undefined ? undefined : { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -181,16 +187,14 @@ function drawChrome() {
   $('#search').style.visibility = signed ? '' : 'hidden';
   $('#main').style.marginLeft = signed && innerWidth > 760 ? '220px' : '0';
   if (!signed) return;
-  // Settings, the API page and signing out sit behind one button at the top right.
-  const gear = iconBtn('gear', t('Settings'), () => openMenu(gear, [
-    { label: t('Settings'), run: () => { location.hash = '#/settings'; } },
-    { label: 'API', run: () => { location.hash = '#/api'; } },
-    '-',
+  // The gear opens the settings; switching user and signing out sit behind the name.
+  const gear = iconBtn('gear', t('Settings'), () => { location.hash = '#/settings'; });
+  const name = h('button', { class: 'link', 'aria-haspopup': 'menu', title: t('Switch user or sign out'), style: 'background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:4px 6px' }, S.me.username + ' ▾');
+  name.onclick = () => openMenu(name, [
     { label: t('Switch user'), run: switchUser },
     { label: t('Sign out'), run: logout },
-  ]));
-  gear.setAttribute('aria-haspopup', 'menu');
-  who.append(h('span', {}, S.me.username), gear);
+  ]);
+  who.append(name, gear);
   document.querySelectorAll('#side .admin').forEach(e => (e.style.display = S.me.admin ? '' : 'none'));
   $('#npbtn').style.display = S.me.admin ? '' : 'none';
   drawQueueChip();
@@ -762,6 +766,19 @@ function sure(text, { ok = t('OK'), danger = false } = {}) {
   });
 }
 
+// Like GitHub's: for deletions that hurt, the name has to be typed before the button works.
+function sureTyped(text, word, { ok = t('Delete') } = {}) {
+  return new Promise(res => {
+    let out = false;
+    const yes = h('button', { class: 'danger', disabled: true, onclick: () => { out = true; box.remove(); } }, ok);
+    const inp = h('input', { placeholder: word, autocomplete: 'off', style: 'width:100%', oninput: () => { yes.disabled = inp.value.trim() !== word; },
+      onkeydown: e => { if (e.key === 'Enter' && !yes.disabled) yes.click(); } });
+    const box = modal(text, [h('p', { class: 'dim' }, t('Type “{name}” to confirm.', { name: word })), inp,
+      h('div', { class: 'actions' }, yes, h('button', { onclick: () => box.remove() }, t('Cancel')))], () => res(out));
+    inp.focus();
+  });
+}
+
 // Where the end credits start: decides when the video counts as watched.
 async function creditsDialog(it) {
   const r = await GET(`/library/metadata/${it.id}/markers`);
@@ -1028,18 +1045,23 @@ async function play(it, startAt, queue, together) {
 }
 // Plays the pre-roll video (if one is set) until it ends, fails or "Skip" is pressed.
 async function playPreroll(it) {
-  let url = null;
-  try { url = (await GET('/api/preroll')).url; } catch (e) { return; }
-  if (!url) return;
-  await new Promise(done => {
-    const skip = h('button', { class: 'primary', style: 'position:absolute;right:24px;bottom:90px;z-index:5' }, t('Skip'));
-    let finished = false;
+  let urls = [];
+  try { urls = (await GET('/api/preroll')).urls || []; } catch (e) { return; }
+  for (const url of urls) { if (P.it !== it || player.style.display === 'none') return; if (!(await playPrerollVideo(it, url, urls.length > 1))) return; }
+}
+// One pre-roll video; false when "Skip" was pressed on the last one or the player was closed.
+async function playPrerollVideo(it, url, several) {
+  return new Promise(done => {
+    const skip = h('button', { class: 'primary', style: 'position:absolute;right:24px;bottom:90px;z-index:5' }, several ? t('Skip all') : t('Skip'));
+    const next = several ? h('button', { style: 'position:absolute;right:24px;bottom:134px;z-index:5' }, t('Next video')) : null;
+    let finished = false, all = false;
     const end = () => {
       if (finished) return; finished = true;
       video.removeEventListener('ended', end); video.removeEventListener('error', end);
-      skip.remove(); done();
+      skip.remove(); if (next) next.remove(); done(!all && P.it === it && player.style.display !== 'none');
     };
-    skip.onclick = end;
+    if (next) { next.onclick = end; player.append(next); }
+    skip.onclick = () => { all = true; end(); };
     player.append(skip);
     video.addEventListener('ended', end); video.addEventListener('error', end);
     video.querySelectorAll('track').forEach(tr => tr.remove());
