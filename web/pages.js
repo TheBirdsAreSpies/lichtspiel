@@ -772,6 +772,7 @@ async function settingsPage(tab) {
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Manage')),
         h('p', {}, h('a', { href: '#/libraries' }, t('Libraries'))), h('p', {}, h('a', { href: '#/users' }, t('Users & invites'))),
         h('p', {}, h('a', { href: '#/plugins' }, t('Plugins'))), h('p', {}, h('a', { href: '#/api' }, t('API')))),
+      await optimizedPanel(size),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Troubleshooting')),
         formRow(t('Optimize library file'), h('button', { onclick: async () => { try { const x = await api('POST', '/api/maintenance/optimize'); toast(t('Optimized: {a} → {b}', { a: size(x.before), b: size(x.after) }), 5000); } catch (e) { toast(e.message, 5000); } } }, t('Optimize')), t('Compacts the library file. Safe to do while the server runs.')),
         formRow(t('Clean up bundles'), h('button', { onclick: async () => { try { const x = await api('POST', '/api/maintenance/cleanup'); toast(t('{n} freed', { n: size(x.freed) }) + (x.transcodes_kept ? ' — ' + t('conversions in use were kept') : ''), 5000); } catch (e) { toast(e.message, 5000); } } }, t('Clean up')), t('Removes leftover conversions and cache files older than a week.')),
@@ -1569,3 +1570,18 @@ async function render() {
 }
 window.addEventListener('hashchange', () => { if (!P.it) render(); });
 boot();
+
+// Settings → Manage → Optimized versions: what is saved, how much room it takes, and a way to clear it.
+async function optimizedPanel(size) {
+  const body = h('div', {});
+  const draw = async () => {
+    const r = await GET('/api/optimized'), total = r.items.reduce((a, i) => a + i.size, 0);
+    body.replaceChildren(
+      h('p', { class: 'dim' }, r.items.length ? t('{n} optimized version(s), {size} in all.', { n: r.items.length, size: size(total) }) : t('Nothing has been optimized yet. Open a title and choose More → Optimize.')),
+      ...r.items.slice(0, 30).map(i => h('p', {}, h('a', { href: '#/item/' + i.id }, i.title), ' ', h('span', { class: 'dim' }, `${i.quality || ''} · ${size(i.size)}`))),
+      r.items.length > 30 ? h('p', { class: 'dim' }, t('… and {n} more', { n: r.items.length - 30 })) : null,
+      r.items.length ? h('button', { class: 'danger', onclick: async () => { if (!confirm(t('Delete all optimized versions?'))) return; const x = await api('DELETE', '/api/optimized'); toast(t('{n} optimized version(s) deleted', { n: x.removed })); draw(); } }, t('Delete all optimized versions')) : null);
+  };
+  try { await draw(); } catch (e) { body.textContent = e.message; }
+  return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Optimized versions')), body);
+}

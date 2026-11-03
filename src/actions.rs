@@ -249,6 +249,26 @@ pub fn remove_optimized(app: &Arc<App>, iid: u64) -> usize {
     n
 }
 
+/// Every optimized version: [{id, title, quality, size}], biggest first.
+pub fn optimized_list(app: &Arc<App>) -> Value {
+    let db = app.db.lock().unwrap();
+    let mut rows: Vec<(u64, Value)> = db.items.values().filter_map(|it| {
+        let o = it.extra.get("optimized")?;
+        let size = o.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
+        let show = it.parent_id.and_then(|p| db.items.get(&p)).and_then(|p| p.parent_id.and_then(|g| db.items.get(&g))).map(|g| g.title.clone());
+        let title = match show { Some(s) => format!("{s} – {}", it.title), None => it.title.clone() };
+        Some((size, json!({"id": it.id, "title": title, "quality": o.get("quality").cloned().unwrap_or(Value::Null), "size": size})))
+    }).collect();
+    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    json!({"items": rows.into_iter().map(|r| r.1).collect::<Vec<_>>()})
+}
+
+/// Delete every optimized version at once → how many.
+pub fn remove_all_optimized(app: &Arc<App>) -> usize {
+    let ids: Vec<u64> = { let db = app.db.lock().unwrap(); db.items.values().filter(|i| i.extra.contains_key("optimized")).map(|i| i.id).collect() };
+    ids.into_iter().map(|id| remove_optimized(app, id)).sum()
+}
+
 // ---------------------------------------------------------------- trash
 
 /// "Empty trash" of a library: unavailable items leave it for good.
