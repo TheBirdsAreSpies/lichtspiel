@@ -699,6 +699,7 @@ async function settingsPage(tab) {
         formRow(t('Language of this app'), langSelect(), t('Saved in this browser.')),
         pref('timeFormat', 'auto', t('Time format'), [['auto', t('Automatic')], ['24', t('24-hour')], ['12', t('12-hour')]], t('Saved in this browser.')),
         pref('autoLogin', '1', t('Sign in automatically'), [['1', t('Yes')], ['0', t('No')]], t('No: you are signed out when the browser is closed.'), () => { saveToken(S.token); }),
+        pref('themeMusic', '0', t('Play theme music'), [['0', t('No')], ['1', t('Yes')]], t('Plays a theme.mp3 from the movie’s or show’s folder quietly on its page. Browsers may need one click on the page first.'), () => { if (store.get('themeMusic', '0') !== '1') stopTheme(); }),
         pref('rememberTab', '0', t('Remember the last page'), [['0', t('No')], ['1', t('Yes')]], t('When the app is opened without an address, it continues where you left off.'))),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Quality')),
         pref('quality', 'original', t('Video quality'), QUALITIES, t('The quality used when a video starts; you can still change it in the player. Saved in this browser.'), () => { P.quality = store.get('quality', 'original'); }),
@@ -1493,6 +1494,23 @@ async function editSection(sec) {
 }
 
 // ---------- router
+// Theme music (Settings -> Web): plays quietly on a movie's or show's page when the folder has a theme.mp3.
+const THEME = { audio: null, id: null };
+function stopTheme() {
+  const a = THEME.audio; THEME.audio = null; THEME.id = null;
+  if (!a) return;
+  const fade = setInterval(() => { a.volume = Math.max(0, a.volume - 0.08); if (a.volume <= 0.01) { clearInterval(fade); a.pause(); a.removeAttribute('src'); } }, 40);
+}
+function startTheme(id) {
+  if (store.get('themeMusic', '0') !== '1' || player.style.display === 'flex') return;
+  if (THEME.id === id) return;
+  const a = new Audio(withTok(`/library/metadata/${id}/theme`));
+  a.loop = true; a.volume = 0.35;
+  THEME.audio = a; THEME.id = id;
+  a.addEventListener('error', () => { if (THEME.audio === a) { THEME.audio = null; THEME.id = null; } });
+  a.play().catch(() => { /* the browser wants a click first, or there is no theme */ });
+}
+window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#/item/')) stopTheme(); });
 async function render() {
   const hash = location.hash.slice(1) || '/';
   const [path, qs] = hash.split('?');
@@ -1505,7 +1523,7 @@ async function render() {
     switch (parts[0]) {
       case undefined: return await homePage();
       case 'section': return await sectionPage(parts[1], qs);
-      case 'item': return await itemPage(parts[1]);
+      case 'item': { stopTheme(); const r = await itemPage(parts[1]); startTheme(parts[1]); return r; }
       // A link that starts playing (?t= seconds in); closing the player leaves the title's page.
       case 'play': {
         history.replaceState(null, '', '#/item/' + parts[1]);

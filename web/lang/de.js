@@ -7,6 +7,8 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Play theme music': 'Titelmusik spielen',
+    'Plays a theme.mp3 from the movie’s or show’s folder quietly on its page. Browsers may need one click on the page first.': 'Spielt eine theme.mp3 aus dem Ordner des Films oder der Serie leise auf deren Seite. Browser brauchen eventuell zuerst einen Klick auf die Seite.',
     'Skip': 'Überspringen',
     'Pre-roll videos': 'Vorspann für Filme',
     'Played before every movie, one picked at random. One path per line (or separated by semicolons). MP4 or WebM files that the browser plays directly work best; the video can be skipped.': 'Wird vor jedem Film gespielt, eines davon zufällig. Ein Pfad pro Zeile (oder durch Semikolon getrennt). Am besten MP4- oder WebM-Dateien, die der Browser direkt abspielt; das Video lässt sich überspringen.',

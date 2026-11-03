@@ -928,6 +928,7 @@ const shown = () => P.pending !== null ? P.pending : position();
 
 // together = following a "Watch together" room (not told to the others again).
 async function play(it, startAt, queue, together) {
+  if (typeof stopTheme === 'function') stopTheme();
   P.queue = queue || [];
   if (!it.Media || !it.Media[0].streams) it = meta(await GET('/library/metadata/' + it.id))[0];
   P.it = it;

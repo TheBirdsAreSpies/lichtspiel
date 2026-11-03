@@ -1143,3 +1143,39 @@ pub fn preroll_file(app: &Arc<App>, ctx: &Ctx, n: &str) -> Resp {
     let ext = Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     serve_file_as(Path::new(path), transcode::content_type(&ext), ctx.range.as_deref(), None)
 }
+
+// ---------------------------------------------------------------- theme music
+
+const THEME_EXTS: [&str; 6] = ["mp3", "m4a", "flac", "ogg", "wav", "aac"];
+
+/// A "theme.mp3" (or .m4a, .flac, .ogg, .wav, .aac) next to the first file of a movie or show, or one
+/// folder above it (a show's season folder).
+fn theme_path(db: &Db, item: &Item) -> Option<PathBuf> {
+    let first = db.leaves(item.id).first().and_then(|id| db.items.get(id))?;
+    let file = first.file.as_ref().map(|f| f.path.clone()).or_else(|| first.all_files().first().map(|f| f.path.clone()))?;
+    let dir = Path::new(&file).parent()?;
+    let mut dirs = vec![dir];
+    if first.kind != ItemKind::Movie {
+        if let Some(up) = dir.parent() { dirs.push(up); }
+    }
+    for d in dirs {
+        for e in THEME_EXTS {
+            let p = d.join(format!("theme.{e}"));
+            if p.is_file() { return Some(p); }
+        }
+    }
+    None
+}
+
+/// GET /library/metadata/{id}/theme: the theme music of a movie or show, with seeking.
+pub fn theme(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
+    let path = {
+        let db = app.db.lock().unwrap();
+        let Some(it) = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)).filter(|i| db.can_see_item(user, i)) else { return fail(404, "Not found") };
+        if !matches!(it.kind, ItemKind::Movie | ItemKind::Show) { return fail(404, "No theme music"); }
+        match theme_path(&db, it) { Some(p) => p, None => return fail(404, "No theme music") }
+    };
+    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let ctype = match ext.as_str() { "mp3" => "audio/mpeg", "m4a" | "aac" => "audio/mp4", "flac" => "audio/flac", "ogg" => "audio/ogg", _ => "audio/wav" };
+    serve_file_as(&path, ctype, ctx.range.as_deref(), None)
+}
