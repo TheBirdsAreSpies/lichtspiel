@@ -148,6 +148,10 @@ async function boot() {
     } catch (e) { S.me = null; }
   }
   drawChrome();
+  // Settings → Web → remember the last page: open it again when the app is opened without an address.
+  if (S.me && !location.hash.replace('#', '').replace(/^\/$/, '') && store.get('rememberTab', '0') === '1') {
+    const last = store.get('lastPage', ''); if (last && !last.startsWith('#/play') && !last.startsWith('#/together')) location.hash = last;
+  }
   render();
   ACT.done = -1; pollActivity();
 }
@@ -305,6 +309,7 @@ function pickGrid(items, cardOpts) {
   document.body.append(bar);
   return grid;
 }
+window.addEventListener('hashchange', () => { if (location.hash.length > 2) store.set('lastPage', location.hash); });
 window.addEventListener('hashchange', () => document.querySelectorAll('.pickbar').forEach(b => b.remove()));
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || P.it || document.querySelector('.modal')) return;
@@ -992,7 +997,11 @@ const partStart = n => P.parts.slice(0, n).reduce((a, b) => a + b, 0);
 const split = () => P.parts.length > 1 && P.parts.every(d => d > 0);
 
 async function load(at) {
-  const it = P.it, q = P.quality;
+  const it = P.it;
+  let q = P.quality;
+  // Settings → Web → quality: a video that is not bigger than the chosen quality plays as it is.
+  const want = Number((/^(\d+)p/.exec(q) || [])[1]) || 0, have = Number(it.Media && it.Media[0] && it.Media[0].height) || 0;
+  if (want && have && have <= want && store.get('keepSmall', '1') === '1') q = 'original';
   // Which part the position is in; `at` becomes the time inside that part.
   P.part = 0;
   if (split()) while (P.part < P.parts.length - 1 && at >= partStart(P.part + 1)) P.part++;
@@ -1005,13 +1014,15 @@ async function load(at) {
   if (!d.allowed) toast(t('Converting is switched off for your account, so this file may not play here.'), 5000);
   video.querySelectorAll('track').forEach(tr => tr.remove());
   spin(true);
+  const noDirect = store.get('directPlay', '1') === '0' && P.method === 'direct' && d.allowed;
+  if (noDirect) P.method = 'transcode';
   if (P.method === 'direct') {
     P.offset = 0;
     video.src = withTok(`/library/parts/${it.id}/file${P.part ? '?part=' + P.part : ''}`);
     video.addEventListener('loadedmetadata', () => { video.currentTime = at; }, { once: true });
   } else {
     P.offset = at;
-    video.src = withTok(`/video/transcode/${it.id}/stream.mp4?quality=${q}&offset=${at.toFixed(1)}${extra}`);
+    video.src = withTok(`/video/transcode/${it.id}/stream.mp4?quality=${q}&offset=${at.toFixed(1)}${extra}${noDirect ? '&transcode=1' : ''}`);
   }
   addSubtitles();
   $('#pmethod').textContent = { direct: ' · ' + t('direct play'), remux: ' · ' + t('repackaged'), transcode: ' · ' + t('converting') }[P.method] || '';

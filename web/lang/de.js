@@ -7,6 +7,15 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Remember the last page': 'Reiter merken',
+    'When the app is opened without an address, it continues where you left off.': 'Wenn die App ohne Adresse geöffnet wird, geht es dort weiter, wo du aufgehört hast.',
+    'Video quality': 'Videoqualität',
+    'The quality used when a video starts; you can still change it in the player. Saved in this browser.': 'Die Qualität beim Start eines Videos; im Player kannst du sie weiter ändern. Wird in diesem Browser gespeichert.',
+    'Play smaller videos in original quality': 'Kleinere Videos in Originalqualität wiedergeben',
+    'A video that is not bigger than the chosen quality is not converted.': 'Ein Video, das nicht größer als die gewählte Qualität ist, wird nicht umgewandelt.',
+    'Allowed': 'Erlaubt',
+    'Always convert': 'Immer umwandeln',
+    'Direct play sends the file as it is. Turn it off to always have the server convert, e.g. when a browser plays a file badly.': 'Direct Play sendet die Datei unverändert. Schalte es aus, damit der Server immer umwandelt, z. B. wenn ein Browser eine Datei schlecht abspielt.',
     'Scheduled tasks': 'Geplante Aufgaben',
     'Maintenance starts at': 'Startzeit für Wartungsmaßnahmen',
     'Maintenance ends at': 'Uhrzeit, zu der laufende Wartungsmaßnahmen unterbrochen werden',
