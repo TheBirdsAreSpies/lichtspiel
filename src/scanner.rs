@@ -475,6 +475,22 @@ pub fn probe(ffprobe: &str, file: &mut MediaFile) -> bool {
     true
 }
 
+/// Every chapter of a file: (start ms, end ms, title). Untitled ones are named "Chapter N".
+pub fn read_chapters(ffprobe: &str, path: &str) -> Option<Vec<(u64, u64, String)>> {
+    let out = Command::new(ffprobe).args(["-v", "quiet", "-print_format", "json", "-show_chapters"]).arg(path).output().ok()?;
+    if !out.status.success() { return None; }
+    Some(parse_chapters(&serde_json::from_slice::<Value>(&out.stdout).ok()?))
+}
+
+pub fn parse_chapters(v: &Value) -> Vec<(u64, u64, String)> {
+    let secs = |c: &Value, k: &str| c[k].as_str().and_then(|t| t.parse::<f64>().ok()).map(|t| (t * 1000.0).max(0.0) as u64);
+    v["chapters"].as_array().map(|a| a.iter().enumerate().filter_map(|(i, c)| {
+        let (s, e) = (secs(c, "start_time")?, secs(c, "end_time").unwrap_or(0));
+        let title = c["tags"]["title"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(String::from).unwrap_or_else(|| format!("Chapter {}", i + 1));
+        Some((s, e.max(s), title))
+    }).collect()).unwrap_or_default()
+}
+
 /// Reads only the chapters of a file and returns where credits start (ms).
 /// None when ffprobe can't read the file.
 pub fn read_credits(ffprobe: &str, path: &str) -> Option<Vec<u64>> {
@@ -1377,6 +1393,38 @@ fn container_index(db: &Db, section: u64) -> HashMap<ContainerKey, u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chapters_are_read_with_titles() {
+        let v: Value = serde_json::from_str(r#"{"chapters":[{"start_time":"0.000000","end_time":"60.5","tags":{"title":"Intro"}},{"start_time":"60.5","end_time":"120","tags":{}}]}"#).unwrap();
+        assert_eq!(parse_chapters(&v), vec![(0, 60500, "Intro".to_string()), (60500, 120000, "Chapter 2".to_string())]);
+    }
+
+    #[test]
+    fn chapters_of_a_real_file() {
+        let dir = std::env::temp_dir().join("lichtspiel-chapter-test");
+        let _ = std::fs::create_dir_all(&dir);
+        let meta = dir.join("m.txt");
+        std::fs::write(&meta, ";FFMETADATA1
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=3000
+title=One
+[CHAPTER]
+TIMEBASE=1/1000
+START=3000
+END=6000
+title=Two
+").unwrap();
+        let f = dir.join("c.mkv");
+        let ok = Command::new("ffmpeg").args(["-nostdin", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=160x90:rate=10:duration=6", "-i"]).arg(&meta)
+            .args(["-map_metadata", "1", "-c:v", "libx264", "-preset", "ultrafast"]).arg(&f).status().map(|s| s.success()).unwrap_or(false);
+        if !ok { return; } // no ffmpeg here
+        let ch = read_chapters("ffprobe", &f.to_string_lossy()).unwrap();
+        assert_eq!(ch.iter().map(|c| (c.0, c.2.as_str())).collect::<Vec<_>>(), vec![(0, "One"), (3000, "Two")]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn ignore_patterns() {

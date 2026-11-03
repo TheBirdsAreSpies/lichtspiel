@@ -529,6 +529,7 @@ async function itemPage(id) {
   const localTrailer = (it.Extras || []).find(e => e.extraType === 'trailer');
   const onlineVideos = matchable ? (x.trailers || []).filter(v => v && v.key) : [];
   // Rows: Other Editions, Related, More by the director, More with the first two actors.
+  const chapters = m ? ((await GET(`/library/metadata/${id}/chapters`).catch(() => null)) || { MediaContainer: {} }).MediaContainer.Chapter || [] : [];
   const related = matchable ? ((await GET(`/library/metadata/${id}/related?count=20`)).MediaContainer.Hub || []) : [];
   const hero = h('img', { class: 'hero', src: withTok(`/library/metadata/${id}/art?v=${it.updatedAt || 0}`), alt: '', onerror: e => e.target.remove() });
   set(
@@ -589,6 +590,9 @@ async function itemPage(id) {
           h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, `${e.index}. ${e.title}`)), h('div', { class: 'dim' }, [fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', e.viewOffset ? t('stopped at {time}', { time: fmtTime(e.viewOffset / 1000) }) : ''].filter(Boolean).join(' · ')),
             e.summary ? h('div', { class: 'ep-plot' }, e.summary) : null),
           h('button', { class: 'primary small', onclick: () => play(e, e.viewOffset ? e.viewOffset / 1000 : 0, kids.slice(i + 1)) }, '▶'))))] : null,
+    chapters.length ? [h('h2', {}, t('Chapters')), scroller('row extras', chapters.map(c => h('div', { class: 'card', onclick: () => play(it, c.start / 1000) },
+      h('div', { class: 'poster' }, h('img', { src: withTok(c.thumb), loading: 'lazy', alt: '' })),
+      h('div', { class: 't', title: c.title }, c.title.replace(/^Chapter (\d+)$/, (_, n) => t('Chapter {n}', { n }))), h('div', { class: 's' }, fmtTime(c.start / 1000)))))] : null,
     (it.Extras || []).length || onlineVideos.length ? [h('h2', {}, t('Extras')), scroller('row extras', [...(it.Extras || []).map(x => h('div', { class: 'card', onclick: () => play(x, 0) },
       h('div', { class: 'poster' }, h('img', { src: withTok(x.thumb), loading: 'lazy', alt: '' })),
       h('div', { class: 't', title: t(x.title) }, t(x.title)), h('div', { class: 's' }, [t(EXTRA_TYPES[x.extraType] || 'Extra'), fmtDur(x.duration)].filter(Boolean).join(' · ')))),

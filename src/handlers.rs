@@ -800,7 +800,8 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str) -> Resp {
 /// Rounded to 10 seconds and kept in cache/frames.
 pub fn frame(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let want = ctx.param("t").and_then(|t| t.parse::<f64>().ok()).unwrap_or(0.0).max(0.0);
-    let step = (want / 10.0).floor() as u64 * 10;
+    // ?exact=1 (chapter pictures) keeps the second; the seek bar's pictures are rounded to 10 s.
+    let step = if ctx.param("exact") == Some("1") { want.floor() as u64 } else { (want / 10.0).floor() as u64 * 10 };
     let (it, _) = match playable_file(app, user, iid, 0) { Ok(x) => x, Err(r) => return r };
     // Which file the moment is in, and the time inside that file.
     let mut at = step as f64;
@@ -1179,4 +1180,25 @@ pub fn theme(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let ctype = match ext.as_str() { "mp3" => "audio/mpeg", "m4a" | "aac" => "audio/mp4", "flac" => "audio/flac", "ogg" => "audio/ogg", _ => "audio/wav" };
     serve_file_as(&path, ctype, ctx.range.as_deref(), None)
+}
+
+// ---------------------------------------------------------------- chapters
+
+/// GET /library/metadata/{id}/chapters: [{index, title, start, end, thumb}] (ms), over all parts of a split movie.
+pub fn chapters(app: &Arc<App>, user: &User, iid: &str) -> Resp {
+    let (it, _) = match playable_file(app, user, iid, 0) { Ok(x) => x, Err(r) => return r };
+    let ffprobe = app.settings().ffprobe;
+    let (mut list, mut offset) = (vec![], 0u64);
+    for f in it.all_files() {
+        for (s, e, title) in scanner::read_chapters(&ffprobe, &f.path).unwrap_or_default() {
+            list.push((offset + s, offset + e, title));
+        }
+        offset += f.duration_ms;
+    }
+    let out: Vec<Value> = list.iter().enumerate().map(|(i, (s, e, title))| {
+        // The picture is taken a little after the start (a chapter often begins on a black frame).
+        let at = (*s as f64 / 1000.0 + ((*e as f64 - *s as f64) / 1000.0).min(6.0) / 2.0).floor();
+        json!({"index": i + 1, "title": title, "start": s, "end": e, "thumb": format!("/library/parts/{}/frame?exact=1&t={at}", it.id)})
+    }).collect();
+    ok(json!({"MediaContainer": {"size": out.len(), "Chapter": out}}))
 }

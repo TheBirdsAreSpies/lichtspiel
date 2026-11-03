@@ -59,6 +59,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/library/people/{key}/media", "The same list at a second address"),
     ("GET", "/library/people/{key}/thumb","An actor's photo; one photo per person, shared by everything they are in"),
     ("GET", "/library/metadata/{id}/markers", "Credits markers (ms), where they came from and where the video counts as watched"),
+    ("GET", "/library/metadata/{id}/chapters", "The chapters of a movie or episode [{index, title, start, end (ms), thumb}]; thumb is a picture from the chapter"),
     ("PUT", "/library/metadata/{id}/markers", "Admin: set credits markers {credits: [ms, …]} or {credits: null} to use the chapters again"),
     ("POST", "/library/sections/{id}/credits", "Admin: run credits detection for a library now (in the background; see /api/metadata/status)"),
     ("POST", "/library/metadata/{id}/credits", "Admin: run credits detection for one movie, show, season or episode"),
@@ -960,6 +961,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["library", "parts", iid, "file"]) | ("GET", ["library", "parts", iid, _, "file"]) | ("GET", ["library", "parts", iid, "file", _]) => direct_file(app, ctx, &user, iid),
         ("GET", ["library", "parts", iid, "subtitles", n]) => subtitles(app, &user, iid, n),
+        ("GET", ["library", "metadata", iid, "chapters"]) => crate::handlers::chapters(app, &user, iid),
         ("GET", ["library", "parts", iid, "frame"]) => frame(app, ctx, &user, iid),
 
         // ---------------- streaming

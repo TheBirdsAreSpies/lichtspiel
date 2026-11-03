@@ -7,6 +7,8 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Chapters': 'Kapitel',
+    'Chapter {n}': 'Kapitel {n}',
     'Level the volume': 'Lautstärke angleichen',
     'Quiet and loud videos are brought to a similar loudness. Works for videos the server has measured (Settings → Scheduled tasks).': 'Leise und laute Videos werden auf eine ähnliche Lautstärke gebracht. Funktioniert bei Videos, die der Server gemessen hat (Einstellungen → Geplante Aufgaben).',
     'Measure the loudness of videos': 'Lautstärke von Videos messen',
