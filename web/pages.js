@@ -678,7 +678,7 @@ function pluginPanels() {
 const SETTINGS_TABS = [
   ['Account', [['account', 'Account'], ['watched', 'Watched indicator'], ['watchlist', 'Watchlist feed'], ['webhooks', 'Webhooks']]],
   ['Web', [['web', 'General']]],
-  ['Settings', [['general', 'General'], ['network', 'Network settings'], ['library', 'Library settings'], ['metadata', 'Metadata agents'], ['transcoder', 'Transcoder'], ['tasks', 'Scheduled tasks']]],
+  ['Settings', [['general', 'General'], ['network', 'Network settings'], ['library', 'Library settings'], ['metadata', 'Metadata agents'], ['transcoder', 'Transcoder'], ['tasks', 'Scheduled tasks'], ['extras', 'Extras']]],
   ['Manage', [['manage', 'Libraries and users']]],
 ];
 const USER_TABS = ['account', 'watched', 'watchlist', 'web'];
@@ -815,6 +815,10 @@ async function settingsPage(tab) {
       inp('tmdb_api_key', t('TMDB API key (optional)'), 'text', t('Without a key, movies come from Wikipedia/Wikidata and TV shows from TVmaze. A free key from themoviedb.org gives better matches, cast photos and translated plots.')),
       inp('omdb_api_key', t('OMDb API key for IMDb plots (optional)'), 'text', t('With a free key from omdbapi.com, movie and show plots are taken from IMDb (in English) instead of Wikipedia. Press Refresh details on a movie, or change the language, to load them for movies you already have.')),
     ],
+    extras: [
+      formRow(t('Pre-roll videos'), (f.preroll_paths = h('textarea', { rows: 4, style: 'width:100%;max-width:520px', placeholder: 'D:\\Videos\\intro.mp4' }, s.preroll_paths)),
+        t('Played before every movie, one picked at random. One path per line (or separated by semicolons). MP4 or WebM files that the browser plays directly work best; the video can be skipped.'), true),
+    ],
     tasks: [
       sel('maintenance_start_hour', t('Maintenance starts at'), hours, t('Scheduled tasks only start between these two times (your local time).')),
       sel('maintenance_end_hour', t('Maintenance ends at'), hours),
@@ -845,7 +849,7 @@ async function settingsPage(tab) {
       inp('ffmpeg', t('ffmpeg program')), inp('ffprobe', t('ffprobe program')),
     ],
   };
-  const titles = { general: 'Server', network: 'Network settings', library: 'Library settings', metadata: 'Movie and show details', transcoder: 'Transcoder', tasks: 'Scheduled tasks' };
+  const titles = { general: 'Server', network: 'Network settings', library: 'Library settings', metadata: 'Movie and show details', transcoder: 'Transcoder', tasks: 'Scheduled tasks', extras: 'Extras' };
   set(h('h1', {}, t('Settings')), nav(tab),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t(titles[tab])), panels[tab]),
     h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: async () => {

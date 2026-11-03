@@ -1118,3 +1118,28 @@ pub fn custom_image(app: &Arc<App>, user: &User, iid: &str, slot: &str) -> Resp 
     let Some(mime) = crate::metadata::file_image_type(Path::new(&p)) else { return fail(404, "No picture") };
     with_cache(serve_file(Path::new(&p), mime, None, false))
 }
+
+// ---------------------------------------------------------------- movie pre-roll
+
+/// The video files named in the settings that exist.
+fn preroll_files(app: &Arc<App>) -> Vec<String> {
+    let list = app.settings().preroll_paths;
+    list.split(|c| c == ';' || c == '\n').map(|p| p.trim().trim_matches('"').to_string()).filter(|p| !p.is_empty() && Path::new(p).is_file()).collect()
+}
+
+/// GET /api/preroll → {url} of one of them (or {url: null}).
+pub fn preroll(app: &Arc<App>, ctx: &Ctx) -> Resp {
+    let files = preroll_files(app);
+    if files.is_empty() { return ok(json!({"url": null})); }
+    let n = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0) as usize) % files.len();
+    let tok = ctx.token.as_ref().map(|t| format!("?token={t}")).unwrap_or_default();
+    ok(json!({"url": format!("/api/preroll/{n}/file{tok}"), "count": files.len()}))
+}
+
+/// GET /api/preroll/{n}/file: the n-th pre-roll video, with seeking.
+pub fn preroll_file(app: &Arc<App>, ctx: &Ctx, n: &str) -> Resp {
+    let files = preroll_files(app);
+    let Some(path) = n.parse::<usize>().ok().and_then(|i| files.get(i)) else { return fail(404, "No such pre-roll video") };
+    let ext = Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    serve_file_as(Path::new(path), transcode::content_type(&ext), ctx.range.as_deref(), None)
+}

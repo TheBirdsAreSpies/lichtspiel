@@ -963,9 +963,35 @@ async function play(it, startAt, queue, together) {
   findNext(it);
   drawMarks();
   mediaSession(it);
+  // Settings -> Extras -> pre-roll: a short video before a movie that starts from the beginning.
+  if (it.type === 'movie' && !(startAt > 0) && !together) await playPreroll(it);
+  if (P.it !== it) return;
   await load(startAt || 0);
   if (TG.code && !together) { TG.quiet = 0; tgSend({ item: it.id, position: Math.round((startAt || 0) * 1000) }); }
   wake();
+}
+// Plays the pre-roll video (if one is set) until it ends, fails or "Skip" is pressed.
+async function playPreroll(it) {
+  let url = null;
+  try { url = (await GET('/api/preroll')).url; } catch (e) { return; }
+  if (!url) return;
+  await new Promise(done => {
+    const skip = h('button', { class: 'primary', style: 'position:absolute;right:24px;bottom:90px;z-index:5' }, t('Skip'));
+    let finished = false;
+    const end = () => {
+      if (finished) return; finished = true;
+      video.removeEventListener('ended', end); video.removeEventListener('error', end);
+      skip.remove(); done();
+    };
+    skip.onclick = end;
+    player.append(skip);
+    video.addEventListener('ended', end); video.addEventListener('error', end);
+    video.querySelectorAll('track').forEach(tr => tr.remove());
+    video.src = url;
+    video.play().catch(end);
+    // The player was closed meanwhile.
+    const watch = setInterval(() => { if (finished) return clearInterval(watch); if (P.it !== it || player.style.display === 'none') { clearInterval(watch); end(); } }, 500);
+  });
 }
 // What plays after this one: the player's own queue, then "Add to queue", then the show's next episode.
 async function findNext(it) {

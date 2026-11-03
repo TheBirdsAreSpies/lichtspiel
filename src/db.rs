@@ -771,6 +771,10 @@ pub struct Settings {
     /// Most conversions at once while the processor converts (0 = no limit).
     #[serde(default)]
     pub max_cpu_transcodes: usize,
+    /// Video files played before a movie (one is picked each time): paths separated by new lines or
+    /// semicolons. Files the browser can play (MP4, WebM) work best.
+    #[serde(default)]
+    pub preroll_paths: String,
     /// When each scheduled task last ran (unix seconds).
     #[serde(default)]
     pub maintenance_last: std::collections::BTreeMap<String, u64>,
@@ -933,6 +937,7 @@ impl Default for Settings {
             optimize_weekly: true,
             cleanup_weekly: true,
             remote_max_mbps: 0,
+            preroll_paths: String::new(),
             max_gpu_transcodes: 0,
             max_cpu_transcodes: 0,
             max_remote_plays: 0,

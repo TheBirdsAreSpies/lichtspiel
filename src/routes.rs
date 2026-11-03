@@ -101,6 +101,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/me/2fa/setup", "Start two-step sign-in → {secret, uri, qr (an SVG picture of the link)} for an authenticator app (not active yet)"),
     ("POST", "/api/me/2fa/enable", "Switch it on with a code from the app {code}"),
     ("POST", "/api/me/2fa/disable", "Switch it off {password, code}"),
+    ("GET", "/api/preroll", "A video to play before a movie (from the pre-roll list in the settings) → {url} or {url: null}"),
+    ("GET", "/api/preroll/{n}/file", "One of the pre-roll videos, with seeking"),
     ("GET", "/api/rss", "Your watchlist feed {enabled, url}; the address holds a private key, so a feed reader needs no sign-in"),
     ("POST", "/api/rss", "{enabled: true|false, regenerate: true} switch your watchlist feed on or off, or make a new address"),
     ("GET", "/rss/watchlist/{key}.xml", "Public: the watchlist as RSS (the key is the private part of the address)"),
@@ -153,7 +155,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/plugins/panels", "Switched-on plugins that give each person a panel in Settings (e.g. Connect Trakt)"),
     ("POST", "/api/plugins/{id}/call/{action}", "Run a plugin's own action (any JSON body is passed on); an answer with mark_watched marks those items watched for you"),
     ("GET", "/api/settings", "Admin: server settings"),
-    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, home_profiles, trusted_proxies, ffmpeg, ffprobe, transcoding_enabled, max_gpu_transcodes, max_cpu_transcodes, transcode_dir, downloads_dir, remote_max_mbps (0 = no limit for people outside the home network), max_remote_plays, paused_stop_minutes, no_auth_networks, maintenance_start_hour, maintenance_end_hour, utc_offset_minutes, backup_enabled, backup_dir, backups_keep, optimize_weekly, cleanup_weekly}"),
+    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, home_profiles, trusted_proxies, ffmpeg, ffprobe, transcoding_enabled, preroll_paths, max_gpu_transcodes, max_cpu_transcodes, transcode_dir, downloads_dir, remote_max_mbps (0 = no limit for people outside the home network), max_remote_plays, paused_stop_minutes, no_auth_networks, maintenance_start_hour, maintenance_end_hour, utc_offset_minutes, backup_enabled, backup_dir, backups_keep, optimize_weekly, cleanup_weekly}"),
     ("GET", "/api/transcoder", "Admin: is ffmpeg there, which hardware encoders"),
     ("GET", "/api/browse", "Admin: list folders on the server ?path= (to pick library folders)"),
     ("POST", "/api/imdb-ratings/refresh", "Admin: download IMDb's ratings file now and update every rating (in the background; progress in /api/metadata/status)"),
@@ -1005,6 +1007,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             app.save();
             ok(json!({"ok": true, "watchlist": on}))
         }
+        ("GET", ["api", "preroll"]) => crate::handlers::preroll(app, ctx),
+        ("GET", ["api", "preroll", n, "file"]) => crate::handlers::preroll_file(app, ctx, n),
         ("GET", ["api", "rss"]) | ("POST", ["api", "rss"]) => crate::rss::manage(app, ctx, user.id),
         ("GET", ["api", "watchlist"]) => {
             let db = app.db.lock().unwrap();

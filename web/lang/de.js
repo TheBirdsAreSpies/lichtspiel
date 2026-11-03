@@ -7,6 +7,9 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Skip': 'Überspringen',
+    'Pre-roll videos': 'Vorspann für Filme',
+    'Played before every movie, one picked at random. One path per line (or separated by semicolons). MP4 or WebM files that the browser plays directly work best; the video can be skipped.': 'Wird vor jedem Film gespielt, eines davon zufällig. Ein Pfad pro Zeile (oder durch Semikolon getrennt). Am besten MP4- oder WebM-Dateien, die der Browser direkt abspielt; das Video lässt sich überspringen.',
     'Maximum simultaneous video transcodes with the graphics chip (0 = no limit)': 'Maximale gleichzeitige GPU-Videotranskodierungen (0 = keine Begrenzung)',
     'Maximum simultaneous video transcodes with the processor (0 = no limit)': 'Maximale gleichzeitige CPU-Videotranskodierungen (0 = keine Begrenzung)',
     'Sign in automatically': 'Automatisch anmelden',
