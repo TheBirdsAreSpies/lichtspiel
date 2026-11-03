@@ -7,6 +7,7 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Read all libraries again every 3 days': 'Alle Mediatheken alle 3 Tage neu einlesen',
     '▶ Trailer': '▶ Trailer',
     'Teaser': 'Teaser',
     'online': 'online',

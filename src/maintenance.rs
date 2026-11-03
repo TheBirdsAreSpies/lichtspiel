@@ -135,7 +135,7 @@ pub fn backup(app: &App) -> Result<String, String> {
 }
 
 /// Runs once a minute: starts the tasks that are due, but only inside the maintenance window.
-pub fn tick(app: &App) {
+pub fn tick(app: &std::sync::Arc<App>) {
     let (s, now) = (app.settings(), crate::db::now());
     if !in_window(now, s.utc_offset_minutes, s.maintenance_start_hour, s.maintenance_end_hour) { return; }
     let due = |key: &str, days: u64| now.saturating_sub(s.maintenance_last.get(key).copied().unwrap_or(0)) >= days * 86400 - 3600;
@@ -146,6 +146,11 @@ pub fn tick(app: &App) {
     }
     if s.optimize_weekly && due("optimize", 7) { let _ = optimize(app); ran.push("optimize"); }
     if s.cleanup_weekly && due("cleanup", 7) { let _ = cleanup(app); ran.push("cleanup"); }
+    if s.refresh_metadata && due("refresh", 3) {
+        let ids: Vec<u64> = app.db.lock().unwrap().sections.iter().map(|x| x.id).collect();
+        for id in ids { app.scan_in_background(id); }
+        ran.push("refresh");
+    }
     if !ran.is_empty() {
         { let mut db = app.db.lock().unwrap(); for k in ran { db.settings.maintenance_last.insert(k.to_string(), now); } }
         app.save();

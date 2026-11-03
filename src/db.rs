@@ -743,6 +743,9 @@ pub struct Settings {
     pub optimize_weekly: bool,
     #[serde(default = "yes")]
     pub cleanup_weekly: bool,
+    /// Every three days, inside the maintenance window, all libraries are read again.
+    #[serde(default = "yes")]
+    pub refresh_metadata: bool,
     /// Streams to people outside the home network are held to this many Mbit/s (0 = no limit).
     #[serde(default)]
     pub remote_max_mbps: u32,
@@ -936,6 +939,7 @@ impl Default for Settings {
             backups_keep: backups_keep(),
             optimize_weekly: true,
             cleanup_weekly: true,
+            refresh_metadata: true,
             remote_max_mbps: 0,
             preroll_paths: String::new(),
             max_gpu_transcodes: 0,

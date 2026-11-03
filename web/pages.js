@@ -829,6 +829,7 @@ async function settingsPage(tab) {
       inp('backups_keep', t('Backups to keep'), 'number'),
       chk('optimize_weekly', t('Optimize the library file every week')),
       chk('cleanup_weekly', t('Remove old cache files and leftover conversions every week')),
+      chk('refresh_metadata', t('Read all libraries again every 3 days')),
       formRow('', h('button', { class: 'small', onclick: async () => { try { const x = await api('POST', '/api/maintenance/backup'); toast(t('Backup saved: {path}', { path: x.path }), 6000); } catch (e) { toast(e.message, 5000); } } }, t('Back up now')),
         s.maintenance_last && s.maintenance_last.backup ? t('Last backup: {date}', { date: fmtDateTime(s.maintenance_last.backup) }) : t('No backup yet.')),
     ],
