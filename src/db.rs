@@ -188,6 +188,12 @@ pub struct Stream {
     pub default: bool,
     #[serde(default)]
     pub title: String,
+    /// Subtitle: only the lines in a foreign language ("forced").
+    #[serde(default)]
+    pub forced: bool,
+    /// Subtitle: also describes sounds, for the deaf and hard of hearing (SDH / CC).
+    #[serde(default)]
+    pub sdh: bool,
     /// ffprobe's profile ("Main 10", "Dolby TrueHD + Dolby Atmos" …).
     #[serde(default)]
     pub profile: String,

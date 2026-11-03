@@ -974,10 +974,12 @@ async function play(it, startAt, queue, together) {
   const wantLang = store.get('subLang', '');
   P.sub = wantLang ? P.subs.findIndex(s => (s.language || s.file || '') === wantLang) : -1;
   const subMode = store.get('subMode', 'manual'), prefSub = store.get('subPrefLang', '');
-  if (P.sub < 0 && prefSub && subMode !== 'manual') {
+  if (P.sub < 0 && prefSub) {
     const playing = auds[aPick > 0 ? aPick : 0];
     const foreign = !playing || !playing.language || lang2(playing.language) !== prefSub;
-    if (subMode === 'always' || foreign) P.sub = P.subs.findIndex(x => lang2(x.language) === prefSub);
+    if (subMode !== 'manual' && (subMode === 'always' || foreign)) P.sub = pickSub(P.subs, prefSub, store.get('subSdh', 'any'), false);
+    // Forced subtitles (only the foreign lines) come on by themselves when the audio is in the preferred language.
+    else if (!foreign && store.get('subForced', '1') === '1') P.sub = pickSub(P.subs, prefSub, 'any', true);
   }
   P.lastSub = P.sub >= 0 ? P.sub : undefined;
   // A picture-based subtitle (Blu-ray, DVD) can't be shown as text: it is burned into the video.
@@ -1138,7 +1140,17 @@ function addSubtitles() {
   });
   showSub();
 }
-const subName = (s, i) => [s.language ? langName(s.language) : '', s.title, !s.language && s.file ? s.file : ''].filter(Boolean).join(' · ') || t('Subtitles {n}', { n: i + 1 });
+const subName = (s, i) => [s.language ? langName(s.language) : '', s.title, s.forced && !/forced|erzwungen/i.test(s.title || '') ? t('forced') : '', s.sdh && !/sdh|hearing|schwerh/i.test(s.title || '') ? 'SDH' : '', !s.language && s.file ? s.file : ''].filter(Boolean).join(' · ') || t('Subtitles {n}', { n: i + 1 });
+// The subtitle to switch on for a language: forced ones only when `forced` is asked for (else they are skipped
+// unless they are all there is); `sdh` is 'any', 'prefer' (for the hard of hearing first) or 'avoid'. -1 = none.
+function pickSub(subs, lang, sdh, forced) {
+  const all = subs.map((s, i) => ({ s, i })).filter(x => lang2(x.s.language) === lang);
+  let pool = forced ? all.filter(x => x.s.forced) : all.filter(x => !x.s.forced);
+  if (!forced && !pool.length) pool = all;
+  if (!pool.length) return -1;
+  const rank = x => (sdh === 'prefer' ? (x.s.sdh ? 0 : 1) : sdh === 'avoid' ? (x.s.sdh ? 1 : 0) : 0);
+  return pool.map(x => [rank(x), x.i]).sort((p, q) => p[0] - q[0] || p[1] - q[1])[0][1];
+}
 function langName(code) {
   try { return new Intl.DisplayNames([I18N.lang], { type: 'language' }).of(code.length === 3 ? ({ ger: 'de', deu: 'de', eng: 'en', fre: 'fr', fra: 'fr', spa: 'es', ita: 'it', jpn: 'ja', por: 'pt', rus: 'ru', dut: 'nl', nld: 'nl', pol: 'pl', tur: 'tr', swe: 'sv', dan: 'da', nor: 'no', fin: 'fi', kor: 'ko', chi: 'zh', zho: 'zh' }[code] || code) : code) || code; } catch (e) { return code; }
 }

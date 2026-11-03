@@ -438,6 +438,8 @@ pub fn probe(ffprobe: &str, file: &mut MediaFile) -> bool {
                 bit_depth,
                 default: s["disposition"]["default"].as_i64() == Some(1),
                 title: s["tags"]["title"].as_str().unwrap_or("").to_string(),
+                forced: subtitle_flags(s).0,
+                sdh: subtitle_flags(s).1,
                 profile: s["profile"].as_str().unwrap_or("").to_string(),
                 color_transfer: s["color_transfer"].as_str().unwrap_or("").to_string(),
                 hdr10plus: false,
@@ -480,6 +482,16 @@ pub fn read_chapters(ffprobe: &str, path: &str) -> Option<Vec<(u64, u64, String)
     let out = Command::new(ffprobe).args(["-v", "quiet", "-print_format", "json", "-show_chapters"]).arg(path).output().ok()?;
     if !out.status.success() { return None; }
     Some(parse_chapters(&serde_json::from_slice::<Value>(&out.stdout).ok()?))
+}
+
+/// (forced, for the hard of hearing) of a subtitle stream, from its disposition or its title.
+pub fn subtitle_flags(s: &Value) -> (bool, bool) {
+    if s["codec_type"].as_str() != Some("subtitle") { return (false, false); }
+    let title = s["tags"]["title"].as_str().unwrap_or("").to_lowercase();
+    let word = |w: &str| title.split(|c: char| !c.is_alphanumeric()).any(|x| x == w);
+    let forced = s["disposition"]["forced"].as_i64() == Some(1) || title.contains("forced") || title.contains("erzwungen") || title.contains("forcé");
+    let sdh = s["disposition"]["hearing_impaired"].as_i64() == Some(1) || word("sdh") || word("cc") || title.contains("hearing") || title.contains("schwerhörig") || title.contains("hörgeschädigt");
+    (forced, sdh)
 }
 
 pub fn parse_chapters(v: &Value) -> Vec<(u64, u64, String)> {
@@ -1393,6 +1405,17 @@ fn container_index(db: &Db, section: u64) -> HashMap<ContainerKey, u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subtitle_kinds_are_told_apart() {
+        let j = |t: &str| serde_json::from_str::<Value>(t).unwrap();
+        assert_eq!(subtitle_flags(&j(r#"{"codec_type":"subtitle","disposition":{"forced":1}}"#)), (true, false));
+        assert_eq!(subtitle_flags(&j(r#"{"codec_type":"subtitle","disposition":{"hearing_impaired":1}}"#)), (false, true));
+        assert_eq!(subtitle_flags(&j(r#"{"codec_type":"subtitle","tags":{"title":"English SDH"}}"#)), (false, true));
+        assert_eq!(subtitle_flags(&j(r#"{"codec_type":"subtitle","tags":{"title":"Deutsch (Erzwungen)"}}"#)), (true, false));
+        assert_eq!(subtitle_flags(&j(r#"{"codec_type":"subtitle","tags":{"title":"Descriptive"}}"#)), (false, false));
+        assert_eq!(subtitle_flags(&j(r#"{"codec_type":"audio","disposition":{"forced":1}}"#)), (false, false));
+    }
 
     #[test]
     fn chapters_are_read_with_titles() {

@@ -2195,7 +2195,7 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
                 .iter()
                 .filter(|s| s.kind == "subtitle")
                 .enumerate()
-                .map(|(n, s)| json!({"key": format!("/library/parts/{}/subtitles/{}", it.id, n), "language": s.language, "codec": s.codec, "title": s.title, "embedded": true}))
+                .map(|(n, s)| json!({"key": format!("/library/parts/{}/subtitles/{}", it.id, n), "language": s.language, "codec": s.codec, "title": s.title, "forced": s.forced, "sdh": s.sdh, "embedded": true}))
                 .collect();
             for (n, p) in f.external_subtitles.iter().enumerate() {
                 subs.push(json!({"key": format!("/library/parts/{}/subtitles/x{}", it.id, n), "file": Path::new(p).file_name().map(|s| s.to_string_lossy().to_string()), "embedded": false}));

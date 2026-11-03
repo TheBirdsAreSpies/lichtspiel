@@ -714,6 +714,8 @@ async function settingsPage(tab) {
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Audio and subtitles')),
         pref('audioLang', '', t('Preferred audio language'), langs, t('Used when a video has that audio track. Saved in this browser.')),
         pref('subPrefLang', '', t('Preferred subtitle language'), langs),
+        pref('subSdh', 'any', t('Subtitles for the hard of hearing (SDH)'), [['any', t('No preference')], ['prefer', t('Prefer them')], ['avoid', t('Avoid them')]], t('SDH subtitles also describe sounds. Needs a library that was read again after this version.')),
+        pref('subForced', '1', t('Forced subtitles'), [['1', t('Show with audio in the preferred language')], ['0', t('Off')]], t('Forced subtitles only translate foreign lines, e.g. when characters speak another language.')),
         pref('burnSubs', 'auto', t('Burn in subtitles'), [['auto', t('Only picture-based (Blu-ray, DVD)')], ['never', t('Never')]], t('Picture-based subtitles can’t be shown as text, so the server paints them into the video (the video is converted for that).')),
         pref('subMode', 'manual', t('Subtitle mode'), [['manual', t('Manually selected')], ['foreign', t('Shown with foreign audio')], ['always', t('Always on')]], t('“Shown with foreign audio” turns subtitles on when the audio is not in your preferred subtitle language.')),
         pref('subSize', '100', t('Subtitle size'), SUB_SIZES, '', () => setSubSize(store.get('subSize', '100'))),
