@@ -563,6 +563,7 @@ async function itemPage(id) {
           iconBtn('check', watched ? t('Mark as unwatched') : t('Mark as watched'), async () => { await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${it.id}`); refresh(); }, watched),
           iconBtn(it.favorite ? 'heart' : 'heartOff', it.favorite ? t('Remove from favorites') : t('Add to favorites'), async () => { await api('PUT', `/api/items/${it.id}/favorite`, { favorite: !it.favorite }); refresh(); }, !!it.favorite),
           it.type === 'clip' ? null : iconBtn(it.watchlist ? 'mark' : 'markOff', it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), async () => { await toggleWatchlist(it); refresh(); }, !!it.watchlist),
+          S.me.admin && it.type !== 'clip' ? iconBtn('edit', t('Edit details'), async () => editItem(await fullItem(it), refresh)) : null,
           iconBtn('more', t('More'), e => itemMenu(it, e.currentTarget, refresh, { detail: true })),
           starRating(it)),
         m ? h('div', { class: 'panel kv' },
