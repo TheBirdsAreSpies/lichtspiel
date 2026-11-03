@@ -23,6 +23,13 @@
 //!    An episode's intro is a part found more often than in 0.2 of the
 //!    episodes. When fewer than half of the episodes get an
 //!    intro, the season gets none ("Less than half of episodes have an intro").
+//! 6. The marker stops 3.5 seconds before the end of the shared sound, and an
+//!    episode gets none when the shared sound reaches within 2 seconds of the
+//!    end of what was read: then it never really ended. Such an
+//!    episode still counts as looked at.
+//! 7. Automatic runs take the seasons with an intro from an older version of
+//!    the detector first, then those with an episode never looked at, newest
+//!    first. Episodes that had no intro are not looked at again.
 //!
 //! The fingerprint is a classic band-energy fingerprint (33 bands between 300 and 2000 Hz, one bit per
 //! pair of neighbouring bands, frame 4096 samples at 11025 Hz, a new value
@@ -59,8 +66,16 @@ pub const MIN_SHARE: f64 = 0.2;
 pub const OFFSET_MIN_HITS: usize = 53;
 /// Only the top bits of a value vote for a shift (`>> 0xc`).
 pub const KEY_SHIFT: u32 = 12;
-/// Bump when detection changes, so seasons are looked at again.
-pub const DETECTOR_VERSION: u32 = 1;
+/// A value has 32 bits: turns equal bits per value into a share.
+pub const BIT_SHARE: f32 = 0.03125;
+/// The marker ends this many seconds before the shared sound does.
+pub const END_TRIM_SECONDS: f64 = 3.5;
+/// Shared sound this close to the end of what was read has no real end.
+pub const TAIL_SECONDS: f64 = 2.0;
+/// Bump when detection changes, so seasons with an intro are looked at again.
+pub const DETECTOR_VERSION: u32 = 2;
+/// Bump when the fingerprints themselves change, so they are read again.
+const PRINT_VERSION: u32 = 1;
 
 const SAMPLE_RATE: u32 = 11025;
 const FRAME: usize = 4096;
@@ -195,10 +210,10 @@ pub fn fingerprint(samples: &[f32]) -> Vec<u32> {
     out
 }
 
-/// Share of equal bits.
+/// Share of equal bits: equal bits per value, times 1/32.
 fn likeness(a: &[u32], b: &[u32]) -> f32 {
     let same: u32 = a.iter().zip(b).map(|(x, y)| 32 - (x ^ y).count_ones()).sum();
-    same as f32 / (32 * a.len().max(1)) as f32
+    same as f32 / a.len().max(1) as f32 * BIT_SHARE
 }
 
 /// Shifts (b index − a index) worth trying, most votes first.
@@ -315,6 +330,20 @@ fn add_part(list: &mut Vec<Part>, (start, end): (f32, f32)) {
     list.push(new);
 }
 
+/// The marker (start, end in ms) for a shared part of an episode of which
+/// `length` seconds were read, if it gets one.
+fn marker(start: f32, end: f32, length: f64) -> Option<(u64, u64)> {
+    let from = (start * 1000.0) as i64;
+    let to = ((end as f64 - END_TRIM_SECONDS) * 1000.0) as i64;
+    (to > from && length - TAIL_SECONDS >= end as f64).then_some((from as u64, to as u64))
+}
+
+/// Whether an episode is due for automatic detection: never looked at, or it
+/// has an intro from an older detector.
+pub fn is_due(checked: u32, has_intro: bool) -> bool {
+    checked == 0 || (checked < DETECTOR_VERSION && has_intro)
+}
+
 /// Intros (start, end in ms) of a season's episodes, in the order given; None
 /// where an episode has none. `prints` empty = that episode could not be read.
 pub fn detect_season(prints: &[Vec<u32>]) -> Vec<Option<(u64, u64)>> {
@@ -332,21 +361,22 @@ pub fn detect_season(prints: &[Vec<u32>]) -> Vec<Option<(u64, u64)>> {
         }
     }
     let need = n as f64 * MIN_SHARE;
-    let mut out: Vec<Option<(u64, u64)>> = parts
+    let mut best: Vec<Option<Part>> = parts
         .into_iter()
         .map(|mut p| {
             // Longest first, then the first one found often enough (
             // sorts by end − start, largest first).
             p.sort_by(|x, y| (y.end - y.start).total_cmp(&(x.end - x.start)));
-            p.into_iter()
-                .find(|x| x.count as f64 > need)
-                .map(|x| ((x.start * 1000.0).round() as u64, (x.end * 1000.0).round() as u64))
+            p.into_iter().find(|x| x.count as f64 > need)
         })
         .collect();
-    if out.iter().filter(|x| x.is_some()).count() < n / 2 {
-        out.iter_mut().for_each(|x| *x = None);
+    if best.iter().filter(|x| x.is_some()).count() < n / 2 {
+        best.iter_mut().for_each(|x| *x = None);
     }
-    out
+    best.into_iter()
+        .zip(prints)
+        .map(|(p, print)| p.and_then(|x| marker(x.start, x.end, (print.len() as f32 * ITEM_SECONDS) as f64)))
+        .collect()
 }
 
 /// Cached fingerprints live in data/cache/intro, one file per video, named
@@ -357,7 +387,7 @@ pub fn cache_name(path: &str, size: u64, modified: u64) -> String {
         h ^= b as u64;
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
-    format!("{h:016x}-v{DETECTOR_VERSION}.fp")
+    format!("{h:016x}-v{PRINT_VERSION}.fp")
 }
 
 pub fn read_cached(file: &std::path::Path) -> Option<Vec<u32>> {
@@ -421,7 +451,7 @@ mod tests {
         for (f, cold) in found.iter().zip([12.0f32, 40.0, 25.0]) {
             let (s, e) = f.expect("intro found");
             assert!((s as f32 / 1000.0 - cold).abs() < 2.5, "start {s} for cold open {cold}");
-            assert!((e as f32 / 1000.0 - (cold + 35.0)).abs() < 2.5, "end {e} for cold open {cold}");
+            assert!((e as f32 / 1000.0 - (cold + 35.0 - 3.5)).abs() < 2.5, "end {e} for cold open {cold}");
         }
     }
 
@@ -450,7 +480,7 @@ mod tests {
         let found = detect_season(&prints);
         for (f, cold) in found.iter().zip([15.0f32, 50.0]) {
             let (s, e) = f.expect("intro found in the files");
-            assert!((s as f32 / 1000.0 - cold).abs() < 2.5 && (e as f32 / 1000.0 - (cold + 30.0)).abs() < 2.5, "{s}–{e} ms for cold open {cold}");
+            assert!((s as f32 / 1000.0 - cold).abs() < 2.5 && (e as f32 / 1000.0 - (cold + 30.0 - 3.5)).abs() < 2.5, "{s}–{e} ms for cold open {cold}");
         }
     }
 
@@ -458,6 +488,24 @@ mod tests {
     fn nothing_shared_means_no_intro() {
         let prints: Vec<Vec<u32>> = (1..=3).map(|s| fingerprint(&tune(90.0, s))).collect();
         assert!(detect_season(&prints).iter().all(|x| x.is_none()));
+    }
+
+    #[test]
+    fn the_marker_stops_before_the_shared_sound_does() {
+        assert_eq!(marker(10.0, 50.0, 600.0), Some((10_000, 46_500)));
+        // Too short once trimmed.
+        assert_eq!(marker(10.0, 13.5, 600.0), None);
+        // Reaches the end of what was read: the sound never really ended.
+        assert_eq!(marker(10.0, 599.0, 600.0), None);
+        assert_eq!(marker(10.0, 598.0, 600.0), Some((10_000, 594_500)));
+    }
+
+    #[test]
+    fn only_unseen_episodes_and_old_intros_are_due() {
+        assert!(is_due(0, false));
+        assert!(is_due(DETECTOR_VERSION - 1, true));
+        assert!(!is_due(DETECTOR_VERSION - 1, false));
+        assert!(!is_due(DETECTOR_VERSION, true));
     }
 
     #[test]

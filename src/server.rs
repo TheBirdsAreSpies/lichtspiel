@@ -715,8 +715,8 @@ impl App {
                     _ => {}
                 }
             }
-            season_ids.sort();
-            season_ids.dedup();
+            let mut seen = std::collections::HashSet::new();
+            season_ids.retain(|s| seen.insert(*s));
             let mut seasons = vec![];
             for sid in season_ids {
                 let eps: Vec<&Item> = db.children(sid).into_iter().filter(|e| e.kind == ItemKind::Episode && e.file.is_some() && db.intro_on(e)).collect();
@@ -724,7 +724,7 @@ impl App {
                 if eps.len() < 2 {
                     continue;
                 }
-                let stale = eps.iter().any(|e| e.file.as_ref().is_some_and(|f| f.intro_checked < intro::DETECTOR_VERSION && f.intro_errors <= db::CREDITS_MAX_ERRORS));
+                let stale = eps.iter().any(|e| e.file.as_ref().is_some_and(|f| intro::is_due(f.intro_checked, !f.intro_ms.is_empty()) && f.intro_errors <= db::CREDITS_MAX_ERRORS));
                 if !force && !stale {
                     continue;
                 }
@@ -795,21 +795,27 @@ impl App {
     }
 
     /// Seasons still waiting for automatic intro detection (with at least two
-    /// episodes, so there is something to compare).
+    /// episodes, so there is something to compare): first those with an intro
+    /// from an older detector, then those with an episode never looked at,
+    /// newest first.
     pub fn intros_pending(&self) -> Vec<u64> {
         let db = self.db.lock().unwrap();
         if db.settings.intro_markers_behaviour == "never" {
             return vec![];
         }
-        let mut v: Vec<u64> = db
+        let mut due: Vec<(bool, u64, u64)> = db
             .items
             .values()
             .filter(|i| i.kind == ItemKind::Episode && db.intro_on(i))
-            .filter(|i| i.file.as_ref().is_some_and(|f| f.intro_checked < crate::intro::DETECTOR_VERSION && f.intro_errors <= db::CREDITS_MAX_ERRORS))
-            .filter_map(|i| i.parent_id)
+            .filter_map(|i| {
+                let f = i.file.as_ref()?;
+                let wanted = crate::intro::is_due(f.intro_checked, !f.intro_ms.is_empty()) && f.intro_errors <= db::CREDITS_MAX_ERRORS;
+                wanted.then_some((f.intro_checked == 0, i.added_at, i.parent_id?))
+            })
             .collect();
-        v.sort();
-        v.dedup();
+        due.sort_by_key(|&(new, added, _)| (new, std::cmp::Reverse(added)));
+        let mut seen = std::collections::HashSet::new();
+        let mut v: Vec<u64> = due.into_iter().map(|d| d.2).filter(|s| seen.insert(*s)).collect();
         v.retain(|s| db.children(*s).iter().filter(|e| e.kind == ItemKind::Episode && e.file.is_some()).count() >= 2);
         v
     }

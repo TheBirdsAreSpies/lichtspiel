@@ -863,7 +863,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let checked = f.is_some_and(|f| f.credits_checked >= db::CREDITS_DETECTOR_VERSION);
             let intro = db.intro_marker(it);
             let intro_source = if it.extra.contains_key("intro_ms") { "manual" } else if intro.is_some() { "sound" }
-                else if it.file.as_ref().is_some_and(|f| f.intro_checked >= crate::intro::DETECTOR_VERSION) { "none" } else { "pending" };
+                else if it.file.as_ref().is_some_and(|f| f.intro_checked > 0) { "none" } else { "pending" };
             ok(json!({"credits": credits, "source": if manual { "manual" } else if !credits.is_empty() { how } else if checked { "none" } else { "pending" },
                 "watchedAt": at, "duration": it.duration_ms, "errors": f.map(|f| f.credits_errors).unwrap_or(0),
                 "intro": intro.map(|(s, e)| json!([s, e])), "introSource": intro_source,
