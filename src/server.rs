@@ -2221,6 +2221,23 @@ pub fn recently_added(db: &Db, user: &User, kind: Option<ItemKind>, limit: usize
     v.into_iter().take(limit).map(|i| i.id).collect()
 }
 
+/// The shows the given episodes belong to, each once, in the order of their newest episode.
+pub fn shows_of(db: &Db, ids: &[u64], limit: usize) -> Vec<u64> {
+    let mut out: Vec<u64> = vec![];
+    for id in ids {
+        let mut cur = db.items.get(id);
+        for _ in 0..4 {
+            match cur {
+                Some(i) if i.kind == ItemKind::Show => { if !out.contains(&i.id) { out.push(i.id); } break; }
+                Some(i) => cur = i.parent_id.and_then(|p| db.items.get(&p)),
+                None => break,
+            }
+        }
+        if out.len() >= limit { break; }
+    }
+    out
+}
+
 /// One week in seconds, for the Continue Watching window:
 /// last viewed + weeks × one week >= now.
 pub const WEEK_SECONDS: u64 = 604800;

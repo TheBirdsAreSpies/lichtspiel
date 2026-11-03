@@ -7,6 +7,7 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Show new episodes on the home page as their show': 'Neue Folgen auf der Startseite als Serie zeigen',
     'Read all libraries again every 3 days': 'Alle Mediatheken alle 3 Tage neu einlesen',
     '▶ Trailer': '▶ Trailer',
     'Teaser': 'Teaser',

@@ -794,6 +794,7 @@ async function settingsPage(tab) {
         h('b', {}, r.your_address ? t('The server sees you as {ip} — {where}.', { ip: r.your_address, where: !r.your_address_trusted ? t('passed on by a proxy that isn’t trusted') : r.you_are_local ? t('home network') : t('from outside') }) : '')]),
     ],
     library: [
+      chk('group_recent_episodes', t('Show new episodes on the home page as their show')),
       chk('scheduled_scans_enabled', t('Scan my library periodically'), t('Off by default. Turn it on so new files show up without pressing "Scan".')),
       sel('scan_interval_minutes', t('Library scan interval'), r.scan_intervals.map(x => [x.minutes, t(x.label)])),
       sel('watched_threshold_percent', t('Video played threshold'), r.played_thresholds.map(p => [p, t('{n}%', { n: p })]), t('Set the progress percentage for video playback at which point the video will be marked as played.')),
