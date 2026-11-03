@@ -698,6 +698,7 @@ async function settingsPage(tab) {
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Web')),
         formRow(t('Language of this app'), langSelect(), t('Saved in this browser.')),
         pref('timeFormat', 'auto', t('Time format'), [['auto', t('Automatic')], ['24', t('24-hour')], ['12', t('12-hour')]], t('Saved in this browser.')),
+        pref('autoLogin', '1', t('Sign in automatically'), [['1', t('Yes')], ['0', t('No')]], t('No: you are signed out when the browser is closed.'), () => { saveToken(S.token); }),
         pref('rememberTab', '0', t('Remember the last page'), [['0', t('No')], ['1', t('Yes')]], t('When the app is opened without an address, it continues where you left off.'))),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Quality')),
         pref('quality', 'original', t('Video quality'), QUALITIES, t('The quality used when a video starts; you can still change it in the player. Saved in this browser.'), () => { P.quality = store.get('quality', 'original'); }),
@@ -894,7 +895,7 @@ async function apiPage() {
   const rotate = async all => {
     if (!await sure(all ? t('Make a new token and sign out every other device and script?') : t('Make a new token? Scripts using the old one stop working.'))) return;
     const r = await api('POST', '/api/tokens/rotate', { all });
-    S.token = r.token; localStorage.setItem('token', r.token); shown.textContent = '••••••••';
+    S.token = r.token; saveToken(r.token); shown.textContent = '••••••••';
     toast(all ? t('New token made; {n} other sign-in(s) ended', { n: r.revoked - 1 }) : t('New token made; the old one no longer works'));
     loadTokens();
   };

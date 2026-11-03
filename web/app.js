@@ -6,9 +6,19 @@
 // then the token is taken out of the address bar.
 (() => {
   const u = new URL(location.href); const tok = u.searchParams.get('token');
-  if (tok) { localStorage.setItem('token', tok); u.searchParams.delete('token'); history.replaceState(null, '', u.pathname + u.search + u.hash); }
+  if (tok) { try { localStorage.setItem('token', tok); } catch (e) { /* none */ } u.searchParams.delete('token'); history.replaceState(null, '', u.pathname + u.search + u.hash); }
 })();
-const S = { token: localStorage.getItem('token') || '', me: null, sections: [], filters: null, status: null };
+// Where the sign-in is kept: for good (the default), or only until the browser is closed
+// (Settings -> Web -> sign in automatically: off).
+const keepSignedIn = () => { try { return localStorage.getItem('autoLogin') !== '0'; } catch (e) { return true; } };
+function saveToken(tok) {
+  try {
+    if (keepSignedIn()) { localStorage.setItem('token', tok); sessionStorage.removeItem('token'); }
+    else { sessionStorage.setItem('token', tok); localStorage.removeItem('token'); }
+  } catch (e) { /* private window: the sign-in lasts for this page */ }
+}
+function loadToken() { try { return sessionStorage.getItem('token') || localStorage.getItem('token') || ''; } catch (e) { return ''; } }
+const S = { token: loadToken(), me: null, sections: [], filters: null, status: null };
 const $ = (s, r = document) => r.querySelector(s);
 const main = () => $('#main');
 
@@ -62,7 +72,7 @@ const GET = p => api('GET', p);
 const meta = j => (j && j.MediaContainer && j.MediaContainer.Metadata) || [];
 
 // ---------- sign in, first setup, invites
-function logout() { S.token = ''; S.me = null; localStorage.removeItem('token'); location.hash = '#/login'; drawChrome(); render(); }
+function logout() { S.token = ''; S.me = null; try { localStorage.removeItem('token'); sessionStorage.removeItem('token'); } catch (e) { /* none */ } location.hash = '#/login'; drawChrome(); render(); }
 
 function authPage(title, intro, fields, button, submit) {
   const err = h('div', { class: 'err' });
@@ -80,7 +90,7 @@ function authPage(title, intro, fields, button, submit) {
   set(form);
   const first = form.querySelector('input'); if (first) first.focus();
 }
-async function signedIn(token) { S.token = token; localStorage.setItem('token', token); location.hash = '#/'; await boot(); }
+async function signedIn(token) { S.token = token; saveToken(token); location.hash = '#/'; await boot(); }
 async function loginPage() {
   authPage(t('Sign in'), S.status ? S.status.name : '', [['username', t('User name'), 'text', '', 'username'], ['password', t('Password'), 'password', '', 'current-password']], t('Sign in'),
     async v => {

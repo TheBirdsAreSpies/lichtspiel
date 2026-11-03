@@ -7,6 +7,8 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Sign in automatically': 'Automatisch anmelden',
+    'No: you are signed out when the browser is closed.': 'Nein: Du wirst abgemeldet, sobald der Browser geschlossen wird.',
     'That code was already used; wait for the next one': 'Dieser Code wurde schon verwendet; warte auf den nächsten',
     'Switch off the two-step sign-in of {name}?': 'Zwei-Faktor-Anmeldung von {name} ausschalten?',
     'Reset': 'Zurücksetzen',
