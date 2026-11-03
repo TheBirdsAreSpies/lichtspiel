@@ -1103,6 +1103,8 @@ I18N.add('de', 'Deutsch', {
     'Delete optimized versions': 'Optimierte Versionen löschen',
     'Optimized versions': 'Optimierte Versionen',
     'Server log': 'Server-Protokoll',
+    'Lift dialogue when mixing surround sound down to stereo': 'Dialoge beim Herunterrechnen von Mehrkanalton anheben',
+    'Voices stay clear when 5.1 or 7.1 sound is converted for browsers and phones. Takes effect with the next video you start.': 'Stimmen bleiben gut verständlich, wenn 5.1- oder 7.1-Ton für Browser und Handys umgerechnet wird. Gilt ab dem nächsten gestarteten Video.',
     'Refresh': 'Aktualisieren',
     'Nothing has been logged yet.': 'Bisher wurde nichts protokolliert.',
     '{n} optimized version(s), {size} in all.': '{n} optimierte Version(en), zusammen {size}.',

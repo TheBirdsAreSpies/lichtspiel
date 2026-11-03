@@ -65,6 +65,8 @@ pub struct Request {
     pub h264_level: Option<u32>,
     /// Burn this picture-based subtitle (its number among the file's subtitle streams) into the video.
     pub burn_subtitle: Option<u32>,
+    /// Lift the dialogue when surround sound is mixed down to stereo.
+    pub boost_dialogue: bool,
 }
 
 /// H.264 level limits (level×10, max frame size in macroblocks, max bitrate kbit/s, max buffer kbit).
@@ -362,6 +364,10 @@ fn audio_args(file: &MediaFile, req: &Request) -> Vec<String> {
         .or_else(|| audio_streams.iter().position(|s| s.default))
         .unwrap_or(0);
     v.extend([s("-map"), s("0:v:0?"), s("-map"), format!("0:a:{pick}?")]);
+    if req.boost_dialogue && audio_streams.get(pick).is_some_and(|a| a.channels > 2) {
+        // Any surround layout → 5.1, then a stereo mix with a strong centre (the voices); the limiter stops clipping.
+        v.extend([s("-af"), s("aformat=channel_layouts=5.1,pan=stereo|FL=0.9*FC+0.55*FL+0.4*BL|FR=0.9*FC+0.55*FR+0.4*BR,alimiter=limit=0.97")]);
+    }
     v.extend([
         s("-c:a"), s("aac"),
         s("-ac"), TRANSCODE_AUDIO_CHANNELS.to_string(),

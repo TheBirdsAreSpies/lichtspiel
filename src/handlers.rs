@@ -382,8 +382,9 @@ pub fn sessions(app: &Arc<App>, user: &User) -> Resp {
 
 /// The player's request, held to the bitrate limit for people outside the home network.
 /// (Takes the limit instead of the app: callers may already hold the library lock.)
-pub fn transcode_request(limit: u32, ctx: &Ctx) -> transcode::Request {
+pub fn transcode_request(limit: u32, boost_dialogue: bool, ctx: &Ctx) -> transcode::Request {
     let mut req = transcode_request_plain(ctx);
+    req.boost_dialogue = boost_dialogue;
     if limit > 0 && !ctx.is_local() {
         let cap = limit.saturating_mul(1000);
         if req.max_kbps == 0 || req.max_kbps > cap { req.max_kbps = cap; }
@@ -406,6 +407,7 @@ fn transcode_request_plain(ctx: &Ctx) -> transcode::Request {
         video_quality: ctx.num("videoQuality").map(|q| q.min(99) as u32),
         h264_level: ctx.param("level").and_then(transcode::parse_level),
         burn_subtitle: ctx.num("subtitle").map(|n| n as u32),
+        boost_dialogue: false,
     }
 }
 
@@ -568,7 +570,7 @@ fn check_transcode_allowed(app: &Arc<App>, user: &User, method: &Method) -> Opti
 /// Any container in, fragmented MP4 (H.264 + AAC) out, streamed while ffmpeg works.
 pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let (it, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
-    let req = transcode_request(app.settings().remote_max_mbps, ctx);
+    let req = { let st = app.settings(); transcode_request(st.remote_max_mbps, st.boost_dialogue, ctx) };
     let mut d = transcode::decide(&f, &req);
     if d.method == Method::Direct {
         d.method = Method::Remux;
@@ -600,7 +602,7 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
 
 pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let (it, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
-    let req = transcode_request(app.settings().remote_max_mbps, ctx);
+    let req = { let st = app.settings(); transcode_request(st.remote_max_mbps, st.boost_dialogue, ctx) };
     let mut d = transcode::decide(&f, &req);
     if d.method == Method::Direct {
         d.method = Method::Remux;

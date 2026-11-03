@@ -957,7 +957,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             // ?part=n: one file of a split movie (0 = the first).
             let part = ctx.num("part").map(|n| n as usize).unwrap_or(0);
             let Some(f) = it.part(part) else { return fail(404, "No such part") };
-            let req = transcode_request(db.settings.remote_max_mbps, ctx);
+            let req = transcode_request(db.settings.remote_max_mbps, db.settings.boost_dialogue, ctx);
             let d = transcode::decide(f, &req);
             let allowed = user.allow_transcode.unwrap_or(true) && db.settings.transcoding_enabled;
             let tok = ctx.token.as_ref().map(|t| format!("&token={t}")).unwrap_or_default();

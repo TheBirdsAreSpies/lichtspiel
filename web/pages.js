@@ -862,6 +862,7 @@ async function settingsPage(tab) {
       tc.hardware_encoders.length ? h('p', { class: 'dim' }, t('Hardware encoders in this ffmpeg: ') + tc.hardware_encoders.join(', ') + (tc.render_device ? ' · ' + t('/dev/dri/renderD128 present') : '')) : null,
       h('p', { class: 'dim' }, t('Converting with: ') + (tc.hw_in_use === 'none' ? t('the processor (software)') : tc.hw_in_use)),
       sel('transcoder_quality', t('Transcoder quality'), [['automatic', t('Automatic')], ['speed', t('Prefer higher speed encoding')], ['quality', t('Prefer higher quality encoding')], ['max', t('Make my CPU hurt')]], t('Applies to Intel Quick Sync and NVIDIA hardware encoding.')),
+      chk('boost_dialogue', t('Lift dialogue when mixing surround sound down to stereo'), t('Voices stay clear when 5.1 or 7.1 sound is converted for browsers and phones. Takes effect with the next video you start.')),
       chk('transcoding_enabled', t('Allow video conversion'), t('Off: the server never converts video; only files the player can play as they are will play.')),
       inp('transcode_dir', t('Folder for live conversions'), 'text', t('Empty = the “transcode” folder in the data folder. Pick a fast disk.')),
       inp('downloads_dir', t('Folder for converted downloads'), 'text', t('Empty = the “downloads” folder in the data folder. Copies already made stay where they are.')),
