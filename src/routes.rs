@@ -97,6 +97,9 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/:/rate", "Your rating ?key= &rating=0-10"),
     ("PUT", "/api/items/{id}/favorite", "{favorite: true|false}"),
     ("PUT", "/api/items/{id}/watchlist", "Put a movie, show, season or episode on your watchlist or take it off {watchlist: true|false}; watching it takes it off by itself (a show once every episode is watched)"),
+    ("GET", "/api/rss", "Your watchlist feed {enabled, url}; the address holds a private key, so a feed reader needs no sign-in"),
+    ("POST", "/api/rss", "{enabled: true|false, regenerate: true} switch your watchlist feed on or off, or make a new address"),
+    ("GET", "/rss/watchlist/{key}.xml", "Public: the watchlist as RSS (the key is the private part of the address)"),
     ("GET", "/api/watchlist", "Your watchlist ?sort=added (newest first)|oldest|title|year|rating|added_at &type=movie|show|season|episode"),
     ("POST", "/api/watchlist", "Put several on your watchlist or take them off {ids: [..], watchlist: true|false}"),
     ("GET", "/api/downloads", "Your downloads, newest first, with state (queued|converting|ready|failed), progress and size ?all=1 (admin: everyone's)"),
@@ -248,6 +251,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["api", "invites", code]) => return invite_info(app, code),
         ("POST", ["api", "invites", code, "accept"]) => return invite_accept(app, ctx, code),
         ("GET", ["video", "transcode", "hls", sid, file]) => return hls_file(app, sid, file),
+        ("GET", ["rss", "watchlist", key]) => return crate::rss::feed(app, ctx, key),
         ("GET", ["favicon.ico"]) => return bytes(200, "image/svg+xml", FAVICON.as_bytes().to_vec()),
         _ => {}
     }
@@ -955,6 +959,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             app.save();
             ok(json!({"ok": true, "watchlist": on}))
         }
+        ("GET", ["api", "rss"]) | ("POST", ["api", "rss"]) => crate::rss::manage(app, ctx, user.id),
         ("GET", ["api", "watchlist"]) => {
             let db = app.db.lock().unwrap();
             let ids = crate::dashboard::watchlist_ids(&db, &user, ctx.param("sort").unwrap_or(""), ctx.param("type").and_then(ItemKind::parse));
@@ -1297,7 +1302,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let id = db.new_id();
             db.users.push(db::User { id, username: username.clone(), email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s,
                 admin: as_admin, created_at: now(), allowed_sections: sections, invited_by: Some(user.id),
-                allow_transcode: None, allow_delete: false, allow_download: None, sidebar: Value::Null, home, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false });
+                allow_transcode: None, allow_delete: false, allow_download: None, sidebar: Value::Null, home, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false, rss_key: String::new() });
             let _ = set_pin(db.users.last_mut().unwrap(), &pin);
             let v = user_json(db.user(id).unwrap());
             drop(db);

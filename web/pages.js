@@ -640,17 +640,18 @@ function pluginPanels() {
 
 // The settings, in order: your account, the web app, the server's settings, and management.
 const SETTINGS_TABS = [
-  ['Account', [['account', 'Account'], ['watched', 'Watched indicator']]],
+  ['Account', [['account', 'Account'], ['watched', 'Watched indicator'], ['watchlist', 'Watchlist feed'], ['webhooks', 'Webhooks']]],
   ['Web', [['web', 'General']]],
   ['Settings', [['general', 'General'], ['network', 'Network settings'], ['library', 'Library settings'], ['metadata', 'Metadata agents'], ['transcoder', 'Transcoder'], ['tasks', 'Scheduled tasks']]],
   ['Manage', [['manage', 'Libraries and users']]],
 ];
+const USER_TABS = ['account', 'watched', 'watchlist', 'web'];
 async function settingsPage(tab) {
   markNav('settings');
-  const nav = cur => h('div', { class: 'tabs', style: 'flex-wrap:wrap' }, SETTINGS_TABS.filter(([, items]) => S.me.admin || items.some(([k]) => k === 'account' || k === 'web')).map(([grp, items]) =>
+  const nav = cur => h('div', { class: 'tabs', style: 'flex-wrap:wrap' }, SETTINGS_TABS.filter(([, items]) => S.me.admin || items.some(([k]) => USER_TABS.includes(k))).map(([grp, items]) =>
     [h('span', { class: 'dim', style: 'padding:7px 4px 7px 12px' }, t(grp) + ':'),
-      items.filter(([k]) => S.me.admin || ['account', 'web'].includes(k)).map(([k, label]) => h('a', { href: '#/settings/' + k, class: k === cur ? 'on' : '' }, t(label)))]));
-  if (!tab || (!S.me.admin && !['account', 'web'].includes(tab))) tab = 'account';
+      items.filter(([k]) => S.me.admin || USER_TABS.includes(k)).map(([k, label]) => h('a', { href: '#/settings/' + k, class: k === cur ? 'on' : '' }, t(label)))]));
+  if (!tab || (!S.me.admin && !USER_TABS.includes(tab))) tab = 'account';
   if (tab === 'account') return set(h('h1', {}, t('Settings')), nav(tab), accountPanel(), pluginPanels());
   if (tab === 'web') {
     const pref = (key, def, label, opts, help, after) => formRow(label, h('select', { onchange: e => { store.set(key, e.target.value); if (after) after(); toast(t('Saved')); } },
@@ -674,6 +675,44 @@ async function settingsPage(tab) {
         formRow(t('Subtitle color'), color),
         pref('subBg', '1', t('Subtitle background'), [['1', t('Dark box')], ['0', t('None')]], '', applySubStyle),
         pref('subLift', '0', t('Subtitle position'), [['0', t('Bottom')], ['2', t('Slightly higher')], ['4', t('Higher')], ['7', t('Much higher')]], t('Applies to the next subtitle line shown.'))));
+  }
+  if (tab === 'watchlist') {
+    const r = await GET('/api/rss');
+    const copy = url => { if (navigator.clipboard) navigator.clipboard.writeText(url); toast(t('Link copied')); };
+    const box = h('div');
+    const draw = x => {
+      box.replaceChildren(
+        x.enabled ? [h('input', { value: x.url, style: 'width:100%;margin:8px 0', onclick: e => e.target.select() }),
+          h('button', { onclick: () => copy(x.url) }, t('Copy link')), ' ',
+          h('button', { onclick: async () => { if (await sure(t('Make a new address? The old one stops working.'))) draw(await api('POST', '/api/rss', { regenerate: true })); } }, t('New address')), ' ',
+          h('button', { class: 'danger', onclick: async () => draw(await api('POST', '/api/rss', { enabled: false })) }, t('Switch off'))]
+          : h('button', { class: 'primary', onclick: async () => draw(await api('POST', '/api/rss', { enabled: true })) }, t('Switch on')));
+    };
+    draw(r);
+    return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Watchlist feed')),
+      h('p', { class: 'dim' }, t('Your watchlist as an RSS feed for a feed reader or an automation. Anyone with the address can read the list, so keep it private.')), box));
+  }
+  if (tab === 'webhooks') {
+    if (!S.me.admin) return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'empty' }, t('Only admins can set up webhooks.')));
+    const plugins = (await GET('/api/plugins')).plugins;
+    const pl = plugins.find(p => p.id === 'webhook-notify');
+    if (!pl) return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, t('The “Webhook notify” plugin is not installed. See Plugins.')));
+    const cfg = pl.settings || {};
+    const urls = h('textarea', { rows: 4, style: 'width:100%', placeholder: 'https://example.com/hook' }, (cfg.urls || []).join('\n'));
+    const EVENTS = [['library.item.added', t('New movies and episodes')], ['playback.started', t('Playback started')], ['playback.watched', t('Playback finished')], ['user.invited', t('Someone was invited')], ['user.joined', t('Someone joined')], ['library.scan.finished', t('A scan finished')]];
+    const checks = EVENTS.map(([k, l]) => ({ k, el: h('input', { type: 'checkbox', checked: (cfg.events || []).includes(k) }), l }));
+    const discord = h('input', { type: 'checkbox', checked: !!cfg.discord_style });
+    const save = async () => {
+      await api('PUT', '/api/plugins/webhook-notify/settings', { urls: urls.value.split(/\s+/).filter(Boolean), events: checks.filter(c => c.el.checked).map(c => c.k), discord_style: discord.checked });
+      toast(t('Saved'));
+    };
+    return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Webhooks')),
+      formRow(t('Send messages'), h('input', { type: 'checkbox', checked: pl.enabled, onchange: async e => { await api('POST', `/api/plugins/webhook-notify/${e.target.checked ? 'enable' : 'disable'}`); toast(t('Saved')); } }), t('Switches the “Webhook notify” plugin on or off.')),
+      formRow(t('Addresses'), urls, t('One per line. Each gets a JSON message.'), true),
+      formRow(t('Events'), h('div', {}, checks.map(c => h('label', { style: 'display:block' }, c.el, ' ', c.l))), '', true),
+      formRow(t('Discord style'), discord, t('Sends a message with “content”, which Discord and similar services understand.')),
+      h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: save }, t('Save')), ' ',
+        h('button', { onclick: async () => { await save(); try { const x = await api('POST', '/api/plugins/webhook-notify/call/test'); toast(x.error || t('Test message sent'), 4000); } catch (e) { toast(e.message, 5000); } } }, t('Send a test message')))));
   }
   if (tab === 'watched') return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Watched indicator')),
     formRow(t('Show the watched mark on'), h('select', { onchange: e => { store.set('watchedMark', e.target.value); toast(t('Saved')); } },

@@ -33,7 +33,7 @@ pub fn setup(app: &Arc<App>, ctx: &Ctx) -> Resp {
     let mut db = app.db.lock().unwrap();
     if !db.users.is_empty() { return fail(409, "This server is already set up; sign in instead"); }
     let id = db.new_id();
-    db.users.push(User { id, username, email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s, admin: true, created_at: now(), allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false });
+    db.users.push(User { id, username, email: ctx.body_or_param("email").unwrap_or_default(), password_hash: h, salt: s, admin: true, created_at: now(), allowed_sections: None, invited_by: None, allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false, rss_key: String::new() });
     if let Some(name) = ctx.body_or_param("server_name").filter(|n| !n.trim().is_empty()) {
         db.settings.server_name = name;
     }
@@ -156,7 +156,7 @@ pub fn invite_accept(app: &Arc<App>, ctx: &Ctx, code: &str) -> Resp {
     if inv.expires_at < now() { return fail(410, "This invite has expired"); }
     let id = db.new_id();
     let email = ctx.body_or_param("email").filter(|e| !e.is_empty()).unwrap_or(inv.email.clone());
-    db.users.push(User { id, username: username.clone(), email, password_hash: h, salt: s, admin: inv.admin, created_at: now(), allowed_sections: inv.allowed_sections.clone(), invited_by: Some(inv.created_by), allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false });
+    db.users.push(User { id, username: username.clone(), email, password_hash: h, salt: s, admin: inv.admin, created_at: now(), allowed_sections: inv.allowed_sections.clone(), invited_by: Some(inv.created_by), allow_transcode: None, allow_delete: false, allow_download: None, sidebar: serde_json::Value::Null, home: false, pin_hash: String::new(), pin_salt: String::new(), max_age: None, block_unrated: false, rss_key: String::new() });
     if let Some(i) = db.invites.iter_mut().find(|i| i.code == code) {
         i.used_by = Some(id);
         i.used_at = Some(now());

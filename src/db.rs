@@ -389,6 +389,9 @@ pub struct User {
     /// With a limit: also hide titles that have no age rating.
     #[serde(default)]
     pub block_unrated: bool,
+    /// Private key in the address of this person's watchlist feed; empty = no feed.
+    #[serde(default)]
+    pub rss_key: String,
 }
 
 /// The minimum age an age rating stands for ("FSK 12", "PG-13", "TV-MA", "de/16" …).

@@ -22,6 +22,7 @@ mod plugins;
 mod query;
 mod related;
 mod routes;
+mod rss;
 mod scanner;
 mod store;
 mod selftest;
