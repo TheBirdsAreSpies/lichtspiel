@@ -1105,3 +1105,24 @@ mod tests {
         assert_eq!(strip_html("<p>Hi &amp; bye</p>"), "Hi & bye");
     }
 }
+
+#[cfg(test)]
+mod trailer_tests {
+    use super::*;
+
+    #[test]
+    fn online_trailers_order() {
+        let r = json!([
+            {"site": "YouTube", "key": "c1", "type": "Clip", "name": "A clip", "iso_639_1": "de", "official": true},
+            {"site": "Vimeo", "key": "v1", "type": "Trailer", "name": "Elsewhere", "iso_639_1": "de"},
+            {"site": "YouTube", "key": "e1", "type": "Trailer", "name": "Trailer", "iso_639_1": "en", "official": true},
+            {"site": "YouTube", "key": "d1", "type": "Trailer", "name": "Offizieller Trailer", "iso_639_1": "de", "official": true},
+            {"site": "YouTube", "key": "r1", "type": "Trailer", "name": "Red Band Trailer", "iso_639_1": "en", "official": true},
+            {"site": "YouTube", "key": "t1", "type": "Teaser", "name": "Teaser", "iso_639_1": "de", "official": false},
+        ]);
+        let keys: Vec<String> = tmdb_trailers(&r, "de-DE").iter().map(|v| v["key"].as_str().unwrap().to_string()).collect();
+        assert_eq!(keys, vec!["d1", "e1", "t1", "c1"]);
+        assert_eq!(video_langs("de-DE"), "de,en,null");
+        assert_eq!(video_langs("en-US"), "en,null");
+    }
+}

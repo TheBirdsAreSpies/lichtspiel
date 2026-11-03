@@ -1539,3 +1539,28 @@ mod tests {
         assert_eq!(parse_episode("Show 3x07 Name").map(|e| (e.0, e.1)), Some((3, 7)));
     }
 }
+
+#[cfg(test)]
+mod trailer_tests {
+    use super::*;
+
+    #[test]
+    fn original_extra_folders_and_trailer_names() {
+        for (name, kind) in [("Trailers", "trailer"), ("trailer", "trailer"), ("Trailer_", "trailer"), ("Deleted Scenes", "deleted"), ("deleted", "deleted"),
+            ("Behind the Scenes", "behindthescenes"), ("behind-the-scenes", "behindthescenes"), ("Featurettes", "featurette"), ("Interviews", "interview"),
+            ("Scenes", "scene"), ("Shorts", "short"), ("Other", "other"), ("Bonus Extras", "other"), ("extra", "other")] {
+            assert_eq!(extra_folder_kind(name), Some(kind), "{name}");
+        }
+        for name in ["Trailer Park Boys", "Shortcuts", "Scenery", "Extraordinary", "Others Here"] {
+            assert_eq!(extra_folder_kind(name), None, "{name}");
+        }
+        let root = Path::new("/m");
+        let x = extra_of(root, Path::new("/m/Heat (1995)/trailer.mkv")).expect("trailer.mkv");
+        assert_eq!((x.kind, x.prefix.clone()), ("trailer", None));
+        assert_eq!(x.movie_dir, Path::new("/m/Heat (1995)"));
+        assert_eq!(extra_of(root, Path::new("/m/Heat (1995)/movie-trailer.mp4")).map(|x| x.kind), Some("trailer"));
+        assert_eq!(extra_of(root, Path::new("/m/Heat (1995)/Trailer_/Teaser.mkv")).map(|x| x.kind), Some("trailer"));
+        assert_eq!(extra_of(root, Path::new("/m/Heat (1995)/Heat (1995)-trailer.mkv")).map(|x| x.kind), Some("trailer"));
+        assert!(extra_of(root, Path::new("/m/Heat (1995)/Heat (1995).mkv")).is_none());
+    }
+}

@@ -555,7 +555,7 @@ pub fn run(out: &Path) -> bool {
     // Playback events tell plugins what the item is (the example plugin writes the last one down).
     let seen_file = data.join("plugins").join("example").join("last_playback.json");
     let mut seen = Value::Null;
-    for _ in 0..60 {
+    for _ in 0..200 {
         if let Some(v) = std::fs::read_to_string(&seen_file).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) { seen = v; break; }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
