@@ -1037,6 +1037,8 @@ I18N.add('de', 'Deutsch', {
     'Make my CPU hurt': 'Meine CPU darf leiden',
     'Applies to Intel Quick Sync and NVIDIA hardware encoding.': 'Gilt für Hardware-Kodierung mit Intel Quick Sync und NVIDIA.',
     'Hardware acceleration': 'Hardwarebeschleunigung',
+    'Graphics device': 'Grafikgerät',
+    'Empty = the first one. VAAPI: the device file, such as /dev/dri/renderD129. NVIDIA: the card number, such as 1.': 'Leer = das erste. VAAPI: die Gerätedatei, z. B. /dev/dri/renderD129. NVIDIA: die Nummer der Karte, z. B. 1.',
     'Automatic (use the graphics chip when it works)': 'Automatisch (Grafikchip nutzen, wenn er funktioniert)',
     'Off (software)': 'Aus (Software)',
     'Intel/AMD VAAPI (most Synology Plus models)': 'Intel/AMD VAAPI (die meisten Synology-Plus-Modelle)',

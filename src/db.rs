@@ -658,6 +658,9 @@ pub struct Settings {
     pub server_name: String,
     /// "none", "vaapi", "qsv" or "nvenc".
     pub hw_accel: String,
+    /// Which graphics device to use: for VAAPI the render node (empty = /dev/dri/renderD128), for NVENC the card's number (empty = 0).
+    #[serde(default)]
+    pub hw_device: String,
     pub ffmpeg: String,
     pub ffprobe: String,
     pub scan_interval_minutes: u64,
@@ -1000,6 +1003,7 @@ impl Default for Settings {
             server_name: crate::server::APP_NAME.into(),
             // Use the hardware when it works.
             hw_accel: "auto".into(),
+            hw_device: String::new(),
             ffmpeg: "ffmpeg".into(),
             ffprobe: "ffprobe".into(),
             scan_interval_minutes: 60,

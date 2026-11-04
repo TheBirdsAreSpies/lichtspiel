@@ -237,15 +237,15 @@ pub fn effective_hw(settings: &Settings) -> String {
     if want != "auto" {
         return want.into();
     }
-    let key = format!("{}|{want}", settings.ffmpeg);
+    let key = format!("{}|{want}|{}", settings.ffmpeg, settings.hw_device);
     let cache = CACHE.get_or_init(|| Mutex::new(Default::default()));
     if let Some(v) = cache.lock().unwrap().get(&key) {
         return v.clone();
     }
     // "auto" tries the graphics chip; a backend that was picked by hand is tested too, because an
     // ffmpeg may list an encoder (h264_qsv, h264_nvenc) although this computer has no such hardware.
-    let pick = if want == "auto" { if hw_works(&settings.ffmpeg, "vaapi") { "vaapi" } else { "none" }.to_string() }
-        else if hw_works(&settings.ffmpeg, want) { want.to_string() }
+    let pick = if want == "auto" { if hw_works(&settings.ffmpeg, "vaapi", &settings.hw_device) { "vaapi" } else { "none" }.to_string() }
+        else if hw_works(&settings.ffmpeg, want, &settings.hw_device) { want.to_string() }
         else {
             elog!("hardware acceleration '{want}' does not work on this computer (a test encode failed); converting with the processor instead");
             "none".to_string()
@@ -254,21 +254,37 @@ pub fn effective_hw(settings: &Settings) -> String {
     pick
 }
 
+/// The VAAPI render node to use (the setting, or the first one).
+fn vaapi_device(device: &str) -> &str {
+    let d = device.trim();
+    if d.is_empty() { "/dev/dri/renderD128" } else { d }
+}
+
+/// The NVENC card number: digits only, else the first card.
+fn nvenc_gpu(device: &str) -> String {
+    let d = device.trim();
+    if !d.is_empty() && d.chars().all(|c| c.is_ascii_digit()) { d.to_string() } else { "0".to_string() }
+}
+
 /// A one-frame test encode with the hardware encoder of this backend.
-pub fn hw_works(ffmpeg: &str, backend: &str) -> bool {
+pub fn hw_works(ffmpeg: &str, backend: &str, device: &str) -> bool {
     let src = ["-hide_banner", "-loglevel", "error", "-nostdin"];
     let mut args: Vec<String> = src.iter().map(|x| x.to_string()).collect();
     let lavfi = ["-f", "lavfi", "-i", "testsrc=size=320x240:rate=1", "-frames:v", "1"];
     match backend {
         "vaapi" => {
-            let dev = "/dev/dri/renderD128";
+            let dev = vaapi_device(device);
             if !std::path::Path::new(dev).exists() { return false; }
             args.extend(["-vaapi_device", dev].map(String::from));
             args.extend(lavfi.map(String::from));
             args.extend(["-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi"].map(String::from));
         }
         "qsv" => { args.extend(lavfi.map(String::from)); args.extend(["-vf", "format=nv12", "-c:v", "h264_qsv"].map(String::from)); }
-        "nvenc" => { args.extend(lavfi.map(String::from)); args.extend(["-vf", "format=yuv420p", "-c:v", "h264_nvenc"].map(String::from)); }
+        "nvenc" => {
+            args.extend(lavfi.map(String::from));
+            args.extend(["-vf", "format=yuv420p", "-c:v", "h264_nvenc"].map(String::from));
+            args.extend(["-gpu".to_string(), nvenc_gpu(device)]);
+        }
         _ => return false,
     }
     args.extend(["-f", "null", "-"].map(String::from));
@@ -309,7 +325,7 @@ fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32, 
     };
     match effective_hw(settings).as_str() {
         "vaapi" => {
-            pre.extend([s("-vaapi_device"), s("/dev/dri/renderD128")]);
+            pre.extend([s("-vaapi_device"), s(vaapi_device(&settings.hw_device))]);
             let scale = if scale_h > 0 { format!(",scale_vaapi=w=-2:h={scale_h}") } else { String::new() };
             out.extend([s("-vf"), format!("format=nv12,hwupload{scale}"), s("-c:v"), s("h264_vaapi")]);
             out.extend(rate("-qp"));
@@ -330,6 +346,7 @@ fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32, 
             let scale = if scale_h > 0 { format!("scale=-2:{scale_h},") } else { String::new() };
             out.extend([s("-vf"), format!("{scale}format=yuv420p"), s("-c:v"), s("h264_nvenc")]);
             out.extend(rate("-q:v"));
+            if !settings.hw_device.trim().is_empty() { out.extend([s("-gpu"), nvenc_gpu(&settings.hw_device)]); }
             match tq {
                 "quality" | "max" => out.extend([s("-preset"), s("hq")]),
                 "speed" => out.extend([s("-preset"), s("hp")]),
@@ -576,7 +593,7 @@ pub fn detect(settings: &Settings) -> Value {
         .into_iter()
         .filter(|e| encoders.contains(e))
         .collect();
-    let working: Vec<&str> = ["vaapi", "qsv", "nvenc"].into_iter().filter(|b| hw.iter().any(|e| e.ends_with(b)) && hw_works(&settings.ffmpeg, b)).collect();
+    let working: Vec<&str> = ["vaapi", "qsv", "nvenc"].into_iter().filter(|b| hw.iter().any(|e| e.ends_with(b)) && hw_works(&settings.ffmpeg, b, &settings.hw_device)).collect();
     json!({
         "ffmpeg": settings.ffmpeg,
         "ffmpeg_found": version.is_some(),
