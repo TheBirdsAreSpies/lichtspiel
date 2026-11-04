@@ -68,6 +68,9 @@ class Api {
   Future<dynamic> post(String path, [Object? body]) async =>
       _decode(await http.post(Uri.parse('$base$path'), headers: _headers, body: body == null ? null : jsonEncode(body)));
 
+  Future<dynamic> put(String path, [Object? body]) async =>
+      _decode(await http.put(Uri.parse('$base$path'), headers: _headers, body: body == null ? null : jsonEncode(body)));
+
   Future<Map<String, dynamic>> status() async => Map<String, dynamic>.from(await get('/api/status'));
 
   /// Signs in and keeps the token. Throws [ApiError] with needsCode when two-step sign-in wants a code.
@@ -98,6 +101,36 @@ class Api {
 
   Future<Map<String, dynamic>> item(String id) async => metadata(await get('/library/metadata/$id')).first;
   Future<List<Map<String, dynamic>>> children(String id) async => metadata(await get('/library/metadata/$id/children'));
+  Future<List<Map<String, dynamic>>> allLeaves(String id) async => metadata(await get('/library/metadata/$id/allLeaves'));
+
+  Future<List<Map<String, dynamic>>> chapters(String id) async {
+    try {
+      return ((await get('/library/metadata/$id/chapters'))['MediaContainer']?['Chapter'] as List? ?? const [])
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// "Other editions", "More by the director", ... as hubs with a title and Metadata.
+  Future<List<Map<String, dynamic>>> related(String id) async {
+    try {
+      return ((await get('/library/metadata/$id/related?count=20'))['MediaContainer']?['Hub'] as List? ?? const [])
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> setWatched(String id, bool watched) async => post('/:/${watched ? 'scrobble' : 'unscrobble'}?key=$id');
+  Future<void> setFavorite(String id, bool on) async => put('/api/items/$id/favorite', {'favorite': on});
+  Future<void> setWatchlist(String id, bool on) async => put('/api/items/$id/watchlist', {'watchlist': on});
+
+  /// Your own rating on the server's 0-10 scale; -1 removes it.
+  Future<void> rate(String id, int value) async => post('/:/rate?key=$id&rating=$value');
+
   Future<List<Map<String, dynamic>>> search(String q) async =>
       metadata(await get('/hubs/search?query=${Uri.encodeQueryComponent(q)}'));
 
