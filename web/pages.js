@@ -41,8 +41,24 @@ async function newManual() {
   location.hash = '#/playlist/' + meta(r)[0].id;
 }
 
+// Random order that does not play the same show (or artist) twice in a row while others are left.
+function smartShuffle(items) {
+  const left = items.slice();
+  for (let i = left.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [left[i], left[j]] = [left[j], left[i]]; }
+  const group = it => it.grandparentRatingKey || null;
+  const out = [];
+  while (left.length) {
+    const last = out.length ? group(out[out.length - 1]) : null;
+    let k = last ? left.findIndex(it => group(it) !== last) : 0;
+    if (k < 0) k = 0;
+    out.push(left.splice(k, 1)[0]);
+  }
+  return out;
+}
+
 async function playPlaylist(id, shuffle) {
-  const items = meta(await GET(`/playlists/${id}/items${shuffle ? '?sort=random' : ''}`));
+  let items = meta(await GET(`/playlists/${id}/items`));
+  if (shuffle) items = smartShuffle(items);
   if (!items.length) return toast(t('This playlist is empty'));
   const [first, ...rest] = items;
   play(first, first.viewOffset ? first.viewOffset / 1000 : 0, rest);
@@ -75,7 +91,7 @@ async function playlistPage(id, qs) {
     pl.summary ? h('p', { class: 'dim' }, pl.default ? t(pl.summary) : pl.summary) : null,
     h('div', { class: 'actions' },
       h('button', { class: 'primary', onclick: () => playPlaylist(id) }, t('▶ Play all')),
-      h('button', { onclick: () => playPlaylist(id, true) }, t('Shuffle')),
+      h('button', { title: t('Random order; the same show or artist does not come twice in a row while others are left'), onclick: () => playPlaylist(id, true) }, t('Shuffle')),
       pl.smart && pl.editable ? h('button', { onclick: () => smartEditor(pl) }, t('Edit rules')) : null,
       pl.editable ? h('button', { onclick: async () => { const name = await ask(t('New name'), { value: plTitle(pl) }); if (name) { await api('PUT', '/playlists/' + id, { title: name }); reload(); } } }, t('Rename')) : null,
       pl.editable ? h('button', { onclick: async () => { await api('PUT', '/playlists/' + id, { pinned: !pl.pinned }); reload(); } }, pl.pinned ? t('Remove from home') : t('Show on home')) : null,

@@ -630,6 +630,7 @@ I18N.add('de', 'Deutsch', {
     'This playlist is empty': 'Diese Wiedergabeliste ist leer',
     '▶ Play all': '▶ Alle abspielen',
     'Shuffle': 'Zufallswiedergabe',
+    'Random order; the same show or artist does not come twice in a row while others are left': 'Zufällige Reihenfolge; dieselbe Serie oder derselbe Künstler kommt nicht zweimal hintereinander, solange andere übrig sind',
     'Edit rules': 'Regeln bearbeiten',
     'New name': 'Neuer Name',
     'Rename': 'Umbenennen',
