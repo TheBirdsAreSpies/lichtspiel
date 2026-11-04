@@ -1697,6 +1697,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                     if let Err(e) = crate::server::check_network_list(&s.lan_networks) { return fail(400, &e); }
                     if !s.bind_address.trim().is_empty() && s.bind_address.trim().parse::<std::net::IpAddr>().is_err() { return fail(400, "network card address must be empty or an IP address such as 192.168.1.10"); }
                     if let Err(e) = crate::server::read_tls(&s.tls_cert, &s.tls_key) { return fail(400, &e); }
+                    if s.http_redirect_port != 0 && s.http_redirect_port == s.port { return fail(400, "the port that passes http:// on must differ from the server port"); }
                     let dev = s.hw_device.trim();
                     if !(dev.is_empty() || dev.chars().all(|c| c.is_ascii_digit()) || (dev.starts_with("/dev/") && !dev.contains(' ') && !dev.contains(".."))) {
                         return fail(400, "graphics device must be empty, a card number or a path like /dev/dri/renderD128");

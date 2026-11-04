@@ -98,8 +98,21 @@ pub fn start(opts: &Options) -> Result<(Arc<server::App>, Arc<tiny_http::Server>
             .map_err(|e| format!("could not listen on {bind}:{want} ({e}); is another server using that port?"))?,
     };
     server::TLS_ON.store(use_tls, std::sync::atomic::Ordering::Relaxed);
+    *server::LISTEN.lock().unwrap() = format!("{bind}:{want}");
+    if use_tls {
+        let st = app.settings();
+        *server::TLS_FILES.lock().unwrap() = (opts.tls_cert.clone().unwrap_or(st.tls_cert), opts.tls_key.clone().unwrap_or(st.tls_key));
+    }
     let port = http.server_addr().to_ip().map(|a| a.port()).unwrap_or(want);
     *app.port.lock().unwrap() = port;
+    // http:// -> https:// on a second port, when asked for.
+    let redirect = app.settings().http_redirect_port;
+    if use_tls && redirect != 0 && redirect != port {
+        match server::redirect_to_https(&bind, redirect, port) {
+            Ok(()) => log::add(format!("http://…:{redirect} is passed on to https://…:{port}")),
+            Err(e) => log::add(format!("could not listen on port {redirect} to pass http:// on to https:// ({e})")),
+        }
+    }
     server::start_background(&app);
     gdm::start(&app);
     app.fire("server.started", serde_json::json!({"port": port}));

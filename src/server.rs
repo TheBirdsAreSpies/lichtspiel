@@ -1845,11 +1845,85 @@ pub fn parse_query(q: &str) -> Vec<(String, String)> {
 
 // ---------------------------------------------------------------- server loop
 
-pub fn serve(app: Arc<App>, server: Arc<tiny_http::Server>) {
-    for req in server.incoming_requests() {
-        let app = app.clone();
-        std::thread::spawn(move || handle(app, req));
+/// Where the server listens ("address:port") and the certificate and key files it uses (empty = no HTTPS).
+pub static LISTEN: Mutex<String> = Mutex::new(String::new());
+pub static TLS_FILES: Mutex<(String, String)> = Mutex::new((String::new(), String::new()));
+/// How often the certificate files are looked at for a renewal.
+const TLS_CHECK_EVERY: Duration = Duration::from_secs(30);
+
+fn tls_stamp() -> Vec<Option<std::time::SystemTime>> {
+    let (c, k) = TLS_FILES.lock().unwrap().clone();
+    [c, k].iter().map(|p| std::fs::metadata(p.trim()).and_then(|m| m.modified()).ok()).collect()
+}
+
+/// Listens again with the (renewed) certificate. The port is free for a moment only after the old
+/// listener is gone, so this tries for a while.
+fn relisten(pair: &(Vec<u8>, Vec<u8>)) -> Option<Arc<tiny_http::Server>> {
+    let addr = LISTEN.lock().unwrap().clone();
+    for _ in 0..40 {
+        match tiny_http::Server::https(addr.as_str(), tiny_http::SslConfig { certificate: pair.0.clone(), private_key: pair.1.clone() }) {
+            Ok(s) => return Some(Arc::new(s)),
+            Err(_) => std::thread::sleep(Duration::from_millis(250)),
+        }
     }
+    None
+}
+
+pub fn serve(app: Arc<App>, server: Arc<tiny_http::Server>) {
+    let mut server = Some(server);
+    let mut stamp = tls_stamp();
+    let mut checked = Instant::now();
+    let mut good = {
+        let (c, k) = TLS_FILES.lock().unwrap().clone();
+        read_tls(&c, &k).ok().flatten()
+    };
+    loop {
+        let Some(s) = server.as_ref() else { return };
+        match s.recv_timeout(Duration::from_secs(5)) {
+            Ok(Some(req)) => {
+                let app = app.clone();
+                std::thread::spawn(move || handle(app, req));
+            }
+            Ok(None) => {}
+            Err(_) => return,
+        }
+        // A renewed certificate (certbot, acme.sh ...): listen again with it, no restart needed.
+        if good.is_some() && checked.elapsed() >= TLS_CHECK_EVERY {
+            checked = Instant::now();
+            let now_stamp = tls_stamp();
+            if now_stamp != stamp {
+                stamp = now_stamp;
+                let (c, k) = TLS_FILES.lock().unwrap().clone();
+                match read_tls(&c, &k) {
+                    Ok(Some(pair)) => {
+                        drop(server.take());
+                        server = relisten(&pair).or_else(|| good.as_ref().and_then(relisten));
+                        if server.is_none() { crate::log::add("HTTPS: could not listen again after the certificate changed; restart the server".into()); return; }
+                        good = Some(pair);
+                        crate::log::add("HTTPS: the new certificate is in use".into());
+                    }
+                    Ok(None) => {}
+                    Err(e) => crate::log::add(format!("HTTPS: the changed certificate files are not used ({e})")),
+                }
+            }
+        }
+    }
+}
+
+/// Answers every request on a plain http:// port with a redirect to the same page on https://.
+pub fn redirect_to_https(bind: &str, port: u16, https_port: u16) -> Result<(), String> {
+    let server = tiny_http::Server::http(format!("{bind}:{port}")).map_err(|e| e.to_string())?;
+    std::thread::spawn(move || {
+        for req in server.incoming_requests() {
+            let host = req.headers().iter().find(|h| h.field.equiv("Host")).map(|h| h.value.as_str().to_string()).unwrap_or_default();
+            let name = if let Some(rest) = host.strip_prefix('[') { format!("[{}", rest.split_once(']').map(|(a, _)| format!("{a}]")).unwrap_or_default()) } else { host.split(':').next().unwrap_or("").to_string() };
+            let name = if name.is_empty() || name == "[" { "localhost".to_string() } else { name };
+            let target = if https_port == 443 { format!("https://{name}{}", req.url()) } else { format!("https://{name}:{https_port}{}", req.url()) };
+            let loc = Header::from_bytes(&b"Location"[..], target.as_bytes()).unwrap();
+            let _ = req.respond(Response::empty(308).with_header(loc));
+        }
+    });
+    Ok(())
 }
 
 pub fn start_background(app: &Arc<App>) {

@@ -1078,6 +1078,8 @@ I18N.add('de', 'Deutsch', {
     'HTTPS certificate file': 'HTTPS-Zertifikat (Datei)',
     'Path of the certificate file (PEM, with its chain), e.g. /config/fullchain.pem. With the key below the server answers on https:// instead of http://. Takes effect after a restart.': 'Pfad der Zertifikatsdatei (PEM, mit Zertifikatskette), z. B. /config/fullchain.pem. Zusammen mit dem Schlüssel unten antwortet der Server unter https:// statt http://. Wirkt nach einem Neustart.',
     'HTTPS key file': 'HTTPS-Schlüssel (Datei)',
+    'Pass http:// on to https:// from port': 'http:// auf https:// umleiten ab Port',
+    'With HTTPS: this extra port (e.g. 80) answers plain http:// by sending visitors to the https:// address. 0 = off. Takes effect after a restart.': 'Mit HTTPS: Dieser zusätzliche Port (z. B. 80) schickt Besucher von http:// zur https://-Adresse. 0 = aus. Wirkt nach einem Neustart.',
     'Path of the private key (PEM) that belongs to the certificate, e.g. /config/privkey.pem. Empty again = plain http://. Both files are checked when you save.': 'Pfad des privaten Schlüssels (PEM) zum Zertifikat, z. B. /config/privkey.pem. Wieder leer = normales http://. Beim Speichern werden beide Dateien geprüft.',
     'Empty = listen on every network card. Enter one address such as 192.168.1.10 to listen only there. Takes effect after a restart.': 'Leer = auf allen Netzwerkkarten lauschen. Mit einer Adresse wie 192.168.1.10 nur dort. Gilt nach einem Neustart.',
     'Let apps find this server on the home network': 'Apps dürfen den Server im Heimnetz finden',

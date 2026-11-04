@@ -810,6 +810,10 @@ pub struct Settings {
     pub tls_cert: String,
     #[serde(default)]
     pub tls_key: String,
+    /// With HTTPS: a second port that answers plain http:// with a redirect to https:// (0 = none, e.g. 80).
+    /// Needs a restart.
+    #[serde(default)]
+    pub http_redirect_port: u16,
     /// Answer apps that search the home network for servers (GDM).
     #[serde(default = "yes")]
     pub gdm_enabled: bool,
@@ -1102,6 +1106,7 @@ impl Default for Settings {
             bind_address: String::new(),
             tls_cert: String::new(),
             tls_key: String::new(),
+            http_redirect_port: 0,
             gdm_enabled: true,
             maintenance_start_hour: maint_start(),
             maintenance_end_hour: maint_end(),
