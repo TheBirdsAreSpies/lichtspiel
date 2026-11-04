@@ -183,6 +183,15 @@ impl App {
         }
         install_bundled_plugins(&data_dir.join("plugins"));
         let (store, mut db, from_json) = open_library(data_dir);
+        // Age ratings and genres in one spelling each.
+        let ids: Vec<u64> = db.items.values().filter(|it| {
+            let mut c = (*it).clone();
+            c.normalize();
+            c.content_rating != it.content_rating || c.genres != it.genres
+        }).map(|it| it.id).collect();
+        for id in ids {
+            if let Some(it) = db.items.get_mut(&id) { it.normalize(); }
+        }
         // Older versions saved picture paths relative to the start folder.
         let relative = |p: &str| Path::new(p).is_relative() && Path::new(p).exists();
         let ids: Vec<u64> = db
@@ -1527,6 +1536,7 @@ pub fn apply_metadata(it: &mut Item, meta: &Value, by_hand: bool) {
             it.extra.insert(k.clone(), v.clone());
         }
     }
+    it.normalize();
     it.updated_at = now();
 }
 
