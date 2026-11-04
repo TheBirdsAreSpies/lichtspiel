@@ -1090,6 +1090,8 @@ I18N.add('de', 'Deutsch', {
     'Automatic (use the graphics chip when it works)': 'Automatisch (Grafikchip nutzen, wenn er funktioniert)',
     'Off (software)': 'Aus (Software)',
     'Intel/AMD VAAPI (most Synology Plus models)': 'Intel/AMD VAAPI (die meisten Synology-Plus-Modelle)',
+    'Convert HDR video to normal colours': 'HDR-Video in normale Farben umrechnen',
+    'When HDR video has to be converted for a browser it is tone mapped to normal (SDR) colours, else it looks grey and washed out. Costs processor time. Needs an ffmpeg with the zscale and tonemap filters.': 'Muss HDR-Video für einen Browser umgewandelt werden, werden die Farben auf normalen Kontrast (SDR) umgerechnet, sonst wirkt es grau und blass. Kostet Rechenzeit. Braucht ein ffmpeg mit den Filtern zscale und tonemap.',
     'Graphics chip: convert by quality instead of bitrate': 'Grafikchip: nach Qualität statt Bitrate umwandeln',
     'Off: the graphics chip gets a fixed bitrate (safe on every model). On: it gets a quality number from 15 (best) to 25, like the software encoder does. Try it if hardware-converted video looks blocky.': 'Aus: Der Grafikchip bekommt eine feste Bitrate (funktioniert auf jedem Modell). An: Er bekommt einen Qualitätswert von 15 (beste) bis 25, wie der Software-Encoder. Probier es aus, wenn per Hardware umgewandeltes Video klötzchenhaft aussieht.',
     'Software encoder speed (x264 preset)': 'Geschwindigkeit des Software-Encoders (x264-Preset)',

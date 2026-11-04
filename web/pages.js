@@ -932,6 +932,7 @@ async function settingsPage(tab, qs) {
       (tc.devices || []).length
         ? sel('hw_device', t('Graphics device'), [['', t('Automatic (the first one)')], ...tc.devices.map(d => [d.value, (d.backend === 'nvenc' ? 'NVIDIA ' : 'VAAPI ') + d.name]), ...(s.hw_device && !tc.devices.some(d => d.value === s.hw_device) ? [[s.hw_device, s.hw_device]] : [])], t('Found on this computer. Pick one if you have more than one graphics chip.'))
         : inp('hw_device', t('Graphics device'), 'text', t('Empty = the first one. VAAPI: the device file, such as /dev/dri/renderD129. NVIDIA: the card number, such as 1.')),
+      chk('hdr_tone_mapping', t('Convert HDR video to normal colours'), t('When HDR video has to be converted for a browser it is tone mapped to normal (SDR) colours, else it looks grey and washed out. Costs processor time. Needs an ffmpeg with the zscale and tonemap filters.')),
       chk('hw_constant_quality', t('Graphics chip: convert by quality instead of bitrate'), t('Off: the graphics chip gets a fixed bitrate (safe on every model). On: it gets a quality number from 15 (best) to 25, like the software encoder does. Try it if hardware-converted video looks blocky.')),
       sel('h264_preset', t('Software encoder speed (x264 preset)'), r.h264_presets.map(p => [p, p])),
       inp('h264_minimum_crf', t('Best allowed x264 quality (minimum CRF)'), 'number', t('Lower = better picture and bigger stream. The quality the player asks for is mapped between this and 24.')),
@@ -943,7 +944,7 @@ async function settingsPage(tab, qs) {
     ],
   };
   // Without ffmpeg these do nothing: they are switched off and say why.
-  if (!tc.ffmpeg_found) for (const k of ['credits_from_picture', 'analyze_loudness', 'deep_analysis', 'generate_thumbnails', 'boost_dialogue', 'transcoder_quality', 'hw_accel', 'hw_device', 'hw_constant_quality', 'h264_preset', 'h264_minimum_crf',
+  if (!tc.ffmpeg_found) for (const k of ['credits_from_picture', 'analyze_loudness', 'deep_analysis', 'generate_thumbnails', 'boost_dialogue', 'transcoder_quality', 'hw_accel', 'hw_device', 'hw_constant_quality', 'hdr_tone_mapping', 'h264_preset', 'h264_minimum_crf',
     'max_transcodes', 'max_gpu_transcodes', 'max_cpu_transcodes', 'hls_segment_seconds', 'segmented_transcoder_timeout_seconds']) {
     const el = f[k]; if (!el) continue;
     el.disabled = true; el.title = t('Needs ffmpeg');

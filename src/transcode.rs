@@ -53,6 +53,9 @@ pub struct Decision {
     /// The video is HEVC (copied into an mp4 it needs the hvc1 tag).
     #[serde(skip)]
     pub hevc: bool,
+    /// The video is HDR (HDR10 / HLG): converting it needs tone mapping to look right on a normal screen.
+    #[serde(skip)]
+    pub hdr: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -102,6 +105,34 @@ pub fn parse_level(s: &str) -> Option<u32> {
 pub fn quality(name: &str) -> (u32, u32) {
     QUALITIES.iter().find(|q| q.0 == name).map(|q| (q.1, q.2)).unwrap_or((0, 0))
 }
+
+/// HDR10 / HLG pictures (Dolby Vision files that carry one of these as their base layer too).
+fn is_hdr_picture(v: &crate::db::Stream) -> bool {
+    matches!(v.color_transfer.as_str(), "smpte2084" | "arib-std-b67")
+}
+
+/// ffmpeg can tone map: it has the zscale (libzimg) and tonemap filters. Looked up once per ffmpeg.
+fn can_tonemap(ffmpeg: &str) -> bool {
+    use std::sync::{Mutex, OnceLock};
+    #[cfg(test)]
+    { let _ = ffmpeg; return true; }
+    #[allow(unreachable_code)]
+    {
+        static CACHE: OnceLock<Mutex<std::collections::HashMap<String, bool>>> = OnceLock::new();
+        let cache = CACHE.get_or_init(|| Mutex::new(Default::default()));
+        if let Some(v) = cache.lock().unwrap().get(ffmpeg) { return *v; }
+        let ok = std::process::Command::new(ffmpeg).args(["-hide_banner", "-filters"]).stdin(std::process::Stdio::null()).output().is_ok_and(|o| {
+            let t = String::from_utf8_lossy(&o.stdout);
+            t.contains(" zscale ") && t.contains(" tonemap ")
+        });
+        cache.lock().unwrap().insert(ffmpeg.to_string(), ok);
+        ok
+    }
+}
+
+/// The filters in front of the scaling that turn HDR (PQ / HLG, BT.2020) into SDR (BT.709): to linear
+/// light, to BT.709 primaries, compress the highlights (hable), back to the BT.709 curve.
+const TONEMAP: &str = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,";
 
 pub fn decide(file: &MediaFile, req: &Request) -> Decision {
     let mut reasons = vec![];
@@ -159,7 +190,7 @@ pub fn decide(file: &MediaFile, req: &Request) -> Decision {
     let height = if req.max_height > 0 { req.max_height.min(src_h.max(1)) } else { src_h };
     let height = if req.max_height > 0 && src_h == 0 { req.max_height } else { height };
     let bitrate_kbps = if req.max_kbps > 0 { req.max_kbps } else { default_kbps(height) };
-    Decision { method, reasons, height, bitrate_kbps, hevc: vcodec == "hevc" }
+    Decision { method, reasons, height, bitrate_kbps, hevc: vcodec == "hevc", hdr: v.is_some_and(is_hdr_picture) }
 }
 
 fn default_kbps(height: u32) -> u32 {
@@ -321,6 +352,10 @@ fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32, 
         return (pre, out);
     }
     let kb = d.bitrate_kbps.max(300);
+    let tm = if d.hdr && settings.hdr_tone_mapping && can_tonemap(&settings.ffmpeg) { TONEMAP } else { "" };
+    if !tm.is_empty() {
+        out.extend([s("-colorspace"), s("bt709"), s("-color_primaries"), s("bt709"), s("-color_trc"), s("bt709")]);
+    }
     let scale_h = if d.height > 0 { d.height } else { 0 };
     let tq = settings.transcoder_quality.as_str();
     // Hardware encoders: a bitrate (-b:v), or with constant quality on, a
@@ -332,12 +367,12 @@ fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32, 
         "vaapi" => {
             pre.extend([s("-vaapi_device"), s(vaapi_device(&settings.hw_device))]);
             let scale = if scale_h > 0 { format!(",scale_vaapi=w=-2:h={scale_h}") } else { String::new() };
-            out.extend([s("-vf"), format!("format=nv12,hwupload{scale}"), s("-c:v"), s("h264_vaapi")]);
+            out.extend([s("-vf"), format!("{tm}format=nv12,hwupload{scale}"), s("-c:v"), s("h264_vaapi")]);
             out.extend(rate("-qp"));
         }
         "qsv" => {
             let scale = if scale_h > 0 { format!("scale=-2:{scale_h},") } else { String::new() };
-            out.extend([s("-vf"), format!("{scale}format=nv12"), s("-c:v"), s("h264_qsv")]);
+            out.extend([s("-vf"), format!("{tm}{scale}format=nv12"), s("-c:v"), s("h264_qsv")]);
             out.extend(rate("-q:v"));
             match tq {
                 "speed" => out.extend([s("-preset"), s("veryfast")]),
@@ -349,7 +384,7 @@ fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32, 
         }
         "nvenc" => {
             let scale = if scale_h > 0 { format!("scale=-2:{scale_h},") } else { String::new() };
-            out.extend([s("-vf"), format!("{scale}format=yuv420p"), s("-c:v"), s("h264_nvenc")]);
+            out.extend([s("-vf"), format!("{tm}{scale}format=yuv420p"), s("-c:v"), s("h264_nvenc")]);
             out.extend(rate("-q:v"));
             if !settings.hw_device.trim().is_empty() { out.extend([s("-gpu"), nvenc_gpu(&settings.hw_device)]); }
             match tq {
@@ -362,7 +397,7 @@ fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32, 
         _ => {
             let scale = if scale_h > 0 { format!("scale=-2:{scale_h},") } else { String::new() };
             out.extend([
-                s("-vf"), format!("{scale}format=yuv420p"),
+                s("-vf"), format!("{tm}{scale}format=yuv420p"),
                 s("-c:v"), s("libx264"), s("-crf"), x264_crf(settings, quality).to_string(),
                 s("-preset"), settings.h264_preset.clone(), s("-profile:v"), s("high"),
             ]);
@@ -475,7 +510,7 @@ pub fn optimize_args(settings: &Settings, file: &MediaFile, preset: &str, out: &
 /// the front) at most `height` high (0 = keep) at `kb` kbit/s; `input` is
 /// the input part ("-i", path, or a concat list for a movie in parts).
 pub fn file_args(settings: &Settings, file: &MediaFile, input: &[String], height: u32, kb: u32, out: &str) -> Vec<String> {
-    let d = Decision { method: Method::Transcode, reasons: vec![], height, bitrate_kbps: kb, hevc: false };
+    let d = Decision { method: Method::Transcode, reasons: vec![], height, bitrate_kbps: kb, hevc: false, hdr: file.video().is_some_and(is_hdr_picture) };
     let (pre, video) = video_args(settings, &d, &Method::Transcode, 99, Some(41));
     let mut a: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into(), "-y".into()];
     a.extend(pre);
@@ -713,7 +748,7 @@ mod tests {
     }
     #[test]
     fn hardware_rate_modes() {
-        let d = Decision { method: Method::Transcode, reasons: vec![], height: 720, bitrate_kbps: 4000, hevc: false };
+        let d = Decision { method: Method::Transcode, reasons: vec![], height: 720, bitrate_kbps: 4000, hevc: false, hdr: false };
         let mut st = Settings { hw_accel: "vaapi".into(), ..Settings::default() };
         let (_, out) = video_args(&st, &d, &Method::Transcode, 99, None);
         assert!(out.windows(2).any(|w| w[0] == "-b:v" && w[1] == "4000k"));
@@ -726,6 +761,24 @@ mod tests {
         assert_eq!(hw_qp(50), 20);
     }
     #[test]
+    fn hdr_is_tone_mapped_when_converted() {
+        let d = Decision { method: Method::Transcode, reasons: vec![], height: 1080, bitrate_kbps: 8000, hevc: true, hdr: true };
+        let mut st = Settings { hw_accel: "none".into(), ..Settings::default() };
+        let vf = |st: &Settings, d: &Decision| { let (_, o) = video_args(st, d, &Method::Transcode, 99, None); o.windows(2).find(|w| w[0] == "-vf").map(|w| w[1].clone()).unwrap() };
+        let chain = vf(&st, &d);
+        assert!(chain.starts_with("zscale=t=linear") && chain.contains("tonemap=hable") && chain.ends_with("scale=-2:1080,format=yuv420p"), "{chain}");
+        // SDR video, the setting off, and a plain copy are left alone.
+        assert_eq!(vf(&st, &Decision { hdr: false, ..d.clone() }), "scale=-2:1080,format=yuv420p");
+        st.hdr_tone_mapping = false;
+        assert_eq!(vf(&st, &d), "scale=-2:1080,format=yuv420p");
+        st.hdr_tone_mapping = true;
+        let (_, o) = video_args(&st, &d, &Method::Remux, 99, None);
+        assert!(!o.iter().any(|a| a == "-vf"));
+        // Hardware encoders get the same filters in front.
+        st.hw_accel = "nvenc".into();
+        assert!(vf(&st, &d).starts_with("zscale=t=linear"));
+    }
+    #[test]
     fn h264_level_rules() {
         // Level 4.0: buffer 25000 kbit → bufsize at most 31250k; 4.1: 62500 → 78125k.
         assert_eq!(bufsize_kbps(20000, Some(40)), 31250);
@@ -734,7 +787,7 @@ mod tests {
         assert_eq!(parse_level("4.1"), Some(41));
         assert_eq!(parse_level("41"), Some(41));
         assert_eq!(parse_level("x"), None);
-        let d = Decision { method: Method::Transcode, reasons: vec![], height: 1080, bitrate_kbps: 20000, hevc: false };
+        let d = Decision { method: Method::Transcode, reasons: vec![], height: 1080, bitrate_kbps: 20000, hevc: false, hdr: false };
         let st = Settings::default();
         let (_, out) = video_args(&st, &d, &Method::Transcode, 99, Some(40));
         assert!(out.windows(2).any(|w| w[0] == "-level" && w[1] == "4.0"));

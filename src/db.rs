@@ -756,6 +756,10 @@ pub struct Settings {
     /// instead of a bitrate. A choice (off = bitrate).
     #[serde(default)]
     pub hw_constant_quality: bool,
+    /// HDR video that is converted for a browser is tone mapped to normal (SDR) colours, else it looks
+    /// grey and washed out. Needs an ffmpeg with the zscale and tonemap filters.
+    #[serde(default = "yes")]
+    pub hdr_tone_mapping: bool,
     /// "Generate credits video markers": "never", "scheduled" or "asap" (default:
     /// as a scheduled task and when media is added).
     #[serde(default = "asap")]
@@ -1090,6 +1094,7 @@ impl Default for Settings {
             // Whichever comes first: the threshold or the first credits marker.
             played_at_behaviour: played_at(),
             hw_constant_quality: false,
+            hdr_tone_mapping: true,
             credits_markers_behaviour: asap(),
             intro_markers_behaviour: asap(),
             cast_photos_limit: cast_photos(),
