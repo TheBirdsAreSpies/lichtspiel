@@ -61,6 +61,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/library/people/{key}/thumb","An actor's photo; one photo per person, shared by everything they are in"),
     ("GET", "/library/metadata/{id}/markers", "Credits markers (ms), where they came from and where the video counts as watched"),
     ("GET", "/library/metadata/{id}/chapters", "The chapters of a movie or episode [{index, title, start, end (ms), thumb}]; thumb is a picture from the chapter"),
+    ("GET", "/library/metadata/{id}/lyrics", "The words of a song {synced, lines: [{t (ms, when synchronized), text}]}, from a .lrc / .txt file beside it or the song's tags; 404 without"),
     ("PUT", "/library/metadata/{id}/markers", "Admin: set credits markers {credits: [ms, …]} or {credits: null} to use the chapters again"),
     ("POST", "/library/sections/{id}/credits", "Admin: run credits detection for a library now (in the background; see /api/metadata/status)"),
     ("POST", "/library/metadata/{id}/credits", "Admin: run credits detection for one movie, show, season or episode"),
@@ -1033,6 +1034,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             crate::handlers::subtitle_set_timing(app, &user, iid, n, &ctx.body)
         }
         ("GET", ["library", "metadata", iid, "chapters"]) => crate::handlers::chapters(app, &user, iid),
+        ("GET", ["library", "metadata", iid, "lyrics"]) => crate::handlers::lyrics(app, &user, iid),
         ("GET", ["library", "parts", iid, "frame"]) => frame(app, ctx, &user, iid),
 
         // ---------------- streaming

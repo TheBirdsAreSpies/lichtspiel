@@ -1340,6 +1340,21 @@ pub fn chapters(app: &Arc<App>, user: &User, iid: &str) -> Resp {
     ok(json!({"MediaContainer": {"size": out.len(), "Chapter": out}}))
 }
 
+/// GET /library/metadata/{id}/lyrics: {synced, lines: [{t (ms, only when synced), text}]}, 404 without words.
+pub fn lyrics(app: &Arc<App>, user: &User, iid: &str) -> Resp {
+    let (it, f) = match playable_file(app, user, iid, 0) { Ok(x) => x, Err(r) => return r };
+    if it.kind != ItemKind::Track { return fail(404, "Only songs have lyrics"); }
+    let ffprobe = app.settings().ffprobe;
+    let found = crate::music::lyrics_of(Path::new(&f.path), || {
+        let out = Command::new(&ffprobe).args(["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams"]).arg(&f.path).output().ok()?;
+        serde_json::from_slice::<Value>(&out.stdout).ok().map(|v| crate::music::tags_of(&v))
+    });
+    match found {
+        Some(l) => ok(json!({"synced": l.synced, "lines": l.lines.iter().map(|(t, w)| match t { Some(t) => json!({"t": t, "text": w}), None => json!({"text": w}) }).collect::<Vec<_>>()})),
+        None => fail(404, "No lyrics"),
+    }
+}
+
 #[cfg(test)]
 mod theme_tests {
     use super::is_theme_name;

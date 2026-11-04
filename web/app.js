@@ -1194,6 +1194,7 @@ const ICONS = {
   check: 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
   heart: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
   heartOff: 'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z',
+  lyrics: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-3 12H7v-2h10v2zm0-3H7V9h10v2zm0-3H7V6h10v2z',
   mark: 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z',
   markOff: 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15-5-2.18L7 18V5h10v13z',
   restart: 'M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z',
@@ -1214,6 +1215,7 @@ btn('pback', 'back', t('Back 10 seconds (←)'));
 btn('pfwd', 'fwd', t('Forward 30 seconds (→)'));
 btn('pnextbtn', 'next', t('Next (N)'));
 btn('psubs', 'cc', t('Subtitles (C)'));
+btn('plyricsbtn', 'lyrics', t('Lyrics (Y)'));
 btn('psettings', 'gear', t('Settings'));
 btn('ppip', 'pip', t('Picture in picture (P)'));
 $('#pvolume').setAttribute('aria-label', t('Volume'));
@@ -1273,6 +1275,7 @@ async function play(it, startAt, queue, together) {
   findNext(it);
   drawMarks();
   mediaSession(it);
+  loadLyrics(it);
   // Settings -> Extras -> pre-roll: a short video before a movie that starts from the beginning.
   if (it.type === 'movie' && !(startAt > 0) && !together) await playPreroll(it);
   if (P.it !== it) return;
@@ -1280,6 +1283,48 @@ async function play(it, startAt, queue, together) {
   if (TG.code && !together) { TG.quiet = 0; tgSend({ item: it.id, position: Math.round((startAt || 0) * 1000) }); }
   wake();
 }
+// ---- lyrics of a song: lines that follow the music (.lrc) or just the text
+function loadLyrics(it) {
+  P.lyrics = null; P.lyricLine = -1;
+  const box = $('#plyrics');
+  box.style.display = 'none'; box.replaceChildren(); $('#plyricsbtn').hidden = true;
+  if (it.type !== 'track') return;
+  GET(`/library/metadata/${it.id}/lyrics`).then(l => {
+    if (P.it !== it || !l.lines || !l.lines.length) return;
+    P.lyrics = l;
+    box.classList.toggle('sync', !!l.synced);
+    box.replaceChildren(...l.lines.map(x => h('p', l.synced && x.t !== undefined ? { onclick: () => seekTo(x.t / 1000) } : {}, x.text || '\u00a0')));
+    $('#plyricsbtn').hidden = false;
+    showLyrics(store.get('lyricsOn', '1') === '1');
+  }).catch(() => { /* a song without words */ });
+}
+function showLyrics(on) {
+  const box = $('#plyrics');
+  box.style.display = on && P.lyrics ? 'block' : 'none';
+  $('#plyricsbtn').classList.toggle('on', !!(on && P.lyrics));
+  P.lyricLine = -2;
+  drawLyrics();
+}
+function toggleLyrics() {
+  if (!P.lyrics) { toast(t('No lyrics for this song')); return; }
+  const on = $('#plyrics').style.display === 'none';
+  store.set('lyricsOn', on ? '1' : '0');
+  showLyrics(on);
+}
+// Marks the line that is sung now and keeps it in the middle.
+function drawLyrics() {
+  const box = $('#plyrics');
+  if (!P.lyrics || !P.lyrics.synced || box.style.display === 'none') return;
+  const now = position() * 1000;
+  let cur = -1;
+  P.lyrics.lines.forEach((x, i) => { if (x.t <= now) cur = i; });
+  if (cur === P.lyricLine) return;
+  const ps = box.children;
+  if (P.lyricLine >= 0 && ps[P.lyricLine]) ps[P.lyricLine].classList.remove('now');
+  P.lyricLine = cur;
+  if (cur >= 0 && ps[cur]) { ps[cur].classList.add('now'); box.scrollTop = ps[cur].offsetTop - box.clientHeight / 2 + ps[cur].clientHeight / 2; }
+}
+$('#plyricsbtn').addEventListener('click', e => { e.stopPropagation(); toggleLyrics(); });
 // Plays the pre-roll video (if one is set) until it ends, fails or "Skip" is pressed.
 async function playPreroll(it) {
   let urls = [];
@@ -1611,7 +1656,7 @@ video.addEventListener('play', () => { drawButtons(); wake(); });
 video.addEventListener('pause', () => { drawButtons(); wake(); if (!video.ended && video.readyState > 0) report('paused'); });
 video.addEventListener('playing', () => { if (P.reported !== 'playing') report('playing'); });
 video.addEventListener('volumechange', () => { drawButtons(); store.set('volume', video.volume); store.set('muted', video.muted ? '1' : '0'); });
-video.addEventListener('timeupdate', () => { if (!bar.classList.contains('drag')) drawBar(); });
+video.addEventListener('timeupdate', () => { if (!bar.classList.contains('drag')) drawBar(); drawLyrics(); });
 video.addEventListener('progress', drawBar);
 video.addEventListener('durationchange', drawMarks);
 video.addEventListener('waiting', () => spin(true));
@@ -1816,6 +1861,7 @@ function closePlayer(send) {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
   video.pause(); video.removeAttribute('src'); video.querySelectorAll('track').forEach(tr => tr.remove()); video.load();
+  P.lyrics = null; $('#plyrics').style.display = 'none'; $('#plyricsbtn').hidden = true;
   player.style.display = 'none';
   player.classList.remove('idle');
   P.it = null; P.next = null; P.pending = null;
@@ -1826,7 +1872,7 @@ $('#pclose').addEventListener('click', () => closePlayer(true));
 
 // ---- keyboard
 const KEYS = [['Space / K', 'Play or pause'], ['← / J', 'Back 10 seconds'], ['→ / L', 'Forward 30 seconds'], ['Shift + ← / →', '1 minute back / forward'],
-  ['↑ / ↓', 'Louder / quieter'], ['M', 'Mute'], ['F', 'Full screen'], ['P', 'Picture in picture'], ['C', 'Subtitles on / off'], ['N', 'Next'],
+  ['↑ / ↓', 'Louder / quieter'], ['M', 'Mute'], ['F', 'Full screen'], ['P', 'Picture in picture'], ['C', 'Subtitles on / off'], ['Y', 'Lyrics on / off'], ['N', 'Next'],
   ['< / >', 'Slower / faster'], ['0 … 9', 'Jump to 0 % … 90 %'], ['Home / End', 'Start / near the end'], ['?', 'This list'], ['Esc', 'Close']];
 function showKeys() {
   const k = $('#pkeys');
@@ -1870,6 +1916,7 @@ document.addEventListener('keydown', e => {
       setSub(P.sub >= 0 ? -1 : (P.lastSub !== undefined ? P.lastSub : 0));
       toast(P.sub >= 0 ? t('Subtitles: {name}', { name: subName(P.subs[P.sub], P.sub) }) : t('Subtitles off'));
       break;
+    case 'y': case 'Y': toggleLyrics(); break;
     case 'n': case 'N': if (P.next || P.queue.length || Q.list.length) { report('stopped'); playNext(); } break;
     case 'Home': seekTo(0); break;
     case 'End': seekTo(duration() - 15); break;

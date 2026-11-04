@@ -73,6 +73,86 @@ pub fn release_type(tags: &Value, album: &str) -> &'static str {
     by_word(album).unwrap_or("album")
 }
 
+/// The words of a song, with a time (ms) per line when they are synchronized.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Lyrics {
+    pub synced: bool,
+    pub lines: Vec<(Option<u64>, String)>,
+}
+
+/// "[01:23.45]" / "[1:23]" / "[01:23:45]" -> ms.
+fn lrc_stamp(s: &str) -> Option<u64> {
+    let (m, rest) = s.split_once(':')?;
+    let m: u64 = m.trim().parse().ok()?;
+    let rest = rest.replace(',', ".").replace(':', ".");
+    let sec: f64 = rest.trim().parse().ok()?;
+    if !(0.0..100.0).contains(&sec) { return None; }
+    Some(m * 60_000 + (sec * 1000.0).round() as u64)
+}
+
+/// Reads LRC text ("[00:12.30]line", several stamps per line, "[offset:+500]"). Plain text comes
+/// back as unsynchronized lines.
+pub fn parse_lyrics(text: &str) -> Option<Lyrics> {
+    let text = text.trim_start_matches('\u{feff}');
+    let mut timed: Vec<(u64, String)> = vec![];
+    let mut plain: Vec<String> = vec![];
+    let mut offset: i64 = 0;
+    for raw in text.lines() {
+        let line = raw.trim_end();
+        let mut rest = line.trim_start();
+        let mut stamps = vec![];
+        let mut meta = false;
+        while rest.starts_with('[') {
+            let Some(end) = rest.find(']') else { break };
+            let inner = &rest[1..end];
+            if let Some(ms) = lrc_stamp(inner) { stamps.push(ms); }
+            else if let Some(v) = inner.strip_prefix("offset:") { offset = v.trim().parse().unwrap_or(0); meta = true; }
+            else if stamps.is_empty() && inner.split_once(':').is_some_and(|(k, _)| !k.is_empty() && k.chars().all(|c| c.is_ascii_alphabetic())) && rest[end + 1..].trim().is_empty() {
+                // [ar:Artist], [ti:Title] ... are not words.
+                meta = true;
+            } else { break }
+            rest = rest[end + 1..].trim_start();
+        }
+        if meta && stamps.is_empty() { continue; }
+        if stamps.is_empty() {
+            plain.push(line.to_string());
+        } else {
+            // <00:12.30> word marks of enhanced LRC are dropped.
+            let mut words = String::new();
+            let mut skip = false;
+            for c in rest.chars() { match c { '<' => skip = true, '>' if skip => skip = false, _ if !skip => words.push(c), _ => {} } }
+            for ms in stamps { timed.push((ms, words.trim().to_string())); }
+        }
+    }
+    if !timed.is_empty() {
+        timed.sort_by_key(|(t, _)| *t);
+        let lines = timed.into_iter().map(|(t, w)| (Some((t as i64 + offset).max(0) as u64), w)).collect();
+        return Some(Lyrics { synced: true, lines });
+    }
+    while plain.first().is_some_and(|l| l.trim().is_empty()) { plain.remove(0); }
+    while plain.last().is_some_and(|l| l.trim().is_empty()) { plain.pop(); }
+    if plain.is_empty() { return None; }
+    Some(Lyrics { synced: false, lines: plain.into_iter().map(|l| (None, l.trim().to_string())).collect() })
+}
+
+/// The words of a song: a .lrc / .txt file beside it (same name), else the "lyrics" tag inside it.
+/// `tags` is only asked for when no file is there.
+pub fn lyrics_of(path: &Path, tags: impl FnOnce() -> Option<Value>) -> Option<Lyrics> {
+    for ext in ["lrc", "txt"] {
+        for e in [ext.to_string(), ext.to_uppercase()] {
+            if let Ok(text) = std::fs::read(path.with_extension(&e)) {
+                if let Some(l) = parse_lyrics(&String::from_utf8_lossy(&text)) { return Some(l); }
+            }
+        }
+    }
+    let tags = tags()?;
+    let obj = tags.as_object()?;
+    // "lyrics", "unsyncedlyrics", "lyrics-eng" ... (the synced text is preferred when both are there).
+    let mut found: Vec<&str> = obj.iter().filter(|(k, _)| { let k = k.to_lowercase(); k.starts_with("lyrics") || k.starts_with("unsyncedlyrics") || k.starts_with("uslt") || k.starts_with("sylt") }).filter_map(|(_, v)| v.as_str()).collect();
+    found.sort_by_key(|t| !t.contains("[0"));
+    found.into_iter().find_map(parse_lyrics)
+}
+
 /// "3/12" or "03" -> 3.
 fn number(s: &str) -> Option<u32> {
     s.split('/').next()?.trim().parse::<u32>().ok().filter(|n| *n > 0)
@@ -173,6 +253,26 @@ mod tests {
         // A file straight in the library folder.
         let i = info(root, Path::new("/m/Loose Song.mp3"), None);
         assert_eq!((i.artist.as_str(), i.album.as_str(), i.title.as_str()), (UNKNOWN_ARTIST, UNKNOWN_ALBUM, "Loose Song"));
+    }
+
+    #[test]
+    fn lyrics_are_read() {
+        let l = parse_lyrics("[ar:Someone]\n[ti:Song]\n[offset:+500]\n[00:12.30]Hello\n[00:05.00][01:00.5]La <00:06.00>la\n[00:20]\n").unwrap();
+        assert!(l.synced);
+        assert_eq!(l.lines, vec![(Some(5500), "La la".into()), (Some(12800), "Hello".into()), (Some(20500), "".into()), (Some(61000), "La la".into())]);
+        let p = parse_lyrics("\n\nFirst\n\nSecond\n\n").unwrap();
+        assert!(!p.synced);
+        assert_eq!(p.lines, vec![(None, "First".into()), (None, "".into()), (None, "Second".into())]);
+        assert_eq!(parse_lyrics("  \n"), None);
+        let dir = std::env::temp_dir().join(format!("lichtspiel-lyrics-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.mp3"), b"x").unwrap();
+        std::fs::write(dir.join("a.lrc"), "[00:01.00]One").unwrap();
+        assert_eq!(lyrics_of(&dir.join("a.mp3"), || None).unwrap().lines, vec![(Some(1000), "One".into())]);
+        assert_eq!(lyrics_of(&dir.join("b.mp3"), || None), None);
+        let tagged = json!({"TITLE": "x", "LYRICS": "Plain", "unsyncedlyrics": "[00:02.00]Timed"});
+        assert!(lyrics_of(&dir.join("b.mp3"), || Some(tagged)).unwrap().synced);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
