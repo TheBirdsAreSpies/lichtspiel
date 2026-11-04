@@ -818,6 +818,12 @@ pub struct Settings {
     /// Needs a restart.
     #[serde(default)]
     pub http_redirect_port: u16,
+    /// Relay: address ("host:port") of a computer on the internet running `lichtspiel --relay`, and the
+    /// secret shared with it. Callers from outside reach this server through it, without a port forward.
+    #[serde(default)]
+    pub relay_server: String,
+    #[serde(default)]
+    pub relay_secret: String,
     /// Answer apps that search the home network for servers (GDM).
     #[serde(default = "yes")]
     pub gdm_enabled: bool,
@@ -1112,6 +1118,8 @@ impl Default for Settings {
             tls_cert: String::new(),
             tls_key: String::new(),
             http_redirect_port: 0,
+            relay_server: String::new(),
+            relay_secret: String::new(),
             gdm_enabled: true,
             maintenance_start_hour: maint_start(),
             maintenance_end_hour: maint_end(),

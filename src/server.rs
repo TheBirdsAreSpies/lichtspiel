@@ -2222,7 +2222,9 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         }
     }
     let device = device_label(&product, &device_name, &params, &agent);
-    let peer = req.remote_addr().map(|a| a.ip().to_string()).unwrap_or_default();
+    // A caller that came through the relay: the relay told us who it is (nobody else can).
+    let relayed = req.remote_addr().and_then(|a| crate::relay::real_client(*a));
+    let peer = relayed.map(|a| a.to_string()).or_else(|| req.remote_addr().map(|a| a.ip().to_string())).unwrap_or_default();
     let user = token.as_ref().and_then(|t| {
         let mut db = app.db.lock().unwrap();
         let at = now();
@@ -2233,7 +2235,10 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         db.user(uid).cloned()
     });
     let (trusted, no_auth, lan_list) = { let db = app.db.lock().unwrap(); (db.settings.trusted_proxies.clone(), db.settings.no_auth_networks.clone(), db.settings.lan_networks.clone()) };
-    let (remote, remote_trusted) = client_address(req.remote_addr().map(|a| a.ip()), &xff, real_ip.as_deref(), &forwarded, &trusted);
+    let (remote, remote_trusted) = match relayed {
+        Some(ip) => (Some(ip), true),
+        None => client_address(req.remote_addr().map(|a| a.ip()), &xff, real_ip.as_deref(), &forwarded, &trusted),
+    };
     // Networks that need no sign-in act as the first admin (only with an address that is believed).
     let user = if user.is_none() && remote_trusted && !no_auth.trim().is_empty() && remote.is_some_and(|a| ip_in_list(&no_auth, a)) {
         app.db.lock().unwrap().users.iter().filter(|u| u.admin).min_by_key(|u| u.id).cloned()

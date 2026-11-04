@@ -27,6 +27,7 @@ mod plexsync;
 mod plugins;
 mod query;
 mod related;
+mod relay;
 mod routes;
 mod rss;
 mod scanner;
@@ -116,6 +117,7 @@ pub fn start(opts: &Options) -> Result<(Arc<server::App>, Arc<tiny_http::Server>
         }
     }
     server::start_background(&app);
+    relay::start_agent(app.clone());
     gdm::start(&app);
     app.fire("server.started", serde_json::json!({"port": port}));
     Ok((app, Arc::new(http)))
@@ -164,6 +166,14 @@ fn main() {
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!("lichtspiel {}\n\n  --data DIR         where the library, settings and plugins are kept (default ./data, or LICHTSPIEL_DATA)\n  --port N           port to listen on (default 8484 or the one saved in Settings, or LICHTSPIEL_PORT)\n  --bind ADDR        address to listen on (default 0.0.0.0)\n  --console          also open the optional desktop status window\n  --no-browser       don't open the web app in the browser on first start\n  --screenshot FILE  draw the status window, save it as PNG and exit\n  --reset-2fa NAME   switch off the two-step sign-in of a user (when the phone is lost) and exit\n  --self-test FILE   test every feature, write the results as JSON and exit", server::VERSION);
+        return;
+    }
+    // `--relay`: the helper for reaching a home server from outside (runs on a computer on the internet).
+    if args.iter().any(|a| a == "--relay") {
+        let public = arg_value(&args, "--relay-public").or_else(|| env("RELAY_PUBLIC")).unwrap_or_else(|| "0.0.0.0:8484".into());
+        let tunnel = arg_value(&args, "--relay-tunnel").or_else(|| env("RELAY_TUNNEL")).unwrap_or_else(|| "0.0.0.0:8485".into());
+        let secret = arg_value(&args, "--relay-secret").or_else(|| env("RELAY_SECRET")).unwrap_or_default();
+        if let Err(e) = relay::run_relay(&public, &tunnel, &secret) { eprintln!("{e}"); std::process::exit(1); }
         return;
     }
     if let Some(out) = arg_value(&args, "--self-test") {
