@@ -216,13 +216,67 @@ fn year_of(date: &str) -> Option<u32> {
     d.get(0..4).and_then(|y| y.parse().ok()).filter(|y| *y > 1800)
 }
 
-/// Lower-case letters and digits only, articles dropped, "&" → "and".
+/// Lower-case letters and digits only, articles dropped, "&" → "and". Umlauts and accents are
+/// folded (ä = ae = a-with-dots), apostrophes disappear ("Angel's" = "Angels").
 pub fn normalize(t: &str) -> String {
     let t = t.to_lowercase().replace('&', " and ");
-    let cleaned: String = t.chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect();
+    let mut cleaned = String::with_capacity(t.len());
+    for c in t.chars() {
+        match c {
+            '\'' | '’' | '`' | '´' | '‘' => {}
+            'ä' => cleaned.push_str("ae"),
+            'ö' => cleaned.push_str("oe"),
+            'ü' => cleaned.push_str("ue"),
+            'ß' => cleaned.push_str("ss"),
+            'à' | 'á' | 'â' | 'ã' | 'å' => cleaned.push('a'),
+            'è' | 'é' | 'ê' | 'ë' => cleaned.push('e'),
+            'ì' | 'í' | 'î' | 'ï' => cleaned.push('i'),
+            'ò' | 'ó' | 'ô' | 'õ' | 'ø' => cleaned.push('o'),
+            'ù' | 'ú' | 'û' => cleaned.push('u'),
+            'ç' => cleaned.push('c'),
+            'ñ' => cleaned.push('n'),
+            'ý' | 'ÿ' => cleaned.push('y'),
+            c if c.is_alphanumeric() => cleaned.push(c),
+            _ => cleaned.push(' '),
+        }
+    }
     let words: Vec<&str> = cleaned.split_whitespace().collect();
-    let skip = matches!(words.first(), Some(&("the" | "a" | "an" | "der" | "die" | "das" | "le" | "la" | "les" | "el" | "il"))) && words.len() > 1;
+    let skip = matches!(words.first(), Some(&("the" | "a" | "an" | "der" | "die" | "das" | "ein" | "eine" | "le" | "la" | "les" | "el" | "il"))) && words.len() > 1;
     words[usize::from(skip)..].join(" ")
+}
+
+/// At most one letter different (a typo, a missing letter) in words of five letters or more.
+fn near(a: &str, b: &str) -> bool {
+    if a == b { return true; }
+    let (x, y): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    if x.len() < 5 || y.len() < 5 || x.len().abs_diff(y.len()) > 1 { return false; }
+    let (mut i, mut j, mut diff) = (0, 0, 0);
+    while i < x.len() && j < y.len() {
+        if x[i] == y[j] { i += 1; j += 1; continue; }
+        diff += 1;
+        if diff > 1 { return false; }
+        if x.len() > y.len() { i += 1; } else if y.len() > x.len() { j += 1; } else { i += 1; j += 1; }
+    }
+    diff + (x.len() - i) + (y.len() - j) <= 1
+}
+
+/// Word overlap of two normalized titles, 0 … 1 (words one letter apart count).
+fn overlap(a: &str, b: &str) -> f64 {
+    let wa: Vec<&str> = a.split(' ').filter(|w| !w.is_empty()).collect();
+    let wb: Vec<&str> = b.split(' ').filter(|w| !w.is_empty()).collect();
+    let mut used = vec![false; wb.len()];
+    let mut hit = 0usize;
+    for w in &wa {
+        if let Some(k) = wb.iter().enumerate().position(|(k, v)| !used[k] && near(w, v)) { used[k] = true; hit += 1; }
+    }
+    let union = (wa.len() + wb.len() - hit).max(1);
+    hit as f64 / union as f64
+}
+
+/// The title without its subtitle: "Die Abbotts - Wenn Hass die Liebe toetet" → "die abbotts".
+fn main_part(t: &str) -> &str {
+    let cut = [" - ", " – ", " — ", ": "].iter().filter_map(|p| t.find(p)).min();
+    match cut { Some(i) if i >= 3 => t[..i].trim(), _ => t.trim() }
 }
 
 /// How well a found title/year fits what the file name said.
@@ -232,11 +286,14 @@ pub fn score(want_title: &str, want_year: Option<u32>, title: &str, year: Option
     let sim = if a == b {
         1.0
     } else {
-        let wa: std::collections::HashSet<&str> = a.split(' ').collect();
-        let wb: std::collections::HashSet<&str> = b.split(' ').collect();
-        let inter = wa.intersection(&wb).count() as f64;
-        let union = wa.union(&wb).count().max(1) as f64;
-        inter / union * 0.9
+        let mut best = overlap(&a, &b) * 0.9;
+        // One of them is the other's main title without the subtitle ("Die Abbotts" / "Die Abbotts - Wenn …").
+        let (ma, mb) = (normalize(main_part(want_title)), normalize(main_part(title)));
+        if !ma.is_empty() && !mb.is_empty() {
+            if ma == b || mb == a || ma == mb { best = best.max(0.93); }
+            else { best = best.max(overlap(&ma, &mb) * 0.9); }
+        }
+        best
     };
     let ybonus = match (want_year, year) {
         (Some(a), Some(b)) if a == b => 0.2,
@@ -1151,5 +1208,17 @@ mod trailer_tests {
         assert_eq!(video_langs("de-DE", false), "de,null");
         assert_eq!(video_langs("en-US", true), "en,null");
         assert!(tmdb_trailers(&r, "de-DE", true).iter().any(|v| v["key"] == "r1"));
+    }
+}
+
+#[cfg(test)]
+mod match_tests {
+    use super::*;
+    #[test]
+    fn titles_match_despite_umlauts_apostrophes_and_subtitles() {
+        assert!(score("angels share ein schluck für die engel", Some(2012), "Angel's Share - Ein Schluck für die Engel", Some(2012)) >= 1.15);
+        assert!(score("arsen und spitzenhaeubchen", Some(1944), "Arsen und Spitzenhäubchen", Some(1944)) >= 1.15);
+        assert!(score("die abbotts", Some(1997), "Die Abbotts - Wenn Haß die Liebe tötet", Some(1997)) >= 1.1);
+        assert!(score("die abbotts", Some(1997), "Die Simpsons", Some(1997)) < 0.85);
     }
 }

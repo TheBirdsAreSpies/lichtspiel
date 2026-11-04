@@ -172,6 +172,9 @@ const STOP_WORDS: &[&str] = &[
     "atmos", "proper", "repack", "extended", "unrated", "multi", "german", "dl", "10bit",
 ];
 
+/// Words of an edition or a release that are not part of the title, wherever they stand.
+const EDITION_WORDS: &[&str] = &["theatrical", "uncut", "remastered", "restored", "imax", "hybrid", "internal", "ac3d", "dubbed", "webhd", "hdrip", "complete", "ws", "fs"];
+
 /// Splits the part marker off a movie file name, as Plex names split movies:
 /// "The Dark Knight (2008) - pt1" gives ("The Dark Knight (2008)", Some(1)).
 /// Words: cd, disc, disk, dvd, part, pt, with the number right after them, after
@@ -248,7 +251,9 @@ pub fn parse_title_year(raw: &str) -> (String, Option<u32>) {
             _ => {}
         }
     }
-    let words: Vec<&str> = cleaned.split_whitespace().collect();
+    let words: Vec<&str> = cleaned.split_whitespace().enumerate()
+        .filter(|(i, w)| *i == 0 || !EDITION_WORDS.contains(&w.trim_matches(|c: char| c == '(' || c == ')' || c == '-' || c == ',').to_lowercase().as_str()))
+        .map(|(_, w)| w).collect();
     // The title ends at the first release tag; the year is the last
     // year-like word before that (a year in brackets wins).
     let mut end = words.len();
@@ -1600,6 +1605,7 @@ title=Two
     #[test]
     fn titles() {
         assert_eq!(parse_title_year("The.Matrix.1999.1080p.BluRay.x264"), ("The Matrix".into(), Some(1999)));
+        assert_eq!(parse_title_year("Abyss.-.Abgrund.des.Todes.THEATRICAL.1989.German.DL.AC3D.1080p.WebHD.x265-FuN"), ("Abyss - Abgrund des Todes".into(), Some(1989)));
         assert_eq!(parse_title_year("Blade Runner 2049 (2017)"), ("Blade Runner 2049".into(), Some(2017)));
         assert_eq!(parse_title_year("Up (2009)"), ("Up".into(), Some(2009)));
     }

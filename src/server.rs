@@ -975,7 +975,9 @@ impl App {
             _ => None,
         };
         if choice.is_none() && unmatched_by_hand {
-            return Err("The match was removed by hand; use Match… to pick one".into());
+            // Only "Refresh details" asked for by hand looks for a match again.
+            if !force { return Err("The match was removed by hand; use Match… to pick one".into()); }
+            if let Some(it) = self.db.lock().unwrap().items.get_mut(&id) { it.extra.remove("unmatched_by_hand"); }
         }
         if choice.is_none() && tagged.is_none() && stored.is_none() && status_recent && !force {
             return Err("No match was found recently; use Fix match".into());
@@ -1228,7 +1230,7 @@ impl App {
                 if can("content_rating") { it.content_rating.clear(); }
                 if can("studio") { it.studio.clear(); }
                 if can("genres") { it.genres.clear(); }
-                for k in ["cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes",
+                for k in ["collections", "cast", "directors", "writers", "producers", "countries", "creators", "ids", "art", "original_title", "runtime_minutes",
                     "originally_available", "ratings", "imdb_ratings_checked", "trailers", "metadata_source", "metadata_id", "metadata_language", "matched_at",
                     "pictures_version", "metadata_checked_at", "match_version"] {
                     if it.locked.iter().any(|l| l == k) { continue; }
@@ -1247,6 +1249,7 @@ impl App {
             }
             if can("summary") { it.summary.clear(); }
             if can("rating") { it.rating = None; }
+            it.updated_at = now();
             // Pictures that came with the match go; ones next to the files come back.
             if it.poster.as_deref().is_none_or(|p| Path::new(p).starts_with(&dir)) {
                 it.poster = posters.get(i).cloned().flatten();

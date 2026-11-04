@@ -458,7 +458,7 @@ I18N.add('de', 'Deutsch', {
     'Match…': 'Zuordnen …',
     'Unmatch': 'Zuordnung aufheben',
     'Remove the online details of "{title}"? It goes back to the file name and is not matched automatically again until you pick a match.': 'Die Online-Details von „{title}“ entfernen? Der Titel kommt wieder aus dem Dateinamen und wird erst wieder automatisch zugeordnet, wenn du selbst eine Zuordnung wählst.',
-    'The match was removed — use "Match" to pick one.': 'Die Zuordnung wurde aufgehoben – wähle mit „Zuordnen“ eine neue.',
+    'The match was removed — use "Match" to pick one, or "Refresh metadata" to look again.': 'Die Zuordnung wurde aufgehoben – wähle mit „Zuordnen“ eine neue oder suche mit „Metadaten aktualisieren“ erneut.',
     'Credits…': 'Abspann …',
     'Downloading details…': 'Details werden geladen …',
     'Refresh details': 'Details aktualisieren',
