@@ -897,7 +897,9 @@ async function settingsPage(tab, qs) {
       inp('transcode_dir', t('Folder for live conversions'), 'text', t('Empty = the “transcode” folder in the data folder. Pick a fast disk.')),
       inp('downloads_dir', t('Folder for converted downloads'), 'text', t('Empty = the “downloads” folder in the data folder. Copies already made stay where they are.')),
       sel('hw_accel', t('Hardware acceleration'), [['auto', t('Automatic (use the graphics chip when it works)')], ['none', t('Off (software)')], ['vaapi', t('Intel/AMD VAAPI (most Synology Plus models)')], ['qsv', 'Intel Quick Sync'], ['nvenc', 'NVIDIA']]),
-      inp('hw_device', t('Graphics device'), 'text', t('Empty = the first one. VAAPI: the device file, such as /dev/dri/renderD129. NVIDIA: the card number, such as 1.')),
+      (tc.devices || []).length
+        ? sel('hw_device', t('Graphics device'), [['', t('Automatic (the first one)')], ...tc.devices.map(d => [d.value, (d.backend === 'nvenc' ? 'NVIDIA ' : 'VAAPI ') + d.name]), ...(s.hw_device && !tc.devices.some(d => d.value === s.hw_device) ? [[s.hw_device, s.hw_device]] : [])], t('Found on this computer. Pick one if you have more than one graphics chip.'))
+        : inp('hw_device', t('Graphics device'), 'text', t('Empty = the first one. VAAPI: the device file, such as /dev/dri/renderD129. NVIDIA: the card number, such as 1.')),
       chk('hw_constant_quality', t('Graphics chip: convert by quality instead of bitrate'), t('Off: the graphics chip gets a fixed bitrate (safe on every model). On: it gets a quality number from 15 (best) to 25, like the software encoder does. Try it if hardware-converted video looks blocky.')),
       sel('h264_preset', t('Software encoder speed (x264 preset)'), r.h264_presets.map(p => [p, p])),
       inp('h264_minimum_crf', t('Best allowed x264 quality (minimum CRF)'), 'number', t('Lower = better picture and bigger stream. The quality the player asks for is mapped between this and 24.')),

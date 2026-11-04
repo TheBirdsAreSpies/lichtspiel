@@ -244,7 +244,9 @@ pub fn effective_hw(settings: &Settings) -> String {
     }
     // "auto" tries the graphics chip; a backend that was picked by hand is tested too, because an
     // ffmpeg may list an encoder (h264_qsv, h264_nvenc) although this computer has no such hardware.
-    let pick = if want == "auto" { if hw_works(&settings.ffmpeg, "vaapi", &settings.hw_device) { "vaapi" } else { "none" }.to_string() }
+    let pick = if want == "auto" {
+            ["vaapi", "nvenc", "qsv"].into_iter().find(|b| hw_works(&settings.ffmpeg, b, &settings.hw_device)).unwrap_or("none").to_string()
+        }
         else if hw_works(&settings.ffmpeg, want, &settings.hw_device) { want.to_string() }
         else {
             elog!("hardware acceleration '{want}' does not work on this computer (a test encode failed); converting with the processor instead");
@@ -576,6 +578,26 @@ pub fn content_type(ext: &str) -> &'static str {
     }
 }
 
+/// The graphics devices this computer offers: (backend, value for the setting, name).
+pub fn graphics_devices() -> Vec<(String, String, String)> {
+    let mut out = vec![];
+    if let Ok(rd) = std::fs::read_dir("/dev/dri") {
+        let mut nodes: Vec<String> = rd.flatten().map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| n.starts_with("renderD")).collect();
+        nodes.sort();
+        for n in nodes { out.push(("vaapi".to_string(), format!("/dev/dri/{n}"), format!("/dev/dri/{n}"))); }
+    }
+    if let Some(text) = std::process::Command::new("nvidia-smi").args(["--query-gpu=index,name", "--format=csv,noheader"]).output().ok()
+        .filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).to_string()) {
+        for l in text.lines() {
+            if let Some((i, name)) = l.split_once(',') {
+                let i = i.trim();
+                if !i.is_empty() && i.chars().all(|c| c.is_ascii_digit()) { out.push(("nvenc".to_string(), i.to_string(), format!("{i} · {}", name.trim()))); }
+            }
+        }
+    }
+    out
+}
+
 /// Is ffmpeg there, and which hardware encoders does it have?
 pub fn detect(settings: &Settings) -> Value {
     let run = |prog: &str, args: &[&str]| {
@@ -602,6 +624,7 @@ pub fn detect(settings: &Settings) -> Value {
         "hardware_encoders": hw,
         "hardware_working": working,
         "render_device": std::path::Path::new("/dev/dri/renderD128").exists(),
+        "devices": graphics_devices().into_iter().map(|(b, v, n)| json!({"backend": b, "value": v, "name": n})).collect::<Vec<_>>(),
         "hw_accel": settings.hw_accel,
         "hw_in_use": effective_hw(settings),
         "qualities": QUALITIES.iter().map(|q| json!({"name": q.0, "height": q.1, "kbps": q.2})).collect::<Vec<_>>(),
