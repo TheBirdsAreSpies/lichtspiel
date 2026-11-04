@@ -136,7 +136,13 @@ fn best_shift(cues: &[(f64, f64)], prefix: &[f64], scale: f64) -> Option<(i64, f
     let mean = scores.iter().sum::<f64>() / scores.len() as f64;
     let sd = (scores.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / scores.len() as f64).sqrt();
     if sd <= 0.0 { return None; }
-    Some((best_i as i64 - max, best, (best - mean) / sd))
+    // Lines longer than the speech fit equally well over a stretch of shifts: take its middle,
+    // not the edge.
+    let tol = best - 0.01 * (best - mean);
+    let (mut lo, mut hi) = (best_i, best_i);
+    while lo > 0 && scores[lo - 1] >= tol { lo -= 1; }
+    while hi + 1 < scores.len() && scores[hi + 1] >= tol { hi += 1; }
+    Some(((lo + hi) as i64 / 2 - max, best, (best - mean) / sd))
 }
 
 /// What to do to the subtitle (None: its lines do not fit the sound well enough to say).
@@ -223,6 +229,17 @@ mod tests {
         let (timing, _) = find_timing(&cues, &sig).expect("sure enough");
         assert!((timing.scale - 23.976 / 25.0).abs() < 1e-6, "{timing:?}");
         assert!(timing.offset_ms.abs() <= 100, "{timing:?}");
+    }
+
+    #[test]
+    fn long_lines_are_centred_on_the_speech() {
+        // Every line is 0.8 s longer than the speech in it (0.2 s before, 0.6 s after).
+        let speech = lines();
+        let cues: Vec<(f64, f64)> = speech.iter().map(|(s, e)| (s - 0.2, e + 0.6)).collect();
+        let sig = speech_signal(&curve_for(&speech, 5.0, 1200.0));
+        let (timing, _) = find_timing(&cues, &sig).expect("sure enough");
+        // Any shift from 4.4 to 5.2 fits; the middle is 4.8.
+        assert!((timing.offset_ms - 4800).abs() <= 150, "{timing:?}");
     }
 
     #[test]
