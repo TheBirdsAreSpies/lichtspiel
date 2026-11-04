@@ -1225,6 +1225,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             hubs.extend([
                 hub(&db, &user, "recentlyAddedMovies", "Recently Added Movies", recently_added(&db, &user, Some(ItemKind::Movie), 20)),
                 hub(&db, &user, "recentlyAddedEpisodes", "Recently Added TV", episodes),
+                hub(&db, &user, "recentlyAddedAlbums", "Recently Added Music", recently_added(&db, &user, Some(ItemKind::Album), 20)),
             ]);
             for p in db.playlists.iter().filter(|p| p.pinned && visible_playlist(p, &user)) {
                 if matches!(p.default_key.as_deref(), Some("continue" | "recent_movies" | "recent_episodes")) { continue; }
@@ -1262,6 +1263,10 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 i.genres.iter().any(|g| g.to_lowercase() == q)
                     || year.is_some_and(|y| i.year == Some(y))
                     || (q.len() >= 3 && i.studio.to_lowercase().contains(&q))
+                    || (q.len() >= 3 && matches!(i.kind, ItemKind::Album | ItemKind::Track) && match query::field(&db, user.id, i, "artist") {
+                        query::FieldValue::Text(v) => v.iter().any(|n| n.to_lowercase().contains(&q)),
+                        _ => false,
+                    })
                     || (q.len() >= 3 && i.kind != ItemKind::Episode && ["director", "actor", "writer", "producer"].iter().any(|f| match query::field(&db, user.id, i, f) {
                         query::FieldValue::Text(v) => v.iter().any(|n| n.to_lowercase().contains(&q)),
                         _ => false,
@@ -1274,7 +1279,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 .collect();
             ids.sort_by_key(|i| {
                 let it = &db.items[i];
-                (!it.title.to_lowercase().starts_with(&q), !by_title(it), it.kind == ItemKind::Episode, it.sort_title.clone())
+                (!it.title.to_lowercase().starts_with(&q), !by_title(it), matches!(it.kind, ItemKind::Episode | ItemKind::Track), it.sort_title.clone())
             });
             ids.truncate(ctx.num("limit").unwrap_or(60) as usize);
             list_resp(&db, &user, &ids, "search")

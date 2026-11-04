@@ -686,6 +686,7 @@ I18N.add('de', 'Deutsch', {
     'Recently Added Movies': 'Kürzlich hinzugefügte Filme',
     'Recently Added Episodes': 'Kürzlich hinzugefügte Episoden',
     'Recently Added TV': 'Kürzlich hinzugefügte Serien',
+    'Recently Added Music': 'Kürzlich hinzugefügte Alben',
     'Unwatched Movies': 'Ungesehene Filme',
     'Favorites': 'Favoriten',
     'Top Rated': 'Am besten bewertet',
