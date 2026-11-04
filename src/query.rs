@@ -19,6 +19,7 @@ pub const ITEM_FIELDS: &[(&str, &str, &str)] = &[
     ("summary", "text", "Description"),
     ("show", "text", "Show title (episodes)"),
     ("artist", "text", "Artist (songs and albums)"),
+    ("release", "text", "Kind of release: album, ep, single, live, compilation or soundtrack (albums and songs)"),
     ("album", "text", "Album title (songs)"),
     ("track", "number", "Track number (songs)"),
     ("season", "number", "Season number (episodes)"),
@@ -90,8 +91,14 @@ pub const OWNER_FILTERS: &[&str] = &["label", "folder"];
 /// filter).
 pub const ADVANCED_FILTERS: &[&str] = &["duplicate"];
 
+pub const ALBUM_FILTERS: &[&str] = &["genre", "year", "decade", "release", "artist", "label"];
+pub const TRACK_FILTERS: &[&str] = &["genre", "year", "decade", "release", "artist", "album", "audio_codec", "unwatched", "label"];
+
 pub fn filters_for(kind: ItemKind) -> &'static [&'static str] {
     match kind {
+        ItemKind::Artist => &["label"],
+        ItemKind::Album => ALBUM_FILTERS,
+        ItemKind::Track => TRACK_FILTERS,
         ItemKind::Show | ItemKind::Season => SHOW_FILTERS,
         ItemKind::Episode => EPISODE_FILTERS,
         _ => MOVIE_FILTERS,
@@ -322,6 +329,11 @@ pub fn field(db: &Db, user_id: u64, item: &Item, name: &str) -> FieldValue {
             ItemKind::Track => item.parent_id.and_then(|p| db.items.get(&p)).and_then(|a| a.parent_id).and_then(|p| db.items.get(&p)),
             _ => None,
         }.map(|a| a.title.clone()).unwrap_or_default()]),
+        "release" => Text(vec![match item.kind {
+            ItemKind::Album => Some(item),
+            ItemKind::Track => item.parent_id.and_then(|p| db.items.get(&p)),
+            _ => None,
+        }.map(|a| a.extra.get("release").and_then(|r| r.as_str()).unwrap_or("album").to_string()).unwrap_or_default()]),
         "album" => Text(vec![match item.kind {
             ItemKind::Album => Some(item),
             ItemKind::Track => item.parent_id.and_then(|p| db.items.get(&p)),

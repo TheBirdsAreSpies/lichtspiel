@@ -1638,6 +1638,12 @@ title=Two
         let opera = db.items.values().find(|i| i.kind == ItemKind::Album && i.title == "Opera").unwrap();
         let songs: Vec<String> = db.children(opera.id).iter().map(|t| t.title.clone()).collect();
         assert_eq!(songs, vec!["Intro", "Death on Two Legs"]);
+        // The filters of a music library know the kind of release.
+        let tr = db.children(opera.id)[0].clone();
+        assert!(matches!(crate::query::field(&db, 0, &tr, "release"), crate::query::FieldValue::Text(v) if v == vec!["album".to_string()]));
+        let albums: Vec<&Item> = db.items.values().filter(|i| i.kind == ItemKind::Album).collect();
+        let f = crate::query::section_filters(&db, 0, &albums, ItemKind::Album, true, false);
+        assert!(f.iter().any(|x| x["filter"] == "release" && x["values"][0]["value"] == "album" && x["values"][0]["count"] == 3));
         // Playing an artist means all its songs, in album order.
         let queen = db.items.values().find(|i| i.kind == ItemKind::Artist && i.title == "Queen").unwrap();
         assert_eq!(db.leaves(queen.id).len(), 3);
