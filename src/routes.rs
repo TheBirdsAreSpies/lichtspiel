@@ -123,7 +123,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/rss", "Your watchlist feed {enabled, url}; the address holds a private key, so a feed reader needs no sign-in"),
     ("POST", "/api/rss", "{enabled: true|false, regenerate: true} switch your watchlist feed on or off, or make a new address"),
     ("GET", "/rss/watchlist/{key}.xml", "Public: the watchlist as RSS (the key is the private part of the address)"),
-    ("GET", "/api/watchlist", "Your watchlist ?sort=added (newest first)|oldest|title|year|rating|added_at &type=movie|show|season|episode"),
+    ("GET", "/api/watchlist", "Your watchlist ?sort=added (newest first)|oldest|title|year|rating|added_at &type=movie|show|season|episode, and the filters of a library page (genre=…, year>=…, q=…, rules=…)"),
+    ("GET", "/api/watchlist/filters", "The filters of the library menu with the values found on your watchlist ?type=movie|show|season|episode &includeAdvanced=1"),
     ("POST", "/api/watchlist", "Put several on your watchlist or take them off {ids: [..], watchlist: true|false}"),
     ("GET", "/api/downloads", "Your downloads, newest first, with state (queued|converting|ready|failed), progress and size ?all=1 (admin: everyone's)"),
     ("POST", "/api/downloads", "Download movies or episodes (a season or show: every episode) {ids: [..], quality: original|1080p-8|720p-4|…}; the original, or a file that already fits, is ready at once, others are converted in the background"),
@@ -1129,7 +1130,16 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["api", "watchlist"]) => {
             let db = app.db.lock().unwrap();
             let ids = crate::dashboard::watchlist_ids(&db, &user, ctx.param("sort").unwrap_or(""), ctx.param("type").and_then(ItemKind::parse));
-            list_resp(&db, &user, &ids, "watchlist")
+            list_resp(&db, &user, &narrow(&db, &user, ids, ctx), "watchlist")
+        }
+        // The filters of the library menu, with the values found on the watchlist.
+        ("GET", ["api", "watchlist", "filters"]) => {
+            let db = app.db.lock().unwrap();
+            let kind = ctx.param("type").and_then(ItemKind::parse);
+            let ids = crate::dashboard::watchlist_ids(&db, &user, "", kind);
+            let items: Vec<&db::Item> = ids.iter().filter_map(|i| db.items.get(i)).collect();
+            let list = query::section_filters(&db, user.id, &items, kind.unwrap_or(ItemKind::Movie), user.admin, matches!(ctx.param("includeAdvanced"), Some("1") | Some("true")));
+            ok(json!({"MediaContainer": {"size": list.len(), "Filter": list}}))
         }
         ("POST", ["api", "watchlist"]) => {
             let ids: Vec<u64> = ctx.body.get("ids").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_u64().or(x.as_str().and_then(|s| s.parse().ok()))).collect()).unwrap_or_default();
@@ -1760,20 +1770,24 @@ fn section_ids(db: &db::Db, user: &db::User, sid: u64, sec: &db::Section, ctx: &
         SectionKind::Other => ItemKind::Video,
         SectionKind::Music => ItemKind::Artist,
     });
-    let params: Vec<(String, String)> = ctx.params.iter().filter(|(k, _)| k != "rules" && k != "rmatch").cloned().collect();
+    let ids = db.items.values().filter(|i| i.section_id == sid && i.kind == kind).map(|i| i.id).collect();
+    (kind, narrow(db, user, ids, ctx))
+}
+
+/// Keeps the items that match the filters in the address: the simple ones (`genre=…`, `year>=…`), the
+/// advanced rules and the title search. Library pages and the watchlist use the same.
+fn narrow(db: &db::Db, user: &db::User, ids: Vec<u64>, ctx: &Ctx) -> Vec<u64> {
+    let params: Vec<(String, String)> = ctx.params.iter().filter(|(k, _)| k != "rules" && k != "rmatch" && k != "type").cloned().collect();
     let rules: Vec<db::Rule> = query::rules_from_params(&params).into_iter().filter(|r| r.field != "kind").collect();
     let any = ctx.param("match") == Some("any");
     let advanced: Vec<db::Rule> = ctx.param("rules").and_then(|r| serde_json::from_str::<Vec<db::Rule>>(r).ok()).unwrap_or_default();
     let adv_any = ctx.param("rmatch") == Some("any");
     let text = ctx.param("q").or(ctx.param("query")).map(|s| s.to_lowercase());
-    let ids = db.items.values()
-        .filter(|i| i.section_id == sid && i.kind == kind)
-        .filter(|i| query::matches_all(db, user.id, i, &rules, !any))
-        .filter(|i| query::matches_all(db, user.id, i, &advanced, !adv_any))
-        .filter(|i| text.as_ref().is_none_or(|t| i.title.to_lowercase().contains(t)))
-        .map(|i| i.id)
-        .collect();
-    (kind, ids)
+    ids.into_iter()
+        .filter(|id| db.items.get(id).is_some_and(|i| query::matches_all(db, user.id, i, &rules, !any)
+            && query::matches_all(db, user.id, i, &advanced, !adv_any)
+            && text.as_ref().is_none_or(|t| i.title.to_lowercase().contains(t))))
+        .collect()
 }
 
 fn list_resp(db: &db::Db, user: &db::User, ids: &[u64], hub: &str) -> Resp {

@@ -466,66 +466,20 @@ const PAGE_SIZE = 120;
 const LIBPOS = (() => { try { return JSON.parse(sessionStorage.getItem('libpos') || '{}'); } catch (e) { return {}; } })();
 const saveLibPos = () => { try { sessionStorage.setItem('libpos', JSON.stringify(LIBPOS)); } catch (e) { /* none */ } };
 
-async function sectionPage(id, qs) {
-  markNav('section/' + id);
-  const myHash = location.hash;
-  const sec = S.sections.find(s => String(s.id) === String(id));
-  if (!sec) return set(h('div', { class: 'empty' }, t('Library not found.')));
-  let p = new URLSearchParams(qs || '');
-  // Opened without a choice: the filters and sorting of the last visit come back.
-  if (!qs) { try { const last = localStorage.getItem('libstate:' + id); if (last) p = new URLSearchParams(last); } catch (e) { /* none */ } }
-  // The library's own pages: Library, Collections, Playlists, Categories.
-  const tab = p.get('tab') || '';
-  const tabs = h('div', { class: 'tabs' }, [['', t('Library')], ['collections', t('Collections')], ['playlists', t('Playlists')], ['categories', t('Categories')]]
-    .map(([k, l]) => h('a', { href: `#/section/${id}${k ? '?tab=' + k : ''}`, class: tab === k ? 'on' : '' }, l)));
-  if (tab) return sectionSubPage(sec, tab, tabs);
-  const st = {}; for (const k of ['type', 'sort', 'from', 'to', 'q', 'container', 'rules', 'rmatch']) st[k] = p.get(k) || '';
-  for (const [k, v] of p) if (k.startsWith('f.')) st[k] = v;
-  if (p.get('genre')) st['f.genre'] = p.get('genre');
-  if (p.get('collection')) st['f.collection'] = p.get('collection');
-  const ow = OLD_WATCHED[p.get('watched')];
-  if (ow) st['f.' + (ow[0] === 'unwatched' && sec.type === 'show' && !st.type ? 'unwatched_leaves' : ow[0])] = ow[1];
-  if (!st.sort) st.sort = st.type === 'episode' || st.type === 'season' ? 'show' : 'title';
-  const sortNow = parseSort(st.sort);
-  const go = () => {
-    const n = new URLSearchParams(); for (const [k, v] of Object.entries(st)) if (v) n.set(k, v);
-    try { localStorage.setItem('libstate:' + id, n.toString()); } catch (e) { /* none */ }
-    location.hash = `#/section/${id}?${n}`;
-  };
-  const advRules = (() => { try { return st.rules ? JSON.parse(st.rules) : []; } catch (e) { return []; } })();
-  // The question to the server without paging and sorting (the letters use it as well).
-  const filterQuery = () => {
-    const q = new URLSearchParams();
-    if (st.type) q.set('type', st.type);
-    if (st.from) q.set('year>', st.from);
-    if (st.to) q.set('year<', st.to);
-    if (st.q) q.set('q', st.q);
-    if (st.container) q.set('container', st.container);
-    if (st.rules) q.set('rules', st.rules);
-    if (st.rmatch) q.set('rmatch', st.rmatch);
-    for (const [k, v] of Object.entries(st)) if (k.startsWith('f.') && v) q.set(k.slice(2), v);
-    return q;
-  };
-  const sortParam = `${sortNow.field === 'show' ? 'episode_order' : sortNow.field}:${sortNow.desc ? 'desc' : 'asc'}`;
-  const listUrl = start => { const q = filterQuery(); q.set('sort', sortParam); q.set('start', start); q.set('size', PAGE_SIZE); return `/library/sections/${id}/all?${q}`; };
-  const first = (await GET(listUrl(0))).MediaContainer;
-  const total = first.totalSize;
-  const pick = (key, opts, title) => {
-    const cur = opts.find(o => o[0] === st[key]) || opts[0];
-    return dropBtn(cur[1], () => opts.map(([v, l]) => ({ label: l, checked: st[key] === v, run: () => { st[key] = v; if (key === 'type') { st.sort = ''; st.rules = ''; for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; } go(); } })), { title, on: key !== 'sort' && !!st[key] });
-  };
+// The filter menu of the library pages (also used by the watchlist): the button, the panel with the kinds of filter and their
+// values, the advanced rules and the chips of what is on. st holds the state (f.<name> = value, rules, rmatch), go() applies it.
+function filterUI({ st, go, advRules, lastKey, loadFilters }) {
   const filterName = f => t(FILTER_NAMES[f] || f);
   const valueName = (f, v) => f === 'video_resolution' ? (RES_NAMES[v] || v) : f === 'decade' ? t('{v}s', { v }) : /_language$/.test(f) ? (langName(v) || v) : v;
   const setFilter = (f, v) => { if (v) st['f.' + f] = v; else delete st['f.' + f]; go(); };
   // ----- the filter panel: the kinds of filter on the left, the values of the chosen one (with a search box) on the right
   let filters = null;
-  const lastKey = 'libFilterField:' + sec.type + ':' + (st.type || '');
   let panel = null;
   const closePanel = () => { if (panel) { panel.remove(); panel = null; document.removeEventListener('mousedown', outside, true); } filterBtn.classList.remove('open'); };
   const outside = e => { if (panel && !panel.contains(e.target) && !filterBtn.contains(e.target) && !document.querySelector('.modal')) closePanel(); };
   const openPanel = async () => {
     if (panel) return closePanel();
-    try { filters = filters || (await GET(`/library/sections/${id}/filters?includeAdvanced=1${st.type ? '&type=' + st.type : ''}`)).MediaContainer.Filter; }
+    try { filters = filters || await loadFilters(); }
     catch (e) { return toast(e.message, 6000); }
     const byName = Object.fromEntries(filters.map(f => [f.filter, f]));
     const states = FILTER_GROUP_STATE.map(k => byName[k]).filter(Boolean);
@@ -611,6 +565,59 @@ async function sectionPage(id, qs) {
     return h('button', { class: 'chip', title: t('Remove this filter'), onclick: () => setFilter(f, '') }, label, h('span', { 'aria-hidden': 'true' }, '×'));
   }), advRules.length ? h('button', { class: 'chip', title: t('Advanced filters'), onclick: advancedDialog }, t('Advanced filters ({n})', { n: advRules.length })) : null,
     nActive > 1 ? h('button', { class: 'small', onclick: () => { for (const k of active) delete st[k]; st.rules = ''; st.rmatch = ''; go(); } }, t('Clear filters')) : null) : null;
+  return { filterBtn, chips, closePanel };
+}
+
+async function sectionPage(id, qs) {
+  markNav('section/' + id);
+  const myHash = location.hash;
+  const sec = S.sections.find(s => String(s.id) === String(id));
+  if (!sec) return set(h('div', { class: 'empty' }, t('Library not found.')));
+  let p = new URLSearchParams(qs || '');
+  // Opened without a choice: the filters and sorting of the last visit come back.
+  if (!qs) { try { const last = localStorage.getItem('libstate:' + id); if (last) p = new URLSearchParams(last); } catch (e) { /* none */ } }
+  // The library's own pages: Library, Collections, Playlists, Categories.
+  const tab = p.get('tab') || '';
+  const tabs = h('div', { class: 'tabs' }, [['', t('Library')], ['collections', t('Collections')], ['playlists', t('Playlists')], ['categories', t('Categories')]]
+    .map(([k, l]) => h('a', { href: `#/section/${id}${k ? '?tab=' + k : ''}`, class: tab === k ? 'on' : '' }, l)));
+  if (tab) return sectionSubPage(sec, tab, tabs);
+  const st = {}; for (const k of ['type', 'sort', 'from', 'to', 'q', 'container', 'rules', 'rmatch']) st[k] = p.get(k) || '';
+  for (const [k, v] of p) if (k.startsWith('f.')) st[k] = v;
+  if (p.get('genre')) st['f.genre'] = p.get('genre');
+  if (p.get('collection')) st['f.collection'] = p.get('collection');
+  const ow = OLD_WATCHED[p.get('watched')];
+  if (ow) st['f.' + (ow[0] === 'unwatched' && sec.type === 'show' && !st.type ? 'unwatched_leaves' : ow[0])] = ow[1];
+  if (!st.sort) st.sort = st.type === 'episode' || st.type === 'season' ? 'show' : 'title';
+  const sortNow = parseSort(st.sort);
+  const go = () => {
+    const n = new URLSearchParams(); for (const [k, v] of Object.entries(st)) if (v) n.set(k, v);
+    try { localStorage.setItem('libstate:' + id, n.toString()); } catch (e) { /* none */ }
+    location.hash = `#/section/${id}?${n}`;
+  };
+  const advRules = (() => { try { return st.rules ? JSON.parse(st.rules) : []; } catch (e) { return []; } })();
+  // The question to the server without paging and sorting (the letters use it as well).
+  const filterQuery = () => {
+    const q = new URLSearchParams();
+    if (st.type) q.set('type', st.type);
+    if (st.from) q.set('year>', st.from);
+    if (st.to) q.set('year<', st.to);
+    if (st.q) q.set('q', st.q);
+    if (st.container) q.set('container', st.container);
+    if (st.rules) q.set('rules', st.rules);
+    if (st.rmatch) q.set('rmatch', st.rmatch);
+    for (const [k, v] of Object.entries(st)) if (k.startsWith('f.') && v) q.set(k.slice(2), v);
+    return q;
+  };
+  const sortParam = `${sortNow.field === 'show' ? 'episode_order' : sortNow.field}:${sortNow.desc ? 'desc' : 'asc'}`;
+  const listUrl = start => { const q = filterQuery(); q.set('sort', sortParam); q.set('start', start); q.set('size', PAGE_SIZE); return `/library/sections/${id}/all?${q}`; };
+  const first = (await GET(listUrl(0))).MediaContainer;
+  const total = first.totalSize;
+  const pick = (key, opts, title) => {
+    const cur = opts.find(o => o[0] === st[key]) || opts[0];
+    return dropBtn(cur[1], () => opts.map(([v, l]) => ({ label: l, checked: st[key] === v, run: () => { st[key] = v; if (key === 'type') { st.sort = ''; st.rules = ''; for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; } go(); } })), { title, on: key !== 'sort' && !!st[key] });
+  };
+  const {filterBtn, chips, closePanel} = filterUI({ st, go, advRules, lastKey: 'libFilterField:' + sec.type + ':' + (st.type || ''),
+    loadFilters: async () => (await GET(`/library/sections/${id}/filters?includeAdvanced=1${st.type ? '&type=' + st.type : ''}`)).MediaContainer.Filter });
   const text = (key, ph, w) => h('input', { placeholder: ph, value: st[key], style: `width:${w}px`, onchange: e => { st[key] = e.target.value.trim(); go(); } });
   // ----- sorting: the field and its direction
   const sortFields = (st.type === 'season' || st.type === 'episode' ? [['show', 'TV show']] : []).concat(SORT_FIELDS);
