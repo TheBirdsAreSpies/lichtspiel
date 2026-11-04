@@ -99,6 +99,22 @@ class Api {
   Future<List<Map<String, dynamic>>> items(String sectionId, {String sort = 'title', int offset = 0, int limit = 60}) async =>
       metadata(await get('/library/sections/$sectionId/all?sort=$sort&offset=$offset&limit=$limit'));
 
+  static String query(Map<String, String> q) => q.entries.map((e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}').join('&');
+
+  /// One page of a library with the web app's filters and sorting: [q] holds type, sort, year>, year<, q,
+  /// container and the filters by name (genre=Drama, unwatched=true, ...). total is the size without paging.
+  Future<({List<Map<String, dynamic>> items, int total})> list(String sectionId, Map<String, String> q, {int start = 0, int size = 60}) async {
+    final r = await get('/library/sections/$sectionId/all?${query({...q, 'start': '$start', 'size': '$size'})}');
+    final items = metadata(r);
+    return (items: items, total: (r?['MediaContainer']?['totalSize'] ?? items.length) as int);
+  }
+
+  /// The kinds of filter of a library with their values and counts (genre, year, age rating, unwatched, ...).
+  Future<List<Map<String, dynamic>>> filters(String sectionId, {String type = ''}) async =>
+      ((await get('/library/sections/$sectionId/filters${type.isEmpty ? '' : '?type=$type'}'))['MediaContainer']?['Filter'] as List? ?? const [])
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+
   Future<Map<String, dynamic>> item(String id) async => metadata(await get('/library/metadata/$id')).first;
   Future<List<Map<String, dynamic>>> children(String id) async => metadata(await get('/library/metadata/$id/children'));
   Future<List<Map<String, dynamic>>> allLeaves(String id) async => metadata(await get('/library/metadata/$id/allLeaves'));

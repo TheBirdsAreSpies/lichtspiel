@@ -213,7 +213,7 @@ class _DetailScreenState extends State<DetailScreen> {
         if (chapters.isNotEmpty) ...[
           _h('Kapitel'),
           SizedBox(
-            height: 130,
+            height: 170,
             child: ListView(scrollDirection: Axis.horizontal, children: [
               for (final c in chapters)
                 InkWell(
@@ -237,7 +237,7 @@ class _DetailScreenState extends State<DetailScreen> {
         if (extras.isNotEmpty) ...[
           _h('Extras'),
           SizedBox(
-            height: 130,
+            height: 170,
             child: ListView(scrollDirection: Axis.horizontal, children: [
               for (final e in extras)
                 InkWell(
