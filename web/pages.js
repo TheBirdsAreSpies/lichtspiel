@@ -172,13 +172,13 @@ function smartEditor(pl) {
 }
 
 // ---------- admin: libraries
-const sectionKind = k => ({ movie: t('Movies'), show: t('TV shows'), other: t('Other videos') }[k] || k);
+const sectionKind = k => ({ movie: t('Movies'), show: t('TV shows'), music: t('Music'), other: t('Other videos') }[k] || k);
 
 async function librariesPage() {
   const secs = (await GET('/library/sections')).MediaContainer.Directory;
   S.sections = secs; drawChrome(); markNav('libraries');
   const name = h('input', { placeholder: t('Movies'), style: 'width:100%;max-width:420px' });
-  const type = h('select', {}, h('option', { value: 'movie' }, t('Movies')), h('option', { value: 'show' }, t('TV shows')), h('option', { value: 'other' }, t('Other videos')));
+  const type = h('select', {}, h('option', { value: 'movie' }, t('Movies')), h('option', { value: 'show' }, t('TV shows')), h('option', { value: 'music' }, t('Music')), h('option', { value: 'other' }, t('Other videos')));
   const paths = h('textarea', { placeholder: t('One folder per line, e.g. /media/Movies or /volume1/video/Movies'), style: 'min-height:70px;max-width:620px' });
   const st = await GET('/api/settings');
   const langs = st.languages;
@@ -1046,7 +1046,7 @@ async function personPage(key, qs) {
 // The item menu: watch together, share, queue, add to …, watched,
 // and for the owner refresh, analyze, fix match, optimize, access; then
 // download, play history, report a problem and media info.
-const PLAYABLE = ['movie', 'episode', 'video', 'clip'];
+const PLAYABLE = ['movie', 'episode', 'video', 'clip', 'track'];
 const isPlayable = it => PLAYABLE.includes(it.type);
 // The whole item (lists leave out the streams and the online details).
 const fullItem = async it => (it.Media && it.Media[0].streams) || it._full ? it : Object.assign(meta(await GET('/library/metadata/' + it.id))[0], { _full: true });

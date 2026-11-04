@@ -423,14 +423,14 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if !admin { return need_admin(); }
             let name = ctx.body_or_param("name").unwrap_or_default();
             let kind = ctx.body_or_param("type").or(ctx.body_or_param("kind")).and_then(|k| SectionKind::parse(&k));
-            let Some(kind) = kind else { return fail(400, "type must be movie, show or other") };
+            let Some(kind) = kind else { return fail(400, "type must be movie, show, music or other") };
             let paths = paths_from(ctx);
             if paths.is_empty() { return fail(400, "Give at least one folder in paths"); }
             if let Some(missing) = paths.iter().find(|p| !Path::new(p).is_dir()) { return fail(400, &format!("Folder not found: {missing}")); }
             let mut db = app.db.lock().unwrap();
             let sid = db.new_id();
             let name = if name.trim().is_empty() {
-                match kind { SectionKind::Movie => "Movies", SectionKind::Show => "TV Shows", SectionKind::Other => "Videos" }.to_string()
+                match kind { SectionKind::Movie => "Movies", SectionKind::Show => "TV Shows", SectionKind::Other => "Videos", SectionKind::Music => "Music" }.to_string()
             } else { name };
             let s = Section { id: sid, name, kind, paths, created_at: now(), scanned_at: 0, credits_detection: true, intro_detection: true, language: ctx.body_or_param("language").unwrap_or_default(), scan_interval_minutes: None };
             let v = section_json(&db, &s);
@@ -776,6 +776,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 SectionKind::Movie => ItemKind::Movie,
                 SectionKind::Show => ItemKind::Show,
                 SectionKind::Other => ItemKind::Video,
+                SectionKind::Music => ItemKind::Artist,
             });
             let items: Vec<&db::Item> = db.items.values().filter(|i| i.section_id == sid && i.kind == kind).collect();
             // Labels and folders only for the owner; duplicates only with ?includeAdvanced=1.
@@ -1735,6 +1736,7 @@ fn section_ids(db: &db::Db, user: &db::User, sid: u64, sec: &db::Section, ctx: &
         SectionKind::Movie => ItemKind::Movie,
         SectionKind::Show => ItemKind::Show,
         SectionKind::Other => ItemKind::Video,
+        SectionKind::Music => ItemKind::Artist,
     });
     let params: Vec<(String, String)> = ctx.params.iter().filter(|(k, _)| k != "rules" && k != "rmatch").cloned().collect();
     let rules: Vec<db::Rule> = query::rules_from_params(&params).into_iter().filter(|r| r.field != "kind").collect();

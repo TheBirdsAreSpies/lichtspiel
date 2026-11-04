@@ -52,6 +52,8 @@ pub enum SectionKind {
     Movie,
     Show,
     Other,
+    /// Songs: artists, albums and tracks.
+    Music,
 }
 
 impl SectionKind {
@@ -60,6 +62,7 @@ impl SectionKind {
             "movie" | "movies" | "1" => Some(Self::Movie),
             "show" | "shows" | "tv" | "tvshows" | "2" => Some(Self::Show),
             "other" | "video" | "videos" | "homevideo" => Some(Self::Other),
+            "music" | "artist" | "artists" | "audio" | "8" => Some(Self::Music),
             _ => None,
         }
     }
@@ -68,6 +71,16 @@ impl SectionKind {
             Self::Movie => "movie",
             Self::Show => "show",
             Self::Other => "other",
+            Self::Music => "music",
+        }
+    }
+    /// The kind of the top level of a library of this kind.
+    pub fn top_kind(self) -> ItemKind {
+        match self {
+            Self::Movie => ItemKind::Movie,
+            Self::Show => ItemKind::Show,
+            Self::Other => ItemKind::Video,
+            Self::Music => ItemKind::Artist,
         }
     }
 }
@@ -135,6 +148,10 @@ pub enum ItemKind {
     Season,
     Episode,
     Video,
+    /// Music: an artist has albums, an album has tracks.
+    Artist,
+    Album,
+    Track,
 }
 
 impl ItemKind {
@@ -145,6 +162,9 @@ impl ItemKind {
             "season" | "3" => Some(Self::Season),
             "episode" | "4" => Some(Self::Episode),
             "video" | "clip" => Some(Self::Video),
+            "artist" | "8" => Some(Self::Artist),
+            "album" | "9" => Some(Self::Album),
+            "track" | "song" | "10" => Some(Self::Track),
             _ => None,
         }
     }
@@ -155,6 +175,9 @@ impl ItemKind {
             Self::Season => "season",
             Self::Episode => "episode",
             Self::Video => "video",
+            Self::Artist => "artist",
+            Self::Album => "album",
+            Self::Track => "track",
         }
     }
     pub fn code(self) -> u32 {
@@ -164,10 +187,13 @@ impl ItemKind {
             Self::Season => 3,
             Self::Episode => 4,
             Self::Video => 1,
+            Self::Artist => 8,
+            Self::Album => 9,
+            Self::Track => 10,
         }
     }
     pub fn playable(self) -> bool {
-        matches!(self, Self::Movie | Self::Episode | Self::Video)
+        matches!(self, Self::Movie | Self::Episode | Self::Video | Self::Track)
     }
 }
 
@@ -1289,10 +1315,12 @@ impl Db {
             .values()
             .filter(|i| i.parent_id == Some(parent))
             .collect();
+        // Songs of a double album: disc by disc.
+        let disc = |i: &Item| i.extra.get("disc").and_then(|d| d.as_u64()).unwrap_or(0);
         v.sort_by(|a, b| {
-            a.index
-                .unwrap_or(0)
-                .cmp(&b.index.unwrap_or(0))
+            disc(a)
+                .cmp(&disc(b))
+                .then(a.index.unwrap_or(0).cmp(&b.index.unwrap_or(0)))
                 .then(a.sort_title.cmp(&b.sort_title))
         });
         v

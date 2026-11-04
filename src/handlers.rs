@@ -759,6 +759,10 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str) -> Resp {
         if poster.is_none() && it.kind == ItemKind::Season {
             poster = it.parent_id.and_then(|p| db.items.get(&p)).and_then(|s| s.poster.clone());
         }
+        // A song without its own picture shows its album's.
+        if poster.is_none() && it.kind == ItemKind::Track {
+            poster = it.parent_id.and_then(|p| db.items.get(&p)).and_then(|a| a.poster.clone());
+        }
         let first_leaf = if it.kind.playable() { None } else { db.leaves(it.id).first().copied() };
         (poster, it.file.as_ref().map(|f| f.path.clone()), it.file.as_ref().map_or(it.duration_ms, |f| f.duration_ms), it.title.clone(), it.kind, first_leaf, it.id)
     };
@@ -782,8 +786,11 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str) -> Resp {
     if let Some((src, dur)) = source {
         let at = if dur > 0 { (dur as f64 / 1000.0 * 0.1).min(300.0) } else { 5.0 };
         let ffmpeg = app.settings().ffmpeg;
+        // Music: the cover art inside the file; a still of the "picture" would be nothing.
+        let music = matches!(kind, ItemKind::Artist | ItemKind::Album | ItemKind::Track);
+        let args = if music { transcode::cover_args(&src, &cache.to_string_lossy()) } else { transcode::thumb_args(&src, at, &cache.to_string_lossy()) };
         let ran = Command::new(&ffmpeg)
-            .args(transcode::thumb_args(&src, at, &cache.to_string_lossy()))
+            .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

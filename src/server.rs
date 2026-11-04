@@ -1975,7 +1975,7 @@ pub fn start_background(app: &Arc<App>) {
             }
             last.retain(|id, _| sections.iter().any(|s| s.id == *id));
             for s in sections {
-                let sig = scanner::folder_signature(&s.paths);
+                let sig = scanner::folder_signature(&s.paths, s.kind == db::SectionKind::Music);
                 match last.insert(s.id, sig) {
                     // First look (also catches files added while the server was off).
                     None => {

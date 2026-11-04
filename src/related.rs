@@ -25,6 +25,7 @@ fn top_kind(kind: SectionKind) -> ItemKind {
         SectionKind::Movie => ItemKind::Movie,
         SectionKind::Show => ItemKind::Show,
         SectionKind::Other => ItemKind::Video,
+        SectionKind::Music => ItemKind::Artist,
     }
 }
 

@@ -22,6 +22,7 @@ mod intro;
 mod maintenance;
 mod metadata;
 mod migrate;
+mod music;
 mod plexsync;
 mod plugins;
 mod query;

@@ -24,6 +24,8 @@ pub const QUALITIES: &[(&str, u32, u32)] = &[
 
 /// Containers, video and audio codecs a web browser plays without help.
 pub const BROWSER_CONTAINERS: &[&str] = &["mp4", "m4v", "mov", "webm"];
+/// Containers of audio-only files that a web browser plays as they are.
+pub const BROWSER_AUDIO_CONTAINERS: &[&str] = &["mp3", "m4a", "ogg", "oga", "opus", "wav", "flac"];
 pub const BROWSER_VIDEO: &[&str] = &["h264", "vp8", "vp9", "av1"];
 pub const BROWSER_AUDIO: &[&str] = &["aac", "mp3", "opus", "vorbis", "flac"];
 pub const MAX_DIRECT_BIT_DEPTH: u32 = 8;
@@ -104,6 +106,7 @@ pub fn quality(name: &str) -> (u32, u32) {
 pub fn decide(file: &MediaFile, req: &Request) -> Decision {
     let mut reasons = vec![];
     let container_ok = BROWSER_CONTAINERS.contains(&file.container.as_str())
+        || (file.probed && file.video().is_none() && BROWSER_AUDIO_CONTAINERS.contains(&file.container.as_str()))
         || req.extra_containers.iter().any(|c| c == &file.container);
     if !container_ok {
         reasons.push(format!("container {} does not play in the browser", file.container));
@@ -537,6 +540,14 @@ pub fn subtitle_args(source: &str, embedded_index: Option<u32>) -> Vec<String> {
     a
 }
 
+/// The picture inside an audio file (cover art), as a small jpg.
+pub fn cover_args(source: &str, out: &str) -> Vec<String> {
+    vec![
+        "-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into(), "-y".into(),
+        "-i".into(), source.into(), "-an".into(), "-frames:v".into(), "1".into(), "-vf".into(), "scale=400:-2".into(), out.into(),
+    ]
+}
+
 pub fn thumb_args(source: &str, at_s: f64, out: &str) -> Vec<String> {
     vec![
         "-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into(), "-y".into(),
@@ -568,6 +579,11 @@ pub fn content_type(ext: &str) -> &'static str {
         "ogv" | "ogm" => "video/ogg",
         "3gp" => "video/3gpp",
         "3g2" => "video/3gpp2",
+        "mp3" => "audio/mpeg",
+        "m4a" | "aac" => "audio/mp4",
+        "ogg" | "oga" | "opus" => "audio/ogg",
+        "wav" => "audio/wav",
+        "flac" => "audio/flac",
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
         "webp" => "image/webp",

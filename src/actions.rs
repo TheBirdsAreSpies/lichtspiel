@@ -160,7 +160,7 @@ pub fn deep_analyze(app: &Arc<App>, iid: u64) -> Result<usize, String> {
 /// "Deep analysis" for a whole library.
 pub fn deep_analyze_section(app: &Arc<App>, sid: u64) -> Result<usize, String> {
     if !app.db.lock().unwrap().sections.iter().any(|s| s.id == sid) { return Err("No such library".into()); }
-    deep_where(app, sid, |db| db.items.values().filter(|i| i.section_id == sid && i.kind.playable()).map(|i| i.id).collect())
+    deep_where(app, sid, |db| db.items.values().filter(|i| i.section_id == sid && i.kind.playable() && i.kind != crate::db::ItemKind::Track).map(|i| i.id).collect())
 }
 
 fn deep_where(app: &Arc<App>, iid: u64, pick: impl FnOnce(&Db) -> Vec<u64>) -> Result<usize, String> {

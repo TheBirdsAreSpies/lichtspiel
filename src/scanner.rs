@@ -81,12 +81,12 @@ fn ignored(rules: &[IgnoreRules], path: &Path) -> bool {
     })
 }
 
-fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
-    walk_in(dir, out, depth, &mut vec![], &mut vec![]);
+fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, audio: bool) {
+    walk_in(dir, out, depth, &mut vec![], &mut vec![], audio);
 }
 
 /// Like `walk`, and lists the ignore files it read (`ignore_files`).
-fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<IgnoreRules>, ignore_files: &mut Vec<PathBuf>) {
+fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<IgnoreRules>, ignore_files: &mut Vec<PathBuf>, audio: bool) {
     if depth > 12 {
         return;
     }
@@ -112,7 +112,10 @@ fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<Ign
             continue;
         }
         match e.file_type() {
-            Ok(t) if t.is_dir() => walk_in(&p, out, depth + 1, rules, ignore_files),
+            Ok(t) if t.is_dir() => walk_in(&p, out, depth + 1, rules, ignore_files, audio),
+            Ok(_) if audio => {
+                if crate::music::is_audio(&p) { out.push(p) }
+            }
             Ok(_) if is_video(&p) => {
                 // Skip release "sample" clips (name is "sample", ends in "-sample"/".sample",
                 // or lies in a "Sample" folder), but not films that merely have the word.
@@ -135,12 +138,12 @@ fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<Ign
 /// A fingerprint of the video files (names, sizes, change times) in a
 /// library's folders. It changes when a file is added, removed, renamed or is
 /// still being copied.
-pub fn folder_signature(paths: &[String]) -> u64 {
+pub fn folder_signature(paths: &[String], audio: bool) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     for root in paths {
         let (mut files, mut ignores) = (vec![], vec![]);
-        walk_in(Path::new(root), &mut files, 0, &mut vec![], &mut ignores);
+        walk_in(Path::new(root), &mut files, 0, &mut vec![], &mut ignores, audio);
         // A changed ignore file counts as a change too.
         for f in files.iter().chain(ignores.iter()) {
             f.hash(&mut h);
@@ -388,16 +391,21 @@ fn tidy(s: &str) -> String {
 /// Reads container, duration and every stream with ffprobe. Returns false
 /// when ffprobe is missing or cannot read the file.
 pub fn probe(ffprobe: &str, file: &mut MediaFile) -> bool {
+    probe_tags(ffprobe, file).is_some()
+}
+
+/// Like [`probe`], and gives back the file's tags (title, artist, album …) too.
+pub fn probe_tags(ffprobe: &str, file: &mut MediaFile) -> Option<Value> {
     let out = Command::new(ffprobe)
         .args(["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters"])
         .arg(&file.path)
         .output();
-    let Ok(out) = out else { return false };
+    let Ok(out) = out else { return None };
     if !out.status.success() {
-        return false;
+        return None;
     }
     let Ok(v) = serde_json::from_slice::<Value>(&out.stdout) else {
-        return false;
+        return None;
     };
     let fmt = &v["format"];
     file.format_name = fmt["format_name"].as_str().unwrap_or("").to_string();
@@ -479,7 +487,7 @@ pub fn probe(ffprobe: &str, file: &mut MediaFile) -> bool {
     }
     file.probed = true;
     file.probe_version = crate::db::PROBE_VERSION;
-    true
+    Some(crate::music::tags_of(&v))
 }
 
 /// Every chapter of a file: (start ms, end ms, title). Untitled ones are named "Chapter N".
@@ -821,6 +829,8 @@ pub struct Parsed {
     pub show: Option<(String, Option<u32>)>,
     pub season: Option<u32>,
     pub episode: Option<u32>,
+    /// A song: who, which album, which number.
+    pub music: Option<crate::music::MusicInfo>,
 }
 
 pub fn classify(section: &Section, root: &Path, path: &Path) -> Parsed {
@@ -850,7 +860,7 @@ pub fn classify(section: &Section, root: &Path, path: &Path) -> Parsed {
                     year = fy.or(year);
                 }
             }
-            Parsed { kind: ItemKind::Movie, title, year, show: None, season: None, episode: None }
+            Parsed { kind: ItemKind::Movie, title, year, show: None, season: None, episode: None, music: None }
         }
         SectionKind::Show => {
             let show_folder = if comps.len() >= 2 { comps[0].clone() } else { String::new() };
@@ -887,10 +897,15 @@ pub fn classify(section: &Section, root: &Path, path: &Path) -> Parsed {
                 show: Some((show_title, show_year)),
                 season: Some(season),
                 episode: Some(episode),
+                music: None,
             }
         }
         SectionKind::Other => {
-            Parsed { kind: ItemKind::Video, title: tidy(&stem), year: None, show: None, season: None, episode: None }
+            Parsed { kind: ItemKind::Video, title: tidy(&stem), year: None, show: None, season: None, episode: None, music: None }
+        }
+        SectionKind::Music => {
+            let m = crate::music::info(root, path, None);
+            Parsed { kind: ItemKind::Track, title: m.title.clone(), year: m.year, show: None, season: None, episode: m.track, music: Some(m) }
         }
     }
 }
@@ -932,7 +947,7 @@ where
         let root = PathBuf::from(root);
         if only.is_some_and(|o| !o.starts_with(&root)) { continue; }
         let mut files = vec![];
-        walk(only.unwrap_or(&root), &mut files, 0);
+        walk(only.unwrap_or(&root), &mut files, 0, section.kind == SectionKind::Music);
         for f in files {
             found.push(Found { size: file_size(&f), mtime: file_mtime(&f), path: f, root: root.clone() });
         }
@@ -978,7 +993,7 @@ where
     {
         let mut groups: HashMap<(PathBuf, String), Vec<(u32, usize)>> = HashMap::new();
         for (i, f) in found.iter().enumerate() {
-            if section.kind != SectionKind::Other {
+            if matches!(section.kind, SectionKind::Movie | SectionKind::Show) {
                 if let Some(x) = extra_of(&f.root, &f.path) {
                     // TV extras are left out (they would turn into odd episodes).
                     if section.kind == SectionKind::Movie {
@@ -1100,7 +1115,12 @@ where
                 probe(ffprobe, &mut media);
                 media
             };
-            let mut media = read(f);
+            let mut music_tags = None;
+            let mut media = if section.kind == SectionKind::Music {
+                let mut m = MediaFile { path: f.path.to_string_lossy().to_string(), size: f.size, modified: f.mtime, container: ext_of(&f.path), ..Default::default() };
+                music_tags = probe_tags(ffprobe, &mut m);
+                m
+            } else { read(f) };
             let parts: Vec<MediaFile> = parts_here.iter().map(|p| read(p)).collect();
             let duration = media.duration_ms + parts.iter().map(|p| p.duration_ms).sum::<u64>();
             let dir = f.path.parent().unwrap_or(Path::new("."));
@@ -1108,9 +1128,19 @@ where
             media.external_subtitles = find_subtitles(dir, &stem);
             let poster = if as_extra.is_some() { None } else { find_poster(dir, &stem) };
             let parsed = match &as_extra {
-                Some((_, _, title)) => Parsed { kind: ItemKind::Video, title: title.clone(), year: None, show: None, season: None, episode: None },
+                Some((_, _, title)) => Parsed { kind: ItemKind::Video, title: title.clone(), year: None, show: None, season: None, episode: None, music: None },
+                None if section.kind == SectionKind::Music => {
+                    let m = crate::music::info(&f.root, &f.path, music_tags.as_ref());
+                    Parsed { kind: ItemKind::Track, title: m.title.clone(), year: m.year, show: None, season: None, episode: m.track, music: Some(m) }
+                }
                 None => classify(section, &f.root, &f.path),
             };
+            // Cover pictures: the album's folder, and the artist's folder one level up.
+            let (album_cover, artist_cover) = if section.kind == SectionKind::Music {
+                let rel = f.path.strip_prefix(&f.root).ok();
+                let artist_dir = rel.filter(|r| r.components().count() >= 3).and_then(|r| r.components().next()).map(|c| f.root.join(c.as_os_str()));
+                (find_poster(dir, "__none__"), artist_dir.and_then(|d| find_poster(&d, "__none__")))
+            } else { (None, None) };
             let show_poster = if section.kind == SectionKind::Show {
                 let rel = f.path.strip_prefix(&f.root).ok();
                 rel.and_then(|r| r.components().next())
@@ -1124,6 +1154,10 @@ where
                 let t = now();
                 let parent = if let Some((_, movie, _)) = &as_extra {
                     Some(*movie)
+                } else if let Some(m) = &parsed.music {
+                    let cache = containers.get_or_insert_with(|| container_index(db, section.id));
+                    let artist = find_or_make(db, cache, section.id, ItemKind::Artist, None, &m.artist, None, None, artist_cover.clone());
+                    Some(find_or_make(db, cache, section.id, ItemKind::Album, Some(artist), &m.album, m.year, None, album_cover.clone()))
                 } else if let Some((show_title, show_year)) = &parsed.show {
                     let cache = containers.get_or_insert_with(|| container_index(db, section.id));
                     let show_id = find_or_make(db, cache, section.id, ItemKind::Show, None, show_title, *show_year, None, show_poster.clone());
@@ -1185,6 +1219,16 @@ where
                         id
                     }
                 };
+                if let (Some(m), Some(it)) = (&parsed.music, db.items.get_mut(&id)) {
+                    it.genres = m.genres.clone();
+                    match m.disc { Some(d) => it.extra.insert("disc".into(), Value::from(d)), None => it.extra.remove("disc") };
+                    let album = it.parent_id;
+                    // The album takes the year and genres of its songs.
+                    if let Some(a) = album.and_then(|a| db.items.get_mut(&a)) {
+                        if a.year.is_none() { a.year = m.year; }
+                        if a.genres.is_empty() { a.genres = m.genres.clone(); }
+                    }
+                }
                 if let Some(it) = db.items.get_mut(&id) {
                     match &as_extra {
                         Some((kind, _, _)) => {
@@ -1570,6 +1614,36 @@ title=Two
         std::fs::remove_dir_all(&root).unwrap();
         scan(&mut db);
         assert_eq!(missing(&db), vec!["Heat"]);
+    }
+
+    #[test]
+    fn music_library_makes_artists_albums_and_tracks() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-music-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for f in ["Queen/Opera/02 - Death on Two Legs.mp3", "Queen/Opera/01 - Intro.mp3", "Queen/Jazz/01 - Mustapha.flac", "Blur/Blur/03 - Song 2.ogg", "notes.txt"] {
+            let p = root.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, b"x").unwrap();
+        }
+        let mut db: Db = serde_json::from_value(serde_json::json!({"version": 1, "machine_id": "x", "next_id": 1, "settings": crate::db::Settings::default(),
+            "sections": [{"id": 1, "name": "Musik", "kind": "music", "paths": [root.to_string_lossy()], "created_at": 0}],
+            "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let section = db.sections[0].clone();
+        let r = scan_section(&section, "no-such-ffprobe", |f| f(&mut db));
+        assert_eq!(r.files_seen, 4);
+        let count = |db: &Db, k: ItemKind| db.items.values().filter(|i| i.kind == k).count();
+        assert_eq!((count(&db, ItemKind::Artist), count(&db, ItemKind::Album), count(&db, ItemKind::Track)), (2, 3, 4));
+        let opera = db.items.values().find(|i| i.kind == ItemKind::Album && i.title == "Opera").unwrap();
+        let songs: Vec<String> = db.children(opera.id).iter().map(|t| t.title.clone()).collect();
+        assert_eq!(songs, vec!["Intro", "Death on Two Legs"]);
+        // Playing an artist means all its songs, in album order.
+        let queen = db.items.values().find(|i| i.kind == ItemKind::Artist && i.title == "Queen").unwrap();
+        assert_eq!(db.leaves(queen.id).len(), 3);
+        // Taking a file away leaves no empty album behind.
+        std::fs::remove_file(root.join("Queen/Jazz/01 - Mustapha.flac")).unwrap();
+        scan_section(&section, "no-such-ffprobe", |f| f(&mut db));
+        assert_eq!((count(&db, ItemKind::Artist), count(&db, ItemKind::Album), count(&db, ItemKind::Track)), (2, 2, 3));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

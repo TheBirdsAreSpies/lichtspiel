@@ -213,6 +213,9 @@ function posterCard(it, opts = {}) {
   if (it.type === 'season') sub = it.parentTitle || '';
   if (it.type === 'show') sub = t('{n} episodes', { n: it.leafCount || 0 });
   if (it.type === 'season') title = seasonTitle(title);
+  if (it.type === 'artist') sub = t('{n} songs', { n: it.leafCount || 0 });
+  if (it.type === 'album') sub = [it.parentTitle, it.year].filter(Boolean).join(' · ');
+  if (it.type === 'track') sub = [it.grandparentTitle, it.parentTitle].filter(Boolean).join(' · ');
   const unseen = it.leafCount ? it.leafCount - (it.viewedLeafCount || 0) : 0;
   const img = it.type === 'episode' && it.grandparentThumb && !opts.episodeThumb ? it.grandparentThumb : it.thumb;
   const mark = store.get('watchedMark', 'all'); // Settings → Account → Watched indicator
@@ -231,7 +234,7 @@ function posterCard(it, opts = {}) {
       card.replaceWith(fresh); if (opts.onReplace) opts.onReplace(fresh);
     });
   };
-  const card = h('div', { class: 'card' + (seen ? ' watched' : '') + (it.missing ? ' missing' : ''), onauxclick: e => { if (e.button === 1) { e.preventDefault(); window.open(location.pathname + '#/item/' + it.id, '_blank'); } }, onmousedown: e => { if (e.button === 1) e.preventDefault(); }, onclick: e => { if (!(opts.pick && opts.pick(e, false))) location.hash = '#/item/' + it.id; } },
+  const card = h('div', { class: 'card' + (seen ? ' watched' : '') + (it.missing ? ' missing' : '') + (['artist', 'album', 'track'].includes(it.type) ? ' music' : ''), onauxclick: e => { if (e.button === 1) { e.preventDefault(); window.open(location.pathname + '#/item/' + it.id, '_blank'); } }, onmousedown: e => { if (e.button === 1) e.preventDefault(); }, onclick: e => { if (!(opts.pick && opts.pick(e, false))) location.hash = '#/item/' + it.id; } },
     h('div', { class: 'poster' }, h('img', { src: withTok(img), loading: 'lazy', alt: '' }),
       it.missing ? h('span', { class: 'gone', title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null,
       prog > 0 ? h('div', { class: 'bar' }, h('i', { style: `width:${prog * 100}%` })) : null,
@@ -653,6 +656,7 @@ async function sectionPage(id, qs) {
     tabs,
     h('div', { class: 'bar-tools' },
       sec.type === 'show' ? pick('type', [['', t('Shows')], ['season', t('Seasons')], ['episode', t('Episodes')]]) : null,
+      sec.type === 'music' ? pick('type', [['', t('Artists')], ['album', t('Albums')], ['track', t('Songs')]]) : null,
       filterBtn, sortBtn, dirBtn,
       text('from', t('Year from'), 95), text('to', t('Year to'), 85),
       pick('container', [['', t('Any file type')], ...['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'].map(c => [c, c.toUpperCase()])]),
@@ -720,7 +724,7 @@ async function itemPage(id) {
   markNav('');
   const it = meta(await GET('/library/metadata/' + id))[0];
   const m = it.Media && it.Media[0];
-  const kids = it.type === 'show' || it.type === 'season' ? meta(await GET(`/library/metadata/${id}/children`)) : [];
+  const kids = ['show', 'season', 'artist', 'album'].includes(it.type) ? meta(await GET(`/library/metadata/${id}/children`)) : [];
   const refresh = () => itemPage(id);
   const watched = it.leafCount ? it.viewedLeafCount === it.leafCount : it.viewCount > 0;
   const crumbs = [];
@@ -772,7 +776,10 @@ async function itemPage(id) {
           // A trailer file next to the movie first, else the first online trailer.
           localTrailer ? h('button', { class: 'big', onclick: () => play(localTrailer, 0) }, t('▶ Trailer'))
             : onlineVideos.length ? h('button', { class: 'big', onclick: () => playOnlineVideo(onlineVideos[0]) }, t('▶ Trailer')) : null,
-          !m && it.leafCount ? h('button', { class: 'primary big', onclick: nextEp }, t('▶ Play next episode')) : null,
+          !m && it.leafCount && (it.type === 'artist' || it.type === 'album') ? [
+            h('button', { class: 'primary big', onclick: () => playMusic(id, false) }, t('▶ Play')),
+            h('button', { class: 'big', title: t('Random order; the same show or artist does not come twice in a row while others are left'), onclick: () => playMusic(id, true) }, t('Shuffle'))] : null,
+          !m && it.leafCount && it.type !== 'artist' && it.type !== 'album' ? h('button', { class: 'primary big', onclick: nextEp }, t('▶ Play next episode')) : null,
           iconBtn('check', watched ? t('Mark as unwatched') : t('Mark as watched'), async () => { await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${it.id}`); refresh(); }, watched),
           iconBtn(it.favorite ? 'heart' : 'heartOff', it.favorite ? t('Remove from favorites') : t('Add to favorites'), async () => { await api('PUT', `/api/items/${it.id}/favorite`, { favorite: !it.favorite }); refresh(); }, !!it.favorite),
           it.type === 'clip' ? null : iconBtn(it.watchlist ? 'mark' : 'markOff', it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), async () => { await toggleWatchlist(it); refresh(); }, !!it.watchlist),
@@ -781,10 +788,10 @@ async function itemPage(id) {
           starRating(it)),
         m ? h('div', { class: 'panel kv' },
           h('div', {}, t('File type')), h('div', {}, `${friendlyContainer(m)} · ${fmtSize(m.size)}`),
-          h('div', {}, t('Video')), h('div', {}, m.videoCodec ? [String(m.videoCodec).toUpperCase(), `${m.width}×${m.height}`, m.bitDepth > 8 ? t('{n}-bit', { n: m.bitDepth }) : ''].filter(Boolean).join(' · ') : t('unknown (ffprobe not available)')),
+          it.type === 'track' ? null : [h('div', {}, t('Video')), h('div', {}, m.videoCodec ? [String(m.videoCodec).toUpperCase(), `${m.width}×${m.height}`, m.bitDepth > 8 ? t('{n}-bit', { n: m.bitDepth }) : ''].filter(Boolean).join(' · ') : t('unknown (ffprobe not available)'))],
           h('div', {}, t('Audio')), h('div', {}, m.audioCodec ? [String(m.audioCodec).toUpperCase(), friendlyChannels(m.audioChannels)].filter(Boolean).join(' · ') : '–'),
           h('div', {}, t('Bitrate')), h('div', {}, m.bitrate ? fmtNum(m.bitrate / 1000, 1) + ' Mbit/s' : '–'),
-          h('div', {}, t('Subtitles')), h('div', {}, [...new Set((m.subtitles || []).map(s => s.language ? langName(s.language) : s.file || s.codec))].join(', ') || t('none')),
+          it.type === 'track' ? null : [h('div', {}, t('Subtitles')), h('div', {}, [...new Set((m.subtitles || []).map(s => s.language ? langName(s.language) : s.file || s.codec))].join(', ') || t('none'))],
           m.file ? [h('div', {}, t('Path')), h('div', { style: 'word-break:break-all' }, m.file)] : null,
           (m.Part || []).length > 1 ? [h('div', {}, t('Parts')), h('div', {}, t('{n} files, played one after the other', { n: m.Part.length }))] : null,
           h('div', {}, t('In your browser')), h('div', { id: 'decision', class: 'dim' }, '…')) : null)),
@@ -797,11 +804,11 @@ async function itemPage(id) {
       return h('a', { class: 'person', href: `#/person/${encodeURIComponent(p.key || 'byname')}?name=${encodeURIComponent(p.name || '')}` }, pic, h('b', {}, p.name), p.role ? h('div', { class: 'dim' }, p.role) : null,
         p.count > 1 ? h('div', { class: 'dim' }, t('{n} in this library', { n: p.count })) : null);
     }))] : null,
-    kids.length ? [h('h2', {}, it.type === 'show' ? t('Seasons') : t('Episodes')),
-      it.type === 'show' ? scroller('row', kids.map(k => posterCard(k))) :
+    kids.length ? [h('h2', {}, it.type === 'show' ? t('Seasons') : it.type === 'artist' ? t('Albums') : it.type === 'album' ? t('Songs') : t('Episodes')),
+      it.type === 'show' || it.type === 'artist' ? scroller('row', kids.map(k => posterCard(k))) :
         h('div', { class: 'list' }, kids.map((e, i) => h('div', { class: 'li' },
-          h('img', { src: withTok(e.thumb), loading: 'lazy' }),
-          h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, `${e.index}. ${e.title}`)), h('div', { class: 'dim' }, [fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', e.viewOffset ? t('stopped at {time}', { time: fmtTime(e.viewOffset / 1000) }) : ''].filter(Boolean).join(' · ')),
+          it.type === 'album' ? null : h('img', { src: withTok(e.thumb), loading: 'lazy' }),
+          h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, e.index ? `${e.index}. ${e.title}` : e.title)), h('div', { class: 'dim' }, [fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', e.viewOffset ? t('stopped at {time}', { time: fmtTime(e.viewOffset / 1000) }) : ''].filter(Boolean).join(' · ')),
             e.summary ? h('div', { class: 'ep-plot' }, e.summary) : null),
           h('button', { class: 'primary small', onclick: () => play(e, e.viewOffset ? e.viewOffset / 1000 : 0, kids.slice(i + 1)) }, '▶'))))] : null,
     chapters.length ? [h('h2', {}, t('Chapters')), scroller('row extras', chapters.map(c => h('div', { class: 'card', onclick: () => play(it, c.start / 1000) },
@@ -1223,9 +1230,11 @@ async function play(it, startAt, queue, together) {
   player.style.display = 'flex';
   hideNext(); closePlayerMenu();
   $('#pkeys').style.display = 'none';
-  const ep = it.type === 'episode';
+  const ep = it.type === 'episode', song = it.type === 'track';
   $('#ptitle').textContent = ep ? it.grandparentTitle : it.title;
-  P.subLine = ep ? `${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} · ${it.title}` : (it.year ? String(it.year) : '');
+  P.subLine = ep ? `${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} · ${it.title}` : song ? [it.grandparentTitle, it.parentTitle].filter(Boolean).join(' · ') : (it.year ? String(it.year) : '');
+  // A song has no picture: the cover stays on the screen.
+  video.poster = song ? withTok(it.thumb) : '';
   const auds = ((it.Media && it.Media[0].streams) || []).filter(s => s.kind === 'audio');
   P.audios = auds;
   P.audio = '';
@@ -1299,6 +1308,13 @@ async function playPrerollVideo(it, url, several) {
 async function findNext(it) {
   $('#pnextbtn').hidden = true;
   let next = P.queue[0] || Q.list[0] || null;
+  if (!next && it.type === 'track' && it.parentRatingKey) {
+    try {
+      const all = meta(await GET(`/library/metadata/${it.parentRatingKey}/allLeaves`));
+      const i = all.findIndex(x => String(x.id) === String(it.id));
+      if (i >= 0 && all[i + 1]) next = all[i + 1];
+    } catch (e) { /* the last song then */ }
+  }
   if (!next && it.type === 'episode' && it.grandparentRatingKey) {
     try {
       const all = meta(await GET(`/library/metadata/${it.grandparentRatingKey}/allLeaves`));
@@ -1310,6 +1326,13 @@ async function findNext(it) {
   P.next = next;
   $('#pnextbtn').hidden = !next;
   if (next) $('#pnextbtn').title = t('Next (N)') + ': ' + nextName(next);
+}
+// Plays all songs of an artist or album, one after the other (shuffle: not the same artist twice in a row).
+async function playMusic(id, shuffle) {
+  let songs = meta(await GET(`/library/metadata/${id}/allLeaves`));
+  if (!songs.length) return;
+  if (shuffle) songs = smartShuffle(songs);
+  play(songs[0], 0, songs.slice(1));
 }
 const nextName = n => n.type === 'episode' ? `${t('S{n}', { n: n.parentIndex })}${t('E{n}', { n: n.index })} · ${n.title}` : n.title;
 function playNext() {
@@ -1735,7 +1758,7 @@ video.addEventListener('ratechange', () => { if (P.it && SPEEDS.includes(video.p
 function mediaSession(it) {
   if (!('mediaSession' in navigator)) return;
   try {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: it.title, artist: it.type === 'episode' ? `${it.grandparentTitle} · ${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })}` : (it.year ? String(it.year) : ''),
+    navigator.mediaSession.metadata = new MediaMetadata({ title: it.title, artist: it.type === 'episode' ? `${it.grandparentTitle} · ${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })}` : it.type === 'track' ? (it.grandparentTitle || '') : (it.year ? String(it.year) : ''), album: it.type === 'track' ? (it.parentTitle || '') : '',
       artwork: [{ src: withTok(it.type === 'episode' && it.grandparentThumb ? it.grandparentThumb : it.thumb), sizes: '300x450', type: 'image/jpeg' }] });
     const on = (a, f) => { try { navigator.mediaSession.setActionHandler(a, f); } catch (e) { /* not offered by this browser */ } };
     on('play', () => video.play()); on('pause', () => video.pause());

@@ -230,7 +230,7 @@ pub fn deep_analysis(app: &App, max: usize) -> usize {
     let mut todo: Vec<(u64, u64)> = {
         let db = app.db.lock().unwrap();
         db.items.values()
-            .filter(|i| i.kind.playable() && !i.extra.contains_key(crate::scanner::MISSING))
+            .filter(|i| i.kind.playable() && i.kind != crate::db::ItemKind::Track && !i.extra.contains_key(crate::scanner::MISSING))
             .filter(|i| i.all_files().iter().any(|f| !crate::deep::is_current(f) && f.deep_errors <= crate::db::CREDITS_MAX_ERRORS && Path::new(&f.path).is_file()))
             .map(|i| (i.updated_at, i.id)).collect()
     };
@@ -250,7 +250,7 @@ pub fn make_thumbnails(app: &App, max: usize) -> usize {
     let todo: Vec<(u64, String)> = {
         let db = app.db.lock().unwrap();
         db.items.values()
-            .filter(|i| i.kind.playable() && !i.extra.contains_key("thumbnails_done"))
+            .filter(|i| i.kind.playable() && i.kind != crate::db::ItemKind::Track && !i.extra.contains_key("thumbnails_done"))
             .filter_map(|i| i.file.as_ref().filter(|f| i.parts.is_empty() && Path::new(&f.path).is_file()).map(|f| (i.id, f.path.clone())))
             .take(max).collect()
     };
