@@ -92,6 +92,9 @@ pub struct Section {
     /// "Language for details" setting.
     #[serde(default)]
     pub language: String,
+    /// How often this library is scanned by itself, in minutes: None = the server's setting, 0 = never.
+    #[serde(default)]
+    pub scan_interval_minutes: Option<u64>,
 }
 
 /// Languages offered for movie and show details.

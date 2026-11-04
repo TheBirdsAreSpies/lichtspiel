@@ -197,6 +197,11 @@ async function librariesPage() {
             h('input', { type: 'checkbox', checked: s.creditsDetection !== false, onchange: async e => { try { await api('PUT', '/library/sections/' + s.id, { credits_detection: e.target.checked }); toast(t('Saved')); } catch (er) { toast(er.message); } } }), t('Enable credits detection')),
           s.type === 'show' ? h('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;color:var(--text)', title: t('Detect show intros, showing the "Skip intro" button in the player, when enabled in server settings.') },
             h('input', { type: 'checkbox', checked: s.introDetection !== false, onchange: async e => { try { await api('PUT', '/library/sections/' + s.id, { intro_detection: e.target.checked }); toast(t('Saved')); } catch (er) { toast(er.message); } } }), t('Enable intro detection')) : null,
+          h('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;color:var(--text)', title: t('How often this library is looked at for new files. Folder watching and "Scan now" work independently.') }, t('Scan interval'),
+            h('select', { onchange: async e => { try { await api('PUT', '/library/sections/' + s.id, { scan_interval_minutes: e.target.value === '' ? null : Number(e.target.value) }); toast(t('Saved')); } catch (er) { toast(er.message); } } },
+              h('option', { value: '', selected: s.scanIntervalMinutes == null }, t('Same as server')),
+              h('option', { value: '0', selected: s.scanIntervalMinutes === 0 }, t('Never by itself')),
+              [[15, 'every 15 minutes'], [30, 'every 30 minutes'], [60, 'hourly'], [120, 'every 2 hours'], [360, 'every 6 hours'], [720, 'every 12 hours'], [1440, 'daily']].map(([m, l]) => h('option', { value: String(m), selected: s.scanIntervalMinutes === m }, t(l))))),
           h('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;color:var(--text)', title: t('Language of titles, plots and episode names downloaded for this library') }, t('Details language'),
             langSel(s.language || '', langs, async e => {
               try { const r = await api('PUT', '/library/sections/' + s.id, { language: e.target.value }); toast(r.refetching ? t('Downloading details for {n} movies and shows again — progress is shown at the top', { n: r.refetching }) : t('Saved'), 6000); }
@@ -435,6 +440,10 @@ function foldersDialog(s) {
     h('p', { class: 'dim' }, t('The library is scanned again after saving. Removing a folder takes its videos out of the library; the files stay on disk.')),
     folders.el,
     h('div', { class: 'actions', style: 'margin-top:14px' },
+      h('button', { title: t('Look only at one folder of this library, which is quicker than a full scan'), onclick: () => folderPicker(async p => {
+        try { await api('POST', `/library/sections/${s.id}/refresh?path=` + encodeURIComponent(p)); toast(t('Scanning {name}', { name: p })); box.remove(); librariesPage(); pollActivity(); }
+        catch (e) { toast(e.message, 5000); }
+      }) }, t('Scan one folder…')),
       h('button', { class: 'primary', onclick: async () => {
         const paths = folders.values();
         if (!paths.length) return toast(t('Give at least one folder in paths'));

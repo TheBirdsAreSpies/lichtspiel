@@ -10,7 +10,7 @@ use crate::server::*;
 use crate::transcode::{self, Method};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// (method, path, what it does).
@@ -33,9 +33,9 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/library/sections", "Libraries you may see (movies and TV shows are separate libraries)"),
     ("POST", "/library/sections", "Admin: add a library {name, type: movie|show|other, paths: [..], language}"),
     ("GET", "/library/sections/{id}", "One library"),
-    ("PUT", "/library/sections/{id}", "Admin: change {name, paths, credits_detection, intro_detection, language} (language: details language for this library, empty = the server's; changing it downloads the details again)"),
+    ("PUT", "/library/sections/{id}", "Admin: change {name, paths, credits_detection, intro_detection, scan_interval_minutes (null = the server's, 0 = never), language} (language: details language for this library, empty = the server's; changing it downloads the details again)"),
     ("DELETE", "/library/sections/{id}", "Admin: remove a library (files stay on disk)"),
-    ("POST", "/library/sections/{id}/refresh", "Admin: scan the library now (?wait=1 to wait for the result)"),
+    ("POST", "/library/sections/{id}/refresh", "Admin: scan the library now (?wait=1 to wait for the result, ?path= to scan only one folder of it)"),
     ("POST", "/library/sections/{id}/analyze", "Admin: read every file of the library again with ffprobe (in the background)"),
     ("POST", "/library/sections/{id}/emptyTrash", "Admin: take the unavailable items (files gone from disk) out of the library for good"),
     ("GET", "/library/sections/{id}/all", "Browse: ?type=movie|show|episode &sort=title|year:desc|added_at:desc|rating:desc|random &genre=Drama &year>=2000 &unwatched=1 &title~=star &q= &offset &limit"),
@@ -430,7 +430,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let name = if name.trim().is_empty() {
                 match kind { SectionKind::Movie => "Movies", SectionKind::Show => "TV Shows", SectionKind::Other => "Videos" }.to_string()
             } else { name };
-            let s = Section { id: sid, name, kind, paths, created_at: now(), scanned_at: 0, credits_detection: true, intro_detection: true, language: ctx.body_or_param("language").unwrap_or_default() };
+            let s = Section { id: sid, name, kind, paths, created_at: now(), scanned_at: 0, credits_detection: true, intro_detection: true, language: ctx.body_or_param("language").unwrap_or_default(), scan_interval_minutes: None };
             let v = section_json(&db, &s);
             db.sections.push(s);
             drop(db);
@@ -464,6 +464,11 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             if new_paths { s.paths = paths; }
             if let Some(b) = ctx.body.get("credits_detection").and_then(|v| v.as_bool()) { s.credits_detection = b; }
             if let Some(b) = ctx.body.get("intro_detection").and_then(|v| v.as_bool()) { s.intro_detection = b; }
+            let interval_set = ctx.body.get("scan_interval_minutes").is_some();
+            if let Some(v) = ctx.body.get("scan_interval_minutes") {
+                // null = the server's setting, 0 = never, else minutes (at least 5).
+                s.scan_interval_minutes = match v.as_u64() { Some(m) if m == 0 || (5..=10080).contains(&m) => Some(m), Some(_) => return fail(400, "scan_interval_minutes must be 0 or 5-10080"), None if v.is_null() => None, None => return fail(400, "scan_interval_minutes must be a number or null") };
+            }
             let mut language_changed = false;
             if let Some(l) = ctx.body.get("language").and_then(|v| v.as_str()) {
                 let l = l.trim().to_lowercase();
@@ -480,7 +485,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 let n = app.refetch_details(|sec| sec.id == sid);
                 return ok(json!({"ok": true, "id": sid, "refetching": n}));
             }
-            if !new_paths && (ctx.body.get("credits_detection").is_some() || ctx.body.get("intro_detection").is_some()) {
+            if !new_paths && (interval_set || ctx.body.get("credits_detection").is_some() || ctx.body.get("intro_detection").is_some()) {
                 // Only a switch changed: no rescan needed.
                 let sid = s.id;
                 drop(db);
@@ -506,13 +511,24 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("POST", ["library", "sections", sid, "refresh"]) | ("GET", ["library", "sections", sid, "refresh"]) => {
             if !admin { return need_admin(); }
             let Some(sid) = id(sid) else { return fail(404, "No such library") };
+            let only = match ctx.param("path").filter(|p| !p.trim().is_empty()) {
+                None => None,
+                Some(p) => {
+                    let p = PathBuf::from(p);
+                    let inside = app.db.lock().unwrap().sections.iter().find(|s| s.id == sid)
+                        .is_some_and(|s| s.paths.iter().any(|r| p.starts_with(r)) && !p.components().any(|c| matches!(c, std::path::Component::ParentDir)));
+                    if !inside { return fail(400, "That folder is not inside the library's folders"); }
+                    if !p.is_dir() { return fail(400, "Folder not found"); }
+                    Some(p)
+                }
+            };
             if ctx.param("wait") == Some("1") {
-                return match app.scan_now(sid) {
+                return match app.scan_folder_now(sid, only) {
                     Some(r) => ok(json!({"added": r.added.len(), "updated": r.updated.len(), "removed": r.removed.len(), "files": r.files_seen})),
                     None => fail(409, "That library is already being scanned"),
                 };
             }
-            app.scan_in_background(sid);
+            app.scan_folder_in_background(sid, only);
             ok(json!({"ok": true, "scanning": true}))
         }
         ("POST", ["library", "sections", sid, "analyze"]) => {

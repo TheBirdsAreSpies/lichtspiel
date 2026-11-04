@@ -117,8 +117,8 @@ fn demo_view(address: String) -> View {
         });
         id
     };
-    db.sections.push(db::Section { id: 9001, name: "Movies".into(), kind: SectionKind::Movie, paths: vec!["/volume1/video/Movies".into()], created_at: t, scanned_at: t, credits_detection: true, intro_detection: true, language: String::new() });
-    db.sections.push(db::Section { id: 9002, name: "TV Shows".into(), kind: SectionKind::Show, paths: vec!["/volume1/video/TV".into()], created_at: t, scanned_at: t, credits_detection: true, intro_detection: true, language: String::new() });
+    db.sections.push(db::Section { id: 9001, name: "Movies".into(), kind: SectionKind::Movie, paths: vec!["/volume1/video/Movies".into()], created_at: t, scanned_at: t, credits_detection: true, intro_detection: true, language: String::new(), scan_interval_minutes: None });
+    db.sections.push(db::Section { id: 9002, name: "TV Shows".into(), kind: SectionKind::Show, paths: vec!["/volume1/video/TV".into()], created_at: t, scanned_at: t, credits_detection: true, intro_detection: true, language: String::new(), scan_interval_minutes: None });
     let movies = [("Northern Lights", 2021), ("The Long Road", 2019), ("Harbor City", 2023), ("Quiet Signal", 2017), ("Paper Moons", 2022), ("Iron Valley", 2015), ("Summer at Sea", 2020), ("Last Orbit", 2024)];
     let mut ids = vec![];
     for (n, (title, year)) in movies.iter().enumerate() {

@@ -914,15 +914,25 @@ struct Found {
 
 /// Scans one library. The slow part (walking folders, ffprobe) happens
 /// without holding the library lock; `with_db` is called for short updates.
-pub fn scan_section<F>(section: &Section, ffprobe: &str, mut with_db: F) -> ScanReport
+pub fn scan_section<F>(section: &Section, ffprobe: &str, with_db: F) -> ScanReport
+where
+    F: FnMut(&mut dyn FnMut(&mut Db)),
+{
+    scan_section_in(section, ffprobe, None, with_db)
+}
+
+/// Like [`scan_section`], but with `only` set just that folder (inside one of the library's folders) is
+/// looked at: files elsewhere are neither added nor taken out.
+pub fn scan_section_in<F>(section: &Section, ffprobe: &str, only: Option<&Path>, mut with_db: F) -> ScanReport
 where
     F: FnMut(&mut dyn FnMut(&mut Db)),
 {
     let mut found = vec![];
     for root in &section.paths {
         let root = PathBuf::from(root);
+        if only.is_some_and(|o| !o.starts_with(&root)) { continue; }
         let mut files = vec![];
-        walk(&root, &mut files, 0);
+        walk(only.unwrap_or(&root), &mut files, 0);
         for f in files {
             found.push(Found { size: file_size(&f), mtime: file_mtime(&f), path: f, root: root.clone() });
         }
@@ -1202,6 +1212,7 @@ where
         let mut back = vec![];
         for i in db.items.values().filter(|i| i.section_id == section.id) {
             let Some(f) = i.file.as_ref() else { continue };
+            if only.is_some_and(|o| !Path::new(&f.path).starts_with(o)) { continue; }
             if later_parts.contains(&f.path) {
                 // Now a later part of a split movie.
                 gone.push(i.id);
@@ -1559,6 +1570,37 @@ title=Two
         std::fs::remove_dir_all(&root).unwrap();
         scan(&mut db);
         assert_eq!(missing(&db), vec!["Heat"]);
+    }
+
+    #[test]
+    fn partial_scan_only_touches_its_folder() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-partial-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for f in ["Avatar (2009)/Avatar (2009).mkv", "Heat (1995)/Heat (1995).mkv"] {
+            let p = root.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, b"x").unwrap();
+        }
+        let mut db: Db = serde_json::from_value(serde_json::json!({"version": 1, "machine_id": "x", "next_id": 1, "settings": crate::db::Settings::default(),
+            "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": [root.to_string_lossy()], "created_at": 0}],
+            "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let section = db.sections[0].clone();
+        assert_eq!(section.scan_interval_minutes, None);
+        let only = root.join("Heat (1995)");
+        // Only Heat is looked at: Avatar is not added yet.
+        let r = scan_section_in(&section, "no-such-ffprobe", Some(&only), |f| f(&mut db));
+        assert_eq!(r.files_seen, 1);
+        assert_eq!(db.items.values().map(|i| i.title.clone()).collect::<Vec<_>>(), vec!["Heat"]);
+        // A full scan finds both; then a file gone from the other folder is not noticed by a partial scan.
+        scan_section(&section, "no-such-ffprobe", |f| f(&mut db));
+        assert_eq!(db.items.len(), 2);
+        std::fs::remove_file(root.join("Avatar (2009)/Avatar (2009).mkv")).unwrap();
+        let r = scan_section_in(&section, "no-such-ffprobe", Some(&only), |f| f(&mut db));
+        assert!(r.removed.is_empty());
+        assert_eq!(db.items.len(), 2);
+        // The full scan sees it.
+        assert_eq!(scan_section(&section, "no-such-ffprobe", |f| f(&mut db)).removed.len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -452,7 +452,7 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
                         let id = db.new_id();
                         let lang: String = s.language.chars().take(2).collect::<String>().to_lowercase();
                         let language = if db::LANGUAGES.iter().any(|l| l.0 == lang) && lang != db.settings.metadata_language { lang } else { String::new() };
-                        db.sections.push(Section { id, name: s.name.clone(), kind, paths: paths.clone(), created_at: now(), scanned_at: 0, credits_detection: true, intro_detection: true, language });
+                        db.sections.push(Section { id, name: s.name.clone(), kind, paths: paths.clone(), created_at: now(), scanned_at: 0, credits_detection: true, intro_detection: true, language, scan_interval_minutes: None });
                         created.push(json!({"id": id, "name": s.name, "folders": paths}));
                         id
                     }

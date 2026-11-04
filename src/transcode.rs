@@ -743,7 +743,7 @@ mod tests {
         use crate::db::{Db, Item, ItemKind, MediaFile, Section, SectionKind};
         let mut db: Db = serde_json::from_value(serde_json::json!({"version": 1, "machine_id": "x", "next_id": 3, "settings": Settings::default(),
             "sections": [], "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
-        db.sections.push(Section { id: 1, name: "M".into(), kind: SectionKind::Movie, paths: vec![], created_at: 0, scanned_at: 0, credits_detection: true, intro_detection: true, language: String::new() });
+        db.sections.push(Section { id: 1, name: "M".into(), kind: SectionKind::Movie, paths: vec![], created_at: 0, scanned_at: 0, credits_detection: true, intro_detection: true, language: String::new(), scan_interval_minutes: None });
         let mut it: Item = serde_json::from_value(serde_json::json!({"id": 2, "section_id": 1, "kind": "movie", "title": "t", "added_at": 0, "updated_at": 0})).unwrap();
         it.kind = ItemKind::Movie;
         it.file = Some(MediaFile { path: "x".into(), size: 0, modified: 0, container: "mkv".into(), format_name: String::new(), duration_ms: 100_000, bitrate: 0, streams: vec![], probed: true, external_subtitles: vec![], credits_ms: vec![80_000], ..Default::default() });

@@ -491,6 +491,11 @@ impl App {
 
     /// Scans a library now, on this thread. None if it is already scanning.
     pub fn scan_now(self: &Arc<Self>, section_id: u64) -> Option<scanner::ScanReport> {
+        self.scan_folder_now(section_id, None)
+    }
+
+    /// Scans a library, or with `only` just one folder of it. None if it is already scanning.
+    pub fn scan_folder_now(self: &Arc<Self>, section_id: u64, only: Option<PathBuf>) -> Option<scanner::ScanReport> {
         {
             let mut s = self.scanning.lock().unwrap();
             if !s.insert(section_id) {
@@ -500,7 +505,7 @@ impl App {
         let section = self.db.lock().unwrap().sections.iter().find(|s| s.id == section_id).cloned();
         let report = section.map(|section| {
             let ffprobe = self.settings().ffprobe;
-            let report = scanner::scan_section(&section, &ffprobe, |f| {
+            let report = scanner::scan_section_in(&section, &ffprobe, only.as_deref(), |f| {
                 let mut db = self.db.lock().unwrap();
                 f(&mut db);
             });
@@ -525,9 +530,13 @@ impl App {
     }
 
     pub fn scan_in_background(self: &Arc<Self>, section_id: u64) {
+        self.scan_folder_in_background(section_id, None);
+    }
+
+    pub fn scan_folder_in_background(self: &Arc<Self>, section_id: u64, only: Option<PathBuf>) {
         let app = self.clone();
         std::thread::spawn(move || {
-            app.scan_now(section_id);
+            app.scan_folder_now(section_id, only);
         });
     }
 
@@ -2053,14 +2062,16 @@ pub fn start_background(app: &Arc<App>) {
         let mut last: HashMap<u64, Instant> = HashMap::new();
         loop {
             std::thread::sleep(Duration::from_secs(30));
-            let (enabled, interval, ids) = {
+            let (enabled, global, ids) = {
                 let db = a.db.lock().unwrap();
-                (db.settings.scheduled_scans_enabled, db.settings.scan_interval_minutes, db.sections.iter().map(|s| s.id).collect::<Vec<_>>())
+                (db.settings.scheduled_scans_enabled, db.settings.scan_interval_minutes, db.sections.iter().map(|s| (s.id, s.scan_interval_minutes)).collect::<Vec<_>>())
             };
-            if !enabled || interval == 0 {
+            if !enabled {
                 continue;
             }
-            for id in ids {
+            for (id, own) in ids {
+                let interval = own.unwrap_or(global);
+                if interval == 0 { continue; }
                 let due = last.get(&id).is_none_or(|t| t.elapsed() >= Duration::from_secs(interval * 60));
                 if due {
                     last.insert(id, Instant::now());
@@ -2333,7 +2344,7 @@ pub fn section_json(db: &Db, s: &Section) -> Value {
     json!({
         "key": s.id.to_string(), "id": s.id, "title": s.name, "type": s.kind.as_str(),
         "Location": s.paths.iter().map(|p| json!({"path": p})).collect::<Vec<_>>(),
-        "paths": s.paths, "createdAt": s.created_at, "scannedAt": s.scanned_at, "creditsDetection": s.credits_detection, "introDetection": s.intro_detection, "language": s.language,
+        "paths": s.paths, "createdAt": s.created_at, "scannedAt": s.scanned_at, "creditsDetection": s.credits_detection, "introDetection": s.intro_detection, "language": s.language, "scanIntervalMinutes": s.scan_interval_minutes,
         "count": top, "videoCount": playable, "trash": trash,
     })
 }
