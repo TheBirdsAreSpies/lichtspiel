@@ -212,7 +212,7 @@ pub fn run(out: &Path) -> bool {
         "settings": {"tagline_prefix": "Added by the example plugin"}
     }).to_string());
 
-    let opts = crate::Options { data: data.clone(), port: Some(0), bind: "127.0.0.1".into() };
+    let opts = crate::Options { data: data.clone(), port: Some(0), bind: "127.0.0.1".into(), tls_cert: None, tls_key: None };
     let (app, http) = match crate::start(&opts) {
         Ok(x) => x,
         Err(e) => {

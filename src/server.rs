@@ -374,7 +374,7 @@ impl App {
 
     pub fn server_info(&self) -> Value {
         let port = *self.port.lock().unwrap();
-        json!({"url": format!("http://127.0.0.1:{port}"), "version": VERSION, "data_dir": self.data_dir.to_string_lossy()})
+        json!({"url": format!("{}://127.0.0.1:{port}", scheme()), "version": VERSION, "data_dir": self.data_dir.to_string_lossy()})
     }
 
     /// Plugins that listen to `event` and are switched on, with their settings.
@@ -2404,7 +2404,33 @@ pub fn base_url(db: &Db, ctx: &Ctx) -> String {
     if !db.settings.public_url.trim().is_empty() {
         return db.settings.public_url.trim().trim_end_matches('/').to_string();
     }
-    if ctx.host.is_empty() { format!("http://localhost:{DEFAULT_PORT}") } else { format!("http://{}", ctx.host) }
+    if ctx.host.is_empty() { format!("{}://localhost:{DEFAULT_PORT}", scheme()) } else { format!("{}://{}", scheme(), ctx.host) }
+}
+
+/// The server speaks HTTPS (a certificate is set).
+pub static TLS_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// "https" or "http", for the addresses the server hands out.
+pub fn scheme() -> &'static str {
+    if TLS_ON.load(std::sync::atomic::Ordering::Relaxed) { "https" } else { "http" }
+}
+
+/// Both PEM files read, or why not. (None, None) = no certificate asked for.
+pub fn read_tls(cert: &str, key: &str) -> Result<Option<(Vec<u8>, Vec<u8>)>, String> {
+    let (cert, key) = (cert.trim(), key.trim());
+    if cert.is_empty() && key.is_empty() { return Ok(None); }
+    if cert.is_empty() || key.is_empty() { return Err("HTTPS needs both the certificate file and the key file".into()); }
+    let c = std::fs::read(cert).map_err(|e| format!("could not read the certificate {cert}: {e}"))?;
+    let k = std::fs::read(key).map_err(|e| format!("could not read the key {key}: {e}"))?;
+    if !String::from_utf8_lossy(&c).contains("-----BEGIN CERTIFICATE-----") { return Err(format!("{cert} is not a PEM certificate (it must contain -----BEGIN CERTIFICATE-----)")); }
+    if !String::from_utf8_lossy(&k).contains("PRIVATE KEY-----") { return Err(format!("{key} is not a PEM private key")); }
+    // The key must be the one of the certificate (else every browser fails the handshake, silently).
+    use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
+    let chain: Vec<CertificateDer<'static>> = CertificateDer::pem_slice_iter(&c).collect::<Result<_, _>>().map_err(|e| format!("{cert} is not a valid PEM certificate: {e}"))?;
+    let parsed = PrivateKeyDer::from_pem_slice(&k).map_err(|e| format!("{key} is not a valid PEM private key (an encrypted key is not supported): {e}"))?;
+    let signing = rustls::crypto::ring::sign::any_supported_type(&parsed).map_err(|e| format!("{key}: this kind of key is not supported ({e})"))?;
+    if rustls::sign::CertifiedKey::new(chain, signing).keys_match().is_err() { return Err(format!("{key} is not the private key of the certificate {cert}")); }
+    Ok(Some((c, k)))
 }
 
 pub fn visible_playlist(p: &Playlist, user: &User) -> bool {
@@ -2656,6 +2682,22 @@ mod proxy_tests {
     #[test]
     fn open_networks_must_be_private() {
         assert!(check_open_networks("").is_ok());
+        // HTTPS settings: nothing = plain HTTP, half or wrong files = a clear error.
+        assert_eq!(read_tls("", " "), Ok(None));
+        assert!(read_tls("a.pem", "").unwrap_err().contains("both"));
+        assert!(read_tls("/no/such/cert.pem", "/no/such/key.pem").unwrap_err().contains("could not read"));
+        let dir = std::env::temp_dir().join(format!("lichtspiel-tls-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (c, k) = (dir.join("c.pem"), dir.join("k.pem"));
+        std::fs::write(&c, "hello").unwrap();
+        std::fs::write(&k, "hello").unwrap();
+        assert!(read_tls(&c.to_string_lossy(), &k.to_string_lossy()).unwrap_err().contains("not a PEM certificate"));
+        std::fs::write(&c, "-----BEGIN CERTIFICATE-----
+AAAA
+-----END CERTIFICATE-----
+").unwrap();
+        assert!(read_tls(&c.to_string_lossy(), &k.to_string_lossy()).unwrap_err().contains("not a PEM private key"));
+        let _ = std::fs::remove_dir_all(&dir);
         assert!(check_open_networks("192.168.1.0/24, 10.0.0.5 fd00::/8").is_ok());
         assert!(check_open_networks("0.0.0.0/0").is_err());
         assert!(check_open_networks("8.8.8.8").is_err());

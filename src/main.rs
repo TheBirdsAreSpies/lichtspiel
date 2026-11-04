@@ -48,6 +48,9 @@ pub struct Options {
     /// None = the port saved in Settings (8484 at first).
     pub port: Option<u16>,
     pub bind: String,
+    /// PEM certificate and key for HTTPS; None = what the settings say.
+    pub tls_cert: Option<String>,
+    pub tls_key: Option<String>,
 }
 
 fn arg_value(args: &[String], name: &str) -> Option<String> {
@@ -67,7 +70,11 @@ fn options(args: &[String]) -> Options {
         .or_else(|| env("PORT"))
         .and_then(|p| p.parse().ok());
     let bind = arg_value(args, "--bind").or_else(|| env("BIND")).unwrap_or_else(|| "0.0.0.0".into());
-    Options { data: PathBuf::from(data), port, bind }
+    Options {
+        data: PathBuf::from(data), port, bind,
+        tls_cert: arg_value(args, "--tls-cert").or_else(|| env("TLS_CERT")),
+        tls_key: arg_value(args, "--tls-key").or_else(|| env("TLS_KEY")),
+    }
 }
 
 /// Opens the library and starts listening. Returns the app and the server.
@@ -79,8 +86,18 @@ pub fn start(opts: &Options) -> Result<(Arc<server::App>, Arc<tiny_http::Server>
     let chosen = app.settings().bind_address.trim().to_string();
     let bind = if opts.bind == "0.0.0.0" && !chosen.is_empty() { chosen } else { opts.bind.clone() };
     let bind = if bind.contains(':') && !bind.starts_with('[') { format!("[{bind}]") } else { bind };
-    let http = tiny_http::Server::http(format!("{bind}:{want}"))
-        .map_err(|e| format!("could not listen on {bind}:{want} ({e}); is another server using that port?"))?;
+    let tls = {
+        let st = app.settings();
+        server::read_tls(opts.tls_cert.as_deref().unwrap_or(&st.tls_cert), opts.tls_key.as_deref().unwrap_or(&st.tls_key))?
+    };
+    let use_tls = tls.is_some();
+    let http = match tls {
+        Some((certificate, private_key)) => tiny_http::Server::https(format!("{bind}:{want}"), tiny_http::SslConfig { certificate, private_key })
+            .map_err(|e| format!("could not listen with HTTPS on {bind}:{want} ({e}); is the key the one of the certificate, and is another server using the port?"))?,
+        None => tiny_http::Server::http(format!("{bind}:{want}"))
+            .map_err(|e| format!("could not listen on {bind}:{want} ({e}); is another server using that port?"))?,
+    };
+    server::TLS_ON.store(use_tls, std::sync::atomic::Ordering::Relaxed);
     let port = http.server_addr().to_ip().map(|a| a.port()).unwrap_or(want);
     *app.port.lock().unwrap() = port;
     server::start_background(&app);
@@ -175,7 +192,8 @@ fn main() {
     };
     let port = *app.port.lock().unwrap();
     println!("{} {} is running.", server::APP_NAME, server::VERSION);
-    println!("  Open http://{}:{port}/ in a browser (or http://localhost:{port}/ on this computer).", lan_address());
+    let scheme = server::scheme();
+    println!("  Open {scheme}://{}:{port}/ in a browser (or {scheme}://localhost:{port}/ on this computer).", lan_address());
     println!("  Data folder: {}", std::fs::canonicalize(&opts.data).unwrap_or(opts.data.clone()).display());
     println!("  API list: GET /api/docs");
     log::add(format!("{} {} started", server::APP_NAME, server::VERSION));
@@ -185,7 +203,7 @@ fn main() {
     // First start on a desktop computer: open the web app so the owner account can be made.
     let setup_needed = app.db.lock().unwrap().users.is_empty();
     if setup_needed && (cfg!(windows) || cfg!(target_os = "macos") || want_window) && !args.iter().any(|a| a == "--no-browser") {
-        open_browser(&format!("http://localhost:{port}/"));
+        open_browser(&format!("{scheme}://localhost:{port}/"));
     }
     #[cfg(feature = "console")]
     if want_window {

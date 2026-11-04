@@ -99,7 +99,7 @@ fn snapshot(app: &Arc<App>) -> View {
         pl.list.iter().map(|p| (p.manifest.name.clone(), db.plugins.get(&p.manifest.id).is_some_and(|s| s.enabled))).collect()
     };
     let port = *app.port.lock().unwrap();
-    view_of(&db, playing, app.active_transcodes(), plugins, format!("http://{}:{port}", crate::lan_address()), false)
+    view_of(&db, playing, app.active_transcodes(), plugins, format!("{}://{}:{port}", crate::server::scheme(), crate::lan_address()), false)
 }
 
 /// A made-up library so an empty server still shows what the window looks like.
@@ -352,7 +352,7 @@ pub fn screenshot(out: PathBuf, opts: crate::Options) {
     // Read the real library if there is one; otherwise show the sample.
     let saved = crate::store::read_library(&opts.data);
     let port = opts.port.or(saved.as_ref().map(|d| d.settings.port)).unwrap_or(crate::server::DEFAULT_PORT);
-    let address = format!("http://{}:{}", crate::lan_address(), port);
+    let address = format!("{}://{}:{}", crate::server::scheme(), crate::lan_address(), port);
     let view = if let Some(db) = saved {
         if db.sections.is_empty() { demo_view(address) } else { view_of(&db, vec![], 0, vec![], address, false) }
     } else {
@@ -389,7 +389,7 @@ pub fn live(app: Arc<App>) {
                 let (x, y) = mouse_position();
                 // The last-drawn area wins (it's on top).
                 if let Some((_, route)) = targets.iter().rev().find(|(r, _)| r.contains(vec2(x, y))) {
-                    crate::open_browser(&format!("http://localhost:{port}/#/{route}"));
+                    crate::open_browser(&format!("{}://localhost:{port}/#/{route}", crate::server::scheme()));
                 }
             }
             frame = frame.wrapping_add(1);

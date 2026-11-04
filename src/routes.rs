@@ -1666,7 +1666,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["api", "settings"]) => {
             if !admin { return need_admin(); }
             let db = app.db.lock().unwrap();
-            ok(json!({"settings": db.settings, "lan_url": format!("http://{}:{}", crate::lan_address(), *app.port.lock().unwrap()), "scan_intervals": db::SCAN_INTERVALS.iter().map(|s| json!({"minutes": s.0, "label": s.1})).collect::<Vec<_>>(),
+            ok(json!({"settings": db.settings, "lan_url": format!("{}://{}:{}", crate::server::scheme(), crate::lan_address(), *app.port.lock().unwrap()), "scan_intervals": db::SCAN_INTERVALS.iter().map(|s| json!({"minutes": s.0, "label": s.1})).collect::<Vec<_>>(),
                 "data_dir": app.data_dir.to_string_lossy(), "transcoder_qualities": ["automatic", "speed", "quality", "max"], "hw_accel": ["auto", "none", "vaapi", "qsv", "nvenc"],
                 "played_thresholds": db::PLAYED_THRESHOLDS, "h264_presets": transcode::X264_PRESETS,
                 "played_at_choices": db::PLAYED_AT_CHOICES.iter().map(|c| json!({"value": c.0, "label": c.1})).collect::<Vec<_>>(),
@@ -1696,6 +1696,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                     if s.port == 0 { return fail(400, "port must be 1-65535"); }
                     if let Err(e) = crate::server::check_network_list(&s.lan_networks) { return fail(400, &e); }
                     if !s.bind_address.trim().is_empty() && s.bind_address.trim().parse::<std::net::IpAddr>().is_err() { return fail(400, "network card address must be empty or an IP address such as 192.168.1.10"); }
+                    if let Err(e) = crate::server::read_tls(&s.tls_cert, &s.tls_key) { return fail(400, &e); }
                     let dev = s.hw_device.trim();
                     if !(dev.is_empty() || dev.chars().all(|c| c.is_ascii_digit()) || (dev.starts_with("/dev/") && !dev.contains(' ') && !dev.contains(".."))) {
                         return fail(400, "graphics device must be empty, a card number or a path like /dev/dri/renderD128");

@@ -804,6 +804,12 @@ pub struct Settings {
     /// The network card's address to listen on (empty = all). Needs a restart.
     #[serde(default)]
     pub bind_address: String,
+    /// HTTPS: the certificate (PEM file, with the chain) and its private key (PEM file). Both set =
+    /// the server speaks HTTPS on its port; both empty = plain HTTP. Needs a restart.
+    #[serde(default)]
+    pub tls_cert: String,
+    #[serde(default)]
+    pub tls_key: String,
     /// Answer apps that search the home network for servers (GDM).
     #[serde(default = "yes")]
     pub gdm_enabled: bool,
@@ -1094,6 +1100,8 @@ impl Default for Settings {
             trusted_proxies: String::new(),
             lan_networks: String::new(),
             bind_address: String::new(),
+            tls_cert: String::new(),
+            tls_key: String::new(),
             gdm_enabled: true,
             maintenance_start_hour: maint_start(),
             maintenance_end_hour: maint_end(),
