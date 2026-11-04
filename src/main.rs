@@ -107,7 +107,9 @@ pub fn start(opts: &Options) -> Result<(Arc<server::App>, Arc<tiny_http::Server>
     *app.port.lock().unwrap() = port;
     // http:// -> https:// on a second port, when asked for.
     let redirect = app.settings().http_redirect_port;
-    if use_tls && redirect != 0 && redirect != port {
+    if use_tls && redirect != 0 && redirect == port {
+        log::add(format!("port {redirect} is the HTTPS port itself, so http:// is not passed on; choose another port"));
+    } else if use_tls && redirect != 0 {
         match server::redirect_to_https(&bind, redirect, port) {
             Ok(()) => log::add(format!("http://…:{redirect} is passed on to https://…:{port}")),
             Err(e) => log::add(format!("could not listen on port {redirect} to pass http:// on to https:// ({e})")),
