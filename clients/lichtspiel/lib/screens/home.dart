@@ -92,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(padding: const EdgeInsets.fromLTRB(16, 20, 16, 8), child: Text('${hub['title']}', style: Theme.of(context).textTheme.titleMedium)),
       SizedBox(
-        height: 250,
+        height: 280,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),

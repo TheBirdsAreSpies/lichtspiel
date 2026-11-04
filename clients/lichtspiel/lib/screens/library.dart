@@ -81,7 +81,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           : GridView.builder(
               controller: scroll,
               padding: const EdgeInsets.all(16),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 170, childAspectRatio: 0.52, crossAxisSpacing: 12, mainAxisSpacing: 12),
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 170, childAspectRatio: 0.48, crossAxisSpacing: 12, mainAxisSpacing: 12),
               itemCount: items.length + (loading ? 1 : 0),
               itemBuilder: (_, i) => i >= items.length
                   ? const Center(child: CircularProgressIndicator())
