@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/poster.dart';
 import 'home.dart';
+import 'person.dart';
 import 'player.dart';
 
 const _gold = Color(0xFFE5A00D);
@@ -365,7 +366,10 @@ class _DetailScreenState extends State<DetailScreen> {
     final name = '${p['name'] ?? '?'}';
     final src = p['thumb'] != null ? api.img('${p['thumb']}') : '${p['photo'] ?? ''}';
     final initials = name.split(' ').where((w) => w.isNotEmpty).map((w) => w[0]).take(2).join();
-    return Container(
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PersonScreen(api: api, keyId: '${p['key'] ?? 'byname'}', name: name))),
+      child: Container(
       width: 100,
       margin: const EdgeInsets.only(right: 12),
       child: Column(children: [
@@ -380,6 +384,7 @@ class _DetailScreenState extends State<DetailScreen> {
         Text(name, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
         if (p['role'] != null) Text('${p['role']}', maxLines: 1, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white54)),
       ]),
+      ),
     );
   }
 

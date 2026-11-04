@@ -115,6 +115,12 @@ class Api {
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
 
+  /// An actor and everything they are in: name, photo, size and Metadata (with the role).
+  Future<Map<String, dynamic>> person(String key, String name) async {
+    final r = await get('/library/people/${Uri.encodeComponent(key)}?name=${Uri.encodeQueryComponent(name)}');
+    return Map<String, dynamic>.from(r?['MediaContainer'] ?? r);
+  }
+
   Future<Map<String, dynamic>> item(String id) async => metadata(await get('/library/metadata/$id')).first;
   Future<List<Map<String, dynamic>>> children(String id) async => metadata(await get('/library/metadata/$id/children'));
   Future<List<Map<String, dynamic>>> allLeaves(String id) async => metadata(await get('/library/metadata/$id/allLeaves'));
@@ -156,12 +162,17 @@ class Api {
   String abs(String path) => path.startsWith('http') ? path : '$base$path${path.contains('?') ? '&' : '?'}token=$token';
 
   /// The server's playback decision: direct file URL, HLS URL, resume position (ms).
-  Future<Map<String, dynamic>> decision(String id) async => Map<String, dynamic>.from(await get('/library/metadata/$id/decision'));
+  Future<Map<String, dynamic>> decision(String id, {String quality = 'original'}) async =>
+      Map<String, dynamic>.from(await get('/library/metadata/$id/decision?quality=${Uri.encodeQueryComponent(quality)}'));
 
-  Future<void> timeline(String id, int ms, String state) async {
+  /// Reports the position. The answer says `stopped: true` (and a `message`) when the owner ended the playback.
+  Future<Map<String, dynamic>?> timeline(String id, int ms, String state) async {
     try {
-      await post('/:/timeline?ratingKey=$id&time=$ms&state=$state&client=app');
-    } catch (_) {}
+      final r = await post('/:/timeline?ratingKey=$id&time=$ms&state=$state&client=app');
+      return r is Map ? Map<String, dynamic>.from(r) : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> scrobble(String id) async {

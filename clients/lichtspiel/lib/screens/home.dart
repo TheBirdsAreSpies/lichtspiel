@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/poster.dart';
+import 'dashboard.dart';
 import 'detail.dart';
 import 'library.dart';
 
@@ -20,6 +21,15 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<List<dynamic>> data = Future.wait([widget.api.hubs(), widget.api.sections()]);
   final search = TextEditingController();
   List<Map<String, dynamic>>? results;
+  bool admin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.api.get('/api/me').then((m) {
+      if (mounted && m is Map) setState(() => admin = m['admin'] == true);
+    }).catchError((_) {});
+  }
 
   Future<void> reload() async {
     setState(() => data = Future.wait([widget.api.hubs(), widget.api.sections()]));
@@ -47,6 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: const InputDecoration(hintText: 'Suchen…', prefixIcon: Icon(Icons.search), border: InputBorder.none),
             ),
           ),
+          if (admin) IconButton(tooltip: 'Dashboard', icon: const Icon(Icons.monitor_heart_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DashboardScreen(api: api)))),
           IconButton(tooltip: 'Aktualisieren', icon: const Icon(Icons.refresh), onPressed: reload),
           IconButton(tooltip: 'Abmelden', icon: const Icon(Icons.logout), onPressed: widget.onSignOut),
         ],
