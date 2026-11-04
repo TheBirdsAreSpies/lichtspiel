@@ -477,7 +477,8 @@ pub fn file_args(settings: &Settings, file: &MediaFile, input: &[String], height
     let mut a: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into(), "-y".into()];
     a.extend(pre);
     a.extend(input.iter().cloned());
-    a.extend(audio_args(file, &Request::default()));
+    // Optimized versions and downloads get the dialogue boost too (when it is on), as the voices matter most on a phone.
+    a.extend(audio_args(file, &Request { boost_dialogue: settings.boost_dialogue, ..Default::default() }));
     a.extend(video);
     a.extend(["-sn".into(), "-dn".into(), "-movflags".into(), "+faststart".into(), "-progress".into(), "pipe:1".into(), "-f".into(), "mp4".into(), out.into()]);
     a
@@ -656,6 +657,14 @@ mod tests {
         let low = Request { max_height: 720, max_kbps: 4000, ..Default::default() };
         assert_eq!(decide(&file("mp4", "h264", "aac", 2, 8), &low).method, Method::Transcode);
     }
+    #[test]
+    fn optimized_copies_get_the_dialogue_boost() {
+        let f = file("mkv", "h264", "ac3", 6, 8);
+        let args = |boost: bool| file_args(&Settings { boost_dialogue: boost, hw_accel: "none".into(), ..Settings::default() }, &f, &["-i".into(), "x.mkv".into()], 0, 4000, "out.mp4");
+        assert!(args(true).iter().any(|a| a.contains("alimiter")));
+        assert!(!args(false).iter().any(|a| a.contains("alimiter")));
+    }
+
     #[test]
     fn download_plans() {
         let mut f = file("mp4", "h264", "aac", 2, 8);
