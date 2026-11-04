@@ -10,6 +10,7 @@
 
 #[macro_use]
 mod log;
+mod gdm;
 mod actions;
 mod auth;
 mod dashboard;
@@ -71,11 +72,16 @@ pub fn start(opts: &Options) -> Result<(Arc<server::App>, Arc<tiny_http::Server>
     let app = server::App::open(&opts.data);
     { let st = app.settings(); db::set_articles(st.sort_ignore_articles, &st.sort_articles); }
     let want = opts.port.unwrap_or_else(|| app.db.lock().unwrap().settings.port);
-    let http = tiny_http::Server::http(format!("{}:{}", opts.bind, want))
-        .map_err(|e| format!("could not listen on {}:{} ({e}); is another server using that port?", opts.bind, want))?;
+    // Without --bind, the network card chosen in the settings is used.
+    let chosen = app.settings().bind_address.trim().to_string();
+    let bind = if opts.bind == "0.0.0.0" && !chosen.is_empty() { chosen } else { opts.bind.clone() };
+    let bind = if bind.contains(':') && !bind.starts_with('[') { format!("[{bind}]") } else { bind };
+    let http = tiny_http::Server::http(format!("{bind}:{want}"))
+        .map_err(|e| format!("could not listen on {bind}:{want} ({e}); is another server using that port?"))?;
     let port = http.server_addr().to_ip().map(|a| a.port()).unwrap_or(want);
     *app.port.lock().unwrap() = port;
     server::start_background(&app);
+    gdm::start(&app);
     app.fire("server.started", serde_json::json!({"port": port}));
     Ok((app, Arc::new(http)))
 }

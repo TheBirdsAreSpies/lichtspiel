@@ -758,6 +758,15 @@ pub struct Settings {
     /// addresses or ranges (192.168.1.5, 172.16.0.0/12, ::1), separated by commas or spaces.
     #[serde(default)]
     pub trusted_proxies: String,
+    /// Further addresses or ranges that count as the home network (a VPN, a routed subnet), besides the private ranges.
+    #[serde(default)]
+    pub lan_networks: String,
+    /// The network card's address to listen on (empty = all). Needs a restart.
+    #[serde(default)]
+    pub bind_address: String,
+    /// Answer apps that search the home network for servers (GDM).
+    #[serde(default = "yes")]
+    pub gdm_enabled: bool,
     /// Maintenance window (local hours): scheduled tasks only start between these.
     #[serde(default = "maint_start")]
     pub maintenance_start_hour: u32,
@@ -1040,6 +1049,9 @@ impl Default for Settings {
             download_keep_days: keep_days(),
             home_profiles: true,
             trusted_proxies: String::new(),
+            lan_networks: String::new(),
+            bind_address: String::new(),
+            gdm_enabled: true,
             maintenance_start_hour: maint_start(),
             maintenance_end_hour: maint_end(),
             utc_offset_minutes: 0,

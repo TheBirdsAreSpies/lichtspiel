@@ -1628,6 +1628,19 @@ pub fn container(list: Vec<Value>, total: usize, offset: usize, extra: Value) ->
 }
 
 /// `ip` is in the list of addresses and ranges ("10.0.0.2, 172.16.0.0/12 ::1").
+/// Checks a list of addresses and ranges (commas or spaces between them): every entry must be well-formed.
+pub fn check_network_list(list: &str) -> Result<(), String> {
+    for e in list.split(|c: char| c == ',' || c.is_whitespace()).filter(|e| !e.is_empty()) {
+        let (addr, bits) = match e.split_once('/') { Some((a, b)) => (a, Some(b)), None => (e, None) };
+        let ip: IpAddr = addr.parse().map_err(|_| format!("'{e}' is not an address or range"))?;
+        if let Some(b) = bits {
+            let max = if ip.is_ipv4() { 32 } else { 128 };
+            if b.parse::<u32>().map_or(true, |b| b > max) { return Err(format!("'{e}' has no valid prefix length")); }
+        }
+    }
+    Ok(())
+}
+
 /// Checks the "no sign-in" networks: every entry must be an address or range inside a private, loopback or
 /// link-local space, because people from there get admin rights without a password.
 pub fn check_open_networks(list: &str) -> Result<(), String> {
@@ -1753,6 +1766,8 @@ pub struct Ctx {
     pub remote: Option<IpAddr>,
     /// `remote` can be relied on (no forwarding header from an untrusted machine).
     pub remote_trusted: bool,
+    /// The caller's address is in the "home network" list of the settings.
+    pub lan_extra: bool,
     /// The device asking: Plex apps name themselves (X-Plex-Product, X-Plex-Device-Name),
     /// browsers by their User-Agent ("Chrome on Windows").
     pub device: String,
@@ -1763,7 +1778,7 @@ impl Ctx {
     /// or loopback address). A request passed on by a reverse proxy counts only when the proxy
     /// is trusted in the settings, and then by the address it forwarded.
     pub fn is_local(&self) -> bool {
-        self.remote_trusted && self.remote.is_some_and(ip_is_local)
+        self.remote_trusted && (self.remote.is_some_and(ip_is_local) || self.lan_extra)
     }
 
     pub fn viewer(&self) -> Viewer {
@@ -2132,7 +2147,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         let uid = tk.user_id;
         db.user(uid).cloned()
     });
-    let (trusted, no_auth) = { let db = app.db.lock().unwrap(); (db.settings.trusted_proxies.clone(), db.settings.no_auth_networks.clone()) };
+    let (trusted, no_auth, lan_list) = { let db = app.db.lock().unwrap(); (db.settings.trusted_proxies.clone(), db.settings.no_auth_networks.clone(), db.settings.lan_networks.clone()) };
     let (remote, remote_trusted) = client_address(req.remote_addr().map(|a| a.ip()), &xff, real_ip.as_deref(), &forwarded, &trusted);
     // Networks that need no sign-in act as the first admin (only with an address that is believed).
     let user = if user.is_none() && remote_trusted && !no_auth.trim().is_empty() && remote.is_some_and(|a| ip_in_list(&no_auth, a)) {
@@ -2142,7 +2157,8 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     if let Some(id) = uid {
         app.stats.saw(id, remote.map(|a| a.to_string()).unwrap_or_default(), &agent);
     }
-    let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token, remote, remote_trusted, device };
+    let lan_extra = !lan_list.trim().is_empty() && remote.is_some_and(|a| ip_in_list(&lan_list, a));
+    let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token, remote, remote_trusted, lan_extra, device };
     let is_local = ctx.is_local();
     let resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) } else { crate::routes::route(&app, &ctx) };
     // Count what is sent (bandwidth on the dashboard).
@@ -2612,6 +2628,14 @@ mod proxy_tests {
     use super::*;
     fn ip(s: &str) -> Option<IpAddr> { s.parse().ok() }
     fn v(s: &[&str]) -> Vec<String> { s.iter().map(|x| x.to_string()).collect() }
+
+    #[test]
+    fn network_lists_must_be_well_formed() {
+        assert!(check_network_list("").is_ok());
+        assert!(check_network_list("100.64.0.0/10, 203.0.113.7 2001:db8::/32").is_ok());
+        assert!(check_network_list("10.0.0.0/33").is_err());
+        assert!(check_network_list("not-an-ip").is_err());
+    }
 
     #[test]
     fn open_networks_must_be_private() {

@@ -1648,6 +1648,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                     if !db::CREDITS_MARKER_CHOICES.iter().any(|c| c.0 == s.intro_markers_behaviour) { return fail(400, "intro_markers_behaviour must be never, scheduled or asap"); }
                     if !["automatic", "speed", "quality", "max"].contains(&s.transcoder_quality.as_str()) { return fail(400, "transcoder_quality must be automatic, speed, quality or max"); }
                     if s.port == 0 { return fail(400, "port must be 1-65535"); }
+                    if let Err(e) = crate::server::check_network_list(&s.lan_networks) { return fail(400, &e); }
+                    if !s.bind_address.trim().is_empty() && s.bind_address.trim().parse::<std::net::IpAddr>().is_err() { return fail(400, "network card address must be empty or an IP address such as 192.168.1.10"); }
                     let dev = s.hw_device.trim();
                     if !(dev.is_empty() || dev.chars().all(|c| c.is_ascii_digit()) || (dev.starts_with("/dev/") && !dev.contains(' ') && !dev.contains(".."))) {
                         return fail(400, "graphics device must be empty, a card number or a path like /dev/dri/renderD128");
