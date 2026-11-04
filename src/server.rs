@@ -2298,6 +2298,14 @@ pub fn playlist_json(db: &Db, user: &User, p: &Playlist) -> (Value, usize, u64) 
     let items = query::playlist_items(db, user, p);
     let duration: u64 = items.iter().filter_map(|i| db.items.get(i)).map(|i| i.duration_ms).sum();
     let thumb = items.first().map(|i| format!("/library/metadata/{i}/thumb"));
+    // Up to four different pictures spread over the list, for the playlist's own picture.
+    let mut thumbs: Vec<String> = vec![];
+    let step = (items.len() / 4).max(1);
+    for k in 0..items.len().min(4) {
+        let top = items.get((k * step + (p.id as usize % step.max(1))).min(items.len() - 1)).and_then(|i| db.items.get(i));
+        let top = top.map(|t| if t.kind == crate::db::ItemKind::Episode { t.parent_id.and_then(|s| db.items.get(&s)).and_then(|s| s.parent_id).and_then(|s| db.items.get(&s)).unwrap_or(t) } else { t });
+        if let Some(t) = top { let u = format!("/library/metadata/{}/thumb?v={}", t.id, t.updated_at); if !thumbs.contains(&u) { thumbs.push(u); } }
+    }
     let owner = if p.owner_id == 0 { "server".to_string() } else { db.user(p.owner_id).map(|u| u.username.clone()).unwrap_or_default() };
     let kind = if p.is_default() { "default" } else if p.kind == PlaylistKind::Smart { "smart" } else { "manual" };
     let v = json!({
@@ -2305,7 +2313,7 @@ pub fn playlist_json(db: &Db, user: &User, p: &Playlist) -> (Value, usize, u64) 
         "type": "playlist", "playlistType": "video", "title": p.title, "summary": p.summary,
         "smart": p.kind == PlaylistKind::Smart, "kind": kind,
         "default": p.is_default(), "defaultKey": p.default_key, "query": p.query,
-        "leafCount": items.len(), "duration": duration, "thumb": thumb, "composite": thumb,
+        "leafCount": items.len(), "duration": duration, "thumb": thumb, "composite": thumb, "thumbs": thumbs,
         "owner": owner, "ownerId": p.owner_id, "shared": p.shared, "pinned": p.pinned,
         "addedAt": p.created_at, "updatedAt": p.updated_at,
         "editable": p.owner_id == user.id || user.admin,

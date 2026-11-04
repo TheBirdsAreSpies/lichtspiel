@@ -21,12 +21,17 @@ async function playlistsPage(qs) {
       h('span', { class: 'grow' }),
       h('button', { onclick: newManual }, t('+ New playlist')),
       h('button', { class: 'primary', onclick: () => smartEditor(null) }, t('+ New smart playlist'))),
-    list.length ? h('div', { class: 'list' }, list.map(pl => h('div', { class: 'li' },
-      h('img', pl.thumb ? { src: withTok(pl.thumb) } : {}),
-      h('div', { class: 'grow' }, h('a', { href: '#/playlist/' + pl.id }, h('b', {}, plTitle(pl))), ' ',
-        h('span', { class: 'tag ' + pl.kind }, kindName(pl.kind)), pl.shared && pl.kind !== 'default' ? h('span', { class: 'tag' }, t('shared')) : null, pl.pinned ? h('span', { class: 'tag' }, t('on home')) : null,
-        h('div', { class: 'dim' }, t(pl.owner === 'server' ? '{n} items · {length} · from the server · changed {date}' : '{n} items · {length} · by {owner} · changed {date}', { n: pl.leafCount, length: fmtDur(pl.duration) || t('{m} min', { m: 0 }), owner: pl.owner, date: fmtDate(pl.updatedAt) }))),
-      pl.leafCount ? h('button', { class: 'primary small', onclick: () => playPlaylist(pl.id) }, t('▶ Play')) : null))) : h('div', { class: 'empty' }, t('No playlists match.')));
+    list.length ? h('div', { class: 'grid plgrid' }, list.map(pl => {
+      const th = pl.thumbs || [];
+      const pic = th.length >= 4 ? h('div', { class: 'mosaic' }, th.slice(0, 4).map(u => h('img', { src: withTok(u), loading: 'lazy', alt: '' })))
+        : th.length ? h('img', { src: withTok(th[0]), loading: 'lazy', alt: '' }) : h('div', { class: 'initials' }, '♪');
+      return h('div', { class: 'card', onclick: () => { location.hash = '#/playlist/' + pl.id; } },
+        h('div', { class: 'poster' }, pic,
+          pl.leafCount ? h('button', { class: 'play', title: t('▶ Play'), 'aria-label': t('▶ Play'), onclick: e => { e.stopPropagation(); playPlaylist(pl.id); } }, icon('play')) : null),
+        h('div', { class: 't', title: plTitle(pl) }, plTitle(pl)),
+        h('div', { class: 's' }, [kindName(pl.kind), t('{n} items', { n: pl.leafCount }), fmtDur(pl.duration)].filter(Boolean).join(' · '),
+          pl.shared && pl.kind !== 'default' ? ' · ' + t('shared') : '', pl.pinned ? ' · ' + t('on home') : ''));
+    })) : h('div', { class: 'empty' }, t('No playlists match.')));
 }
 
 async function newManual() {
@@ -187,7 +192,7 @@ async function librariesPage() {
       h('div', { class: 'grow' }, h('b', {}, s.title), ' ', h('span', { class: 'tag' }, sectionKind(s.type)), s.scanning ? h('span', { class: 'tag smart' }, t('scanning…')) : null,
         h('div', { class: 'dim' }, (s.type === 'show' ? t('{n} shows', { n: s.count }) + ', ' : '') + t('{n} videos · last scan {when}', { n: s.videoCount, when: s.scannedAt ? fmtDateTime(s.scannedAt) : t('never') })),
         h('div', { class: 'dim', style: 'font-size:13px' }, s.paths.join(' · ')),
-        h('div', { style: 'display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-top:6px' },
+        h('div', { style: 'display:flex;gap:8px;flex-direction:column;align-items:flex-start;margin-top:8px' },
           h('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;color:var(--text)', title: t('Detect credits and allow credits skipping for items in this library when enabled in server settings.') },
             h('input', { type: 'checkbox', checked: s.creditsDetection !== false, onchange: async e => { try { await api('PUT', '/library/sections/' + s.id, { credits_detection: e.target.checked }); toast(t('Saved')); } catch (er) { toast(er.message); } } }), t('Enable credits detection')),
           s.type === 'show' ? h('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;color:var(--text)', title: t('Detect show intros, showing the "Skip intro" button in the player, when enabled in server settings.') },

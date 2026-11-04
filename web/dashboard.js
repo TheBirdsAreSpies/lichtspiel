@@ -13,9 +13,15 @@ async function toggleWatchlist(it, on = !it.watchlist) {
 async function watchlistPage(qs) {
   markNav('watchlist');
   const p = new URLSearchParams(qs || '');
-  const st = { sort: p.get('sort') || '', type: p.get('type') || '' };
+  const st = { sort: p.get('sort') || '', type: p.get('type') || '', q: p.get('q') || '', genre: p.get('genre') || '', rating: p.get('rating') || '', from: p.get('from') || '', to: p.get('to') || '', unseen: p.get('unseen') || '' };
   const go = () => { const n = new URLSearchParams(); for (const [k, v] of Object.entries(st)) if (v) n.set(k, v); location.hash = '#/watchlist' + (n.toString() ? '?' + n : ''); };
-  const items = meta(await GET(`/api/watchlist?sort=${st.sort}&type=${st.type}`));
+  const all = meta(await GET(`/api/watchlist?sort=${st.sort}&type=${st.type}`));
+  // The whole list is here, so the filters work on it directly.
+  const genres = [...new Set(all.flatMap(i => i.genres || []))].sort(), ratings = [...new Set(all.map(i => i.contentRating).filter(Boolean))].sort();
+  const items = all.filter(i => (!st.q || i.title.toLowerCase().includes(st.q.toLowerCase())) && (!st.genre || (i.genres || []).includes(st.genre)) && (!st.rating || i.contentRating === st.rating)
+    && (!st.from || (i.year || 0) >= Number(st.from)) && (!st.to || (i.year || 9999) <= Number(st.to)) && (!st.unseen || !(i.viewCount > 0)));
+  const pickSel = (key, label, opts) => h('select', { title: label, onchange: e => { st[key] = e.target.value; go(); } }, h('option', { value: '' }, label), opts.map(o => h('option', { value: o, selected: st[key] === o }, o)));
+  const num = (key, ph, w) => h('input', { placeholder: ph, value: st[key], style: `width:${w}px`, onchange: e => { st[key] = e.target.value.trim(); go(); } });
   const tabs = [['', t('All')], ['movie', t('Movies')], ['show', t('Shows')], ['episode', t('Episodes')]];
   const sorts = [['', t('Added to the watchlist (newest)')], ['oldest', t('Added to the watchlist (oldest)')], ['title', t('Title')], ['year', t('Year')], ['rating', t('Rating')], ['added_at', t('Added to the library')]];
   set(h('h1', {}, t('Watchlist')),
@@ -23,11 +29,16 @@ async function watchlistPage(qs) {
     h('div', { class: 'bar-tools' },
       h('div', { class: 'tabs', style: 'margin:0' }, tabs.map(([k, l]) => h('a', { href: '#', class: st.type === k ? 'on' : '', onclick: e => { e.preventDefault(); st.type = k; go(); } }, l))),
       h('span', { class: 'grow', style: 'flex:1' }),
+      h('input', { placeholder: t('Filter by title'), value: st.q, style: 'width:150px', onchange: e => { st.q = e.target.value.trim(); go(); } }),
+      genres.length ? pickSel('genre', t('Genre'), genres) : null, ratings.length ? pickSel('rating', t('Age rating'), ratings) : null,
+      num('from', t('Year from'), 95), num('to', t('Year to'), 85),
+      h('label', { style: 'margin:0;display:flex;gap:6px;align-items:center;color:var(--text)' }, h('input', { type: 'checkbox', checked: !!st.unseen, onchange: e => { st.unseen = e.target.checked ? '1' : ''; go(); } }), t('Unwatched')),
+      h('span', { class: 'dim' }, itemCount(items.length)),
       h('label', { style: 'margin:0;display:flex;gap:8px;align-items:center' }, t('Sort'),
         h('select', { onchange: e => { st.sort = e.target.value; go(); } }, sorts.map(([k, l]) => h('option', { value: k, selected: st.sort === k }, l)))),
       sizeSlider()),
     items.length ? pickGrid(items, { watchlistPage: true })
-      : h('div', { class: 'empty' }, st.type ? t('Nothing of this kind on your watchlist.') : t('Your watchlist is empty. Use “Add to watchlist” on a movie or show, or in its “⋯” menu.')));
+      : h('div', { class: 'empty' }, all.length ? t('Nothing matches these filters.') : st.type ? t('Nothing of this kind on your watchlist.') : t('Your watchlist is empty. Use “Add to watchlist” on a movie or show, or in its “⋯” menu.')));
 }
 
 // ---------- dashboard

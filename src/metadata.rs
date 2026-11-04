@@ -581,6 +581,13 @@ fn tmdb_fetch(settings: &Settings, kind: ItemKind, id: &str, seasons_wanted: &[u
     if let Some(y) = year_of(&date) { meta["year"] = json!(y); }
     if let Some(r) = rating { meta["rating"] = json!(r); }
     let mut d = Details { meta, poster_url: tmdb_img(&v["poster_path"], "w500"), art_url: tmdb_img(&v["backdrop_path"], "w1280"), ..Default::default() };
+    // No poster in this language: TMDB often has one in English or without text.
+    if d.poster_url.is_none() || d.art_url.is_none() {
+        if let Ok(im) = tmdb_get(settings, &format!("/{}/{id}/images?include_image_language=en,null", if show { "tv" } else { "movie" })) {
+            if d.poster_url.is_none() { d.poster_url = tmdb_img(&im["posters"][0]["file_path"], "w500"); }
+            if d.art_url.is_none() { d.art_url = tmdb_img(&im["backdrops"][0]["file_path"], "w1280"); }
+        }
+    }
     if show {
         for s in v["seasons"].as_array().cloned().unwrap_or_default() {
             let n = s["season_number"].as_u64().unwrap_or(0) as u32;
@@ -939,6 +946,15 @@ pub fn pick_scores(all: &[ReviewScore], rt_id: Option<&str>, mc_id: Option<&str>
             if let Some(u) = url { v["url"] = json!(u); }
             out[key] = v;
         }
+    }
+    // Rotten Tomatoes' audience score ("8.8/10", "4.4/5") next to the Tomatometer.
+    let aud = all.iter().filter(|s| s.by == BY_ROTTEN_TOMATOES && !s.score.is_empty() && !s.score.ends_with('%'))
+        .max_by_key(|s| (PREFERRED_METHODS.contains(&s.method.as_str()), s.time.clone()));
+    if let Some(s) = aud {
+        let mut v = json!({"score": s.score, "source": "Wikidata", "as_of": s.time.get(..10).unwrap_or("")});
+        if let Some(n) = s.count { v["count"] = json!(n); v["count_label"] = json!("ratings"); }
+        if let Some(i) = rt_id { v["url"] = json!(format!("https://www.rottentomatoes.com/{i}")); }
+        out["rotten_tomatoes_audience"] = v;
     }
     out
 }

@@ -735,6 +735,7 @@ async function itemPage(id) {
   const ids = x.ids || topX.ids || {};
   const crew = [[t('Directed by'), x.directors], [t('Written by'), x.writers], [t('Created by'), x.creators || (it.type !== 'show' ? topX.creators : null)]].filter(r => r[1] && r[1].length);
   const links = [ids.imdb ? ['IMDb', 'https://www.imdb.com/title/' + ids.imdb] : null, ids.tmdb ? ['TMDB', `https://www.themoviedb.org/${it.type === 'movie' ? 'movie' : 'tv'}/${ids.tmdb}`] : null,
+    it.type === 'movie' && (ids.tmdb || ids.imdb) ? ['Letterboxd', ids.tmdb ? 'https://letterboxd.com/tmdb/' + ids.tmdb : 'https://letterboxd.com/imdb/' + ids.imdb] : null,
     ids.tvmaze ? ['TVmaze', 'https://www.tvmaze.com/shows/' + ids.tvmaze] : null, ids.wikipedia ? ['Wikipedia', ids.wikipedia] : null, ids.wikidata ? ['Wikidata', 'https://www.wikidata.org/wiki/' + ids.wikidata] : null].filter(Boolean);
   const matchable = it.type === 'movie' || it.type === 'show';
   const localTrailer = (it.Extras || []).find(e => e.extraType === 'trailer');
@@ -747,11 +748,12 @@ async function itemPage(id) {
     hero,
     h('div', { class: 'dim', style: 'margin-bottom:10px;position:relative' }, crumbs),
     h('div', { class: 'detail' },
-      h('div', { class: 'poster' }, h('img', { src: withTok(it.thumb), alt: '' })),
+      h('div', { class: 'poster' }, h('img', { src: withTok(it.thumb), alt: '' }),
+        isPlayable(it) && !it.missing ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: () => play(it, (it.viewOffset || 0) / 1000) }, icon('play')) : null),
       h('div', { class: 'info' },
         h('h1', { style: 'margin-bottom:4px' }, it.type === 'episode' ? `${it.index}. ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : it.clearLogo ? h('img', { src: withTok(it.clearLogo), alt: it.title, title: it.title, style: 'max-height:96px;max-width:100%;object-fit:contain;display:block', onerror: e => e.target.replaceWith(document.createTextNode(it.title)) }) : it.title,
           it.missing ? h('span', { class: 'tag', style: 'margin-left:10px;font-size:13px;vertical-align:middle;color:var(--red)', title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null),
-        h('div', { class: 'dim' }, [it.year, it.type === 'episode' ? t('Season {n}', { n: it.parentIndex }) : null, fmtDur(it.duration), it.contentRating, it.rating ? `★ ${fmtNum(it.rating)}` : null, it.leafCount ? t('{seen}/{all} watched', { seen: it.viewedLeafCount, all: it.leafCount }) : null].filter(Boolean).join(' · ')),
+        h('div', { class: 'dim' }, [it.year, it.type === 'episode' ? t('Season {n}', { n: it.parentIndex }) : null, fmtDur(it.duration), it.contentRating, (it.rating && !Object.keys(x.ratings || (it.type === 'season' ? topX.ratings : null) || {}).length) ? `★ ${fmtNum(it.rating)}` : null, it.leafCount ? t('{seen}/{all} watched', { seen: it.viewedLeafCount, all: it.leafCount }) : null].filter(Boolean).join(' · ')),
         scoreBadges(x.ratings || (it.type === 'season' ? topX.ratings : null)),
         it.tagline ? h('p', { style: 'font-style:italic' }, it.tagline) : null,
         it.summary ? h('p', { class: 'plot' }, it.summary) : (S.me.admin && matchable && !x.metadata_source ? h('p', { class: 'dim' }, x.unmatched_by_hand ? t('The match was removed — use "Match" to pick one, or "Refresh metadata" to look again.') : x.metadata_status === 'unmatched' ? t('No details were found online for this title — use "Match" to pick the right one.') : t('Details are being looked up online…')) : null),
@@ -858,13 +860,15 @@ const SCORE_MARKS = {
     ? '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="18.5" r="12" fill="#fa320a"/><path fill="#00912d" d="M10 5.5c2.6.4 4.6 1.8 5.8 4 .9-2.3 2.8-3.6 5.4-3.7-.8 1.6-1.9 2.7-3.3 3.5 2 .1 3.8.8 5.1 2.2-2.4.5-4.8.3-7-.6-1.9 1.3-4.2 1.8-6.8 1.4 1.4-1.2 2.9-2 4.6-2.3-1.6-1-2.9-2.5-3.8-4.5z"/></svg>'
     : '<svg viewBox="0 0 32 32" aria-hidden="true"><path fill="#0ac855" d="M16 2.5l2.6 6.4 5.9-3.3-1.6 6.7 6.6 1.6-5.6 4 3.8 5.8-6.8-.9-.5 6.9-4.4-5.2-4.4 5.2-.5-6.9-6.8.9 3.8-5.8-5.6-4 6.6-1.6-1.6-6.7 5.9 3.3z"/></svg>',
   metacritic: n => `<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6" fill="${n >= 61 ? '#00ce7a' : n >= 40 ? '#ffbd3f' : '#ff6874'}"/><text x="16" y="23" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="900" font-size="19" fill="#1a1a1a">M</text></svg>`,
+  // The audience score of Rotten Tomatoes: a bucket of popcorn, red below 60 %.
+  rotten_tomatoes_audience: pct => `<svg viewBox="0 0 32 32" aria-hidden="true"><path fill="${pct >= 60 ? '#fa320a' : '#7a7f86'}" d="M8 14h16l-2 15H10z"/><path fill="#fff" d="M12 14h2l.5 15h-2zm6 0h2l-.5 15h-2z" opacity=".55"/><g fill="#ffd34d"><circle cx="10" cy="11" r="3.4"/><circle cx="16" cy="8.5" r="4"/><circle cx="22" cy="11" r="3.4"/><circle cx="13" cy="12.5" r="3"/><circle cx="19" cy="12.5" r="3"/></g></svg>`,
   tmdb: () => '<svg viewBox="0 0 70 32" aria-hidden="true"><defs><linearGradient id="tmdb-mark" x1="0" x2="1"><stop offset="0" stop-color="#90cea1"/><stop offset=".56" stop-color="#3cbec9"/><stop offset="1" stop-color="#00b3e5"/></linearGradient></defs><rect width="70" height="32" rx="16" fill="url(#tmdb-mark)"/><text x="35" y="22" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="900" font-size="16" fill="#0d253f">TMDB</text></svg>',
 };
 
 // Scores from review sites with their marks. Values are as the source gives them.
 function scoreBadges(r) {
   if (!r) return null;
-  const names = [['imdb', 'IMDb'], ['rotten_tomatoes', 'Rotten Tomatoes'], ['metacritic', 'Metacritic'], ['tmdb', 'TMDB']];
+  const names = [['imdb', 'IMDb'], ['rotten_tomatoes', 'Rotten Tomatoes'], ['rotten_tomatoes_audience', 'Rotten Tomatoes audience'], ['metacritic', 'Metacritic'], ['tmdb', 'TMDB']];
   const shown = names.filter(([k]) => r[k] && r[k].score);
   if (!shown.length) return null;
   return h('div', { class: 'scores' }, shown.map(([k, n]) => {
@@ -872,7 +876,8 @@ function scoreBadges(r) {
     const count = s.count ?? s.votes;
     const many = count ? t(s.count_label === 'reviews' ? '{n} reviews' : '{n} votes', { n: Number(count).toLocaleString(I18N.lang) }) : '';
     const mark = h('span', { class: 'mark' });
-    mark.innerHTML = SCORE_MARKS[k](parseFloat(String(s.score)) || 0);
+    const num = parseFloat(String(s.score)) || 0;
+    mark.innerHTML = SCORE_MARKS[k](k === 'rotten_tomatoes_audience' ? (String(s.score).includes('/5') ? num * 20 : String(s.score).includes('/10') ? num * 10 : num) : num);
     const kids = [mark, h('span', { class: 'num' }, h('b', {}, s.score), h('span', {}, many || n))];
     const title = `${n}: ${s.score}${many ? ' · ' + many : ''}${s.note ? ' — ' + s.note : ''}`;
     return s.url ? h('a', { class: 'score', href: s.url, target: '_blank', rel: 'noopener', title, 'aria-label': title }, kids)

@@ -1216,14 +1216,26 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let q = ctx.param("query").or(ctx.param("q")).unwrap_or("").trim().to_lowercase();
             let db = app.db.lock().unwrap();
             if q.is_empty() { return list_resp(&db, &user, &[], "search"); }
+            // Not only titles: genres, the year, the studio, and the people of a movie or show.
+            let year: Option<u32> = q.parse().ok().filter(|y| (1800..=2200).contains(y));
+            let by_title = |i: &db::Item| i.title.to_lowercase().contains(&q);
+            let by_other = |i: &db::Item| {
+                i.genres.iter().any(|g| g.to_lowercase() == q)
+                    || year.is_some_and(|y| i.year == Some(y))
+                    || (q.len() >= 3 && i.studio.to_lowercase().contains(&q))
+                    || (q.len() >= 3 && i.kind != ItemKind::Episode && ["director", "actor", "writer", "producer"].iter().any(|f| match query::field(&db, user.id, i, f) {
+                        query::FieldValue::Text(v) => v.iter().any(|n| n.to_lowercase().contains(&q)),
+                        _ => false,
+                    }))
+            };
             let mut ids: Vec<u64> = db.items.values()
                 .filter(|i| db.can_see_item(&user, i) && i.kind != ItemKind::Season && !i.is_extra())
-                .filter(|i| i.title.to_lowercase().contains(&q) || i.genres.iter().any(|g| g.to_lowercase() == q))
+                .filter(|i| by_title(i) || by_other(i))
                 .map(|i| i.id)
                 .collect();
             ids.sort_by_key(|i| {
                 let it = &db.items[i];
-                (!it.title.to_lowercase().starts_with(&q), it.kind == ItemKind::Episode, it.sort_title.clone())
+                (!it.title.to_lowercase().starts_with(&q), !by_title(it), it.kind == ItemKind::Episode, it.sort_title.clone())
             });
             ids.truncate(ctx.num("limit").unwrap_or(60) as usize);
             list_resp(&db, &user, &ids, "search")
