@@ -269,6 +269,17 @@ pub struct MediaFile {
     pub intro_checked: u32,
     #[serde(default)]
     pub intro_errors: u32,
+    /// Deep analysis (deep.rs): the speed in kbit/s this file needs at each
+    /// connection level, the analysis version, the file date it belongs to,
+    /// and how often reading failed.
+    #[serde(default)]
+    pub required_kbps: Vec<u32>,
+    #[serde(default)]
+    pub deep_version: u32,
+    #[serde(default)]
+    pub deep_date: u64,
+    #[serde(default)]
+    pub deep_errors: u32,
 }
 
 /// Bump when the credits detector changes, so files are looked at again.
@@ -815,6 +826,9 @@ pub struct Settings {
     /// Measure how loud each video is (during maintenance) so the player can level the volume.
     #[serde(default)]
     pub analyze_loudness: bool,
+    /// "Deep analysis" as a scheduled task (off by default).
+    #[serde(default)]
+    pub deep_analysis: bool,
     #[serde(default)]
     pub generate_thumbnails: bool,
     /// Surround sound converted to stereo: lift the dialogue (the centre channel) so voices stay clear.
@@ -1071,6 +1085,7 @@ impl Default for Settings {
             trailers_red_band: false,
             group_recent_episodes: false,
             analyze_loudness: false,
+            deep_analysis: false,
             generate_thumbnails: false,
             boost_dialogue: true,
             remote_max_mbps: 0,

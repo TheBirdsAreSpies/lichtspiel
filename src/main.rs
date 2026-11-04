@@ -14,6 +14,7 @@ mod gdm;
 mod actions;
 mod auth;
 mod dashboard;
+mod deep;
 mod db;
 mod downloads;
 mod handlers;

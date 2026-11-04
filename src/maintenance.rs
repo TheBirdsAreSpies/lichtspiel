@@ -224,6 +224,23 @@ pub fn analyze_loudness(app: &App, max: usize) -> usize {
     todo.len()
 }
 
+/// Deep analysis of up to `max` videos that need it, the latest changed first
+/// (a new or changed file, or one from an older analysis). Returns how many were done.
+pub fn deep_analysis(app: &App, max: usize) -> usize {
+    let mut todo: Vec<(u64, u64)> = {
+        let db = app.db.lock().unwrap();
+        db.items.values()
+            .filter(|i| i.kind.playable() && !i.extra.contains_key(crate::scanner::MISSING))
+            .filter(|i| i.all_files().iter().any(|f| !crate::deep::is_current(f) && f.deep_errors <= crate::db::CREDITS_MAX_ERRORS && Path::new(&f.path).is_file()))
+            .map(|i| (i.updated_at, i.id)).collect()
+    };
+    todo.sort_by_key(|t| std::cmp::Reverse(*t));
+    todo.truncate(max);
+    for (_, id) in &todo { crate::actions::deep_read(app, *id); }
+    if !todo.is_empty() { app.save(); }
+    todo.len()
+}
+
 /// Makes the seek-bar pictures (one every 10 s) and the chapter pictures of single-file videos ahead
 /// of time, so they show at once. Returns how many videos were done.
 pub fn make_thumbnails(app: &App, max: usize) -> usize {
@@ -278,6 +295,7 @@ pub fn tick(app: &std::sync::Arc<App>) {
         ran.push("refresh");
     }
     if s.analyze_loudness { analyze_loudness(app, 5); }
+    if s.deep_analysis { deep_analysis(app, 1); }
     if s.generate_thumbnails { make_thumbnails(app, 2); }
     if !ran.is_empty() {
         { let mut db = app.db.lock().unwrap(); for k in ran { db.settings.maintenance_last.insert(k.to_string(), now); } }

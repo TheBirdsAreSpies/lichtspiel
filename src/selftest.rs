@@ -351,6 +351,24 @@ pub fn run(out: &Path) -> bool {
         detail = format!("{detail}; credits found in the picture (no chapters): {} (expected 1:10, took {} ms)",
             match &found { Ok(Some(ms)) => crate::selftest::mmss(*ms), Ok(None) => "none".into(), Err(e) => e.clone() }, t0.elapsed().as_millis());
     }
+    // deep analysis: every packet of a file is read in the background.
+    if have_ffmpeg {
+        let wait = std::time::Duration::from_millis(100);
+        let started = (0..50).any(|_| {
+            let r = c.post(&format!("/library/metadata/{mkv}/deepanalyze"), json!({}));
+            if r.status != 200 { std::thread::sleep(wait); }
+            r.status == 200
+        });
+        let mut speeds = String::new();
+        for _ in 0..100 {
+            let d = c.get(&format!("/library/metadata/{mkv}")).json();
+            speeds = d["MediaContainer"]["Metadata"][0]["Media"][0]["requiredBandwidths"].as_str().unwrap_or("").to_string();
+            if !speeds.is_empty() { break; }
+            std::thread::sleep(wait);
+        }
+        act_ok &= started && speeds.split(',').count() == crate::deep::BANDWIDTH_LEVELS.len();
+        detail = format!("{detail}; deep analysis of the mkv: {}", if speeds.is_empty() { "no result".to_string() } else { format!("{speeds} kbit/s") });
+    }
     steps.add("act", act_ok, detail);
 
     // ---- hud: the web app and the API list are served

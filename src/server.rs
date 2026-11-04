@@ -2266,6 +2266,8 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
             "audioCodec": aud.map(|a| a.codec.clone()).unwrap_or_default(),
             "audioChannels": aud.map(|a| a.channels).unwrap_or(0),
             "probed": f.probed,
+            "deepAnalysisVersion": if crate::deep::is_current(f) { f.deep_version } else { 0 },
+            "requiredBandwidths": if crate::deep::is_current(f) { f.required_kbps.iter().map(|k| k.to_string()).collect::<Vec<_>>().join(",") } else { String::new() },
             // A split movie has a Part per file; they play one after the other.
             "Part": it.all_files().iter().enumerate().map(|(n, p)| json!({
                 "key": if n == 0 { format!("/library/parts/{}/file", it.id) } else { format!("/library/parts/{}/file?part={n}", it.id) },

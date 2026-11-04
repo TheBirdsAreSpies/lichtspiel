@@ -37,6 +37,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("DELETE", "/library/sections/{id}", "Admin: remove a library (files stay on disk)"),
     ("POST", "/library/sections/{id}/refresh", "Admin: scan the library now (?wait=1 to wait for the result, ?path= to scan only one folder of it)"),
     ("POST", "/library/sections/{id}/analyze", "Admin: read every file of the library again with ffprobe (in the background)"),
+    ("POST", "/library/sections/{id}/deepanalyze", "Admin: deep analysis of the library: read every packet to work out the connection speed each file needs (in the background)"),
     ("POST", "/library/sections/{id}/emptyTrash", "Admin: take the unavailable items (files gone from disk) out of the library for good"),
     ("GET", "/library/sections/{id}/all", "Browse: ?type=movie|show|episode &sort=title|year:desc|added_at:desc|rating:desc|random &genre=Drama &year>=2000 &unwatched=1 &title~=star &q= &offset &limit"),
     ("GET", "/library/sections/{id}/genres", "Genres and years in a library with counts"),
@@ -71,6 +72,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/library/metadata/{id}/report", "Report a problem {kind: playback|video|audio|subtitles|metadata|other, note}"),
     ("DELETE", "/library/metadata/{id}", "Delete the files of a movie or episode (or every episode of a season or show) from disk; needs media deletion allowed in the settings and, for others than admins, the right to delete"),
     ("POST", "/library/metadata/{id}/analyze", "Admin: read the files again with ffprobe (streams, length; in the background)"),
+    ("POST", "/library/metadata/{id}/deepanalyze", "Admin: deep analysis: read every packet to work out the connection speed the files need (in the background)"),
     ("POST", "/library/metadata/{id}/optimize", "Admin: save a version every browser plays directly {quality: original|tv|mobile} (in the background; played instead of converting)"),
     ("DELETE", "/library/metadata/{id}/optimize", "Admin: delete the optimized versions"),
     ("GET", "/api/log", "Admin: the server's recent messages (the last 500) → {lines: [{t, msg}]}, oldest first"),
@@ -167,7 +169,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/plugins/panels", "Switched-on plugins that give each person a panel in Settings (e.g. Connect Trakt)"),
     ("POST", "/api/plugins/{id}/call/{action}", "Run a plugin's own action (any JSON body is passed on); an answer with mark_watched marks those items watched for you"),
     ("GET", "/api/settings", "Admin: server settings"),
-    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, home_profiles, trusted_proxies, ffmpeg, ffprobe, transcoding_enabled, group_recent_episodes, preroll_paths, max_gpu_transcodes, max_cpu_transcodes, transcode_dir, downloads_dir, remote_max_mbps (0 = no limit for people outside the home network), max_remote_plays, paused_stop_minutes, no_auth_networks, maintenance_start_hour, maintenance_end_hour, utc_offset_minutes, backup_enabled, backup_dir, backups_keep, optimize_weekly, cleanup_weekly}"),
+    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, home_profiles, trusted_proxies, ffmpeg, ffprobe, transcoding_enabled, group_recent_episodes, preroll_paths, max_gpu_transcodes, max_cpu_transcodes, transcode_dir, downloads_dir, remote_max_mbps (0 = no limit for people outside the home network), max_remote_plays, paused_stop_minutes, no_auth_networks, maintenance_start_hour, maintenance_end_hour, utc_offset_minutes, backup_enabled, backup_dir, backups_keep, optimize_weekly, cleanup_weekly, deep_analysis}"),
     ("GET", "/api/transcoder", "Admin: is ffmpeg there, which hardware encoders"),
     ("GET", "/api/browse", "Admin: list folders on the server ?path= (to pick library folders)"),
     ("POST", "/api/imdb-ratings/refresh", "Admin: download IMDb's ratings file now and update every rating (in the background; progress in /api/metadata/status)"),
@@ -530,6 +532,11 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             }
             app.scan_folder_in_background(sid, only);
             ok(json!({"ok": true, "scanning": true}))
+        }
+        ("POST", ["library", "sections", sid, "deepanalyze"]) => {
+            if !admin { return need_admin(); }
+            let Some(sid) = id(sid) else { return fail(404, "No such library") };
+            match crate::actions::deep_analyze_section(app, sid) { Ok(n) => ok(json!({"ok": true, "videos": n})), Err(e) => fail(409, &e) }
         }
         ("POST", ["library", "sections", sid, "analyze"]) => {
             if !admin { return need_admin(); }
@@ -950,6 +957,11 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["library", "metadata", iid, "history"]) => match id(iid) { Some(i) => crate::actions::history(app, &user, i), None => fail(404, "Not found") },
         ("POST", ["library", "metadata", iid, "report"]) => match id(iid) { Some(i) => crate::actions::report_problem(app, ctx, &user, i), None => fail(404, "Not found") },
         ("DELETE", ["library", "metadata", iid]) => match id(iid) { Some(i) => crate::actions::delete_media(app, &user, i), None => fail(404, "Not found") },
+        ("POST", ["library", "metadata", iid, "deepanalyze"]) => {
+            if !admin { return need_admin(); }
+            let Some(iid) = id(iid) else { return fail(404, "Not found") };
+            match crate::actions::deep_analyze(app, iid) { Ok(n) => ok(json!({"ok": true, "videos": n})), Err(e) => fail(409, &e) }
+        }
         ("POST", ["library", "metadata", iid, "analyze"]) => {
             if !admin { return need_admin(); }
             let Some(iid) = id(iid) else { return fail(404, "Not found") };

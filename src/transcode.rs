@@ -131,9 +131,9 @@ pub fn decide(file: &MediaFile, req: &Request) -> Decision {
         }
     }
     let src_h = v.map(|v| v.height).unwrap_or(0);
-    let src_kbps = (file.bitrate / 1000) as u32;
+    // The speed the file really needs (deep analysis), not its average.
     let too_big = (req.max_height > 0 && src_h > req.max_height)
-        || (req.max_kbps > 0 && src_kbps > req.max_kbps + TRANSCODE_AUDIO_KBPS);
+        || (req.max_kbps > 0 && crate::deep::required_kbps(file, req.max_kbps) > req.max_kbps);
     if too_big {
         reasons.push("lower quality was asked for".into());
     }

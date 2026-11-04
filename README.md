@@ -222,6 +222,27 @@ A pattern without `/` matches a file or folder name at any depth; one with `/` m
 path from the folder the file is in. `*` stands for any characters except `/`, `**` for any
 characters, `?` for one. Upper and lower case count the same.
 
+## Deep analysis
+
+The bitrate of a file is only its average: a busy scene can need far more for a while, and a
+player with only a little video stored ahead of it then stops to wait. **Deep analysis**
+(*Ausführliche Analyse*) reads every packet of the file, without decoding anything, and plays them
+back on paper. For eight connection speeds, from 5 to 500 Mbit/s, it finds the lowest speed at which
+the player's store never runs empty. The player's store holds 7.2 seconds of the connection, and
+playback starts after 5 seconds of filling it.
+
+It only matters when a stream has a speed limit (a quality chosen in the player, or the limit for
+people outside the home network). A video is sent as it is when the measured speed plus 5 % fits the
+limit. A video that was not analyzed is taken to need twice its bitrate, so it is converted sooner.
+On the home network without a limit it changes nothing.
+
+Run it with **Deep analysis** in the menu of a video or a library, or turn on **Settings → Scheduled
+tasks → Run deep analysis** (off by default): one video at a time inside the
+maintenance window, the latest changed first, and again when a file changes. It reads every file
+completely, so a large library keeps the disks busy for a long time. **Media info** shows the result
+under *Connection speed needed*. Plain **Analyze** only reads the file's header, which takes
+seconds.
+
 ## When something counts as watched
 
 A video counts as watched at **whichever comes first: 90 % or the start of

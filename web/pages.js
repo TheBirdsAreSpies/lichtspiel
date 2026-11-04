@@ -911,6 +911,7 @@ async function settingsPage(tab, qs) {
       chk('optimize_weekly', t('Optimize the library file every week')),
       chk('cleanup_weekly', t('Remove old cache files and leftover conversions every week')),
       chk('analyze_loudness', t('Measure the loudness of videos'), t('Looks at 5 videos per minute inside the maintenance window until all are measured. Needs ffmpeg.')),
+      chk('deep_analysis', t('Run deep analysis'), t('The bitrate of a file is only its average. Deep analysis reads the whole file to find out how fast a connection really has to be for it to play without stopping, also in its busiest scenes; with a speed limit, this decides whether a video is sent as it is or converted. One video at a time inside the maintenance window, and it reads every file completely, so disks stay busy for a long time. Needs ffprobe.')),
       chk('generate_thumbnails', t('Create preview pictures'), t('Makes the pictures on the seek bar and the chapter pictures ahead of time, 2 videos per minute inside the maintenance window. Needs ffmpeg.')),
       chk('refresh_metadata', t('Read all libraries again every 3 days')),
     ],
@@ -939,7 +940,7 @@ async function settingsPage(tab, qs) {
     ],
   };
   // Without ffmpeg these do nothing: they are switched off and say why.
-  if (!tc.ffmpeg_found) for (const k of ['credits_from_picture', 'analyze_loudness', 'generate_thumbnails', 'boost_dialogue', 'transcoder_quality', 'hw_accel', 'hw_device', 'hw_constant_quality', 'h264_preset', 'h264_minimum_crf',
+  if (!tc.ffmpeg_found) for (const k of ['credits_from_picture', 'analyze_loudness', 'deep_analysis', 'generate_thumbnails', 'boost_dialogue', 'transcoder_quality', 'hw_accel', 'hw_device', 'hw_constant_quality', 'h264_preset', 'h264_minimum_crf',
     'max_transcodes', 'max_gpu_transcodes', 'max_cpu_transcodes', 'hls_segment_seconds', 'segmented_transcoder_timeout_seconds']) {
     const el = f[k]; if (!el) continue;
     el.disabled = true; el.title = t('Needs ffmpeg');
@@ -1141,6 +1142,7 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
       const r = await api('POST', `/library/metadata/${it.id}/refresh`); toast(t(r.message), 4000); changed();
     } } : null,
     admin ? { label: t('Analyze'), run: async () => { await api('POST', `/library/metadata/${it.id}/analyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
+    admin ? { label: t('Deep analysis'), run: async () => { await api('POST', `/library/metadata/${it.id}/deepanalyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
     admin ? { label: t('Edit details'), run: async () => editItem(await fullItem(it)) } : null,
     admin && matchable ? { label: (it.extra || {}).metadata_source ? t('Fix match…') : t('Match…'), run: async () => fixMatch(await fullItem(it), changed) } : null,
     admin && matchable && (it.extra || {}).metadata_source ? { label: t('Unmatch'), run: async () => {
@@ -1338,6 +1340,15 @@ async function reportsPage() {
 }
 
 // ---------- media info: every stream of the file
+// What deep analysis found: from the slowest connection level to the fastest.
+function neededSpeed(m) {
+  const k = String(m.requiredBandwidths || '').split(',').map(Number).filter(x => x > 0 && x < 2147483647);
+  if (!k.length) return t('Not measured yet — use Deep analysis');
+  const mbit = x => fmtNum(x / 1000, 1);
+  const [a, b] = [Math.max(...k), Math.min(...k)];
+  return a === b ? mbit(a) + ' Mbit/s' : `${mbit(b)}–${mbit(a)} Mbit/s`;
+}
+
 async function mediaInfo(it) {
   const full = await fullItem(it);
   const m = (full.Media || [])[0];
@@ -1353,6 +1364,7 @@ async function mediaInfo(it) {
   const box = modal(t('Media info'), [
     kv([[t('File'), m.file], [t('File type'), friendlyContainer(m)], [t('Size'), m.size ? fmtSize(m.size) : ''],
       [t('Length'), fmtDur(full.duration)], [t('Bitrate'), m.bitrate ? fmtNum(m.bitrate / 1000, 1) + ' Mbit/s' : ''],
+      [t('Connection speed needed'), neededSpeed(m)],
       (m.Part || []).length > 1 ? [t('Parts'), t('{n} files, played one after the other', { n: m.Part.length })] : null,
       opt ? [t('Optimized version'), `${opt.quality}, ${fmtSize(opt.size || 0)}`] : null,
       [t('Subtitle files'), (m.subtitles || []).filter(s => !s.embedded).map(s => s.file).join(', ')]]),
@@ -1542,6 +1554,10 @@ function sectionMenu(sec, anchor) {
           toast(t('Downloading details for {n} movies and shows again — progress is shown at the top', { n: r.queued }), 5000); pollActivity();
         } },
         { label: fresh.trash ? t('Empty trash ({n})', { n: fresh.trash }) : t('Empty trash'), run: () => emptyTrash(fresh) },
+        { label: t('Deep analysis'), run: async () => {
+          const r = await api('POST', `/library/sections/${sec.id}/deepanalyze`);
+          toast(t('Analyzing {n} videos — progress is shown at the top', { n: r.videos }), 5000); pollActivity();
+        } },
         { label: t('Analyze'), run: async () => {
           const r = await api('POST', `/library/sections/${sec.id}/analyze`);
           toast(t('Analyzing {n} videos — progress is shown at the top', { n: r.videos }), 5000); pollActivity();

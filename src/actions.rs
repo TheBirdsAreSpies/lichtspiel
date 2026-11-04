@@ -150,6 +150,72 @@ fn analyze_where(app: &Arc<App>, iid: u64, pick: impl FnOnce(&Db) -> Vec<u64>) -
     Ok(total)
 }
 
+/// "Deep analysis" of an item (and its episodes): every packet of its files is
+/// read to work out the connection speed they really need (deep.rs).
+pub fn deep_analyze(app: &Arc<App>, iid: u64) -> Result<usize, String> {
+    if !app.db.lock().unwrap().items.contains_key(&iid) { return Err("Not found".into()); }
+    deep_where(app, iid, |db| with_leaves(db, iid))
+}
+
+/// "Deep analysis" for a whole library.
+pub fn deep_analyze_section(app: &Arc<App>, sid: u64) -> Result<usize, String> {
+    if !app.db.lock().unwrap().sections.iter().any(|s| s.id == sid) { return Err("No such library".into()); }
+    deep_where(app, sid, |db| db.items.values().filter(|i| i.section_id == sid && i.kind.playable()).map(|i| i.id).collect())
+}
+
+fn deep_where(app: &Arc<App>, iid: u64, pick: impl FnOnce(&Db) -> Vec<u64>) -> Result<usize, String> {
+    let mut job = app.job.lock().unwrap();
+    if job.is_some() { return Err("Another job is already running; try again in a moment".into()); }
+    let ids: Vec<u64> = {
+        let db = app.db.lock().unwrap();
+        pick(&db).into_iter().filter(|i| db.items.get(i).is_some_and(|x| x.file.is_some() && !x.extra.contains_key(crate::scanner::MISSING))).collect()
+    };
+    let total = ids.len();
+    if total == 0 { return Err("There is no video file to analyze".into()); }
+    *job = Some(("Deep analysis".into(), 0, total));
+    drop(job);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut failed = 0;
+        for (n, id) in ids.into_iter().enumerate() {
+            failed += deep_read(&app, id);
+            *app.job.lock().unwrap() = Some(("Deep analysis".into(), n + 1, total));
+        }
+        app.save();
+        *app.job.lock().unwrap() = None;
+        let mut p = app.meta_progress.lock().unwrap();
+        p.done += 1;
+        p.last = json!({"id": iid, "title": "Deep analysis", "ok": failed == 0, "at": now(),
+            "message": if failed == 0 { format!("Analyzed {total} video(s)") } else { format!("Analyzed {total} video(s); {failed} file(s) could not be read") }});
+    });
+    Ok(total)
+}
+
+/// Runs deep analysis on the files of one item, without holding the library
+/// while a file is read. Returns how many files could not be read.
+pub fn deep_read(app: &App, id: u64) -> usize {
+    let ffprobe = app.settings().ffprobe;
+    let paths: Vec<String> = app.db.lock().unwrap().items.get(&id).map(|i| i.all_files().into_iter().map(|f| f.path.clone()).collect()).unwrap_or_default();
+    let mut failed = 0;
+    for path in paths {
+        let result = crate::deep::analyze_file(&ffprobe, &path);
+        let mut db = app.db.lock().unwrap();
+        let Some(it) = db.items.get_mut(&id) else { continue };
+        let Some(f) = it.file.iter_mut().chain(it.parts.iter_mut()).find(|f| f.path == path) else { continue };
+        match result {
+            Ok(r) => crate::deep::apply(f, r),
+            Err(e) => {
+                failed += 1;
+                f.deep_errors += 1;
+                elog!("deep analysis of item {id}: {e}");
+            }
+        }
+        let total_ms: u64 = it.all_files().iter().map(|f| f.duration_ms).sum();
+        if total_ms > 0 { it.duration_ms = total_ms; }
+    }
+    failed
+}
+
 // ---------------------------------------------------------------- optimize
 
 /// Where optimized versions are kept: <data>/optimized/<item id>.mp4.
