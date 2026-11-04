@@ -2369,7 +2369,7 @@ pub fn playlist_json(db: &Db, user: &User, p: &Playlist) -> (Value, usize, u64) 
     let kind = if p.is_default() { "default" } else if p.kind == PlaylistKind::Smart { "smart" } else { "manual" };
     let v = json!({
         "ratingKey": p.id.to_string(), "id": p.id, "key": format!("/playlists/{}/items", p.id),
-        "type": "playlist", "playlistType": "video", "title": p.title, "summary": p.summary,
+        "type": "playlist", "playlistType": if !items.is_empty() && items.iter().all(|i| db.items.get(i).is_some_and(|x| x.kind == crate::db::ItemKind::Track)) { "audio" } else { "video" }, "title": p.title, "summary": p.summary,
         "smart": p.kind == PlaylistKind::Smart, "kind": kind,
         "default": p.is_default(), "defaultKey": p.default_key, "query": p.query,
         "leafCount": items.len(), "duration": duration, "thumb": thumb, "composite": thumb, "thumbs": thumbs,

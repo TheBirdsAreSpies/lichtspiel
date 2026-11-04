@@ -105,9 +105,9 @@ async function playlistPage(id, qs) {
       h('input', { placeholder: t('Filter by title'), value: st.q, onchange: e => { st.q = e.target.value.trim(); go(); } }),
       h('span', { class: 'grow' }), h('span', { class: 'dim' }, t('{shown} of {all} items · {length}', { shown: res.totalSize, all: pl.leafCount, length: fmtDur(pl.duration) }))),
     items.length ? h('div', { class: 'list' }, items.map((it, i) => h('div', { class: 'li' },
-      h('img', { src: withTok(it.squareThumb || (it.type === 'episode' && it.grandparentThumb ? it.grandparentThumb : it.thumb)), loading: 'lazy', style: it.squareThumb ? 'object-fit:cover' : '' }),
-      h('div', { class: 'grow' }, h('a', { href: '#/item/' + it.id }, h('b', {}, it.type === 'episode' ? `${it.grandparentTitle} · ${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} ${it.title}` : it.title)),
-        h('div', { class: 'dim' }, [it.year, fmtDur(it.duration), it.viewCount ? t('✓ watched') : '', it.viewOffset ? t('stopped at {time}', { time: fmtTime(it.viewOffset / 1000) }) : ''].filter(Boolean).join(' · '))),
+      h('img', { src: withTok(it.squareThumb || (it.type === 'episode' && it.grandparentThumb ? it.grandparentThumb : it.thumb)), loading: 'lazy', style: it.squareThumb || it.type === 'track' ? 'object-fit:cover' : '' }),
+      h('div', { class: 'grow' }, h('a', { href: '#/item/' + it.id }, h('b', {}, it.type === 'episode' ? `${it.grandparentTitle} · ${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} ${it.title}` : it.type === 'track' ? `${it.grandparentTitle || ''} · ${it.title}` : it.title)),
+        h('div', { class: 'dim' }, [it.type === 'track' ? it.parentTitle : null, it.year, fmtDur(it.duration), it.viewCount ? t('✓ watched') : '', it.viewOffset ? t('stopped at {time}', { time: fmtTime(it.viewOffset / 1000) }) : ''].filter(Boolean).join(' · '))),
       reorder ? [h('button', { class: 'small', title: t('Move up'), onclick: () => move(i, -1) }, '↑'), h('button', { class: 'small', title: t('Move down'), onclick: () => move(i, 1) }, '↓')] : null,
       manual && pl.editable ? h('button', { class: 'small danger', onclick: async () => { if (!(await sure(t('Remove “{title}” from this playlist?', { title: it.title }), { ok: t('Remove'), danger: true }))) return; await api('DELETE', `/playlists/${id}/items/${it.id}`); reload(); } }, t('Remove')) : null,
       h('button', { class: 'primary small', onclick: () => play(it, it.viewOffset ? it.viewOffset / 1000 : 0, items.slice(i + 1)) }, '▶')))) :
@@ -126,7 +126,7 @@ function smartEditor(pl) {
   const upd = () => { clearTimeout(timer); timer = setTimeout(async () => {
     try {
       const r = (await api('POST', '/playlists/preview', { query: q })).MediaContainer;
-      preview.textContent = t('{n} items match: ', { n: r.totalSize }) + r.Metadata.slice(0, 6).map(m => m.type === 'episode' ? `${m.grandparentTitle} ${t('S{n}', { n: m.parentIndex })}${t('E{n}', { n: m.index })}` : m.title).join(', ') + (r.totalSize > 6 ? ' …' : '');
+      preview.textContent = t('{n} items match: ', { n: r.totalSize }) + r.Metadata.slice(0, 6).map(m => m.type === 'episode' ? `${m.grandparentTitle} ${t('S{n}', { n: m.parentIndex })}${t('E{n}', { n: m.index })}` : m.type === 'track' ? `${m.grandparentTitle} · ${m.title}` : m.title).join(', ') + (r.totalSize > 6 ? ' …' : '');
     } catch (e) { preview.textContent = e.message; }
   }, 250); };
   const drawRules = () => {
@@ -1230,7 +1230,7 @@ async function addToQueue(it) {
   saveQueue();
   toast(list.length === 1 ? t('Added to the queue') : t('{n} episodes added to the queue', { n: list.length }));
 }
-const queueTitle = x => x.type === 'episode' ? `${x.grandparentTitle || ''} · ${t('S{n}', { n: x.parentIndex || 0 })}${t('E{n}', { n: x.index || 0 })} ${x.title}` : x.title;
+const queueTitle = x => x.type === 'episode' ? `${x.grandparentTitle || ''} · ${t('S{n}', { n: x.parentIndex || 0 })}${t('E{n}', { n: x.index || 0 })} ${x.title}` : x.type === 'track' ? `${x.grandparentTitle || ''} · ${x.title}` : x.title;
 function drawQueueChip() {
   let chip = $('#qchip');
   if (!chip) { chip = h('button', { id: 'qchip', class: 'small', onclick: queueDialog }); $('#top').insertBefore(chip, $('#who')); }

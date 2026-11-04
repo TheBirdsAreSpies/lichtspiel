@@ -702,7 +702,7 @@ I18N.add('de', 'Deutsch', {
     "Valentine's Day": 'Valentinstag',
 
     // smart playlist fields (labels from GET /api/filters)
-    'movie, show, season, episode or video': 'Art (movie, show, season, episode oder video)',
+    'movie, show, season, episode, video, artist, album or track': 'Art (movie, show, season, episode, video, artist, album oder track)',
     'Release year': 'Erscheinungsjahr',
     'Genre': 'Genre',
     'Rating 0-10': 'Bewertung 0–10',
@@ -711,6 +711,9 @@ I18N.add('de', 'Deutsch', {
     'Studio or network': 'Studio oder Sender',
     'Description': 'Beschreibung',
     'Show title (episodes)': 'Serientitel (Episoden)',
+    'Artist (songs and albums)': 'Künstler (Titel und Alben)',
+    'Album title (songs)': 'Albumtitel (Titel)',
+    'Track number (songs)': 'Titelnummer (Titel)',
     'Season number (episodes)': 'Staffelnummer (Episoden)',
     'Episode number': 'Episodennummer',
     'Library id': 'Bibliotheks-ID',

@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 /// returned by GET /api/filters so clients can build rule editors).
 pub const ITEM_FIELDS: &[(&str, &str, &str)] = &[
     ("title", "text", "Title"),
-    ("kind", "text", "movie, show, season, episode or video"),
+    ("kind", "text", "movie, show, season, episode, video, artist, album or track"),
     ("year", "number", "Release year"),
     ("genre", "text", "Genre"),
     ("rating", "number", "Rating 0-10"),
@@ -18,6 +18,9 @@ pub const ITEM_FIELDS: &[(&str, &str, &str)] = &[
     ("studio", "text", "Studio or network"),
     ("summary", "text", "Description"),
     ("show", "text", "Show title (episodes)"),
+    ("artist", "text", "Artist (songs and albums)"),
+    ("album", "text", "Album title (songs)"),
+    ("track", "number", "Track number (songs)"),
     ("season", "number", "Season number (episodes)"),
     ("episode", "number", "Episode number"),
     ("section", "number", "Library id"),
@@ -313,6 +316,18 @@ pub fn field(db: &Db, user_id: u64, item: &Item, name: &str) -> FieldValue {
         "studio" => Text(vec![item.studio.clone()]),
         "summary" => Text(vec![item.summary.clone()]),
         "show" => Text(vec![show().map(|s| s.title.clone()).unwrap_or_default()]),
+        "artist" => Text(vec![match item.kind {
+            ItemKind::Artist => Some(item),
+            ItemKind::Album => item.parent_id.and_then(|p| db.items.get(&p)),
+            ItemKind::Track => item.parent_id.and_then(|p| db.items.get(&p)).and_then(|a| a.parent_id).and_then(|p| db.items.get(&p)),
+            _ => None,
+        }.map(|a| a.title.clone()).unwrap_or_default()]),
+        "album" => Text(vec![match item.kind {
+            ItemKind::Album => Some(item),
+            ItemKind::Track => item.parent_id.and_then(|p| db.items.get(&p)),
+            _ => None,
+        }.map(|a| a.title.clone()).unwrap_or_default()]),
+        "track" => Num(if item.kind == ItemKind::Track { item.index.map(|v| v as f64) } else { None }),
         "season" => Num(match item.kind {
             ItemKind::Season => item.index.map(|v| v as f64),
             ItemKind::Episode => item.parent_id.and_then(|p| db.items.get(&p)).and_then(|s| s.index).map(|v| v as f64),
