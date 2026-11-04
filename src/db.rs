@@ -771,6 +771,9 @@ pub struct Settings {
     pub backup_dir: String,
     #[serde(default = "backups_keep")]
     pub backups_keep: u32,
+    /// Memory for the library file's page cache, in MB.
+    #[serde(default = "db_cache_mb")]
+    pub db_cache_mb: u32,
     #[serde(default = "yes")]
     pub optimize_weekly: bool,
     #[serde(default = "yes")]
@@ -854,6 +857,7 @@ pub struct Settings {
 fn maint_start() -> u32 { 2 }
 fn maint_end() -> u32 { 5 }
 fn backups_keep() -> u32 { 5 }
+fn db_cache_mb() -> u32 { 64 }
 
 fn keep_days() -> u64 {
     7
@@ -1038,6 +1042,7 @@ impl Default for Settings {
             backup_enabled: true,
             backup_dir: String::new(),
             backups_keep: backups_keep(),
+            db_cache_mb: db_cache_mb(),
             optimize_weekly: true,
             cleanup_weekly: true,
             refresh_metadata: true,

@@ -1650,6 +1650,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                     if s.port == 0 { return fail(400, "port must be 1-65535"); }
                     if let Err(e) = crate::server::check_open_networks(&s.no_auth_networks) { return fail(400, &e); }
                     let port_changed = s.port != db.settings.port;
+                    let cache_mb = s.db_cache_mb;
                     let language_changed = s.metadata_language != db.settings.metadata_language;
                     let imdb_plots = !s.omdb_api_key.trim().is_empty() && s.omdb_api_key.trim() != db.settings.omdb_api_key.trim();
                     if !db::LANGUAGES.iter().any(|x| x.0 == s.metadata_language) { return fail(400, "Unknown language"); }
@@ -1665,6 +1666,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                         v["restart_needed"] = json!(format!("The server keeps using port {} until it is restarted (a --port option or LICHTSPIEL_PORT still wins over this setting).", *app.port.lock().unwrap()));
                     }
                     drop(db);
+                    app.store.lock().unwrap().set_cache_mb(cache_mb);
                     app.save();
                     if language_changed {
                         // Libraries that follow the server's language get their details again.

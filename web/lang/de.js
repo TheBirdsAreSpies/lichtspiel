@@ -138,6 +138,8 @@ I18N.add('de', 'Deutsch', {
     'Backup folder': 'Sicherungsverzeichnis',
     'Empty = the “backups” folder in the data folder.': 'Leer = der Ordner „backups“ im Datenordner.',
     'Backups to keep': 'Sicherungen, die behalten werden',
+    'Database cache (MB)': 'Datenbank-Cache (MB)',
+    'Memory the library file may keep ready. More makes big libraries faster. Applies right away.': 'Arbeitsspeicher, den die Bibliotheksdatei bereithalten darf. Mehr macht große Mediatheken schneller. Wirkt sofort.',
     'Optimize the library file every week': 'Datenbank wöchentlich optimieren',
     'Remove old cache files and leftover conversions every week': 'Alte Cache-Dateien und übrige Umwandlungen wöchentlich entfernen',
     'Back up now': 'Jetzt sichern',

@@ -225,6 +225,12 @@ pub struct Store {
 }
 
 impl Store {
+    /// How much memory the library file may use for its pages (in MB; SQLite's own default is about 2).
+    pub fn set_cache_mb(&self, mb: u32) {
+        let mb = mb.clamp(2, 4096);
+        let _ = self.conn.pragma_update(None, "cache_size", -(mb as i64) * 1024);
+    }
+
     pub fn open(path: &Path) -> Result<Store, String> {
         let conn = Connection::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let fail = |e: rusqlite::Error| format!("{}: {e}", path.display());

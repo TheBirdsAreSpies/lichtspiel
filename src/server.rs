@@ -212,6 +212,7 @@ impl App {
             }
         }
         let plugins = Plugins::load(&data_dir.join("plugins"));
+        store.set_cache_mb(db.settings.db_cache_mb);
         let app = Arc::new(App {
             data_dir: data_dir.to_path_buf(),
             store: Mutex::new(store),

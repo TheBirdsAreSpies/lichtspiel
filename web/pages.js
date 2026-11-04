@@ -879,6 +879,7 @@ async function settingsPage(tab, qs) {
       chk('backup_enabled', t('Back up the library file every 3 days'), t('Back up now and restore a backup: Maintenance.')),
       inp('backup_dir', t('Backup folder'), 'text', t('Empty = the “backups” folder in the data folder.')),
       inp('backups_keep', t('Backups to keep'), 'number'),
+      inp('db_cache_mb', t('Database cache (MB)'), 'number', t('Memory the library file may keep ready. More makes big libraries faster. Applies right away.')),
       chk('optimize_weekly', t('Optimize the library file every week')),
       chk('cleanup_weekly', t('Remove old cache files and leftover conversions every week')),
       chk('analyze_loudness', t('Measure the loudness of videos'), t('Looks at 5 videos per minute inside the maintenance window until all are measured. Needs ffmpeg.')),
