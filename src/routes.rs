@@ -1648,6 +1648,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                     if !db::CREDITS_MARKER_CHOICES.iter().any(|c| c.0 == s.intro_markers_behaviour) { return fail(400, "intro_markers_behaviour must be never, scheduled or asap"); }
                     if !["automatic", "speed", "quality", "max"].contains(&s.transcoder_quality.as_str()) { return fail(400, "transcoder_quality must be automatic, speed, quality or max"); }
                     if s.port == 0 { return fail(400, "port must be 1-65535"); }
+                    if let Err(e) = crate::server::check_open_networks(&s.no_auth_networks) { return fail(400, &e); }
                     let port_changed = s.port != db.settings.port;
                     let language_changed = s.metadata_language != db.settings.metadata_language;
                     let imdb_plots = !s.omdb_api_key.trim().is_empty() && s.omdb_api_key.trim() != db.settings.omdb_api_key.trim();

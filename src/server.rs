@@ -1627,6 +1627,33 @@ pub fn container(list: Vec<Value>, total: usize, offset: usize, extra: Value) ->
 }
 
 /// `ip` is in the list of addresses and ranges ("10.0.0.2, 172.16.0.0/12 ::1").
+/// Checks the "no sign-in" networks: every entry must be an address or range inside a private, loopback or
+/// link-local space, because people from there get admin rights without a password.
+pub fn check_open_networks(list: &str) -> Result<(), String> {
+    for e in list.split(|c: char| c == ',' || c.is_whitespace()).filter(|e| !e.is_empty()) {
+        let (addr, bits) = match e.split_once('/') { Some((a, b)) => (a, Some(b)), None => (e, None) };
+        let ip: IpAddr = addr.parse().map_err(|_| format!("'{e}' is not an address or range"))?;
+        let bits = match bits { Some(b) => Some(b.parse::<u32>().map_err(|_| format!("'{e}' has no valid prefix length"))?), None => None };
+        let private = match ip {
+            IpAddr::V4(a) => {
+                if bits.is_some_and(|b| b > 32) { return Err(format!("'{e}' has no valid prefix length")); }
+                let b = bits.unwrap_or(32);
+                let o = a.octets();
+                (o[0] == 10 && b >= 8) || (o[0] == 172 && (16..32).contains(&o[1]) && b >= 12) || (o[0] == 192 && o[1] == 168 && b >= 16)
+                    || (o[0] == 127 && b >= 8) || (o[0] == 169 && o[1] == 254 && b >= 16)
+            }
+            IpAddr::V6(a) => {
+                if bits.is_some_and(|b| b > 128) { return Err(format!("'{e}' has no valid prefix length")); }
+                let b = bits.unwrap_or(128);
+                let s0 = a.segments()[0];
+                (a.is_loopback() && b >= 128) || ((s0 & 0xfe00) == 0xfc00 && b >= 7) || ((s0 & 0xffc0) == 0xfe80 && b >= 10)
+            }
+        };
+        if !private { return Err(format!("'{e}' reaches beyond your home network; only private ranges such as 192.168.0.0/16 are allowed")); }
+    }
+    Ok(())
+}
+
 pub fn ip_in_list(list: &str, ip: IpAddr) -> bool {
     let ip = match ip { IpAddr::V6(a) => a.to_ipv4_mapped().map(IpAddr::V4).unwrap_or(IpAddr::V6(a)), v4 => v4 };
     list.split(|c: char| c == ',' || c.is_whitespace()).filter(|e| !e.is_empty()).any(|e| {
@@ -2584,6 +2611,17 @@ mod proxy_tests {
     use super::*;
     fn ip(s: &str) -> Option<IpAddr> { s.parse().ok() }
     fn v(s: &[&str]) -> Vec<String> { s.iter().map(|x| x.to_string()).collect() }
+
+    #[test]
+    fn open_networks_must_be_private() {
+        assert!(check_open_networks("").is_ok());
+        assert!(check_open_networks("192.168.1.0/24, 10.0.0.5 fd00::/8").is_ok());
+        assert!(check_open_networks("0.0.0.0/0").is_err());
+        assert!(check_open_networks("8.8.8.8").is_err());
+        assert!(check_open_networks("192.168.0.0/8").is_err());
+        assert!(check_open_networks("172.15.0.1").is_err());
+        assert!(check_open_networks("nonsense").is_err());
+    }
 
     #[test]
     fn lists() {
