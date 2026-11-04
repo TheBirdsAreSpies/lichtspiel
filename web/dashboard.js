@@ -216,8 +216,17 @@ function playingCard(p) {
       h('div', { class: 'np-rows' }, rows.flatMap(([k, v]) => [h('span', {}, k), h('span', {}, v)])),
       h('div', { class: 'np-prog' }, h('span', {}, p.state === 'paused' ? '⏸ ' + t('Paused') : '▶ ' + t('Playing')),
         h('div', { class: 'pbar' }, h('i', { style: `width:${pct}%` })),
-        h('span', { class: 'dim' }, p.duration ? `${fmtTime(p.offset / 1000)} / ${fmtTime(p.duration / 1000)}` : ''))));
+        h('span', { class: 'dim np-time', 'data-offset': p.offset, 'data-duration': p.duration || 0, 'data-playing': p.state === 'paused' ? '' : '1', 'data-at': Date.now() }, p.duration ? `${fmtTime(p.offset / 1000)} / ${fmtTime(p.duration / 1000)}` : ''))));
 }
+// The position of everything that plays moves on every second, between the server's updates.
+setInterval(() => {
+  document.querySelectorAll('.np-time[data-playing="1"]').forEach(el => {
+    const dur = Number(el.dataset.duration); if (!dur) return;
+    const off = Math.min(dur, Number(el.dataset.offset) + (Date.now() - Number(el.dataset.at)));
+    el.textContent = `${fmtTime(off / 1000)} / ${fmtTime(dur / 1000)}`;
+    const bar = el.parentElement.querySelector('.pbar i'); if (bar) bar.style.width = Math.min(100, off / dur * 100) + '%';
+  });
+}, 1000);
 function tile(label, value, note, spark) {
   return h('div', { class: 'tile' }, h('div', { class: 'dim lbl' }, label), h('div', { class: 'val' }, value), note ? h('div', { class: 'dim note' }, note) : null, spark || null);
 }
@@ -357,7 +366,7 @@ async function dashHistory(box) {
           users.map(u => h('option', { value: u.id, selected: String(u.id) === String(DB.user) }, u.username))))),
     h('div', { class: 'panel' },
       h('div', { class: 'ch-title' }, h('b', {}, hours ? t('Hours watched per {unit}', { unit: weekly ? t('week') : t('day') }) : t('Viewings per {unit}', { unit: weekly ? t('week') : t('day') })),
-        h('span', { class: 'dim' }, t('{n} viewings · {h} hours', { n: r.size, h: fmtNum(r.minutes / 60, 0) }))),
+        h('span', { class: 'dim' }, t('{n} viewings · {h} watched', { n: r.size, h: fmtDur(r.minutes * 60000) || '0 min' }))),
       chart),
     h('div', { class: 'dash-cols' },
       h('div', { class: 'panel' }, h('b', {}, t('Most played')),
@@ -365,7 +374,7 @@ async function dashHistory(box) {
           h('div', { class: 'grow' }, h('a', { href: '#/item/' + x.id }, x.title || t('(removed)')), h('div', { class: 'dim' }, [x.year, x.type === 'show' ? t('Show') : null].filter(Boolean).join(' · '))),
           h('span', { class: 'dim' }, t('{n}×', { n: x.plays }))))),
       h('div', { class: 'panel' }, h('b', {}, t('Top users')),
-        ranked(r.users, x => h('li', {}, h('div', { class: 'grow' }, h('b', {}, x.username || '?')), h('span', { class: 'dim' }, t('{n} viewings · {h} h', { n: x.plays, h: fmtNum(x.minutes / 60, 0) })))))),
+        ranked(r.users, x => h('li', {}, h('div', { class: 'grow' }, h('b', {}, x.username || '?')), h('span', { class: 'dim' }, t('{n} viewings · {h} watched', { n: x.plays, h: fmtDur(x.minutes * 60000) || '0 min' })))))),
     h('div', { class: 'panel', style: 'padding:6px 12px;overflow-x:auto' }, h('b', { style: 'display:block;padding:8px 0' }, t('Latest viewings')),
       r.recent.length ? h('table', {}, h('tr', {}, [t('When'), t('User'), t('Title'), ''].map(x => h('th', {}, x))),
         r.recent.map(e => h('tr', {}, h('td', { class: 'dim' }, fmtDateTime(e.at)), h('td', {}, e.user || '?'),

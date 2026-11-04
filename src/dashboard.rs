@@ -262,7 +262,6 @@ pub fn history(db: &Db, open: &[PlaySession], days: u64, only_user: Option<u64>)
     }
     let days = days.clamp(1, 366);
     let from = now().saturating_sub(days * 86400);
-    let length = |id: u64| db.items.get(&id).map(|i| i.duration_ms as f64 / 60000.0).unwrap_or(0.0);
     let since = db.sessions.first().map(|s| s.at).into_iter().chain(open.iter().map(|s| s.at)).min().unwrap_or(u64::MAX);
     let wanted = |at: u64, user: u64| at >= from && only_user.is_none_or(|u| user == u);
     let mut events: Vec<Play> = vec![];
@@ -274,7 +273,8 @@ pub fn history(db: &Db, open: &[PlaySession], days: u64, only_user: Option<u64>)
     for e in &db.history {
         // Watched to the end while plays were recorded: that play is counted already.
         if (e.manual || e.at < since) && wanted(e.at, e.user_id) {
-            events.push(Play { at: e.at, user: e.user_id, item: e.item_id, minutes: length(e.item_id), manual: e.manual, live: false });
+            // How long someone really watched is unknown here, so it adds nothing to the watch time.
+            events.push(Play { at: e.at, user: e.user_id, item: e.item_id, minutes: 0.0, manual: e.manual, live: false });
         }
     }
     events.sort_by_key(|e| e.at);

@@ -20,7 +20,7 @@ use tiny_http::{Response, StatusCode};
 
 pub fn new_token(db: &mut Db, user_id: u64, device: &str) -> String {
     let t = db::random_hex(20);
-    db.tokens.push(db::Token { token: t.clone(), user_id, created_at: now(), device: device.into() });
+    db.tokens.push(db::Token { token: t.clone(), user_id, created_at: now(), device: device.into(), last_used: 0, last_device: String::new(), last_ip: String::new() });
     t
 }
 

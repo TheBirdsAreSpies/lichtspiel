@@ -2093,9 +2093,15 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
             });
         }
     }
+    let device = device_label(&product, &device_name, &params, &agent);
+    let peer = req.remote_addr().map(|a| a.ip().to_string()).unwrap_or_default();
     let user = token.as_ref().and_then(|t| {
-        let db = app.db.lock().unwrap();
-        let uid = db.tokens.iter().find(|x| &x.token == t)?.user_id;
+        let mut db = app.db.lock().unwrap();
+        let at = now();
+        let tk = db.tokens.iter_mut().find(|x| &x.token == t)?;
+        // The list of devices says when each was used last (written at most once a minute).
+        if at.saturating_sub(tk.last_used) > 60 { tk.last_used = at; tk.last_device = device.clone(); tk.last_ip = peer.clone(); }
+        let uid = tk.user_id;
         db.user(uid).cloned()
     });
     let (trusted, no_auth) = { let db = app.db.lock().unwrap(); (db.settings.trusted_proxies.clone(), db.settings.no_auth_networks.clone()) };
@@ -2108,7 +2114,6 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     if let Some(id) = uid {
         app.stats.saw(id, remote.map(|a| a.to_string()).unwrap_or_default(), &agent);
     }
-    let device = device_label(&product, &device_name, &params, &agent);
     let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token, remote, remote_trusted, device };
     let is_local = ctx.is_local();
     let resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) } else { crate::routes::route(&app, &ctx) };

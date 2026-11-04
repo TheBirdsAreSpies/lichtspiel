@@ -468,6 +468,13 @@ pub struct Token {
     pub created_at: u64,
     #[serde(default)]
     pub device: String,
+    /// When and from where it was used last (unix seconds, a device name, an address).
+    #[serde(default)]
+    pub last_used: u64,
+    #[serde(default)]
+    pub last_device: String,
+    #[serde(default)]
+    pub last_ip: String,
 }
 
 /// One condition of a smart playlist (or of a library filter).

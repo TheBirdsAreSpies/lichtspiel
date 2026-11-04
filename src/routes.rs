@@ -1381,7 +1381,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["api", "tokens"]) => {
             let db = app.db.lock().unwrap();
             let list: Vec<Value> = db.tokens.iter().filter(|t| t.user_id == user.id).map(|t| json!({
-                "id": auth::token_id(&t.token), "device": t.device, "created_at": t.created_at,
+                "id": auth::token_id(&t.token), "device": t.device, "created_at": t.created_at, "last_used": t.last_used, "last_device": t.last_device, "last_ip": t.last_ip,
                 "current": ctx.token.as_deref() == Some(t.token.as_str()),
             })).collect();
             ok(json!({"tokens": list}))

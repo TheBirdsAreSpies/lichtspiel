@@ -681,12 +681,12 @@ function pluginPanels() {
 
 // The settings, in order: your account, the web app, the server's settings, and management.
 const SETTINGS_TABS = [
-  ['Account', [['account', 'Account'], ['watched', 'Watched indicator'], ['watchlist', 'Watchlist feed'], ['webhooks', 'Webhooks']]],
+  ['Account', [['account', 'Account'], ['devices', 'Devices'], ['watched', 'Watched indicator'], ['watchlist', 'Watchlist feed'], ['webhooks', 'Webhooks']]],
   ['Web', [['web', 'General']]],
   ['Settings', [['general', 'General'], ['network', 'Network settings'], ['library', 'Library settings'], ['metadata', 'Metadata agents'], ['transcoder', 'Transcoder'], ['tasks', 'Scheduled tasks'], ['extras', 'Extras']]],
   ['Manage', [['libraries', 'Libraries', '#/libraries'], ['users', 'Users & invites', '#/users'], ['plugins', 'Plugins', '#/plugins'], ['reports', 'Reported problems', '#/reports'], ['api', 'API', '#/api'], ['manage', 'Maintenance']]],
 ];
-const USER_TABS = ['account', 'watched', 'watchlist', 'web'];
+const USER_TABS = ['account', 'devices', 'watched', 'watchlist', 'web'];
 // Two rows: the groups on top, the pages of the group you are in below.
 function settingsNav(cur) {
   const to = ([k, , href]) => href || '#/settings/' + k;
@@ -701,6 +701,24 @@ async function settingsPage(tab) {
   const nav = settingsNav;
   if (!tab || (!S.me.admin && !USER_TABS.includes(tab))) tab = 'account';
   if (tab === 'account') return set(h('h1', {}, t('Settings')), nav(tab), accountPanel(), pluginPanels());
+  if (tab === 'devices') {
+    const box = h('div');
+    const draw = async () => {
+      const tk = (await GET('/api/tokens')).tokens.sort((a, b) => (b.last_used || b.created_at) - (a.last_used || a.created_at));
+      box.replaceChildren(tk.length ? h('table', {},
+        h('tr', {}, [t('Device'), t('Last used'), t('Address'), t('Signed in'), ''].map(x => h('th', {}, x))),
+        tk.map(k => h('tr', {},
+          h('td', {}, h('b', {}, k.last_device || k.device || t('Web app')), k.current ? h('span', { class: 'badge', style: 'margin-left:8px' }, t('this one')) : null, k.device && k.last_device && k.device !== k.last_device ? h('div', { class: 'dim' }, k.device) : null),
+          h('td', { class: 'dim' }, k.last_used ? fmtDateTime(k.last_used) : '–'), h('td', { class: 'dim' }, k.last_ip || '–'), h('td', { class: 'dim' }, fmtDateTime(k.created_at)),
+          h('td', {}, k.current ? '' : h('button', { class: 'small danger', onclick: async () => {
+            if (!(await sure(t('Sign this device out? It has to sign in again.'), { ok: t('Sign out'), danger: true }))) return;
+            await api('DELETE', '/api/tokens/' + k.id); toast(t('Device signed out')); draw();
+          } }, t('Sign out')))))) : h('p', { class: 'dim' }, t('No devices.')));
+    };
+    await draw();
+    return set(h('h1', {}, t('Settings')), nav(tab), h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Active devices')),
+      h('p', { class: 'dim' }, t('Browsers, apps and scripts that are signed in to your account.')), box));
+  }
   if (tab === 'web') {
     const pref = (key, def, label, opts, help, after) => formRow(label, h('select', { onchange: e => { store.set(key, e.target.value); if (after) after(); toast(t('Saved')); } },
       opts.map(([v, l]) => h('option', { value: v, selected: store.get(key, def) === String(v) }, l))), help);
