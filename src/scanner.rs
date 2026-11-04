@@ -929,6 +929,8 @@ struct Found {
 
 /// Scans one library. The slow part (walking folders, ffprobe) happens
 /// without holding the library lock; `with_db` is called for short updates.
+/// (The server scans through `scan_section_in`; this whole-library form is what the tests use.)
+#[cfg(test)]
 pub fn scan_section<F>(section: &Section, ffprobe: &str, with_db: F) -> ScanReport
 where
     F: FnMut(&mut dyn FnMut(&mut Db)),
