@@ -1680,7 +1680,29 @@ function upNext() {
   const next = P.queue[0] || Q.list[0] || P.next;
   if (!next) return closePlayer(false);
   if (!P.autoNext) return showNext(next, null);
+  // Like Netflix: after a few episodes in a row without anyone touching anything, ask if somebody is still there.
+  if ((P.autoRun || 0) >= STILL_WATCHING_AFTER) return showStillWatching(next);
   showNext(next, 10);
+}
+const STILL_WATCHING_AFTER = 3, STILL_WATCHING_WAIT = 30;
+// Any input (not just moving the mouse) shows that somebody is there.
+for (const ev of ['pointerdown', 'keydown', 'touchstart', 'wheel']) document.addEventListener(ev, () => { P.autoRun = 0; }, { passive: true, capture: true });
+function showStillWatching(next) {
+  const box = $('#pnext'), count = h('span');
+  clearInterval(P.countdown);
+  const stop = () => { hideNext(); closePlayer(false); };
+  const go = h('button', { class: 'primary', onclick: () => { P.autoRun = 0; playNext(); } }, t('Yes, keep watching'));
+  box.replaceChildren(h('img', { src: withTok(next.thumb || `/library/metadata/${next.id}/thumb`), alt: '' }),
+    h('div', {}, h('b', {}, t('Are you still watching?')), h('div', { class: 'dim' }, nextName(next), count),
+      h('div', { class: 'actions' }, go, h('button', { onclick: stop }, t('Stop')))));
+  box.style.display = 'flex';
+  $('#pskip').style.display = 'none';
+  wake();
+  let left = STILL_WATCHING_WAIT;
+  const tick = () => { count.textContent = ' · ' + t('stops in {n} s', { n: left }); if (left-- <= 0) stop(); };
+  tick();
+  P.countdown = setInterval(tick, 1000);
+  go.focus();
 }
 function showNext(next, secs) {
   const box = $('#pnext'), count = h('span');
@@ -1695,7 +1717,7 @@ function showNext(next, secs) {
   wake();
   if (secs) {
     let left = secs;
-    const tick = () => { count.textContent = ' · ' + t('in {n} s', { n: left }); if (left-- <= 0) playNext(); };
+    const tick = () => { count.textContent = ' · ' + t('in {n} s', { n: left }); if (left-- <= 0) { P.autoRun = (P.autoRun || 0) + 1; playNext(); } };
     tick();
     P.countdown = setInterval(tick, 1000);
   }
@@ -1813,7 +1835,8 @@ function playerMenu(name, page) {
     kids = [entry(t('Quality'), q ? q[1] : P.quality, () => playerMenu('settings', 'quality')),
       entry(t('Playback speed'), P.speed === 1 ? t('Normal speed') : fmtNum(P.speed) + '×', () => playerMenu('settings', 'speed')),
       P.audios.length > 1 ? entry(t('Audio track'), a ? audioName(a) : t('Default audio'), () => playerMenu('settings', 'audio')) : null,
-      choice(t('Play the next episode by itself'), P.autoNext, () => { P.autoNext = !P.autoNext; store.set('autoNext', P.autoNext ? '1' : '0'); playerMenu('settings', 'main'); }),
+      // Makes no sense for a single movie: only where something follows (episodes, a playlist or queue).
+      P.it && (P.it.type === 'episode' || P.queue.length || Q.list.length) ? choice(t('Play the next episode by itself'), P.autoNext, () => { P.autoNext = !P.autoNext; store.set('autoNext', P.autoNext ? '1' : '0'); playerMenu('settings', 'main'); }) : null,
       h('div', { class: 'mi', tabindex: 0, onclick: e => { e.stopPropagation(); closePlayerMenu(); showKeys(); } }, h('span', { class: 'ck' }), t('Keyboard shortcuts'), h('span', { class: 'v' }, '?'))];
   } else if (page === 'quality') {
     kids = [back(t('Quality')), ...QUALITIES.map(([v, l]) => choice(l, P.quality === v, () => { P.quality = v; store.set('quality', v); closePlayerMenu(); load(position()); }))];
@@ -1864,7 +1887,7 @@ function closePlayer(send) {
   P.lyrics = null; $('#plyrics').style.display = 'none'; $('#plyricsbtn').hidden = true;
   player.style.display = 'none';
   player.classList.remove('idle');
-  P.it = null; P.next = null; P.pending = null;
+  P.it = null; P.next = null; P.pending = null; P.autoRun = 0;
   if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
   render();
 }
