@@ -379,6 +379,33 @@ svg.viz rect.hov{fill:rgba(255,255,255,.05)}
 @media (max-width:760px){.np-list,.dash-charts,.dash-cols{grid-template-columns:minmax(0,1fr)}}
 .empty{padding:40px;text-align:center;color:var(--dim);background:var(--panel);border-radius:var(--r)}
 @media (max-width:760px){.field,.modal .field{grid-template-columns:minmax(0,1fr);gap:4px}.field>.help{grid-column:1}.field.top>label{padding-top:0}#side{display:none}#main{margin-left:0;padding:18px}.pickbar{left:50%;max-width:calc(100vw - 32px)}#top .logo{min-width:0}.detail{flex-direction:column}.detail .poster{width:180px;flex-basis:auto}}
+
+/* a library's page: the bar stays on top, only the posters scroll */
+.libhead{position:sticky;top:56px;z-index:4;background:var(--bg);margin:-26px -30px 18px;padding:22px 30px 0}
+.libhead h1{margin-bottom:12px}
+.libhead .bar-tools{margin-bottom:12px}
+.libhead .chips{margin:0 0 12px}
+.bar-tools .count{color:var(--dim);font-size:14px;white-space:nowrap}
+button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--panel2)}
+.src{font-size:10px;letter-spacing:.04em;background:var(--panel2);border-radius:3px;padding:0 4px;color:var(--text)}
+.filterpanel{position:fixed;z-index:40;display:flex;width:min(600px,calc(100vw - 16px));height:min(460px,calc(100vh - 140px));background:#22272d;border:1px solid #353c44;border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.5);overflow:hidden}
+.fp-left{flex:0 0 230px;overflow:auto;padding:6px;border-right:1px solid #353c44}
+.fp-left hr{border:0;border-top:1px solid #353c44;margin:6px 4px}
+.fp-right{flex:1;min-width:0;display:flex;flex-direction:column;padding:10px;gap:8px}
+.fp-values{flex:1;overflow:auto}
+.fp-item,.fp-val{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;border-radius:6px;padding:6px 10px;font-size:14px}
+.fp-item:hover,.fp-val:hover{background:var(--panel2)}
+.fp-item.cur{background:var(--panel2)}
+.fp-item.on span,.fp-val.on span{color:var(--accent)}
+.fp-val.on{background:#2b2312}
+.fp-item span,.fp-val span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.letters{position:fixed;right:4px;top:50%;transform:translateY(-50%);z-index:3;display:flex;flex-direction:column;gap:0;max-height:calc(100vh - 120px)}
+.letters button{background:none;border:0;padding:0 5px;font-size:11px;line-height:1.28;color:var(--dim);border-radius:3px}
+.letters button:hover{color:var(--accent);background:var(--panel)}
+.sentinel{text-align:center;padding:18px;min-height:40px}
+.chips .chip{display:inline-flex;align-items:center;gap:10px;padding:4px 10px 4px 12px}
+.chips .chip span{margin-left:2px;padding-left:4px}
+.rule{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
 </style>
 </head>
 <body>

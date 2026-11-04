@@ -2147,6 +2147,11 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
     });
     if v.watchlist_at > 0 { o["watchlistedAt"] = json!(v.watchlist_at); }
     if let Some(y) = it.year { o["year"] = json!(y); }
+    if let Some(d) = it.extra.get("originally_available").and_then(|v| v.as_str()).filter(|d| !d.is_empty()) { o["originallyAvailableAt"] = json!(d); }
+    if let Some(r) = it.extra.get("ratings").and_then(|r| r.as_object()) {
+        let scores: serde_json::Map<String, Value> = r.iter().filter_map(|(k, v)| v.get("score").and_then(|s| s.as_str()).map(|s| (k.clone(), json!(s)))).collect();
+        if !scores.is_empty() { o["scores"] = Value::Object(scores); }
+    }
     if let Some(l) = it.extra.get("loudness_lufs").filter(|v| v.is_number()) { o["loudness"] = l.clone(); }
     if it.extra.contains_key(crate::scanner::MISSING) { o["missing"] = json!(true); }
     if let Some(r) = it.rating { o["rating"] = json!(r); }
