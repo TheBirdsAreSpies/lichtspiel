@@ -665,6 +665,8 @@ pub fn run(out: &Path) -> bool {
         // country come over from the old server and can be filtered on.
         let film_sid = c.get("/library/sections").json()["MediaContainer"]["Directory"].as_array().cloned().unwrap_or_default().iter()
             .find(|s| s["title"] == "Old films").and_then(|s| s["id"].as_u64()).unwrap_or(0);
+        // A collection of one film is hidden by default (the "smallest collection" setting); show it for this check.
+        c.call("PUT", "/api/settings", Some(json!({"collection_min_items": 1})), &[]);
         let fl = c.get(&format!("/library/sections/{film_sid}/filters?includeAdvanced=1")).json();
         let flist = fl["MediaContainer"]["Filter"].as_array().cloned().unwrap_or_default();
         let has_value = |f: &str, v: &str| flist.iter().any(|x| x["filter"] == f && x["values"].as_array().is_some_and(|a| a.iter().any(|y| y["value"] == v)));
