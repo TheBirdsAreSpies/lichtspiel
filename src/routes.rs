@@ -96,7 +96,9 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("DELETE", "/api/together/{code}", "Leave a room"),
     ("GET", "/library/metadata/{id}/decision", "How it would play: direct, remux or transcode ?quality=720p-4"),
     ("GET", "/library/parts/{id}/file", "The original file, with seeking (Range requests); ?download=1"),
-    ("GET", "/library/parts/{id}/subtitles/{n}", "A subtitle track as WebVTT (n, or xN for side files)"),
+    ("GET", "/library/parts/{id}/subtitles/{n}", "A subtitle track as WebVTT (n, or xN for side files), with its timing set by synchronizing or by hand"),
+    ("POST", "/library/parts/{id}/subtitles/{n}/sync", "Admin: listen to the sound and move the subtitle track so its lines fall on the speech (also fixes 23.976 / 25 fps stretches); only kept when certain. Takes a while"),
+    ("PUT", "/library/parts/{id}/subtitles/{n}/timing", "Admin: set the timing of a subtitle track {offset_ms, scale} or move it {delta_ms}, or {reset: true}"),
     ("GET", "/library/parts/{id}/frame", "A small still for the player's seek bar ?t=seconds (rounded to 10 s, cached)"),
     ("GET", "/video/transcode/{id}/stream.mp4", "Converted stream for any container ?quality= &offset=seconds &audio=streamIndex &transcode=1 &level=4.1 (H.264 level the player needs)"),
     ("GET", "/video/transcode/{id}/start.m3u8", "HLS (MPEG-TS, H.264/AAC) stream ?quality= &offset= &level=4.1 (redirects to the playlist)"),
@@ -1022,6 +1024,14 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["library", "parts", iid, "file"]) | ("GET", ["library", "parts", iid, _, "file"]) | ("GET", ["library", "parts", iid, "file", _]) => direct_file(app, ctx, &user, iid),
         ("GET", ["library", "parts", iid, "subtitles", n]) => subtitles(app, &user, iid, n),
+        ("POST", ["library", "parts", iid, "subtitles", n, "sync"]) => {
+            if !admin { return need_admin(); }
+            crate::handlers::subtitle_sync(app, &user, iid, n)
+        }
+        ("PUT", ["library", "parts", iid, "subtitles", n, "timing"]) => {
+            if !admin { return need_admin(); }
+            crate::handlers::subtitle_set_timing(app, &user, iid, n, &ctx.body)
+        }
         ("GET", ["library", "metadata", iid, "chapters"]) => crate::handlers::chapters(app, &user, iid),
         ("GET", ["library", "parts", iid, "frame"]) => frame(app, ctx, &user, iid),
 

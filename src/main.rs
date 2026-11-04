@@ -34,6 +34,7 @@ mod store;
 mod selftest;
 mod server;
 mod stats;
+mod subsync;
 mod totp;
 mod transcode;
 #[cfg(feature = "console")]

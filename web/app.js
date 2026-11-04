@@ -1422,18 +1422,48 @@ async function load(at) {
 }
 // Subtitles belong to the first file (a later part would show them at the wrong time). A converted
 // stream starts at the seek point, so its times are moved by that much.
+function subTrack(s, i, shift, fresh) {
+  const el = h('track', { kind: 'subtitles', src: withTok(s.key + (fresh ? '?r=' + Date.now() : '')), label: subName(s, i), srclang: (s.language || 'und').slice(0, 2) });
+  el.addEventListener('load', () => {
+    if (shift > 0 && el.track.cues) for (const c of Array.from(el.track.cues)) { c.startTime = Math.max(0, c.startTime - shift); c.endTime = Math.max(0, c.endTime - shift); }
+  }, { once: true });
+  el.addEventListener('error', () => { if (i === P.sub) toast(t('This subtitle can’t be shown here.'), 4000); }, { once: true });
+  return el;
+}
 function addSubtitles() {
   if (P.part) return;
-  const shift = P.offset;
-  P.subs.forEach((s, i) => {
-    const el = h('track', { kind: 'subtitles', src: withTok(s.key), label: subName(s, i), srclang: (s.language || 'und').slice(0, 2) });
-    el.addEventListener('load', () => {
-      if (shift > 0 && el.track.cues) for (const c of Array.from(el.track.cues)) { c.startTime = Math.max(0, c.startTime - shift); c.endTime = Math.max(0, c.endTime - shift); }
-    }, { once: true });
-    el.addEventListener('error', () => { if (i === P.sub) toast(t('This subtitle can’t be shown here.'), 4000); }, { once: true });
-    video.append(el);
-  });
+  P.subs.forEach((s, i) => video.append(subTrack(s, i, P.offset)));
   showSub();
+}
+// Fetches one subtitle track again (after its timing changed), in the same place.
+function reloadSub(i) {
+  const old = video.querySelectorAll('track')[i];
+  if (!old || !P.subs[i]) return;
+  old.replaceWith(subTrack(P.subs[i], i, P.offset, true));
+  showSub();
+}
+// Subtitle timing (owner): listen to the sound and move the lines onto the speech, or nudge by hand.
+async function syncSub() {
+  const s = P.subs[P.sub]; if (!s) return;
+  closePlayerMenu();
+  toast(t('Listening to the sound … this takes a moment'), 60000);
+  try {
+    const r = await api('POST', s.key + '/sync');
+    if (!r.applied) { toast(t(r.message), 6000); return; }
+    s.offsetMs = r.offsetMs;
+    reloadSub(P.sub);
+    toast(t('Subtitles moved by {s} s', { s: fmtNum(r.offsetMs / 1000, 1) }) + (Math.abs(r.scale - 1) > 1e-6 ? ' · ' + t('and stretched for another frame rate') : ''), 5000);
+  } catch (e) { toast(e.message, 6000); }
+}
+async function nudgeSub(ms) {
+  const s = P.subs[P.sub]; if (!s) return;
+  try {
+    const r = await api('PUT', s.key + '/timing', ms === null ? { reset: true } : { delta_ms: ms });
+    s.offsetMs = r.offsetMs || null;
+    reloadSub(P.sub);
+    toast(ms === null ? t('Subtitle timing reset') : t('Subtitles moved by {s} s', { s: fmtNum(r.offsetMs / 1000, 1) }), 3000);
+    playerMenu('subs', 'again');
+  } catch (e) { toast(e.message, 5000); }
 }
 const subName = (s, i) => [s.language ? langName(s.language) : '', s.title, s.forced && !/forced|erzwungen/i.test(s.title || '') ? t('forced') : '', s.sdh && !/sdh|hearing|schwerh/i.test(s.title || '') ? 'SDH' : '', !s.language && s.file ? s.file : ''].filter(Boolean).join(' · ') || t('Subtitles {n}', { n: i + 1 });
 // The subtitle to switch on for a language: forced ones only when `forced` is asked for (else they are skipped
@@ -1720,7 +1750,12 @@ function playerMenu(name, page) {
   if (name === 'subs') {
     kids = [h('div', { class: 'mh' }, t('Subtitles')), choice(t('Off'), P.sub < 0 && P.burn === null, () => { setSub(-1); closePlayerMenu(); }),
       ...P.subs.map((s, i) => choice(subName(s, i) + (isPictureSub(s) ? ' · ' + t('burned in') : ''), P.sub === i || P.burn === i, () => { setSub(i); closePlayerMenu(); })),
-      h('div', { class: 'mh' }, t('Subtitle size')), ...SUB_SIZES.map(([v, l]) => choice(l, P.subSize === v, () => { setSubSize(v); playerMenu('subs', 'again'); }))];
+      h('div', { class: 'mh' }, t('Subtitle size')), ...SUB_SIZES.map(([v, l]) => choice(l, P.subSize === v, () => { setSubSize(v); playerMenu('subs', 'again'); })),
+      ...(S.me.admin && P.sub >= 0 && P.subs[P.sub] && !P.part ? [h('div', { class: 'mh' }, t('Subtitle timing') + (P.subs[P.sub].offsetMs ? ' · ' + fmtNum(P.subs[P.sub].offsetMs / 1000, 1) + ' s' : '')),
+        h('div', { class: 'mi', tabindex: 0, onclick: e => { e.stopPropagation(); syncSub(); } }, h('span', { class: 'ck' }), t('Synchronize with the sound')),
+        h('div', { class: 'mi', tabindex: 0, onclick: e => { e.stopPropagation(); nudgeSub(-500); } }, h('span', { class: 'ck' }), t('Earlier by 0.5 s')),
+        h('div', { class: 'mi', tabindex: 0, onclick: e => { e.stopPropagation(); nudgeSub(500); } }, h('span', { class: 'ck' }), t('Later by 0.5 s')),
+        P.subs[P.sub].offsetMs ? h('div', { class: 'mi', tabindex: 0, onclick: e => { e.stopPropagation(); nudgeSub(null); } }, h('span', { class: 'ck' }), t('Reset timing')) : null] : [])];
   } else if (!page || page === 'main') {
     const q = QUALITIES.find(x => x[0] === P.quality), a = P.audios.find(x => String(x.index) === String(P.audio));
     kids = [entry(t('Quality'), q ? q[1] : P.quality, () => playerMenu('settings', 'quality')),

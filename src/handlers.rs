@@ -668,25 +668,88 @@ pub fn hls_file(app: &Arc<App>, sid: &str, file: &str) -> Resp {
     }
 }
 
-pub fn subtitles(app: &Arc<App>, user: &User, iid: &str, n: &str) -> Resp {
-    let (_, f) = match playable_file(app, user, iid, 0) { Ok(x) => x, Err(r) => return r };
-    let n = n.trim_end_matches(".vtt");
+/// A subtitle track as WebVTT, as it is in the file (n: "2" for the third embedded track, "x0" for the first side file).
+fn subtitle_vtt(app: &Arc<App>, f: &db::MediaFile, n: &str) -> Result<Vec<u8>, Resp> {
     let (source, embedded) = if let Some(x) = n.strip_prefix('x') {
-        let Some(p) = x.parse::<usize>().ok().and_then(|i| f.external_subtitles.get(i)) else { return fail(404, "No such subtitle") };
+        let Some(p) = x.parse::<usize>().ok().and_then(|i| f.external_subtitles.get(i)) else { return Err(fail(404, "No such subtitle")) };
         if p.to_lowercase().ends_with(".vtt") {
-            return serve_file(Path::new(p), "text/vtt; charset=utf-8", None, false);
+            return std::fs::read(p).map_err(|_| fail(404, "No such subtitle"));
         }
         (p.clone(), None)
     } else {
-        let Some(i) = n.parse::<u32>().ok() else { return fail(404, "No such subtitle") };
+        let Some(i) = n.parse::<u32>().ok() else { return Err(fail(404, "No such subtitle")) };
         (f.path.clone(), Some(i))
     };
     let ffmpeg = app.settings().ffmpeg;
     match Command::new(&ffmpeg).args(transcode::subtitle_args(&source, embedded)).stdin(Stdio::null()).stderr(Stdio::null()).output() {
-        Ok(o) if o.status.success() && !o.stdout.is_empty() => bytes(200, "text/vtt; charset=utf-8", o.stdout),
-        Ok(_) => fail(415, "This subtitle can't be turned into text (picture-based subtitles need burning in)"),
-        Err(e) => fail(500, &format!("ffmpeg could not be started: {e}")),
+        Ok(o) if o.status.success() && !o.stdout.is_empty() => Ok(o.stdout),
+        Ok(_) => Err(fail(415, "This subtitle can't be turned into text (picture-based subtitles need burning in)")),
+        Err(e) => Err(fail(500, &format!("ffmpeg could not be started: {e}"))),
     }
+}
+
+/// The timing set for a subtitle track (by synchronizing or by hand), if any.
+pub fn subtitle_timing(it: &Item, n: &str) -> Option<crate::subsync::Timing> {
+    it.extra.get("subsync").and_then(|s| s.get(n)).and_then(crate::subsync::Timing::from_json).filter(|t| !t.is_none())
+}
+
+pub fn subtitles(app: &Arc<App>, user: &User, iid: &str, n: &str) -> Resp {
+    let (it, f) = match playable_file(app, user, iid, 0) { Ok(x) => x, Err(r) => return r };
+    let n = n.trim_end_matches(".vtt");
+    let vtt = match subtitle_vtt(app, &f, n) { Ok(v) => v, Err(r) => return r };
+    match subtitle_timing(&it, n) {
+        Some(t) => bytes(200, "text/vtt; charset=utf-8", crate::subsync::shift_vtt(&String::from_utf8_lossy(&vtt), t).into_bytes()),
+        None => bytes(200, "text/vtt; charset=utf-8", vtt),
+    }
+}
+
+/// Listens to the sound of the video and moves the subtitle track so its lines fall on the speech.
+/// Slow (the whole audio is read): the answer says what was found, and it is only kept when it is certain.
+pub fn subtitle_sync(app: &Arc<App>, user: &User, iid: &str, n: &str) -> Resp {
+    let (it, f) = match playable_file(app, user, iid, 0) { Ok(x) => x, Err(r) => return r };
+    let vtt = match subtitle_vtt(app, &f, n) { Ok(v) => v, Err(r) => return r };
+    let cues = crate::subsync::cues(&String::from_utf8_lossy(&vtt));
+    if cues.len() < 20 { return fail(422, "This subtitle has too few lines to synchronize"); }
+    if !f.streams.iter().any(|s| s.kind == "audio") { return fail(422, "The video has no sound to listen to"); }
+    let ffmpeg = app.settings().ffmpeg;
+    let curve = match crate::subsync::loudness_curve(&ffmpeg, &f.path) { Ok(c) => c, Err(e) => return fail(502, &e) };
+    let signal = crate::subsync::speech_signal(&curve);
+    let Some((timing, sure)) = crate::subsync::find_timing(&cues, &signal) else {
+        return js(200, json!({"ok": true, "applied": false, "message": "The subtitle could not be matched to the speech with certainty; nothing was changed"}));
+    };
+    {
+        let mut db = app.db.lock().unwrap();
+        let Some(item) = db.items.get_mut(&it.id) else { return fail(404, "Not found") };
+        let sync = item.extra.entry("subsync").or_insert_with(|| json!({}));
+        if let Some(o) = sync.as_object_mut() { o.insert(n.to_string(), timing.to_json()); }
+    }
+    app.save();
+    js(200, json!({"ok": true, "applied": true, "offsetMs": timing.offset_ms, "scale": timing.scale, "confidence": (sure * 10.0).round() / 10.0}))
+}
+
+/// Sets the timing of a subtitle track by hand: `offset_ms` (and `scale`), `delta_ms` to move it further,
+/// or `reset` to go back to the file's own timing.
+pub fn subtitle_set_timing(app: &Arc<App>, user: &User, iid: &str, n: &str, body: &Value) -> Resp {
+    let (it, f) = match playable_file(app, user, iid, 0) { Ok(x) => x, Err(r) => return r };
+    let known = if let Some(x) = n.strip_prefix('x') { x.parse::<usize>().is_ok_and(|i| i < f.external_subtitles.len()) } else { n.parse::<usize>().is_ok() };
+    if !known { return fail(404, "No such subtitle"); }
+    let cur = subtitle_timing(&it, n).unwrap_or(crate::subsync::Timing { offset_ms: 0, scale: 1.0 });
+    let next = if body["reset"].as_bool() == Some(true) {
+        crate::subsync::Timing { offset_ms: 0, scale: 1.0 }
+    } else {
+        let offset = match (body["offset_ms"].as_i64(), body["delta_ms"].as_i64()) { (Some(o), _) => o, (None, Some(d)) => cur.offset_ms + d, _ => return fail(400, "Give offset_ms, delta_ms or reset") };
+        let scale = body["scale"].as_f64().unwrap_or(cur.scale);
+        if offset.abs() > 3_600_000 || !(0.5..=2.0).contains(&scale) { return fail(400, "That timing is out of range"); }
+        crate::subsync::Timing { offset_ms: offset, scale }
+    };
+    {
+        let mut db = app.db.lock().unwrap();
+        let Some(item) = db.items.get_mut(&it.id) else { return fail(404, "Not found") };
+        let sync = item.extra.entry("subsync").or_insert_with(|| json!({}));
+        if let Some(o) = sync.as_object_mut() { if next.is_none() { o.remove(n); } else { o.insert(n.to_string(), next.to_json()); } }
+    }
+    app.save();
+    js(200, json!({"ok": true, "offsetMs": next.offset_ms, "scale": next.scale}))
 }
 
 // ---------------------------------------------------------------- posters
