@@ -1227,6 +1227,8 @@ where
                     if let Some(a) = album.and_then(|a| db.items.get_mut(&a)) {
                         if a.year.is_none() { a.year = m.year; }
                         if a.genres.is_empty() { a.genres = m.genres.clone(); }
+                        // A release is a live album, single ... as soon as one song says so.
+                        if a.extra.get("release").and_then(|r| r.as_str()).is_none_or(|r| r == "album") { a.extra.insert("release".into(), Value::from(m.release)); }
                     }
                 }
                 if let Some(it) = db.items.get_mut(&id) {

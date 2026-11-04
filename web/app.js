@@ -214,7 +214,7 @@ function posterCard(it, opts = {}) {
   if (it.type === 'show') sub = t('{n} episodes', { n: it.leafCount || 0 });
   if (it.type === 'season') title = seasonTitle(title);
   if (it.type === 'artist') sub = t('{n} songs', { n: it.leafCount || 0 });
-  if (it.type === 'album') sub = [it.parentTitle, it.year].filter(Boolean).join(' · ');
+  if (it.type === 'album') sub = [it.parentTitle, it.year, it.releaseType && it.releaseType !== 'album' ? releaseName(it.releaseType) : ''].filter(Boolean).join(' · ');
   if (it.type === 'track') sub = [it.grandparentTitle, it.parentTitle].filter(Boolean).join(' · ');
   const unseen = it.leafCount ? it.leafCount - (it.viewedLeafCount || 0) : 0;
   const img = it.type === 'episode' && it.grandparentThumb && !opts.episodeThumb ? it.grandparentThumb : it.thumb;
@@ -804,8 +804,12 @@ async function itemPage(id) {
       return h('a', { class: 'person', href: `#/person/${encodeURIComponent(p.key || 'byname')}?name=${encodeURIComponent(p.name || '')}` }, pic, h('b', {}, p.name), p.role ? h('div', { class: 'dim' }, p.role) : null,
         p.count > 1 ? h('div', { class: 'dim' }, t('{n} in this library', { n: p.count })) : null);
     }))] : null,
-    kids.length ? [h('h2', {}, it.type === 'show' ? t('Seasons') : it.type === 'artist' ? t('Albums') : it.type === 'album' ? t('Songs') : t('Episodes')),
-      it.type === 'show' || it.type === 'artist' ? scroller('row', kids.map(k => posterCard(k))) :
+    it.type === 'artist' && kids.length ? RELEASES.map(r => {
+      const of = kids.filter(k => (k.releaseType || 'album') === r);
+      return of.length ? [h('h2', {}, releaseName(r, true)), scroller('row', of.map(k => posterCard(k)))] : null;
+    }) : null,
+    kids.length && it.type !== 'artist' ? [h('h2', {}, it.type === 'show' ? t('Seasons') : it.type === 'album' ? t('Songs') : t('Episodes')),
+      it.type === 'show' ? scroller('row', kids.map(k => posterCard(k))) :
         h('div', { class: 'list' }, kids.map((e, i) => h('div', { class: 'li' },
           it.type === 'album' ? null : h('img', { src: withTok(e.thumb), loading: 'lazy' }),
           h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, e.index ? `${e.index}. ${e.title}` : e.title)), h('div', { class: 'dim' }, [fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', e.viewOffset ? t('stopped at {time}', { time: fmtTime(e.viewOffset / 1000) }) : ''].filter(Boolean).join(' · ')),
@@ -1327,6 +1331,9 @@ async function findNext(it) {
   $('#pnextbtn').hidden = !next;
   if (next) $('#pnextbtn').title = t('Next (N)') + ': ' + nextName(next);
 }
+const RELEASES = ['album', 'ep', 'single', 'live', 'compilation', 'soundtrack'];
+const releaseName = (r, plural) => ({ album: plural ? t('Albums') : t('Album'), ep: plural ? t('EPs') : t('EP'), single: plural ? t('Singles') : t('Single'),
+  live: plural ? t('Live albums') : t('Live'), compilation: plural ? t('Compilations') : t('Compilation'), soundtrack: plural ? t('Soundtracks') : t('Soundtrack') }[r] || r);
 // Plays all songs of an artist or album, one after the other (shuffle: not the same artist twice in a row).
 async function playMusic(id, shuffle) {
   let songs = meta(await GET(`/library/metadata/${id}/allLeaves`));

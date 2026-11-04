@@ -2232,6 +2232,7 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
         o["leafCount"] = json!(leaves.len());
         o["viewedLeafCount"] = json!(seen);
         o["childCount"] = json!(db.children(it.id).len());
+        if it.kind == ItemKind::Album { o["releaseType"] = it.extra.get("release").cloned().unwrap_or(json!("album")); }
     }
     if let Some(p) = it.parent_id.and_then(|p| db.items.get(&p)) {
         o["parentRatingKey"] = json!(p.id.to_string());

@@ -25,6 +25,8 @@ pub struct MusicInfo {
     pub disc: Option<u32>,
     pub year: Option<u32>,
     pub genres: Vec<String>,
+    /// album, ep, single, live, compilation or soundtrack
+    pub release: &'static str,
 }
 
 pub const UNKNOWN_ARTIST: &str = "Unknown Artist";
@@ -38,6 +40,37 @@ fn tag(tags: &Value, name: &str) -> Option<String> {
         .and_then(|(_, v)| v.as_str())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+/// A tag whose name is matched without case, spaces or underscores ("MusicBrainz Album Type").
+fn tag_loose(tags: &Value, name: &str) -> Option<String> {
+    let norm = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase();
+    let want = norm(name);
+    tags.as_object()?.iter().find(|(k, _)| norm(k) == want).and_then(|(_, v)| v.as_str()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// What kind of release an album is: from the tags (MusicBrainz release type, compilation flag),
+/// else from words in its title ("Live at …", "(Single)", "EP", "Soundtrack", "Greatest Hits").
+pub fn release_type(tags: &Value, album: &str) -> &'static str {
+    let by_word = |s: &str| -> Option<&'static str> {
+        let s = s.to_lowercase();
+        let has = |w: &str| s.contains(w);
+        let ends = |w: &str| s.ends_with(w);
+        Some(if has("(live") || has("[live") || has(" live ") || ends(" live") || has("unplugged") || s.starts_with("live ") { "live" }
+            else if has("soundtrack") || has("(ost") || has("[ost") || ends(" ost") || has("original score") || has("motion picture") { "soundtrack" }
+            else if has("(single") || has("[single") || ends(" single") { "single" }
+            else if has("(ep)") || has("[ep]") || ends(" ep") { "ep" }
+            else if has("greatest hits") || has("best of") || has("the very best") || has("anthology") || has("compilation") { "compilation" }
+            else { return None })
+    };
+    if let Some(t) = tag_loose(tags, "musicbrainz album type").or_else(|| tag_loose(tags, "releasetype")) {
+        let t = t.to_lowercase();
+        for (w, r) in [("live", "live"), ("soundtrack", "soundtrack"), ("compilation", "compilation"), ("single", "single"), ("ep", "ep")] {
+            if t.split(['/', ';', ',', ' ']).any(|p| p == w) { return r; }
+        }
+    }
+    if tag_loose(tags, "compilation").is_some_and(|c| c == "1") { return "compilation"; }
+    by_word(album).unwrap_or("album")
 }
 
 /// "3/12" or "03" -> 3.
@@ -85,15 +118,17 @@ pub fn info(root: &Path, path: &Path, tags: Option<&Value>) -> MusicInfo {
     let folder_artist = (comps.len() >= 3).then(|| comps[comps.len() - 3].clone());
     let null = Value::Null;
     let t = tags.unwrap_or(&null);
+    let album = tag(t, "album").or(folder_album).unwrap_or_else(|| UNKNOWN_ALBUM.into());
     let mut genres: Vec<String> = tag(t, "genre").map(|g| g.split([';', '/']).map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()).unwrap_or_default();
     genres.dedup();
     MusicInfo {
         title: tag(t, "title").unwrap_or(file_title),
         artist: tag(t, "album_artist").or_else(|| tag(t, "albumartist")).or_else(|| tag(t, "artist")).or(folder_artist).unwrap_or_else(|| UNKNOWN_ARTIST.into()),
-        album: tag(t, "album").or(folder_album).unwrap_or_else(|| UNKNOWN_ALBUM.into()),
+        album: album.clone(),
         track: tag(t, "track").and_then(|s| number(&s)).or(file_track),
         disc: tag(t, "disc").or_else(|| tag(t, "discnumber")).and_then(|s| number(&s)),
         year: tag(t, "date").or_else(|| tag(t, "year")).or_else(|| tag(t, "originaldate")).and_then(|s| year_of(&s)),
+        release: release_type(t, &album),
         genres,
     }
 }
@@ -138,6 +173,21 @@ mod tests {
         // A file straight in the library folder.
         let i = info(root, Path::new("/m/Loose Song.mp3"), None);
         assert_eq!((i.artist.as_str(), i.album.as_str(), i.title.as_str()), (UNKNOWN_ARTIST, UNKNOWN_ALBUM, "Loose Song"));
+    }
+
+    #[test]
+    fn release_types() {
+        let none = json!({});
+        assert_eq!(release_type(&none, "A Night at the Opera"), "album");
+        assert_eq!(release_type(&none, "Alive 2007"), "album");
+        assert_eq!(release_type(&none, "Live at Wembley"), "live");
+        assert_eq!(release_type(&none, "Nevermind (Live)"), "live");
+        assert_eq!(release_type(&none, "Hello [Single]"), "single");
+        assert_eq!(release_type(&none, "Blue EP"), "ep");
+        assert_eq!(release_type(&none, "Greatest Hits"), "compilation");
+        assert_eq!(release_type(&none, "Drive (Original Motion Picture Soundtrack)"), "soundtrack");
+        assert_eq!(release_type(&json!({"MusicBrainz Album Type": "album/live"}), "Plain"), "live");
+        assert_eq!(release_type(&json!({"COMPILATION": "1"}), "Plain"), "compilation");
     }
 
     #[test]
