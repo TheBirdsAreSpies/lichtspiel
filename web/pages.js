@@ -697,11 +697,14 @@ function settingsNav(cur) {
   const to = ([k, , href]) => href || '#/settings/' + k;
   const mine = SETTINGS_TABS.map(([grp, items]) => [grp, items.filter(([k]) => S.me.admin || USER_TABS.includes(k))]).filter(([, items]) => items.length);
   const here = mine.find(([, items]) => items.some(([k]) => k === cur)) || mine[0];
+  const search = S.me.admin ? h('input', { type: 'search', placeholder: t('Search the settings…'), style: 'margin-left:auto;width:220px',
+    value: cur === 'search' ? (new URLSearchParams((location.hash.split('?')[1]) || '').get('q') || '') : '',
+    onchange: e => { const v = e.target.value.trim(); location.hash = v ? '#/settings/search?q=' + encodeURIComponent(v) : '#/settings'; } }) : null;
   return h('div', {},
-    h('div', { class: 'tabs' }, mine.map(([grp, items]) => h('a', { href: to(items[0]), class: grp === here[0] ? 'on' : '' }, t(grp)))),
+    h('div', { class: 'tabs', style: 'align-items:center' }, mine.map(([grp, items]) => h('a', { href: to(items[0]), class: grp === here[0] ? 'on' : '' }, t(grp))), search),
     here[1].length > 1 ? h('div', { class: 'tabs', style: 'font-size:.92em;opacity:.9' }, here[1].map(it => h('a', { href: to(it), class: it[0] === cur ? 'on' : '' }, t(it[1])))) : null);
 }
-async function settingsPage(tab) {
+async function settingsPage(tab, qs) {
   markNav('settings');
   const nav = settingsNav;
   if (!tab || (!S.me.admin && !USER_TABS.includes(tab))) tab = 'account';
@@ -910,18 +913,27 @@ async function settingsPage(tab) {
     el.disabled = true; el.title = t('Needs ffmpeg');
     const row = el.closest('.field'); if (row) row.style.opacity = '.5';
   }
+  const saveSettings = async () => {
+    const body = tab === 'tasks' ? { utc_offset_minutes: -new Date().getTimezoneOffset() } : {};
+    for (const [k, el] of Object.entries(f)) body[k] = typeof s[k] === 'boolean' ? el.checked : typeof s[k] === 'number' ? Number(el.value) : el.value;
+    try {
+      const x = await api('PUT', '/api/settings', body);
+      toast([t('Saved'), x.refetching ? t('details for {n} movies and shows are being downloaded again in the new language', { n: x.refetching }) : '', x.restart_needed ? t(x.restart_needed) : ''].filter(Boolean).join(' · '), 6000);
+      boot();
+    } catch (e) { toast(e.message, 5000); }
+  };
   const titles = { general: 'Server', network: 'Network settings', library: 'Library settings', metadata: 'Movie and show details', transcoder: 'Transcoder', tasks: 'Scheduled tasks', extras: 'Extras' };
+  const saveBar = h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: saveSettings }, t('Save settings')));
+  if (tab === 'search') {
+    const q = (new URLSearchParams(qs || '').get('q') || '').trim().toLowerCase();
+    const found = Object.keys(panels).map(k => [k, (panels[k] || []).filter(el => el && el.textContent && q && el.textContent.toLowerCase().includes(q))]).filter(([, rows]) => rows.length);
+    return set(h('h1', {}, t('Settings')), nav(tab),
+      found.length ? found.map(([k, rows]) => h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, h('a', { href: '#/settings/' + k }, t(titles[k]))), rows)) : h('div', { class: 'empty' }, t('No setting matches “{q}”.', { q })),
+      found.length ? saveBar : null);
+  }
   set(h('h1', {}, t('Settings')), nav(tab),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t(titles[tab])), panels[tab]),
-    h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: async () => {
-      const body = tab === 'tasks' ? { utc_offset_minutes: -new Date().getTimezoneOffset() } : {};
-      for (const [k, el] of Object.entries(f)) body[k] = typeof s[k] === 'boolean' ? el.checked : typeof s[k] === 'number' ? Number(el.value) : el.value;
-      try {
-        const x = await api('PUT', '/api/settings', body);
-        toast([t('Saved'), x.refetching ? t('details for {n} movies and shows are being downloaded again in the new language', { n: x.refetching }) : '', x.restart_needed ? t(x.restart_needed) : ''].filter(Boolean).join(' — '), x.restart_needed || x.refetching ? 8000 : 2600);
-        boot();
-      } catch (e) { toast(e.message, 5000); }
-    } }, t('Save settings'))),
+    saveBar,
     tab === 'general' ? h('p', { class: 'dim' }, t('Data folder on the server: '), h('code', {}, r.data_dir)) : null);
 }
 
@@ -1382,7 +1394,7 @@ video.addEventListener('seeked', () => { if (P.method === 'direct' && !split()) 
 // ---------- the left menu: libraries and Playlists in the order each person chose
 // (kept on the server per person), unpinned ones under "More"; "⋯" edits it.
 const NAV = { edit: false, cur: '', more: false };
-try { NAV.more = localStorage.getItem('navMore') === '1'; } catch (e) { /* private window */ }
+NAV.more = store.get('navMore', '0') === '1';
 function navList() {
   const all = [...S.sections.map(s => ({ key: 's' + s.id, sec: s, title: s.title })), { key: 'playlists', title: t('Playlists') }];
   const sb = (S.me && S.me.sidebar) || {};
@@ -1436,7 +1448,7 @@ function drawNav() {
     box.replaceChildren(head, ...pinned.map(navLink),
       off.length ? h('a', { href: '#', class: 'morehead', onclick: ev => {
         ev.preventDefault(); NAV.more = !open;
-        try { localStorage.setItem('navMore', NAV.more ? '1' : '0'); } catch (x) { /* private window */ }
+        store.set('navMore', NAV.more ? '1' : '0');
         drawNav();
       } }, h('span', {}, t('More')), h('small', {}, (open ? '▾ ' : '▸ ') + off.length)) : '',
       ...(open ? off.map(navLink) : []));
@@ -1609,7 +1621,7 @@ async function render() {
       case 'libraries': return await librariesPage();
       case 'users': return await usersPage();
       case 'plugins': return await pluginsPage();
-      case 'settings': return await settingsPage(parts[1]);
+      case 'settings': return await settingsPage(parts[1], qs);
       case 'api': return await apiPage();
       case 'reports': return await reportsPage();
       case 'watchlist': return await watchlistPage(qs);

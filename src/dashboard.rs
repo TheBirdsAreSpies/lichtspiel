@@ -355,7 +355,7 @@ mod tests {
         let (mut db, _) = setup();
         db.items.get_mut(&10).unwrap().duration_ms = 90 * 60000;
         let t = now();
-        // Before plays were recorded: a viewing counts with the whole length.
+        // A recorded play adds no time of its own; only the time really watched counts.
         db.history.push(crate::db::PlayEvent { user_id: 1, item_id: 10, at: t - 5000, manual: false });
         assert!(db.record_session(PlaySession { user_id: 1, item_id: 10, at: t - 4000, watched_ms: 20 * 60000 }));
         // Too short: not counted.
@@ -368,7 +368,7 @@ mod tests {
         let r = history(&db, &open, 30, None);
         let v: Value = serde_json::from_slice(&{ let mut b = vec![]; std::io::Read::read_to_end(&mut r.into_reader(), &mut b).unwrap(); b }).unwrap();
         assert_eq!(v["size"], 4, "{v}");
-        assert_eq!(v["minutes"].as_f64().unwrap(), 90.0 + 20.0 + 0.0 + 5.0);
+        assert_eq!(v["minutes"].as_f64().unwrap(), 20.0 + 5.0);
         assert_eq!(v["recent"][0]["live"], true);
         assert_eq!(v["recent"][0]["minutes"].as_f64().unwrap(), 5.0);
     }

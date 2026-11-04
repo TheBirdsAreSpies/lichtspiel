@@ -26,7 +26,7 @@ async function downloadDialog(items) {
   const ms = items.reduce((n, it) => n + (it.duration || 0) * (isPlayable(it) ? 1 : 0), 0);
   const mayConvert = S.me.admin || S.me.allow_transcode !== false;
   let last = 'original';
-  try { last = localStorage.getItem('dlQuality') || 'original'; } catch (e) { /* private window */ }
+  last = store.get('dlQuality', 'original');
   if (!mayConvert) last = 'original';
   const label = ([q, l]) => {
     const orig = media ? media.size : 0;
@@ -49,7 +49,7 @@ async function downloadDialog(items) {
     h('div', { class: 'actions' },
       h('button', { class: 'primary', onclick: async () => {
         const q = sel.value;
-        try { localStorage.setItem('dlQuality', q); } catch (e) { /* private window */ }
+        store.set('dlQuality', q);
         let r;
         try { r = await api('POST', '/api/downloads', { ids: items.map(i => i.id), quality: q }); } catch (e) { return toast(e.message, 6000); }
         box.remove();

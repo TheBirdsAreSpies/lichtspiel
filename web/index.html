@@ -255,6 +255,7 @@ button.profile:hover .avatar,button.profile:focus-visible .avatar{border-color:v
 #pbar:hover .rail,#pbar:hover .buf,#pbar:hover .fill,#pbar.drag .rail,#pbar.drag .buf,#pbar.drag .fill{top:6px;height:6px}
 #pbar .knob{position:absolute;top:3px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:var(--accent);transform:scale(0);transition:transform .1s}
 #pbar:hover .knob,#pbar.drag .knob{transform:scale(1)}
+#pbar .mark.chap{top:4px;width:2px;height:10px;background:rgba(255,255,255,.75)}
 #pbar .mark{position:absolute;top:5px;width:3px;height:8px;background:#ffd34d;border-radius:1px}
 #pbar .mark.intro{background:rgba(120,200,255,.75)}
 #pbar .tip{position:absolute;bottom:22px;transform:translateX(-50%);display:none;flex-direction:column;align-items:center;gap:4px;pointer-events:none}
@@ -386,7 +387,7 @@ svg.viz rect.hov{fill:rgba(255,255,255,.05)}
 @media (max-width:760px){.field,.modal .field{grid-template-columns:minmax(0,1fr);gap:4px}.field>.help{grid-column:1}.field.top>label{padding-top:0}#side{display:none}#main{margin-left:0;padding:18px}.pickbar{left:50%;max-width:calc(100vw - 32px)}#top .logo{min-width:0}.detail{flex-direction:column}.detail .poster{width:180px;flex-basis:auto}}
 
 /* a library's page: the bar stays on top, only the posters scroll */
-.libhead{position:sticky;top:56px;z-index:4;background:var(--bg);margin:-26px -30px 18px;padding:22px 30px 0}
+.libhead,#main>.libhead{position:sticky;top:56px;z-index:4;background:var(--bg);margin:-26px -30px 18px;padding:22px 30px 0}
 .libhead h1{margin-bottom:12px}
 .libhead .bar-tools{margin-bottom:12px}
 .libhead .chips{margin:0 0 12px}

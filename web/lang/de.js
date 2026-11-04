@@ -142,6 +142,8 @@ I18N.add('de', 'Deutsch', {
     'Remove old cache files and leftover conversions every week': 'Alte Cache-Dateien und übrige Umwandlungen wöchentlich entfernen',
     'Back up now': 'Jetzt sichern',
     'Maintenance': 'Wartung',
+    'Search the settings…': 'Einstellungen durchsuchen…',
+    'No setting matches “{q}”.': 'Keine Einstellung passt zu „{q}“.',
     'Rotten Tomatoes audience': 'Rotten Tomatoes Publikum',
     'Devices': 'Geräte',
     'Active devices': 'Aktive Geräte',

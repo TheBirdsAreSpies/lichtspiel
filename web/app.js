@@ -256,7 +256,7 @@ cardSize();
 function sizeSlider() {
   return h('label', { class: 'size', title: t('Poster size') }, h('span', { class: 'dim', style: 'font-size:11px' }, '▮'),
     h('input', { type: 'range', min: CARD.min, max: CARD.max, step: 10, value: cardSize(), 'aria-label': t('Poster size'),
-      oninput: e => { const v = cardSize(e.target.value); try { localStorage.setItem('cardSize', String(v)); } catch (er) { /* private window */ } } }),
+      oninput: e => { const v = cardSize(e.target.value); store.set('cardSize', v); } }),
     h('span', { class: 'dim', style: 'font-size:18px' }, '▮'));
 }
 // Several items picked at once in a library: click the circle on a poster (or Ctrl-click),
@@ -1128,7 +1128,7 @@ const CLIENT_CODECS = (() => {
 // Audio, subtitle and watched-mark settings follow the account from browser to browser: they are kept on the
 // server too (POST /api/me/prefs); at start the server's values win, and values only this browser has go up once.
 const SYNCED = ['audioLang', 'subLang', 'subMode', 'subPrefLang', 'subSdh', 'subForced', 'subSize', 'subColor', 'subBg', 'subLift', 'burnSubs', 'watchedMark',
-  'timeFormat', 'quality', 'directPlay', 'keepSmall', 'levelVolume', 'themeMusic', 'rememberTab', 'autoNext', 'timeLeft', 'speed'];
+  'timeFormat', 'cardSize', 'dlQuality', 'navMore', 'quality', 'directPlay', 'keepSmall', 'levelVolume', 'themeMusic', 'rememberTab', 'autoNext', 'timeLeft', 'speed'];
 let prefQueue = {}, prefTimer = null;
 function syncPref(k, v) {
   if (!S.me) return;
@@ -1149,6 +1149,7 @@ function pullPrefs() {
   // What the player read when this file loaded.
   P.quality = store.get('quality', 'original'); P.speed = Number(store.get('speed', 1)) || 1;
   P.autoNext = store.get('autoNext', '1') === '1'; P.remaining = store.get('timeLeft', '0') === '1';
+  cardSize();
 }
 window.saveLangPref = code => (S.me ? api('POST', '/api/me/prefs', { lang: code }).catch(() => {}) : null);
 const P = { it: null, offset: 0, method: 'direct', timer: null, queue: [], quality: store.get('quality', 'original'), audio: '', speed: Number(store.get('speed', 1)) || 1,
@@ -1249,6 +1250,8 @@ async function play(it, startAt, queue, together) {
   // A picture-based subtitle (Blu-ray, DVD) can't be shown as text: it is burned into the video.
   if (P.sub >= 0 && isPictureSub(P.subs[P.sub])) { if (store.get('burnSubs', 'auto') === 'auto') { P.burn = P.sub; } P.sub = -1; }
   P.credits = (it.credits || []).map(ms => ms / 1000);
+  P.chapters = [];
+  if (it.Media && it.Media[0]) GET(`/library/metadata/${it.id}/chapters`).then(r => { if (P.it !== it) return; P.chapters = (r.MediaContainer.Chapter || []).map(c => ({ at: c.start / 1000, title: c.title.replace(/^Chapter (\d+)$/, (_, n) => t('Chapter {n}', { n })) })); drawMarks(); }).catch(() => {});
   P.intro = it.intro && it.intro.end > it.intro.start ? [it.intro.start / 1000, it.intro.end / 1000] : null;
   // A movie split over files: its parts play one after the other.
   P.parts = ((it.Media && it.Media[0].Part) || []).map(x => (x.duration || 0) / 1000);
@@ -1510,6 +1513,8 @@ function drawBar() {
 function drawMarks() {
   const marks = $('.marks', bar); marks.replaceChildren();
   // drawn once the length is known (duration() needs the item)
+  // The chapters of the file: a thin line each (the first one is the start), their names show when hovering.
+  if ((P.chapters || []).length > 1) for (const c of P.chapters.slice(1)) marks.append(h('div', { class: 'mark chap', style: `left:${pct(c.at)}%` }));
   for (const c of P.credits) marks.append(h('div', { class: 'mark', style: `left:${pct(c)}%`, title: t('Credits') }));
   if (P.intro) marks.append(h('div', { class: 'mark intro', style: `left:${pct(P.intro[0])}%;width:${Math.max(0.3, pct(P.intro[1]) - pct(P.intro[0]))}%`, title: t('Intro') }));
 }
@@ -1610,7 +1615,8 @@ function hoverTip(e) {
   const s = barTime(e), tip = $('.tip', bar), r = bar.getBoundingClientRect();
   const half = 104, x = Math.max(half - 4, Math.min(r.width - half + 4, e.clientX - r.left));
   tip.style.left = x + 'px';
-  $('span', tip).textContent = fmtTime(s);
+  const chap = (P.chapters || []).length > 1 ? [...P.chapters].reverse().find(c => c.at <= s) : null;
+  $('span', tip).textContent = fmtTime(s) + (chap ? ' · ' + chap.title : '');
   // A still from the server (rounded to 10 s), asked for once the pointer rests a moment.
   const img = $('img', tip), step = Math.floor(s / 10) * 10;
   if (frameWant === step) return;
