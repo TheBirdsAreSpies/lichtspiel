@@ -16,7 +16,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg python3 ca-certificates mesa-va-drivers \
  && if [ "$(dpkg --print-architecture)" = "amd64" ]; then apt-get install -y --no-install-recommends i965-va-driver intel-media-va-driver; fi \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=build /src/target/release/lichtspiel /usr/local/bin/lichtspiel
+COPY --from=build /src/target/release/lichtspiel-server /usr/local/bin/lichtspiel-server
 COPY plugins /opt/lichtspiel/plugins
 ENV LICHTSPIEL_DATA=/config \
     LICHTSPIEL_PORT=8484 \
@@ -24,4 +24,4 @@ ENV LICHTSPIEL_DATA=/config \
 VOLUME ["/config"]
 EXPOSE 8484
 HEALTHCHECK --interval=60s --timeout=5s CMD python3 -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8484/identity')" || exit 1
-CMD ["lichtspiel"]
+CMD ["lichtspiel-server"]

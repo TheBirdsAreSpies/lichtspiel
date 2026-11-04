@@ -400,7 +400,7 @@ Under **Settings → Network**:
 
 1. Install **ffmpeg** (e.g. `winget install ffmpeg`) so `ffmpeg` and `ffprobe` are on the PATH,
    or set their full paths in Settings.
-2. `cargo build --release` in this folder, then run `target\release\lichtspiel.exe`.
+2. `cargo build --release` in this folder, then run `target\release\lichtspiel-server.exe`.
 3. Open `http://localhost:8484`.
 
 Data goes to a `data` folder next to where you start it. Options:
