@@ -254,6 +254,8 @@ async function plexSyncPanel() {
   const url = h('input', { value: st.url, placeholder: 'http://192.168.1.10:32400', style: 'width:100%;max-width:420px' });
   const every = h('input', { type: 'number', min: 1, max: 1440, value: st.interval_minutes, style: 'width:90px' });
   const on = h('input', { type: 'checkbox', checked: st.enabled });
+  const dir = h('select', {}, [['both', t('Both ways')], ['from_plex', t('Plex → here only (Plex is the master)')], ['to_plex', t('Here → Plex only (this server is the master)')]]
+    .map(([v, l]) => h('option', { value: v, selected: (st.direction || 'both') === v }, l)));
   const what = {};
   const box = (k, label) => h('label', {}, (what[k] = h('input', { type: 'checkbox', checked: st[k] })), label);
   // Plex accounts → people here.
@@ -283,7 +285,7 @@ async function plexSyncPanel() {
   };
   st.path_map.forEach(r => addMap(r.from, r.to));
   const body = () => ({ enabled: on.checked, url: url.value.trim(), interval_minutes: Number(every.value) || 15,
-    watched: what.watched.checked, resume: what.resume.checked, ratings: what.ratings.checked,
+    watched: what.watched.checked, resume: what.resume.checked, ratings: what.ratings.checked, direction: dir.value,
     path_map: maps.map(m => ({ from: m.f.value.trim(), to: m.tt.value.trim() })).filter(m => m.from && m.to),
     accounts: rows.map(r => ({ id: r.id || undefined, token: r.token.value.trim() || undefined, user_id: Number(r.who.value) })) });
   // Saved tokens are kept by the server; the fields empty again.
@@ -334,13 +336,14 @@ async function plexSyncPanel() {
   if (st.running) wait();
   return h('div', { class: 'panel', style: 'margin-top:20px' },
     h('h2', { style: 'margin-top:0' }, t('Sync with Plex')),
-    h('p', { class: 'dim' }, t('Keeps watched state, resume points and ratings the same here and on a running Plex server, both ways. Videos are matched by their file. When something changed on both sides, the side watched more recently wins; the first sync loses nothing (watched on either side stays watched).')),
+    h('p', { class: 'dim' }, t('Keeps watched state, resume points and ratings the same here and on a running Plex server, by default both ways. Videos are matched by their file. When something changed on both sides, the side watched more recently wins; the first sync loses nothing (watched on either side stays watched).')),
     formRow(t('Plex server'), url, t('Its address with the port, usually 32400.')),
     formRow(t('Plex accounts'), h('div', {}, accBox, h('button', { class: 'small', style: 'margin-top:6px', onclick: () => addRow(null) }, t('Add a Plex account'))),
       t('One X-Plex-Token per person. Find it in Plex Web: ⋯ on any movie → Get info → View XML; the address ends in X-Plex-Token=….'), true),
     formRow(t('Folder translation'), h('div', {}, mapBox, h('button', { class: 'small', style: 'margin-top:6px', onclick: () => addMap('', '') }, t('Add a translation'))),
       t('Only needed when Plex sees the videos under other paths than this server (e.g. /data/Filme there, /media/Filme here). Test connection suggests them.'), true),
     formRow(t('Sync'), h('div', { class: 'checks' }, box('watched', t('Watched')), box('resume', t('Resume points')), box('ratings', t('Ratings')))),
+    formRow(t('Direction'), dir, t('With one direction only, the master side is copied as it is: a video unwatched on the master becomes unwatched on the other side too, and nothing is ever sent the other way.')),
     formRow(t('Automatically'), h('label', { style: 'display:flex;gap:8px;align-items:center;margin:0' }, on, t('every'), every, t('minutes'))),
     h('div', { class: 'actions' },
       h('button', { onclick: test }, t('Test connection')),

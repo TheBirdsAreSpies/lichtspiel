@@ -848,8 +848,15 @@ I18N.add('de', 'Deutsch', {
     'Import finished': 'Import abgeschlossen',
     // ---------- sync with Plex
     'Sync with Plex': 'Mit Plex synchronisieren',
-    'Keeps watched state, resume points and ratings the same here and on a running Plex server, both ways. Videos are matched by their file. When something changed on both sides, the side watched more recently wins; the first sync loses nothing (watched on either side stays watched).':
-      'Hält Gesehen-Status, Fortsetzungspunkte und Bewertungen hier und auf einem laufenden Plex-Server gleich, in beide Richtungen. Videos werden über ihre Datei zugeordnet. Wurde auf beiden Seiten etwas geändert, gewinnt die Seite, auf der zuletzt geschaut wurde; beim ersten Abgleich geht nichts verloren (auf einer Seite Gesehenes bleibt gesehen).',
+    'Keeps watched state, resume points and ratings the same here and on a running Plex server, by default both ways. Videos are matched by their file. When something changed on both sides, the side watched more recently wins; the first sync loses nothing (watched on either side stays watched).':
+      'Hält Gesehen-Status, Fortsetzungspunkte und Bewertungen hier und auf einem laufenden Plex-Server gleich, standardmäßig in beide Richtungen. Videos werden über ihre Datei zugeordnet. Wurde auf beiden Seiten etwas geändert, gewinnt die Seite, auf der zuletzt geschaut wurde; beim ersten Abgleich geht nichts verloren (auf einer Seite Gesehenes bleibt gesehen).',
+    'Direction': 'Richtung',
+    'Both ways': 'In beide Richtungen',
+    'Plex → here only (Plex is the master)': 'Nur Plex → hier (Plex ist der Master)',
+    'Here → Plex only (this server is the master)': 'Nur hier → Plex (dieser Server ist der Master)',
+    'With one direction only, the master side is copied as it is: a video unwatched on the master becomes unwatched on the other side too, and nothing is ever sent the other way.':
+      'Bei nur einer Richtung wird die Master-Seite eins zu eins übernommen: Ein Video, das auf dem Master ungesehen ist, wird auch auf der anderen Seite ungesehen, und in die Gegenrichtung wird nie etwas gesendet.',
+    'Direction must be both, from_plex or to_plex': 'Richtung muss both, from_plex oder to_plex sein',
     'Plex server': 'Plex-Server',
     'Its address with the port, usually 32400.': 'Seine Adresse mit Port, meist 32400.',
     'Plex accounts': 'Plex-Konten',

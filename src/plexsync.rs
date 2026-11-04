@@ -1,5 +1,5 @@
 //! Keeps watched state, resume points and ratings in step with a running
-//! Plex Media Server, both ways, through Plex's own HTTP API.
+//! Plex Media Server (both ways, or one way only: the master side wins), through Plex's own HTTP API.
 //!
 //! Each Plex account (its X-Plex-Token) belongs to one person here. Movies and
 //! episodes are matched by their file path (folder paths can be translated,
@@ -65,6 +65,9 @@ pub struct Config {
     pub resume: bool,
     #[serde(default = "yes")]
     pub ratings: bool,
+    /// "both", "from_plex" (Plex is the master: this server copies it) or "to_plex" (this server is the master).
+    #[serde(default = "both")]
+    pub direction: String,
     /// Plex's folder → the same folder here.
     #[serde(default)]
     pub path_map: Vec<PathRule>,
@@ -81,10 +84,13 @@ fn interval() -> u64 {
 fn yes() -> bool {
     true
 }
+fn both() -> String {
+    "both".into()
+}
 
 impl Default for Config {
     fn default() -> Self {
-        Config { enabled: false, url: String::new(), interval_minutes: interval(), watched: true, resume: true, ratings: true, path_map: vec![], accounts: vec![], client_id: String::new() }
+        Config { enabled: false, url: String::new(), interval_minutes: interval(), watched: true, resume: true, ratings: true, direction: both(), path_map: vec![], accounts: vec![], client_id: String::new() }
     }
 }
 
@@ -153,7 +159,7 @@ pub fn public(app: &App) -> Value {
     let last = std::fs::read(last_path(app)).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok());
     json!({
         "enabled": c.enabled, "url": c.url, "interval_minutes": c.interval_minutes,
-        "watched": c.watched, "resume": c.resume, "ratings": c.ratings,
+        "watched": c.watched, "resume": c.resume, "ratings": c.ratings, "direction": c.direction,
         "path_map": c.path_map,
         "accounts": c.accounts.iter().map(|a| json!({"id": a.id, "token_hint": hint(&a.token), "user_id": a.user_id, "plex_name": a.plex_name,
             "username": db.user(a.user_id).map(|u| u.username.clone())})).collect::<Vec<_>>(),
@@ -172,6 +178,10 @@ pub fn update(app: &App, body: &Value) -> Result<Value, String> {
     if let Some(v) = body.get("interval_minutes").and_then(Value::as_u64) { c.interval_minutes = v.clamp(1, 24 * 60); }
     for (k, f) in [("watched", &mut c.watched), ("resume", &mut c.resume), ("ratings", &mut c.ratings)] {
         if let Some(v) = body.get(k).and_then(Value::as_bool) { *f = v; }
+    }
+    if let Some(v) = body.get("direction").and_then(Value::as_str) {
+        if !["both", "from_plex", "to_plex"].contains(&v) { return Err("Direction must be both, from_plex or to_plex".into()); }
+        c.direction = v.into();
     }
     if let Some(list) = body.get("path_map").and_then(Value::as_array) {
         c.path_map = list.iter().map(|r| PathRule { from: r["from"].as_str().unwrap_or("").trim().into(), to: r["to"].as_str().unwrap_or("").trim().into() })
@@ -363,6 +373,15 @@ fn pick<T: Clone>(agreed: Option<T>, here: T, plex: T, plex_newer: bool, eq: imp
     }
 }
 
+/// One-way sync: the master side's value always wins ("from_plex": Plex, "to_plex": here).
+fn directed<T>(dir: &str, picked: T, here: T, plex: T) -> T {
+    match dir {
+        "from_plex" => plex,
+        "to_plex" => here,
+        _ => picked,
+    }
+}
+
 /// Starts a run on a background thread unless one is running.
 pub fn start_now(app: &Arc<App>) -> bool {
     if RUNNING.swap(true, Ordering::SeqCst) { return false; }
@@ -469,6 +488,7 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
             let mut scrobbled = false;
             if c.watched {
                 let w = pick(agreed.as_ref().map(|s| s.w), lv.view_count > 0, p.count > 0, plex_newer, |a, b| a == b, |a, b| a || b);
+                let w = directed(&c.direction, w, lv.view_count > 0, p.count > 0);
                 res.w = w;
                 if w != (lv.view_count > 0) {
                     let v = db.view_mut(u, *id);
@@ -493,6 +513,7 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
             }
             if c.resume {
                 let o = pick(agreed.as_ref().map(|s| s.o), lv.view_offset_ms, p.offset, plex_newer, |a, b| same_offset(*a, *b), |a, b| if plex_newer { b } else { a });
+                let o = directed(&c.direction, o, lv.view_offset_ms, p.offset);
                 res.o = o;
                 if !same_offset(o, lv.view_offset_ms) {
                     let v = db.view_mut(u, *id);
@@ -509,6 +530,7 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
             if c.ratings {
                 let eq = |a: &Option<f32>, b: &Option<f32>| match (a, b) { (Some(x), Some(y)) => (x - y).abs() < 0.05, (None, None) => true, _ => false };
                 let r = pick(agreed.as_ref().map(|s| s.r), lv.rating, p.rating, plex_newer, eq, |a, b| a.or(b));
+                let r = directed(&c.direction, r, lv.rating, p.rating);
                 res.r = r;
                 if !eq(&r, &lv.rating) {
                     db.view_mut(u, *id).rating = r;
@@ -549,6 +571,13 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_way_follows_the_master() {
+        assert!(!directed("from_plex", true, true, false));
+        assert!(directed("to_plex", false, true, false));
+        assert!(directed("both", true, false, false));
+    }
 
     #[test]
     fn picks_the_side_that_changed() {

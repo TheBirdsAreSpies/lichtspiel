@@ -307,6 +307,8 @@ Videos are matched by their file path; when Plex sees the folders under other pa
 **Test connection** suggests a folder translation. A change on one side goes to the other;
 when both sides changed, the side watched more recently wins. The first sync loses nothing:
 watched on either side stays watched and a rating set on either side is kept.
+Under **Direction** you can make one side the master instead: *Plex → here only* or
+*Here → Plex only* copy the master's state as it is and never send anything the other way.
 
 ## Import everything from your old server
 
