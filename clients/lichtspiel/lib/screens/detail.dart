@@ -97,7 +97,29 @@ class _DetailScreenState extends State<DetailScreen> {
 
   String get key => '${it!['ratingKey'] ?? it!['id'] ?? widget.id}';
 
+  /// Which of several merged versions (1080p, 4K ...) plays; 0 = the item's own file.
+  int ver = 0;
+
+  static String versionName(Map v) {
+    final h = ((v['height'] ?? 0) as num).toInt();
+    final size = ((v['size'] ?? 0) as num).toDouble();
+    final e = '${v['edition'] ?? ''}';
+    return [
+      if (h > 0) h >= 2000 ? '4K' : '${h}p',
+      if (e.isNotEmpty) e,
+      if (size > 0) size > 1e9 ? '${(size / 1e9).toStringAsFixed(1)} GB' : '${(size / 1e6).round()} MB',
+    ].join(' · ');
+  }
+
+  Map<String, dynamic> versioned(Map<String, dynamic> item) {
+    final m = item['Media'] as List? ?? const [];
+    if (ver <= 0 || ver >= m.length || '${item['ratingKey']}' != '${it?['ratingKey']}') return item;
+    final v = m[ver]['id'];
+    return {...item, 'id': v, 'ratingKey': '$v', 'Media': null};
+  }
+
   Future<void> play(Map<String, dynamic> item) async {
+    item = versioned(item);
     await Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: api, item: item)));
     if (mounted) load(); // refresh resume position and watched marks
   }
@@ -216,6 +238,12 @@ class _DetailScreenState extends State<DetailScreen> {
                 if (playable && off > 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: Text('Fortsetzen bei ${fmtClock(off)}')),
                 if (playable && off > 0) OutlinedButton(onPressed: () => play({...item, 'viewOffset': 0}), child: const Text('Von vorn')),
                 if (playable && off == 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
+                if (playable && (item['Media'] as List? ?? const []).length > 1)
+                  DropdownButton<int>(
+                    value: ver.clamp(0, (item['Media'] as List).length - 1),
+                    onChanged: (v) => setState(() => ver = v ?? 0),
+                    items: [for (var i = 0; i < (item['Media'] as List).length; i++) DropdownMenuItem(value: i, child: Text(versionName(item['Media'][i])))],
+                  ),
                 if (trailer != null) OutlinedButton.icon(onPressed: () => play(trailer), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer'))
                 else if (online.isNotEmpty) OutlinedButton.icon(onPressed: () => _open('https://www.youtube.com/watch?v=${online.first['key']}'), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer (online)')),
                 if (!playable && leafCount > 0 && (type == 'show' || type == 'season'))
