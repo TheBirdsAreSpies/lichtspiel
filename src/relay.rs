@@ -243,7 +243,12 @@ mod tests {
         let (public, tunnel) = (free(()), free(()));
         let (p, t) = (public.clone(), tunnel.clone());
         std::thread::spawn(move || { let _ = run_relay(&p, &t, "geheimes-passwort"); });
-        std::thread::sleep(Duration::from_millis(300));
+        // Wait until the relay really listens (a fixed pause is too short on a busy machine, like a NAS).
+        let started = Instant::now();
+        while TcpStream::connect(&tunnel).is_err() {
+            assert!(started.elapsed() < Duration::from_secs(20), "the relay did not start");
+            std::thread::sleep(Duration::from_millis(50));
+        }
         // A home server with the wrong secret is turned away, the right one is accepted.
         assert!(wait_for_caller(&tunnel, "falsch-falsch").is_err());
         let t2 = tunnel.clone();
