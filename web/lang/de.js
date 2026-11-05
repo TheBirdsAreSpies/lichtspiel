@@ -1152,6 +1152,13 @@ I18N.add('de', 'Deutsch', {
 
     // ---------- person page
     'In 1 movie or show in your libraries': 'In 1 Film oder Serie in deinen Bibliotheken',
+    'Born {date}': 'Geboren am {date}',
+    'Died {date}': 'Gestorben am {date}',
+    'Photos': 'Fotos',
+    'Filmography': 'Filmografie',
+    'in your libraries': 'in deinen Bibliotheken',
+    'Not in your libraries': 'Nicht in deinen Bibliotheken',
+    'Reload details': 'Details neu laden',
     'In {n} movies and shows in your libraries': 'In {n} Filmen und Serien in deinen Bibliotheken',
     'as {role}': 'als {role}',
     'Nothing in your libraries.': 'Nichts in deinen Bibliotheken.',

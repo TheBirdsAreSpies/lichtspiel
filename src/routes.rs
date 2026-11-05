@@ -57,6 +57,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/library/metadata/{id}/refresh", "Admin: download the details again"),
     ("GET", "/library/metadata/{id}/cast/{n}", "Photo of the n-th cast member (older downloads)"),
     ("GET", "/library/people/{key}", "An actor and every movie and show you can see that they are in (with their role) ?name= "),
+    ("GET", "/library/people/{key}/details", "About an actor from TMDB: biography, birth, more photos, filmography with what of it is in your libraries (item) ?name= &refresh=1"),
     ("GET", "/library/people/{key}/media", "The same list at a second address"),
     ("GET", "/library/people/{key}/thumb","An actor's photo; one photo per person, shared by everything they are in"),
     ("GET", "/library/metadata/{id}/markers", "Credits markers (ms), where they came from and where the video counts as watched"),
@@ -594,6 +595,45 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 Some(mime) => with_cache(serve_file(&p, mime, None, false)),
                 None => fail(404, "No photo"),
             }
+        }
+        ("GET", ["library", "people", key, "details"]) => {
+            if key.is_empty() || key.len() > 40 || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') { return fail(404, "Not found"); }
+            let cache = app.data_dir.join("metadata").join("people").join(format!("{key}.json"));
+            let fresh = std::fs::metadata(&cache).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|e| e < std::time::Duration::from_secs(14 * 86400));
+            let mut det = None;
+            if fresh && ctx.param("refresh") != Some("1") {
+                det = std::fs::read_to_string(&cache).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok());
+            }
+            if det.is_none() {
+                let settings = app.db.lock().unwrap().settings.clone();
+                match crate::metadata::person_details(&settings, key, ctx.param("name").unwrap_or("")) {
+                    Ok(d) => {
+                        let _ = std::fs::create_dir_all(cache.parent().unwrap());
+                        let _ = std::fs::write(&cache, d.to_string());
+                        det = Some(d);
+                    }
+                    Err(e) => match std::fs::read_to_string(&cache).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()) {
+                        Some(old) => det = Some(old),
+                        None => return fail(502, &e),
+                    },
+                }
+            }
+            let mut det = det.unwrap();
+            // Which of the filmography is in your libraries (by TMDB id, else by title and year).
+            let db = app.db.lock().unwrap();
+            let items: Vec<&db::Item> = db.items.values().filter(|i| matches!(i.kind, ItemKind::Movie | ItemKind::Show) && db.can_see_item(&user, i)).collect();
+            if let Some(list) = det["credits"].as_array_mut() {
+                for c in list.iter_mut() {
+                    let show = c["type"] == "show";
+                    let tid = c["tmdb_id"].as_u64().unwrap_or(0).to_string();
+                    let title = c["title"].as_str().unwrap_or("").to_lowercase();
+                    let year = c["year"].as_u64().map(|y| y as u32);
+                    let hit = items.iter().find(|i| (i.kind == ItemKind::Show) == show && i.extra.get("metadata_source").and_then(|v| v.as_str()) == Some("tmdb") && i.extra.get("metadata_id").and_then(|v| v.as_str()) == Some(tid.as_str()))
+                        .or_else(|| items.iter().find(|i| (i.kind == ItemKind::Show) == show && !title.is_empty() && i.title.to_lowercase() == title && (year.is_none() || i.year == year)));
+                    c["item"] = hit.map(|i| item_json(&db, &user, i, false)).unwrap_or(Value::Null);
+                }
+            }
+            ok(det)
         }
         // A person's list is also at /library/people/{id}/media.
         ("GET", ["library", "people", key]) | ("GET", ["library", "people", key, "media"]) => {

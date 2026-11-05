@@ -1045,10 +1045,41 @@ async function personPage(key, qs) {
   const initials = () => h('div', { class: 'initials', style: 'width:160px;height:220px;font-size:42px' }, (r.name || '?').split(' ').map(w => w[0]).slice(0, 2).join(''));
   const src = r.thumb ? withTok(r.thumb) : r.photo;
   const pic = src ? h('img', { src, alt: '', referrerpolicy: 'no-referrer', style: 'width:160px;height:220px;object-fit:cover;border-radius:8px', onerror: e => e.target.replaceWith(initials()) }) : initials();
-  set(h('div', { class: 'detail', style: 'margin-bottom:24px' }, h('div', {}, pic),
-      h('div', { class: 'info' }, h('h1', {}, r.name || t('Unknown')), h('p', { class: 'dim' }, r.size === 1 ? t('In 1 movie or show in your libraries') : t('In {n} movies and shows in your libraries', { n: r.size })))),
+  const facts = h('div', { class: 'dim', style: 'margin:6px 0' });
+  const bio = h('p', { style: 'max-width:760px;white-space:pre-line' });
+  const more = h('div', {});
+  const head = h('div', { class: 'detail', style: 'margin-bottom:24px' }, h('div', {}, pic),
+    h('div', { class: 'info' }, h('h1', {}, r.name || t('Unknown')), h('p', { class: 'dim' }, r.size === 1 ? t('In 1 movie or show in your libraries') : t('In {n} movies and shows in your libraries', { n: r.size })), facts, bio));
+  set(head,
     r.Metadata.length ? h('div', { class: 'grid' }, r.Metadata.map(it => h('div', {}, posterCard(it), it.role ? h('div', { class: 'dim', style: 'font-size:12px;margin-top:2px' }, t('as {role}', { role: it.role })) : null)))
-      : h('div', { class: 'empty' }, t('Nothing in your libraries.')));
+      : h('div', { class: 'empty' }, t('Nothing in your libraries.')),
+    more);
+  // From TMDB: biography, birth, more photos and the whole filmography (with what you have).
+  const load = async refresh => {
+    let d;
+    try { d = await GET(`/library/people/${encodeURIComponent(key)}/details?name=${encodeURIComponent(r.name || name)}${refresh ? '&refresh=1' : ''}`); }
+    catch (e) { more.replaceChildren(h('p', { class: 'dim' }, e.message)); return; }
+    const day = s => s ? new Date(s + 'T00:00').toLocaleDateString(I18N.lang || undefined, { dateStyle: 'long' }) : '';
+    const age = d.birthday ? Math.floor(((d.deathday ? new Date(d.deathday) : new Date()) - new Date(d.birthday)) / 31557600000) : null;
+    facts.replaceChildren(...[
+      d.birthday ? t('Born {date}', { date: day(d.birthday) }) + (age != null && !d.deathday ? ` (${age})` : '') : '',
+      d.deathday ? t('Died {date}', { date: day(d.deathday) }) + (age != null ? ` (${age})` : '') : '',
+      d.place_of_birth || '',
+    ].filter(Boolean).map(x => h('div', {}, x)));
+    bio.textContent = d.biography || '';
+    const mine = d.credits.filter(c => c.item), others = d.credits.filter(c => !c.item);
+    const card = c => c.item
+      ? h('div', {}, posterCard(c.item), c.role ? h('div', { class: 'dim', style: 'font-size:12px;margin-top:2px' }, c.role) : null)
+      : h('div', { class: 'card', style: 'opacity:.55', title: t('Not in your libraries') },
+          h('div', { class: 'poster' }, c.poster ? h('img', { src: c.poster, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer' }) : null),
+          h('div', { class: 't', title: c.title }, c.title), h('div', { class: 's' }, [c.year, c.role].filter(Boolean).join(' · ')));
+    more.replaceChildren(
+      d.photos.length > 1 ? [h('h2', {}, t('Photos')), scroller('row', d.photos.map(p => h('a', { href: p.full, target: '_blank', rel: 'noreferrer' }, h('img', { src: p.url, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer', style: 'height:200px;border-radius:6px;display:block' }))))] : null,
+      d.credits.length ? [h('h2', {}, t('Filmography') + ` (${mine.length}/${d.credits.length} ${t('in your libraries')})`),
+        h('div', { class: 'grid' }, [...mine, ...others].map(card))] : null,
+      h('p', {}, h('button', { class: 'small', onclick: () => load(true) }, t('Reload details')), d.imdb_id ? [' ', h('a', { href: `https://www.imdb.com/name/${d.imdb_id}/`, target: '_blank', rel: 'noreferrer' }, 'IMDb')] : null));
+  };
+  load(false);
 }
 
 // ---------- the "…" menu on posters and on a movie's page

@@ -543,6 +543,60 @@ fn tmdb_get(settings: &Settings, path: &str) -> Result<Value, String> {
     }
 }
 
+/// What TMDB knows about a person: biography, birth, more photos and everything they appeared in.
+/// `key` is our person key (tmdb-31 …); for people from other sources the name is searched.
+pub fn person_details(settings: &Settings, key: &str, name: &str) -> Result<Value, String> {
+    if settings.tmdb_api_key.trim().is_empty() {
+        return Err("Add a TMDB API key in the settings to load details about people".into());
+    }
+    let lang = lang_of(settings);
+    let id = match key.strip_prefix("tmdb-").and_then(|n| n.parse::<u64>().ok()) {
+        Some(n) => n,
+        None => {
+            if name.trim().is_empty() { return Err("Unknown person".into()); }
+            let r = tmdb_get(settings, &format!("/search/person?query={}&language={lang}", enc(name)))?;
+            r["results"][0]["id"].as_u64().ok_or("No person of that name found at TMDB")?
+        }
+    };
+    let v = tmdb_get(settings, &format!("/person/{id}?language={lang}&append_to_response=images,combined_credits,external_ids"))?;
+    let mut bio = v["biography"].as_str().unwrap_or("").trim().to_string();
+    if bio.is_empty() && lang != "en" {
+        bio = tmdb_get(settings, &format!("/person/{id}?language=en")).ok().and_then(|e| e["biography"].as_str().map(|s| s.trim().to_string())).unwrap_or_default();
+    }
+    let photos: Vec<Value> = v["images"]["profiles"].as_array().cloned().unwrap_or_default().iter().take(30)
+        .filter_map(|p| Some(json!({"url": tmdb_img(&p["file_path"], "w342")?, "full": tmdb_img(&p["file_path"], "h632")?}))).collect();
+    // One line per movie or show; a person can be actor and director in the same one.
+    let mut credits: Vec<Value> = vec![];
+    let mut add = |c: &Value, role: String| {
+        let kind = if c["media_type"] == "tv" { "show" } else { "movie" };
+        let tid = c["id"].as_u64().unwrap_or(0);
+        if c["genre_ids"].as_array().is_some_and(|g| g.iter().any(|x| x == 10767 || x == 10763)) { return; } // talk shows, news
+        if let Some(e) = credits.iter_mut().find(|e| e["tmdb_id"] == tid && e["type"] == kind) {
+            let old = e["role"].as_str().unwrap_or("").to_string();
+            if !role.is_empty() && !old.split(" · ").any(|r| r == role) { e["role"] = json!(if old.is_empty() { role } else { format!("{old} · {role}") }); }
+            return;
+        }
+        let date = c["release_date"].as_str().or(c["first_air_date"].as_str()).unwrap_or("");
+        credits.push(json!({"tmdb_id": tid, "type": kind, "title": c["title"].as_str().or(c["name"].as_str()).unwrap_or(""),
+            "year": date.get(..4).and_then(|y| y.parse::<u32>().ok()), "role": role, "poster": tmdb_img(&c["poster_path"], "w185"),
+            "votes": c["vote_count"]}));
+    };
+    for c in v["combined_credits"]["cast"].as_array().cloned().unwrap_or_default() {
+        add(&c, c["character"].as_str().unwrap_or("").to_string());
+    }
+    for c in v["combined_credits"]["crew"].as_array().cloned().unwrap_or_default() {
+        let job = c["job"].as_str().unwrap_or("");
+        if matches!(job, "Director" | "Writer" | "Screenplay" | "Creator" | "Producer" | "Executive Producer") {
+            add(&c, job.to_string());
+        }
+    }
+    credits.sort_by(|a, b| b["year"].as_u64().unwrap_or(9999).cmp(&a["year"].as_u64().unwrap_or(9999)));
+    credits.truncate(300);
+    Ok(json!({"tmdb_id": id, "name": v["name"], "biography": bio, "birthday": v["birthday"], "deathday": v["deathday"],
+        "place_of_birth": v["place_of_birth"], "department": v["known_for_department"], "imdb_id": v["external_ids"]["imdb_id"],
+        "homepage": v["homepage"], "photos": photos, "credits": credits}))
+}
+
 fn tmdb_img(path: &Value, size: &str) -> Option<String> {
     path.as_str().filter(|p| !p.is_empty()).map(|p| format!("{TMDB_IMG}/{size}{p}"))
 }
