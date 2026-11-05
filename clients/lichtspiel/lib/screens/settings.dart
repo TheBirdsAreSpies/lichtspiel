@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import 'libraries.dart';
+import 'maintenance.dart';
 import 'server_settings.dart';
 import 'users.dart';
 
@@ -43,6 +44,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: const Icon(Icons.dns_outlined),
                 label: const Text('Server'),
                 onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ServerSettingsScreen(api: widget.api))),
+              ),
+            if (widget.admin)
+              TextButton.icon(
+                icon: const Icon(Icons.build_outlined),
+                label: const Text('Wartung'),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MaintenanceScreen(api: widget.api))),
               ),
             if (widget.admin)
               TextButton.icon(
