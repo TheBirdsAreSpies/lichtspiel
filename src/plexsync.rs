@@ -65,6 +65,9 @@ pub struct Config {
     pub resume: bool,
     #[serde(default = "yes")]
     pub ratings: bool,
+    /// Takes over the intro and credits markers Plex found, where this server has none (never the other way).
+    #[serde(default = "yes")]
+    pub markers: bool,
     /// "both", "from_plex" (Plex is the master: this server copies it) or "to_plex" (this server is the master).
     #[serde(default = "both")]
     pub direction: String,
@@ -90,7 +93,7 @@ fn both() -> String {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { enabled: false, url: String::new(), interval_minutes: interval(), watched: true, resume: true, ratings: true, direction: both(), path_map: vec![], accounts: vec![], client_id: String::new() }
+        Config { enabled: false, url: String::new(), interval_minutes: interval(), watched: true, resume: true, ratings: true, markers: true, direction: both(), path_map: vec![], accounts: vec![], client_id: String::new() }
     }
 }
 
@@ -103,6 +106,13 @@ struct Snap {
     o: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     r: Option<f32>,
+    /// When Plex was last asked for this item's intro and credits markers (0 = never).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    m: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -159,7 +169,7 @@ pub fn public(app: &App) -> Value {
     let last = std::fs::read(last_path(app)).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok());
     json!({
         "enabled": c.enabled, "url": c.url, "interval_minutes": c.interval_minutes,
-        "watched": c.watched, "resume": c.resume, "ratings": c.ratings, "direction": c.direction,
+        "watched": c.watched, "resume": c.resume, "ratings": c.ratings, "markers": c.markers, "direction": c.direction,
         "path_map": c.path_map,
         "accounts": c.accounts.iter().map(|a| json!({"id": a.id, "token_hint": hint(&a.token), "user_id": a.user_id, "plex_name": a.plex_name,
             "username": db.user(a.user_id).map(|u| u.username.clone())})).collect::<Vec<_>>(),
@@ -176,7 +186,7 @@ pub fn update(app: &App, body: &Value) -> Result<Value, String> {
     if let Some(v) = body.get("enabled").and_then(Value::as_bool) { c.enabled = v; }
     if let Some(v) = body.get("url").and_then(Value::as_str) { c.url = v.trim().to_string(); }
     if let Some(v) = body.get("interval_minutes").and_then(Value::as_u64) { c.interval_minutes = v.clamp(1, 24 * 60); }
-    for (k, f) in [("watched", &mut c.watched), ("resume", &mut c.resume), ("ratings", &mut c.ratings)] {
+    for (k, f) in [("watched", &mut c.watched), ("resume", &mut c.resume), ("ratings", &mut c.ratings), ("markers", &mut c.markers)] {
         if let Some(v) = body.get(k).and_then(Value::as_bool) { *f = v; }
     }
     if let Some(v) = body.get("direction").and_then(Value::as_str) {
@@ -246,6 +256,22 @@ struct PlexItem {
     offset: u64,
     last: u64,
     rating: Option<f32>,
+}
+
+/// An item's markers as Plex tells them: (intro (start, end) ms, credits start ms).
+fn plex_markers(url: &str, client: &str, token: &str, rk: &str) -> Result<(Option<(u64, u64)>, Option<u64>), String> {
+    let v = request("GET", &format!("{url}/library/metadata/{rk}?includeMarkers=1"), client, token)?;
+    let (mut intro, mut credits) = (None, None);
+    for m in v["MediaContainer"]["Metadata"][0]["Marker"].as_array().into_iter().flatten() {
+        let (Some(s), Some(e)) = (num(&m["startTimeOffset"]), num(&m["endTimeOffset"])) else { continue };
+        let (s, e) = (s.max(0.0) as u64, e.max(0.0) as u64);
+        match m["type"].as_str() {
+            Some("intro") if e > s && intro.is_none() => intro = Some((s, e)),
+            Some("credits") if credits.is_none() => credits = Some(s),
+            _ => {}
+        }
+    }
+    Ok((intro, credits))
 }
 
 struct PlexSection {
@@ -556,6 +582,51 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
         }
     }
     app.save();
+    // Intro and credits markers Plex found, where this server has none. Plex is asked once per item
+    // and week; an item with a marker is not asked again.
+    let mut markers_taken = 0;
+    if c.markers && c.direction != "to_plex" {
+        let week = 7 * 86400;
+        let mut seen: std::collections::HashSet<u64> = Default::default();
+        let todo: Vec<(String, u64, String)> = {
+            let db = app.db.lock().unwrap();
+            matched.iter().filter(|(_, id)| seen.insert(*id)).filter_map(|(p, id)| {
+                let it = db.items.get(id)?;
+                let f = it.file.as_ref()?;
+                let need_credits = it.parts.is_empty() && !it.extra.contains_key("credits_ms") && f.credits_ms.is_empty();
+                let need_intro = it.kind == ItemKind::Episode && !it.extra.contains_key("intro_ms") && f.intro_ms.is_empty();
+                let key = format!("{u}:{id}");
+                let asked = state.items.get(&key).map(|s| s.m).unwrap_or(0);
+                ((need_credits || need_intro) && now().saturating_sub(asked) >= week).then(|| (p.rk.clone(), *id, key))
+            }).collect()
+        };
+        for (rk, id, key) in todo {
+            if app.job_cancelled() { break; }
+            let Ok((intro, credits)) = plex_markers(url, &c.client_id, &acc.token, &rk) else { continue };
+            if let Some(it) = app.db.lock().unwrap().items.get_mut(&id) {
+                let is_episode = it.kind == ItemKind::Episode;
+                let whole = it.parts.is_empty() && !it.extra.contains_key("credits_ms");
+                let intro_free = is_episode && !it.extra.contains_key("intro_ms");
+                if let Some(f) = it.file.as_mut() {
+                    if let Some(c0) = credits.filter(|_| whole && f.credits_ms.is_empty()) {
+                        f.credits_ms = vec![c0];
+                        f.credits_source = "plex".into();
+                        f.credits_checked = crate::db::CREDITS_DETECTOR_VERSION;
+                        f.credits_errors = 0;
+                        markers_taken += 1;
+                    }
+                    if let Some((s, e)) = intro.filter(|_| intro_free && f.intro_ms.is_empty()) {
+                        f.intro_ms = vec![s, e];
+                        f.intro_checked = crate::intro::DETECTOR_VERSION;
+                        f.intro_errors = 0;
+                        markers_taken += 1;
+                    }
+                }
+            }
+            state.items.entry(key).or_default().m = now();
+        }
+        if markers_taken > 0 { app.save(); }
+    }
     // Then tell Plex. What could not be sent is agreed again next time.
     let mut errors: Vec<String> = vec![];
     let mut pushes = pushes.into_iter();
@@ -582,7 +653,7 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
     Ok(json!({
         "plex_items": plex_items, "matched": matched.len(), "not_found": missing.len(),
         "not_found_examples": missing.iter().take(8).collect::<Vec<_>>(),
-        "to_here": here.json(), "to_plex": there.json(),
+        "to_here": here.json(), "to_plex": there.json(), "markers": markers_taken,
         "error": if errors.is_empty() { Value::Null } else { json!(format!("Not everything reached Plex: {}", errors.join("; "))) },
     }))
 }

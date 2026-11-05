@@ -834,6 +834,8 @@ I18N.add('de', 'Deutsch', {
     'Credits markers': 'Abspann-Markierungen',
     'Titles and plots': 'Titel und Handlungen',
     'Online match from Plex': 'Online-Zuordnung von Plex',
+    'Intro and credits markers (from Plex)': 'Intro- und Abspann-Marken (von Plex)',
+    'Markers from Plex': 'Marken von Plex',
     'Not imported': 'Nicht importiert',
     'smart playlists (their rules work differently here): ': 'intelligente Wiedergabelisten (ihre Regeln funktionieren hier anders): ',
     'Accounts skipped': 'Übersprungene Konten',

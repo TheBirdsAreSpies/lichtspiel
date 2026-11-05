@@ -290,7 +290,7 @@ async function plexSyncPanel() {
   };
   st.path_map.forEach(r => addMap(r.from, r.to));
   const body = () => ({ enabled: on.checked, url: url.value.trim(), interval_minutes: Number(every.value) || 15,
-    watched: what.watched.checked, resume: what.resume.checked, ratings: what.ratings.checked, direction: dir.value,
+    watched: what.watched.checked, resume: what.resume.checked, ratings: what.ratings.checked, markers: what.markers.checked, direction: dir.value,
     path_map: maps.map(m => ({ from: m.f.value.trim(), to: m.tt.value.trim() })).filter(m => m.from && m.to),
     accounts: rows.map(r => ({ id: r.id || undefined, token: r.token.value.trim() || undefined, user_id: Number(r.who.value) })) });
   // Saved tokens are kept by the server; the fields empty again.
@@ -336,7 +336,8 @@ async function plexSyncPanel() {
       a.plex_items != null ? h('div', { class: 'kv', style: 'margin-top:4px' },
         h('div', {}, t('Found here')), h('div', {}, t('{n} of {all}', { n: a.matched, all: a.plex_items })),
         h('div', {}, t('From Plex')), h('div', {}, counts(a.to_here)),
-        h('div', {}, t('To Plex')), h('div', {}, counts(a.to_plex))) : null,
+        h('div', {}, t('To Plex')), h('div', {}, counts(a.to_plex)),
+        a.markers ? [h('div', {}, t('Markers from Plex')), h('div', {}, t('{n} items', { n: a.markers }))] : null) : null,
       a.not_found ? h('details', { style: 'margin-top:6px' }, h('summary', { class: 'dim' }, t('{n} files were not found here — check the folder translation', { n: a.not_found })),
         h('pre', { style: 'white-space:pre-wrap;font-size:12px' }, (a.not_found_examples || []).join('\n'))) : null))));
   showLast(st.last, st.running);
@@ -357,7 +358,7 @@ async function plexSyncPanel() {
       t('One X-Plex-Token per person. Find it in Plex Web: ⋯ on any movie → Get info → View XML; the address ends in X-Plex-Token=….'), true),
     formRow(t('Folder translation'), h('div', {}, mapBox, h('button', { class: 'small', style: 'margin-top:6px', onclick: () => addMap('', '') }, t('Add a translation'))),
       t('Only needed when Plex sees the videos under other paths than this server (e.g. /data/Filme there, /media/Filme here). Test connection lists the folders of Plex, choose the matching folder here for each.'), true),
-    formRow(t('Sync'), h('div', { class: 'checks' }, box('watched', t('Watched')), box('resume', t('Resume points')), box('ratings', t('Ratings')))),
+    formRow(t('Sync'), h('div', { class: 'checks' }, box('watched', t('Watched')), box('resume', t('Resume points')), box('ratings', t('Ratings')), box('markers', t('Intro and credits markers (from Plex)')))),
     formRow(t('Direction'), dir, t('With one direction only, the master side is copied as it is: a video unwatched on the master becomes unwatched on the other side too, and nothing is ever sent the other way.')),
     formRow(t('Automatically'), h('label', { style: 'display:flex;gap:8px;align-items:center;margin:0' }, on, t('every'), every, t('minutes'))),
     h('div', { class: 'actions' },
