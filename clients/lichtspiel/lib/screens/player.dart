@@ -591,8 +591,14 @@ class _SettingsMenuState extends State<_SettingsMenu> {
     final size = MediaQuery.of(context).size;
     return Dialog(
       alignment: Alignment.bottomRight,
-      insetPadding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-      child: SizedBox(width: 340, height: size.height < 560 ? size.height - 120 : 440, child: ListView(children: children)),
+      insetPadding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 260, maxHeight: (size.height - 100).clamp(160.0, 300.0)),
+        child: ListTileTheme(
+          data: const ListTileThemeData(dense: true, minVerticalPadding: 0, visualDensity: VisualDensity(vertical: -3), titleTextStyle: TextStyle(fontSize: 13, color: Colors.white), horizontalTitleGap: 6),
+          child: ListView(shrinkWrap: true, padding: const EdgeInsets.symmetric(vertical: 4), children: children),
+        ),
+      ),
     );
   }
 }
