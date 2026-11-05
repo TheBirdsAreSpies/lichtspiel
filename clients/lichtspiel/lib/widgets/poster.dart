@@ -6,6 +6,7 @@ import '../screens/edit.dart';
 import '../screens/player.dart';
 import 'activity.dart';
 import 'together.dart';
+import 'item_extras.dart';
 import '../screens/downloads.dart';
 
 /// A poster card with title, subtitle, watched mark and progress bar. Focusable (D-pad / remote ready).
@@ -75,6 +76,8 @@ class _PosterState extends State<Poster> {
         if (widget.onRemoved != null) const PopupMenuItem(value: 'unresume', child: Text('Aus „Weiterschauen“ entfernen')),
         if (playable && item['missing'] != true && item['type'] != 'track') const PopupMenuItem(value: 'together', child: Text('Zusammen schauen…')),
         if (DownloadRights.allowed && (playable || const {'show', 'season'}.contains(item['type'])) && item['missing'] != true) const PopupMenuItem(value: 'download', child: Text('Herunterladen…')),
+        if (item['type'] != 'clip' && item['type'] != 'collection') const PopupMenuItem(value: 'history', child: Text('Verlauf')),
+        if (playable) const PopupMenuItem(value: 'report', child: Text('Problem melden…')),
         PopupMenuItem(value: 'watched', child: Text(watched ? 'Als ungesehen markieren' : 'Als gesehen markieren')),
         if (Poster.admin && matchable) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
         if (Poster.admin) const PopupMenuItem(value: 'edit', child: Text('Details bearbeiten')),
@@ -87,6 +90,12 @@ class _PosterState extends State<Poster> {
         case 'queue':
           PlayerScreen.userQueue.add(item);
           say('Zur Warteschlange hinzugefügt – sie läuft nach dem aktuellen Video');
+          return;
+        case 'history':
+          await historyDialog(context, widget.api, item);
+          return;
+        case 'report':
+          await reportDialog(context, widget.api, item);
           return;
         case 'download':
           await downloadDialog(context, widget.api, [item]);

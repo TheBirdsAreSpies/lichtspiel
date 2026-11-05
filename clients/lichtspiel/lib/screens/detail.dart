@@ -7,6 +7,7 @@ import 'person.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'edit.dart';
 import 'downloads.dart';
+import '../widgets/item_extras.dart';
 import 'player.dart';
 import 'playlists.dart';
 
@@ -215,7 +216,18 @@ class _DetailScreenState extends State<DetailScreen> {
     ].join(' › ');
 
     return Scaffold(
-      appBar: AppBar(actions: [if (admin) _adminMenu(item)]),
+      appBar: AppBar(actions: [
+        if (item['type'] != 'clip')
+          PopupMenuButton<String>(
+            tooltip: 'Mehr',
+            onSelected: (v) => v == 'history' ? historyDialog(context, api, item) : reportDialog(context, api, item),
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'history', child: Text('Verlauf')),
+              if (playable) const PopupMenuItem(value: 'report', child: Text('Problem melden…')),
+            ],
+          ),
+        if (admin) _adminMenu(item),
+      ]),
       body: ListView(padding: const EdgeInsets.all(20), children: [
         if (crumbs.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(crumbs, style: dim)),
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
