@@ -1033,8 +1033,9 @@ async function creditsDialog(it) {
 // Pick the right online entry when the automatic match was wrong or missing.
 function fixMatch(it, done) {
   const x = it.extra || {};
-  const title = h('input', { value: x.file_title || it.title, style: 'width:100%' });
-  const year = h('input', { value: it.year || '', style: 'width:100px' });
+  const onEnter = e => { if (e.key === 'Enter') { e.preventDefault(); search(); } };
+  const title = h('input', { value: x.file_title || it.title, style: 'width:100%', onkeydown: onEnter });
+  const year = h('input', { value: it.year || '', style: 'width:100px', onkeydown: onEnter });
   const results = h('div', { class: 'list', style: 'max-height:55vh;overflow:auto;margin-top:10px' });
   const search = async () => {
     results.replaceChildren(h('div', { class: 'dim' }, t('Searching…')));
