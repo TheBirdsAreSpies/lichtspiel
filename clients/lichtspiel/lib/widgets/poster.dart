@@ -18,6 +18,7 @@ class Poster extends StatelessWidget {
     final dur = (item['duration'] ?? 0) as int;
     final off = (item['viewOffset'] ?? 0) as int;
     final thumb = isEp && item['grandparentThumb'] != null ? item['grandparentThumb'] : item['thumb'];
+    final missing = item['missing'] == true;
     final watched = ((item['viewCount'] ?? 0) as int) > 0;
     return SizedBox(
       width: width,
@@ -32,7 +33,9 @@ class Poster extends StatelessWidget {
               child: Stack(fit: StackFit.expand, children: [
                 Container(color: Colors.white10),
                 Image.network(api.img(thumb), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Center(child: Text('$title', textAlign: TextAlign.center))),
+                if (missing) Container(color: Colors.black54),
                 BusyOverlay(item: item),
+                if (missing) const Positioned(top: 4, left: 4, child: Tooltip(message: 'Datei fehlt – im Papierkorb der Mediathek', child: DecoratedBox(decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.all(Radius.circular(4))), child: Padding(padding: EdgeInsets.all(3), child: Icon(Icons.delete_outline, size: 18, color: Colors.redAccent))))),
                 if (watched) const Positioned(top: 4, right: 4, child: Icon(Icons.check_circle, size: 18, color: Color(0xFFE5A00D))),
                 if (off > 0 && dur > 0)
                   Positioned(left: 0, right: 0, bottom: 0, child: LinearProgressIndicator(value: (off / dur).clamp(0, 1).toDouble(), minHeight: 3)),
