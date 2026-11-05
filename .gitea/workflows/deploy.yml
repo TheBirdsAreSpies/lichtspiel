@@ -39,7 +39,7 @@ jobs:
             echo "The runner cannot use Docker (on a Synology: run act_runner as root or add its user to the docker group)."; exit 1; }
 
       - name: Tests
-        run: docker build --target test -t ${NAME}-test .
+        run: docker build --target test --build-arg GIT_SHA=${GITHUB_SHA::8} -t ${NAME}-test .
 
       - name: Build the image
         run: |
