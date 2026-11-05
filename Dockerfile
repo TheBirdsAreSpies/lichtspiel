@@ -3,9 +3,11 @@
 
 FROM rust:1-slim-bookworm AS build
 WORKDIR /src
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
 COPY web ./web
+# The commit the image is built from (shown in the web app; the Gitea workflow passes it).
+ARG GIT_SHA=
 # The status window is left out: a NAS has no screen.
 # The cache mounts keep the downloaded crates and the compiled dependencies between builds, so a
 # build after a small change takes minutes instead of a quarter of an hour (needs BuildKit, the default).

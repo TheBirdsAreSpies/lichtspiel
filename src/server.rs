@@ -28,6 +28,9 @@ use tiny_http::{Header, Response, StatusCode};
 pub const MATCH_VERSION: u64 = 3;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The commit this build is made from (a trailing "+" = with changes that were not committed) and when it was built.
+pub const BUILD: &str = env!("LICHTSPIEL_BUILD");
+pub const BUILT_AT: &str = env!("LICHTSPIEL_BUILT_AT");
 /// The server's name (after the old German word for cinema, "Lichtspielhaus").
 pub const APP_NAME: &str = "Lichtspiel";
 /// The default port; it can be

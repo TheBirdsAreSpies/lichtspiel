@@ -277,7 +277,7 @@ async function dashLive(live, charts) {
   const active = d.users.filter(u => u.active);
   const tc = d.playing.filter(p => p.method === 'transcode').length;
   const sub = $('#dashsub');
-  if (sub) sub.textContent = t('Running for {time} · version {v} · {sent} sent since the start · updates every {n} s', { time: fmtUptime(d.now - d.started_at), v: d.version, sent: fmtBytes(d.bytes_sent), n: d.sample_seconds });
+  if (sub) sub.textContent = t('Running for {time} · version {v} · {sent} sent since the start · updates every {n} s', { time: fmtUptime(d.now - d.started_at), v: d.version + (d.build ? ' (' + d.build + ')' : ''), sent: fmtBytes(d.bytes_sent), n: d.sample_seconds });
   const mem = c.mem_total ? `${fmtBytes(c.mem_used)} / ${fmtBytes(c.mem_total)}` : '–';
   live.replaceChildren(
     h('div', { class: 'tiles' },

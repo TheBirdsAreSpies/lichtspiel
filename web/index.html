@@ -45,6 +45,7 @@ label{display:block;color:var(--dim);font-size:13px;margin:10px 0 4px}
 #side a.on{color:var(--text);background:var(--panel2);border-left-color:var(--accent)}
 #side .head{font-size:11px;letter-spacing:.08em;color:#6f7780;padding:16px 22px 6px}
 #side small{color:#6f7780}
+#ver{padding:18px 22px 8px;font-size:11px;color:#6f7780;cursor:default}
 #side a{position:relative}
 #side .navhead{display:flex;align-items:center;justify-content:space-between;padding-right:12px}
 #side .more{width:26px;height:26px;padding:0;border:0;border-radius:50%;background:none;color:var(--dim);font-size:16px;line-height:24px;opacity:0;flex:none}
@@ -311,8 +312,8 @@ code{background:#0e1013;padding:1px 6px;border-radius:4px;font-size:13px}
 .apigroup table{margin-top:10px}
 code.m-get{color:#6cb6ff}code.m-post{color:var(--green)}code.m-put,code.m-patch{color:var(--accent)}code.m-delete{color:var(--red)}
 .badge{display:inline-block;margin-left:6px;font-size:11px;padding:0 7px;border-radius:9px;background:#2b2312;color:var(--accent)}
-#activity{display:none;align-items:center;gap:8px;font-size:13px;color:var(--dim);background:var(--panel2);border-radius:14px;padding:4px 12px;max-width:360px;white-space:nowrap;overflow:hidden;cursor:default}
-#activity .txt{overflow:hidden;text-overflow:ellipsis}
+#activity{display:none;align-items:center;gap:6px 10px;flex-wrap:wrap;font-size:12.5px;line-height:1.25;color:var(--dim);background:var(--panel2);border-radius:14px;padding:4px 12px;max-width:min(560px,60vw);max-height:46px;overflow:hidden;cursor:default}
+#activity .txt{overflow-wrap:anywhere}
 #activity button{flex:0 0 auto;padding:1px 10px}
 #activity .spin{width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .9s linear infinite;flex:0 0 12px}
 #activity .pbar{display:inline-block;width:60px;height:4px;background:var(--line);border-radius:2px;overflow:hidden;flex:0 0 60px}
@@ -437,6 +438,7 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   <a href="#/watchlist" data-nav="watchlist" data-t="Watchlist">Watchlist</a>
   <a href="#/downloads" data-nav="downloads" data-t="Downloads" style="display:none">Downloads</a>
   <div id="navsections"></div>
+  <div id="ver"></div>
 </nav>
 <main id="main"><p class="dim" data-t="Loading…">Loading…</p></main>
 <div id="player">

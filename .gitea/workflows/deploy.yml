@@ -47,7 +47,7 @@ jobs:
           # Keep the version that is running now as "previous" for the way back.
           running=$(docker inspect --format '{{.Image}}' ${NAME} 2>/dev/null || true)
           [ -n "$running" ] && docker tag "$running" ${NAME}:previous || true
-          docker build -t ${NAME}:latest -t ${NAME}:${GITHUB_SHA::8} .
+          docker build --build-arg GIT_SHA=${GITHUB_SHA::8} -t ${NAME}:latest -t ${NAME}:${GITHUB_SHA::8} .
 
       - name: Replace the container
         run: |

@@ -162,7 +162,7 @@ async function invitePage(code) {
 async function boot() {
   I18N.applyStatic();
   try { S.status = await GET('/api/status'); } catch (e) { S.status = null; }
-  if (S.status) { $('#sname').textContent = S.status.name; document.title = S.status.name === 'Lichtspiel' ? 'Lichtspiel' : `${S.status.name} · Lichtspiel`; }
+  if (S.status) { $('#ver').textContent = `Lichtspiel ${S.status.version}${S.status.build ? ' · ' + S.status.build : ''}`; $('#ver').title = S.status.built_at ? t('Built {when}', { when: fmtDateTime(S.status.built_at) }) : ''; $('#sname').textContent = S.status.name; document.title = S.status.name === 'Lichtspiel' ? 'Lichtspiel' : `${S.status.name} · Lichtspiel`; }
   S.me = null;
   { // (Also without a token: networks set to need no sign-in are let in by the server.)
     try {
@@ -986,7 +986,9 @@ async function pollActivity() {
       } }, t('Cancel')));
     }
     el.replaceChildren(h('span', { class: 'spin' }), ...parts);
-    el.title = st.last && st.last.message ? t('Last: {msg}', { msg: t(st.last.message) }) : t('Background work on the server');
+    el.title = [scanning.length ? t('Scanning {name}', { name: scanning.join(', ') }) : '', st.job ? t('{label}: {done} of {total}', { label: t(st.job.label), done: st.job.done, total: st.job.total }) : '',
+      st.working_on || st.queued > 0 ? t('Updating details') + (st.working_title ? ': ' + st.working_title : '') + (st.queued > 0 ? ' · ' + t('{n} left', { n: st.queued }) : '') : '',
+      st.last && st.last.message ? t('Last: {msg}', { msg: t(st.last.message) }) : ''].filter(Boolean).join('\n') || t('Background work on the server');
     el.style.display = 'flex';
   } else if (ACT.done >= 0 && st.done > ACT.done && st.last && st.last.message) {
     el.replaceChildren(h('span', { class: 'txt' }, (st.last.ok === false ? '⚠ ' : '✓ ') + t(st.last.message)));

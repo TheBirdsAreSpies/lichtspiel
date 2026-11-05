@@ -270,7 +270,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["api", "status"]) => {
             let db = app.db.lock().unwrap();
-            return ok(json!({"name": crate::server::display_name(&db.settings), "version": VERSION, "setup_needed": db.users.is_empty(), "machine_id": db.machine_id,
+            return ok(json!({"name": crate::server::display_name(&db.settings), "version": VERSION, "build": BUILD, "built_at": BUILT_AT.parse::<u64>().unwrap_or(0), "setup_needed": db.users.is_empty(), "machine_id": db.machine_id,
                 "started_at": app.started_at, "signed_in": ctx.user.as_ref().map(|u| u.username.clone())}));
         }
         ("POST", ["api", "setup"]) => return setup(app, ctx),

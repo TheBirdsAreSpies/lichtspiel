@@ -213,6 +213,7 @@ pub fn dashboard(app: &Arc<App>) -> Resp {
         "now": t,
         "started_at": app.started_at,
         "version": VERSION,
+        "build": crate::server::BUILD,
         "cores": std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
         "sample_seconds": crate::stats::SAMPLE_SECONDS,
         "active_seconds": ACTIVE_SECONDS,

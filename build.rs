@@ -14,6 +14,24 @@ fn main() {
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=web");
+    println!("cargo:rerun-if-changed=.git/logs/HEAD");
+    println!("cargo:rerun-if-env-changed=GIT_SHA");
+    // The commit the build is made from: GIT_SHA (the Docker build passes it, there is no .git
+    // there), else git itself; "+" marks changes that are not committed yet.
+    let git = |args: &[&str]| {
+        std::process::Command::new("git").args(args).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    };
+    let build = match std::env::var("GIT_SHA").ok().filter(|s| !s.trim().is_empty()) {
+        Some(s) => s.trim().chars().take(8).collect::<String>(),
+        None => {
+            let sha = git(&["rev-parse", "--short=8", "HEAD"]).unwrap_or_default();
+            let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some_and(|s| !s.is_empty());
+            if sha.is_empty() { "unknown".to_string() } else if dirty { format!("{sha}+") } else { sha }
+        }
+    };
+    println!("cargo:rustc-env=LICHTSPIEL_BUILD={build}");
+    let built = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    println!("cargo:rustc-env=LICHTSPIEL_BUILT_AT={built}");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
