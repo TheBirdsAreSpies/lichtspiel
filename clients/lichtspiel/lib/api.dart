@@ -71,6 +71,13 @@ class Api {
   Future<dynamic> put(String path, [Object? body]) async =>
       _decode(await http.put(Uri.parse('$base$path'), headers: _headers, body: body == null ? null : jsonEncode(body)));
 
+  /// Any other method (PATCH, ...) with a JSON body.
+  Future<dynamic> request(String method, String path, [Object? body]) async {
+    final req = http.Request(method, Uri.parse('$base$path'))..headers.addAll(_headers);
+    if (body != null) req.body = jsonEncode(body);
+    return _decode(await http.Response.fromStream(await req.send()));
+  }
+
   Future<Map<String, dynamic>> status() async => Map<String, dynamic>.from(await get('/api/status'));
 
   /// Signs in and keeps the token. Throws [ApiError] with needsCode when two-step sign-in wants a code.
