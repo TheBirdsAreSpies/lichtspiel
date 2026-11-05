@@ -285,6 +285,8 @@ pub fn parse_title_year(raw: &str) -> (String, Option<u32>) {
         .join(" ")
         .trim_matches(|c: char| c == '-' || c == ' ' || c == '(')
         .to_string();
+    // Library-style names put the article last ("Affe im Menschen, Der"): the title is "Der Affe im Menschen".
+    let title = crate::metadata::move_article_front(&title).unwrap_or(title);
     let title = if title.is_empty() { raw.to_string() } else { title };
     (title, year)
 }
@@ -1469,6 +1471,14 @@ fn container_index(db: &Db, section: u64) -> HashMap<ContainerKey, u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trailing_article_moves_to_the_front() {
+        assert_eq!(parse_title_year("Affe im Menschen, Der").0, "Der Affe im Menschen");
+        assert_eq!(parse_title_year("Affe im Menschen, Der (1990)"), ("Der Affe im Menschen".to_string(), Some(1990)));
+        assert_eq!(parse_title_year("Simpsons, The").0, "The Simpsons");
+        assert_eq!(parse_title_year("Hallo, Welt (2001)").0, "Hallo, Welt");
+    }
 
     #[test]
     fn subtitle_kinds_are_told_apart() {

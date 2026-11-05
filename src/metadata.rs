@@ -345,7 +345,7 @@ fn search_one(settings: &Settings, kind: ItemKind, title: &str, year: Option<u32
 /// Spellings of a title that are worth trying besides the typed one: "ae/oe/ue" as umlauts (and back), "ss" as ß
 /// (and back), without accents, and without punctuation. File names often lack the umlauts the title has.
 /// "Affe im Menschen, Der" -> "Der Affe im Menschen" (library-style names put the article last).
-fn move_article_front(title: &str) -> Option<String> {
+pub fn move_article_front(title: &str) -> Option<String> {
     const ARTICLES: [&str; 16] = ["der", "die", "das", "ein", "eine", "the", "a", "an", "le", "la", "les", "il", "el", "un", "une", "los"];
     let t = title.trim();
     // An optional year in brackets may follow: "Affe im Menschen, Der (1990)".
