@@ -185,6 +185,58 @@ class _PlayerScreenState extends State<PlayerScreen> {
   List<Map<String, dynamic>> externalSubs = []; // subtitle files next to the video
   List<Map<String, dynamic>> chapters = [];
 
+  // Settings -> Extras -> pre-roll: a short video before a movie that starts from the beginning.
+  Completer<bool>? prerollEnd; // completes with true to skip all of them
+  bool prerollSeveral = false;
+
+  Future<void> playPreroll() async {
+    List urls;
+    try {
+      final r = await widget.api.get('/api/preroll');
+      urls = (r is Map ? r['urls'] as List? : null) ?? const [];
+    } catch (_) {
+      return;
+    }
+    prerollSeveral = urls.length > 1;
+    for (final u in urls) {
+      if (!mounted) return;
+      final end = Completer<bool>();
+      prerollEnd = end;
+      setState(() {});
+      final done = player.stream.completed.listen((c) {
+        if (c && !end.isCompleted) end.complete(false);
+      });
+      final err = player.stream.error.listen((e) {
+        if (e.isNotEmpty && !end.isCompleted) end.complete(false);
+      });
+      try {
+        await player.open(Media(widget.api.abs('$u')));
+        if (await end.future) break;
+      } catch (_) {
+        // a pre-roll that does not play is skipped
+      } finally {
+        await done.cancel();
+        await err.cancel();
+      }
+    }
+    prerollEnd = null;
+    if (mounted) setState(() {});
+  }
+
+  Widget prerollButtons() {
+    final end = prerollEnd;
+    if (end == null) return const SizedBox.shrink();
+    return Positioned(
+      right: 24,
+      bottom: 110,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        if (prerollSeveral) FilledButton.tonal(onPressed: () => end.isCompleted ? null : end.complete(false), child: const Text('Nächstes Video')),
+        const SizedBox(height: 8),
+        FilledButton(onPressed: () => end.isCompleted ? null : end.complete(true), child: Text(prerollSeveral ? 'Alle überspringen' : 'Überspringen')),
+      ]),
+    );
+  }
+
   // The words of a song: lines that follow the music (.lrc, with times) or plain text.
   List<Map<String, dynamic>> lyrics = [];
   bool lyricsSynced = false, lyricsOn = true;
@@ -383,6 +435,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       });
       findNext();
       loadLyrics();
+      if (it['type'] == 'movie' && ((it['viewOffset'] ?? 0) as num) <= 0 && widget.together == null) await playPreroll();
+      if (!mounted) return;
       await load(((it['viewOffset'] ?? 0) as num).toInt());
       subs.add(player.stream.error.listen((e) async {
         if (e.isEmpty) return;
@@ -773,7 +827,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 subtitleViewConfiguration: SubtitleViewConfiguration(
                   style: TextStyle(fontSize: 32 * subSize / 100, color: Colors.white, backgroundColor: const Color(0x99000000), height: 1.3),
                 ),
-                controls: (state) => Listener(onPointerHover: (e) { mouseMoved(); hoverPos.value = e.localPosition; }, onPointerDown: (_) => mouseMoved(), child: Stack(children: [MaterialDesktopVideoControls(state), chapterTicks(), seekTip(), lyricsPanel(), overlay()])),
+                controls: (state) => Listener(onPointerHover: (e) { mouseMoved(); hoverPos.value = e.localPosition; }, onPointerDown: (_) => mouseMoved(), child: Stack(children: [MaterialDesktopVideoControls(state), chapterTicks(), seekTip(), lyricsPanel(), prerollButtons(), overlay()])),
               ),
             ),
     );
