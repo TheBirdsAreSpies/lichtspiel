@@ -21,7 +21,9 @@ class Poster extends StatefulWidget {
   final VoidCallback? onPick;
   final bool picked;
   final bool selecting;
-  const Poster({super.key, required this.api, required this.item, required this.onTap, this.width = 140, this.onPick, this.picked = false, this.selecting = false});
+  /// Set in the "Continue Watching" row: the menu offers to take the title off it, then calls [onRemoved].
+  final VoidCallback? onRemoved;
+  const Poster({super.key, required this.api, required this.item, required this.onTap, this.width = 140, this.onPick, this.picked = false, this.selecting = false, this.onRemoved});
 
   @override
   State<Poster> createState() => _PosterState();
@@ -67,6 +69,7 @@ class _PosterState extends State<Poster> {
       context: context,
       position: RelativeRect.fromLTRB(at.dx, at.dy, size.width - at.dx, size.height - at.dy),
       items: [
+        if (widget.onRemoved != null) const PopupMenuItem(value: 'unresume', child: Text('Aus „Weiterschauen“ entfernen')),
         PopupMenuItem(value: 'watched', child: Text(watched ? 'Als ungesehen markieren' : 'Als gesehen markieren')),
         if (Poster.admin && matchable) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
         if (Poster.admin) const PopupMenuItem(value: 'edit', child: Text('Details bearbeiten')),
@@ -76,6 +79,11 @@ class _PosterState extends State<Poster> {
     if (v == null || !mounted) return;
     try {
       switch (v) {
+        case 'unresume':
+          await widget.api.post('/api/continue/remove', {'ids': [id]});
+          say('Aus „Weiterschauen“ entfernt');
+          widget.onRemoved?.call();
+          return;
         case 'watched':
           await widget.api.setWatched(id, !watched);
           say(watched ? 'Als ungesehen markiert' : 'Als gesehen markiert');

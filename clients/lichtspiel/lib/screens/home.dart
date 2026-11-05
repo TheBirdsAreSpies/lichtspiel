@@ -123,7 +123,12 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           itemCount: items.length,
           separatorBuilder: (_, __) => const SizedBox(width: 12),
-          itemBuilder: (_, i) => Poster(api: api, item: items[i], onTap: () => openItem(context, api, items[i])),
+          itemBuilder: (_, i) => Poster(
+            api: api,
+            item: items[i],
+            onTap: () => openItem(context, api, items[i]),
+            onRemoved: hub['hubIdentifier'] == 'continueWatching' ? reload : null,
+          ),
         ),
       ),
     ]);
