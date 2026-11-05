@@ -834,6 +834,7 @@ I18N.add('de', 'Deutsch', {
     'Credits markers': 'Abspann-Markierungen',
     'Titles and plots': 'Titel und Handlungen',
     'Online match from Plex': 'Online-Zuordnung von Plex',
+    'Titles without an online number in the Plex database (examples)': 'Titel ohne Online-Nummer in der Plex-Datenbank (Beispiele)',
     'Intro and credits markers (from Plex)': 'Intro- und Abspann-Marken (von Plex)',
     'Markers from Plex': 'Marken von Plex',
     'Online match of titles (from Plex)': 'Online-Zuordnung der Titel (von Plex)',

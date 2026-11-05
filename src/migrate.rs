@@ -680,15 +680,29 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
 
     // The match Plex made: the online lookup takes exactly that entry instead of searching by title.
     let mut linked = 0;
+    let mut fresh: Vec<u64> = vec![];
+    let mut without: Vec<String> = vec![];
+    let mut candidates = 0;
     for (oid, id) in &map {
         let Some(oi) = old.items.get(oid) else { continue };
         if !matches!(oi.kind, 1 | 2) { continue; }
-        let Some((src, eid)) = plex_external_id(&oi.guid, old.external.get(oid).map(|v| v.as_slice()).unwrap_or(&[])) else { continue };
+        candidates += 1;
+        let tags = old.external.get(oid).map(|v| v.as_slice()).unwrap_or(&[]);
+        let Some((src, eid)) = plex_external_id(&oi.guid, tags) else {
+            if without.len() < 5 { without.push(format!("{} \u{2192} {}{}", oi.title, oi.guid, if tags.is_empty() { String::new() } else { format!(" {tags:?}") })); }
+            continue;
+        };
         let Some(it) = db.items.get_mut(id) else { continue };
         it.extra.insert("plex_id".into(), json!({"source": src, "id": eid}));
         linked += 1;
+        // Not matched here yet: its details are fetched at once, whatever an earlier miss was.
+        if !it.extra.contains_key("metadata_source") && it.extra.get("unmatched_by_hand").and_then(|v| v.as_bool()) != Some(true) {
+            fresh.push(*id);
+        }
     }
     report["matches"] = json!(linked);
+    report["match_candidates"] = json!(candidates);
+    report["match_examples_without_id"] = json!(without);
 
     // 6. Playlists (manual ones; smart ones use the old server's own rule format).
     if app.job_cancelled() { return Err(CANCELLED.into()); }
@@ -767,6 +781,11 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
     // Online details for what's new (posters, cast); imported titles and plots stay.
     let ids: Vec<u64> = map.values().copied().collect();
     app.queue_online_details(&ids, false);
+    // Titles with Plex's number are looked up for sure (a miss from before does not hold them back).
+    let online = app.db.lock().unwrap().settings.metadata_enabled;
+    if online && !fresh.is_empty() {
+        app.queue_online_details(&fresh, true);
+    }
     Ok(report)
 }
 
