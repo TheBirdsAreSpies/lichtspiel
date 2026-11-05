@@ -2465,7 +2465,7 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
 }
 
 pub fn section_json(db: &Db, s: &Section) -> Value {
-    let top = db.items.values().filter(|i| i.section_id == s.id && i.parent_id.is_none()).count();
+    let top = db.items.values().filter(|i| i.section_id == s.id && i.parent_id.is_none() && i.version_of().is_none()).count();
     let playable = db.items.values().filter(|i| i.section_id == s.id && i.kind.playable() && !i.hidden()).count();
     let trash = db.items.values().filter(|i| i.section_id == s.id && i.extra.contains_key(crate::scanner::MISSING)).count();
     json!({

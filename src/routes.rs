@@ -1878,7 +1878,7 @@ fn section_ids(db: &db::Db, user: &db::User, sid: u64, sec: &db::Section, ctx: &
         SectionKind::Other => ItemKind::Video,
         SectionKind::Music => ItemKind::Artist,
     });
-    let ids = db.items.values().filter(|i| i.section_id == sid && i.kind == kind).map(|i| i.id).collect();
+    let ids = db.items.values().filter(|i| i.section_id == sid && i.kind == kind && i.version_of().is_none()).map(|i| i.id).collect();
     (kind, narrow(db, user, ids, ctx))
 }
 
