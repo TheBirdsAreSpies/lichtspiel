@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import 'libraries.dart';
 import 'maintenance.dart';
+import 'plugins.dart';
 import 'server_settings.dart';
 import 'users.dart';
 
@@ -44,6 +45,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: const Icon(Icons.dns_outlined),
                 label: const Text('Server'),
                 onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ServerSettingsScreen(api: widget.api))),
+              ),
+            if (widget.admin)
+              TextButton.icon(
+                icon: const Icon(Icons.extension_outlined),
+                label: const Text('Plugins'),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PluginsScreen(api: widget.api))),
               ),
             if (widget.admin)
               TextButton.icon(
@@ -249,6 +256,7 @@ class _AccountTabState extends State<_AccountTab> {
           ),
         ),
       ]),
+      PluginPanels(api: widget.api),
     ]);
   }
 }
