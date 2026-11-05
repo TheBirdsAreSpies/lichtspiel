@@ -132,6 +132,10 @@ pub struct App {
     pub job: Mutex<Option<(String, usize, usize)>>,
     /// Set by "Cancel": the running job stops after the file it is working on.
     pub job_cancel: AtomicBool,
+    /// The running credits or intro detection was started by the server itself (not by a button).
+    pub job_auto: AtomicBool,
+    /// It was stopped only to let the details go first: it ends quietly and starts again later.
+    pub job_yield: AtomicBool,
     /// What the running job works through, in order (its label, then the names): for the activity panel.
     pub job_items: Mutex<(String, Vec<String>)>,
     /// Processor, memory and bandwidth samples and who was here lately (the dashboard).
@@ -238,6 +242,8 @@ impl App {
             meta_progress: Mutex::new(MetaProgress::default()),
             job: Mutex::new(None),
             job_cancel: AtomicBool::new(false),
+            job_auto: AtomicBool::new(false),
+            job_yield: AtomicBool::new(false),
             job_items: Mutex::new((String::new(), vec![])),
             stats: Default::default(),
         });
@@ -637,10 +643,29 @@ impl App {
             t
         };
         let mut q = self.meta_queue.lock().unwrap();
+        let before = q.len();
         for id in tops {
             if !q.iter().any(|(i, _)| *i == id) {
                 q.push_back((id, force));
             }
+        }
+        let added = q.len() > before;
+        drop(q);
+        if added {
+            self.yield_to_details();
+        }
+    }
+
+    /// Details come before credits and intros: an automatic detection that is running steps aside after
+    /// the file it is on and starts again once no details are waiting (the scheduler does that).
+    pub fn yield_to_details(&self) {
+        if !self.job_auto.load(AtomicOrdering::SeqCst) {
+            return;
+        }
+        let detecting = self.job.lock().unwrap().as_ref().is_some_and(|j| j.0 == "Detecting credits" || j.0 == "Detecting intros");
+        if detecting {
+            self.job_yield.store(true, AtomicOrdering::SeqCst);
+            self.job_cancel.store(true, AtomicOrdering::SeqCst);
         }
     }
 
@@ -684,6 +709,8 @@ impl App {
         }
         *job = Some(("Detecting credits".into(), 0, total));
         self.job_cancel.store(false, AtomicOrdering::SeqCst);
+        self.job_yield.store(false, AtomicOrdering::SeqCst);
+        self.job_auto.store(!force, AtomicOrdering::SeqCst);
         drop(job);
         self.set_job_items("Detecting credits", &files.iter().map(|f| f.0).collect::<Vec<_>>());
         let app = self.clone();
@@ -718,6 +745,11 @@ impl App {
             app.save();
             *app.job.lock().unwrap() = None;
             let cancelled = app.job_cancel.swap(false, AtomicOrdering::SeqCst);
+            app.job_auto.store(false, AtomicOrdering::SeqCst);
+            // Stopped for the details: no result to report, the scheduler takes it up again later.
+            if app.job_yield.swap(false, AtomicOrdering::SeqCst) {
+                return;
+            }
             let mut p = app.meta_progress.lock().unwrap();
             p.done += 1;
             let failed_txt = if failed > 0 { format!(", {failed} could not be read") } else { String::new() };
@@ -824,6 +856,8 @@ impl App {
         }
         *job = Some(("Detecting intros".into(), 0, total));
         self.job_cancel.store(false, AtomicOrdering::SeqCst);
+        self.job_yield.store(false, AtomicOrdering::SeqCst);
+        self.job_auto.store(!force, AtomicOrdering::SeqCst);
         drop(job);
         self.set_job_items("Detecting intros", &seasons.iter().flat_map(|s| s.iter().map(|e| e.0)).collect::<Vec<_>>());
         let app = self.clone();
@@ -878,6 +912,10 @@ impl App {
             app.save();
             *app.job.lock().unwrap() = None;
             let cancelled = app.job_cancel.swap(false, AtomicOrdering::SeqCst);
+            app.job_auto.store(false, AtomicOrdering::SeqCst);
+            if app.job_yield.swap(false, AtomicOrdering::SeqCst) {
+                return;
+            }
             let mut p = app.meta_progress.lock().unwrap();
             p.done += 1;
             let failed_txt = if failed > 0 { format!(", {failed} could not be read") } else { String::new() };
@@ -2185,7 +2223,8 @@ pub fn start_background(app: &Arc<App>) {
                 "scheduled" => last_scheduled.elapsed() >= Duration::from_secs(86400),
                 _ => false,
             };
-            let idle = a.meta_queue.lock().unwrap().is_empty() && a.job.lock().unwrap().is_none();
+            // Credits and intros come last: only when no details are waiting or being fetched.
+            let idle = a.meta_queue.lock().unwrap().is_empty() && a.meta_busy.lock().unwrap().is_empty() && a.job.lock().unwrap().is_none();
             if due && idle {
                 let pending = a.credits_pending();
                 if !pending.is_empty() {
