@@ -132,6 +132,8 @@ pub struct App {
     pub job: Mutex<Option<(String, usize, usize)>>,
     /// Set by "Cancel": the running job stops after the file it is working on.
     pub job_cancel: AtomicBool,
+    /// What the running job works through, in order (its label, then the names): for the activity panel.
+    pub job_items: Mutex<(String, Vec<String>)>,
     /// Processor, memory and bandwidth samples and who was here lately (the dashboard).
     pub stats: crate::stats::Stats,
 }
@@ -236,6 +238,7 @@ impl App {
             meta_progress: Mutex::new(MetaProgress::default()),
             job: Mutex::new(None),
             job_cancel: AtomicBool::new(false),
+            job_items: Mutex::new((String::new(), vec![])),
             stats: Default::default(),
         });
         app.sync_plugin_states();
@@ -682,6 +685,7 @@ impl App {
         *job = Some(("Detecting credits".into(), 0, total));
         self.job_cancel.store(false, AtomicOrdering::SeqCst);
         drop(job);
+        self.set_job_items("Detecting credits", &files.iter().map(|f| f.0).collect::<Vec<_>>());
         let app = self.clone();
         std::thread::spawn(move || {
             let (mut found, mut failed) = (0, 0);
@@ -745,6 +749,32 @@ impl App {
         running || waiting
     }
 
+    /// A readable name for an item in lists of work: "Show · S1E2 Title" for an episode, else its title.
+    pub fn label_of(db: &Db, id: u64) -> String {
+        let Some(it) = db.items.get(&id) else { return format!("#{id}") };
+        match it.kind {
+            ItemKind::Episode => {
+                let season = it.parent_id.and_then(|p| db.items.get(&p));
+                let show = season.and_then(|s| s.parent_id).and_then(|p| db.items.get(&p));
+                format!("{} \u{b7} S{}E{} {}", show.map(|s| s.title.as_str()).unwrap_or(""), season.and_then(|s| s.index).unwrap_or(0), it.index.unwrap_or(0), it.title)
+            }
+            ItemKind::Season => {
+                let show = it.parent_id.and_then(|p| db.items.get(&p));
+                format!("{} \u{b7} {}", show.map(|s| s.title.as_str()).unwrap_or(""), it.title)
+            }
+            _ => it.title.clone(),
+        }
+    }
+
+    /// Remembers what the job `label` is going to work through, for the activity panel.
+    pub fn set_job_items(&self, label: &str, ids: &[u64]) {
+        let names: Vec<String> = {
+            let db = self.db.lock().unwrap();
+            ids.iter().map(|i| Self::label_of(&db, *i)).collect()
+        };
+        *self.job_items.lock().unwrap() = (label.to_string(), names);
+    }
+
     pub fn job_cancelled(&self) -> bool {
         self.job_cancel.load(AtomicOrdering::SeqCst)
     }
@@ -795,6 +825,7 @@ impl App {
         *job = Some(("Detecting intros".into(), 0, total));
         self.job_cancel.store(false, AtomicOrdering::SeqCst);
         drop(job);
+        self.set_job_items("Detecting intros", &seasons.iter().flat_map(|s| s.iter().map(|e| e.0)).collect::<Vec<_>>());
         let app = self.clone();
         let cache = self.data_dir.join("cache").join("intro");
         std::thread::spawn(move || {

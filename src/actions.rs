@@ -121,6 +121,7 @@ fn analyze_where(app: &Arc<App>, iid: u64, pick: impl FnOnce(&Db) -> Vec<u64>) -
     *job = Some(("Analyzing".into(), 0, total));
     app.job_cancel.store(false, AtomicOrdering::SeqCst);
     drop(job);
+    app.set_job_items("Analyzing", &ids);
     let app = app.clone();
     std::thread::spawn(move || {
         let mut failed = 0;
@@ -179,6 +180,7 @@ fn deep_where(app: &Arc<App>, iid: u64, pick: impl FnOnce(&Db) -> Vec<u64>) -> R
     *job = Some(("Deep analysis".into(), 0, total));
     app.job_cancel.store(false, AtomicOrdering::SeqCst);
     drop(job);
+    app.set_job_items("Deep analysis", &ids);
     let app = app.clone();
     std::thread::spawn(move || {
         let mut failed = 0;
@@ -259,6 +261,7 @@ pub fn optimize(app: &Arc<App>, iid: u64, preset: &str) -> Result<usize, String>
     *job = Some(("Optimizing".into(), 0, total * 100));
     app.job_cancel.store(false, AtomicOrdering::SeqCst);
     drop(job);
+    app.set_job_items("Optimizing", &todo.iter().map(|t| t.0).collect::<Vec<_>>());
     let app = app.clone();
     let preset = preset.to_string();
     std::thread::spawn(move || {

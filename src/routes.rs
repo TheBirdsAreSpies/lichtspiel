@@ -69,6 +69,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/library/sections/{id}/intros", "Admin: run intro detection for a TV library now (compares the sound at the start of each season's episodes; in the background)"),
     ("POST", "/library/metadata/{id}/intros", "Admin: run intro detection for one show, season or episode (its whole season)"),
     ("POST", "/library/sections/{id}/refreshMetadata", "Admin: download details again for a whole library (in the background)"),
+    ("GET", "/api/activity", "Admin: what the server is doing and what is planned: the running job with the names still to do, scanning, the details waiting, and what the automatic credits and intro detection will do next"),
     ("POST", "/api/job/cancel", "Admin: stop the running background job (credits or intro detection, analysis, optimizing) after the file it is working on"),
     ("GET", "/api/metadata/status", "Background work: details waiting and being downloaded, the last result, and any running job (credits detection) with progress"),
     ("GET", "/library/metadata/{id}/history", "Play history of a movie, show, season or episode, newest first (the owner sees everyone's, others their own)"),
@@ -739,6 +740,38 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("POST", ["api", "plex-sync", "run"]) => {
             if !admin { return need_admin(); }
             if crate::plexsync::start_now(app) { js(202, json!({"ok": true, "started": true})) } else { fail(409, "A sync with Plex is already running") }
+        }
+        ("GET", ["api", "activity"]) => {
+            if !user.admin { return fail(403, "Only an admin can do this"); }
+            const SHOWN: usize = 25;
+            let job = app.job.lock().unwrap().clone();
+            let (jl, names) = app.job_items.lock().unwrap().clone();
+            let job_json = job.map(|(label, done, total)| {
+                // Optimizing counts in hundredths of a video.
+                let (done_n, total_n) = if label == "Optimizing" { (done / 100, total / 100) } else { (done, total) };
+                let rest: Vec<&String> = if jl == label { names.iter().skip(done_n).collect() } else { vec![] };
+                json!({"label": label, "done": done, "total": total, "items": rest.iter().take(SHOWN).collect::<Vec<_>>(), "more": rest.len().saturating_sub(SHOWN),
+                    "step": done_n, "steps": total_n})
+            });
+            let queue: Vec<u64> = app.meta_queue.lock().unwrap().iter().map(|q| q.0).collect();
+            let working: Vec<u64> = app.meta_busy.lock().unwrap().clone();
+            let scanning_ids = app.scanning.lock().unwrap().clone();
+            let credits = app.credits_pending();
+            let intros = app.intros_pending();
+            let db = app.db.lock().unwrap();
+            let name_of = |ids: &[u64]| -> Vec<String> { ids.iter().take(SHOWN).map(|i| App::label_of(&db, *i)).collect() };
+            let examples = |ids: &[u64]| -> Vec<String> { ids.iter().take(8).map(|i| App::label_of(&db, *i)).collect() };
+            ok(json!({
+                "job": job_json,
+                "scanning": db.sections.iter().filter(|s| scanning_ids.contains(&s.id)).map(|s| s.name.clone()).collect::<Vec<_>>(),
+                "details": {"working": name_of(&working), "queued": name_of(&queue), "more": queue.len().saturating_sub(SHOWN), "total": queue.len(),
+                    "enabled": db.settings.metadata_enabled},
+                "next": {
+                    "credits": {"n": credits.len(), "mode": db.settings.credits_markers_behaviour, "examples": examples(&credits)},
+                    "intros": {"n": intros.len(), "mode": db.settings.intro_markers_behaviour, "examples": examples(&intros)},
+                },
+                "last": app.meta_progress.lock().unwrap().last.clone(),
+            }))
         }
         ("POST", ["api", "job", "cancel"]) => {
             if !user.admin { return fail(403, "Only an admin can do this"); }

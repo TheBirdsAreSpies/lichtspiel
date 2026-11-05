@@ -957,7 +957,44 @@ function scoreBadges(r) {
 }
 
 // ---------- background work (details downloads, credits detection) in the top bar
-const ACT = { done: -1, timer: null, lastRefresh: 0 };
+const ACT = { done: -1, timer: null, lastRefresh: 0, open: false };
+// A click on the bar opens what is running, what waits and what is planned after it.
+async function drawActPanel() {
+  let box = $('#actpanel');
+  if (!ACT.open) { if (box) box.remove(); return; }
+  let d;
+  try { d = await GET('/api/activity'); } catch (e) { return; }
+  if (!ACT.open) return;
+  if (!box) { box = h('div', { id: 'actpanel', class: 'actpanel' }); document.body.append(box); }
+  const sec = (title, ...kids) => h('div', { class: 'actsec' }, h('h4', {}, title), ...kids);
+  const list = (items, more) => h('ul', {}, items.map(x => h('li', {}, x)), more > 0 ? h('li', { class: 'dim' }, t('… and {n} more', { n: more })) : null);
+  const blocks = [];
+  if (d.job) {
+    const j = d.job, pct = Math.floor(100 * j.done / Math.max(1, j.total));
+    const head = j.label === 'Optimizing' ? t('{label}: {pct} %', { label: t(j.label), pct }) : t('{label}: {done} of {total}', { label: t(j.label), done: j.step, total: j.steps });
+    blocks.push(sec(t('Running now'), h('div', { style: 'display:flex;gap:10px;align-items:center' }, h('span', {}, head), h('span', { class: 'pbar' }, h('i', { style: `width:${pct}%` }))),
+      j.items.length ? [h('div', { class: 'dim', style: 'margin-top:6px' }, t('Next up')), list(j.items, j.more)] : null));
+  }
+  if (d.scanning.length) blocks.push(sec(t('Scanning'), list(d.scanning, 0)));
+  const dt = d.details;
+  if (dt.working.length || dt.total) {
+    blocks.push(sec(t('Downloading details'), dt.working.length ? h('div', {}, '\u25B6 ' + dt.working.join(', ')) : null,
+      dt.total ? [h('div', { class: 'dim', style: 'margin-top:6px' }, t('Waiting ({n})', { n: dt.total })), list(dt.queued, dt.more)] : null));
+  }
+  const modes = { asap: t('as soon as possible'), scheduled: t('once a day') };
+  const plan = [];
+  const add = (n, text, mode, ex) => { if (n) plan.push(h('div', {}, text + (modes[mode] ? ' \u00B7 ' + modes[mode] : '')), ex.length ? list(ex, n - ex.length) : null); };
+  add(d.next.credits.n, t('Credits detection: {n} videos waiting', { n: d.next.credits.n }), d.next.credits.mode, d.next.credits.examples);
+  add(d.next.intros.n, t('Intro detection: {n} seasons waiting', { n: d.next.intros.n }), d.next.intros.mode, d.next.intros.examples);
+  blocks.push(sec(t('Planned afterwards'), plan.length ? plan : h('div', { class: 'dim' }, t('Nothing else is planned.'))));
+  if (d.last && d.last.message) blocks.push(sec(t('Last result'), h('div', {}, (d.last.ok === false ? '\u26A0 ' : '\u2713 ') + t(d.last.message))));
+  box.replaceChildren(h('button', { class: 'small close', title: t('Close'), onclick: () => { ACT.open = false; box.remove(); } }, '\u2715'), ...blocks);
+}
+document.addEventListener('click', e => {
+  const bar = $('#activity');
+  if (bar.contains(e.target) && !e.target.closest('button')) { ACT.open = !ACT.open; drawActPanel(); }
+  else if (ACT.open && !e.target.closest('#actpanel')) { ACT.open = false; drawActPanel(); }
+});
 async function pollActivity() {
   clearTimeout(ACT.timer);
   const el = $('#activity');
@@ -1007,6 +1044,7 @@ async function pollActivity() {
     }
   }
   ACT.done = st.done;
+  if (ACT.open) drawActPanel();
   ACT.timer = setTimeout(pollActivity, busy ? 2500 : 8000);
 }
 
