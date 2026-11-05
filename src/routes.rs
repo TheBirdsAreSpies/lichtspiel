@@ -69,6 +69,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/library/sections/{id}/intros", "Admin: run intro detection for a TV library now (compares the sound at the start of each season's episodes; in the background)"),
     ("POST", "/library/metadata/{id}/intros", "Admin: run intro detection for one show, season or episode (its whole season)"),
     ("POST", "/library/sections/{id}/refreshMetadata", "Admin: download details again for a whole library (in the background)"),
+    ("POST", "/api/job/cancel", "Admin: stop the running background job (credits or intro detection, analysis, optimizing) after the file it is working on"),
     ("GET", "/api/metadata/status", "Background work: details waiting and being downloaded, the last result, and any running job (credits detection) with progress"),
     ("GET", "/library/metadata/{id}/history", "Play history of a movie, show, season or episode, newest first (the owner sees everyone's, others their own)"),
     ("POST", "/library/metadata/{id}/report", "Report a problem {kind: playback|video|audio|subtitles|metadata|other, note}"),
@@ -736,6 +737,11 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("POST", ["api", "plex-sync", "run"]) => {
             if !admin { return need_admin(); }
             if crate::plexsync::start_now(app) { js(202, json!({"ok": true, "started": true})) } else { fail(409, "A sync with Plex is already running") }
+        }
+        ("POST", ["api", "job", "cancel"]) => {
+            if !user.admin { return fail(403, "Only an admin can do this"); }
+            if !app.cancel_job() { return fail(409, "No job is running that can be cancelled"); }
+            ok(json!({"ok": true}))
         }
         ("GET", ["api", "metadata", "status"]) => {
             let q = app.meta_queue.lock().unwrap().len();

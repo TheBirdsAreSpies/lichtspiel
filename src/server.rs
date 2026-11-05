@@ -17,6 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Child;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tiny_http::{Header, Response, StatusCode};
@@ -126,6 +127,8 @@ pub struct App {
     pub meta_progress: Mutex<MetaProgress>,
     /// Background jobs other than details (credits detection): (label, done, total).
     pub job: Mutex<Option<(String, usize, usize)>>,
+    /// Set by "Cancel": the running job stops after the file it is working on.
+    pub job_cancel: AtomicBool,
     /// Processor, memory and bandwidth samples and who was here lately (the dashboard).
     pub stats: crate::stats::Stats,
 }
@@ -229,6 +232,7 @@ impl App {
             meta_busy: Mutex::new(Vec::new()),
             meta_progress: Mutex::new(MetaProgress::default()),
             job: Mutex::new(None),
+            job_cancel: AtomicBool::new(false),
             stats: Default::default(),
         });
         app.sync_plugin_states();
@@ -668,11 +672,15 @@ impl App {
             return Err(if force { "No videos to check (or credits detection is off for this library)".into() } else { "Everything is already up to date".into() });
         }
         *job = Some(("Detecting credits".into(), 0, total));
+        self.job_cancel.store(false, AtomicOrdering::SeqCst);
         drop(job);
         let app = self.clone();
         std::thread::spawn(move || {
             let (mut found, mut failed) = (0, 0);
             for (n, (id, path, duration)) in files.into_iter().enumerate() {
+                if app.job_cancelled() {
+                    break;
+                }
                 let r = crate::scanner::find_credits(&ffmpeg, &ffprobe, &path, duration, picture);
                 if let Some(f) = app.db.lock().unwrap().items.get_mut(&id).and_then(|i| i.last_file_mut()) {
                     match r {
@@ -697,11 +705,12 @@ impl App {
             }
             app.save();
             *app.job.lock().unwrap() = None;
+            let cancelled = app.job_cancel.swap(false, AtomicOrdering::SeqCst);
             let mut p = app.meta_progress.lock().unwrap();
             p.done += 1;
             let failed_txt = if failed > 0 { format!(", {failed} could not be read") } else { String::new() };
             p.last = json!({"id": null, "title": "Credits detection", "ok": failed == 0,
-                "message": format!("Credits detection finished: credits found in {found} of {total} videos{failed_txt}"), "at": now()});
+                "message": format!("Credits detection {}: credits found in {found} of {total} videos{failed_txt}", if cancelled { "cancelled" } else { "finished" }), "at": now()});
         });
         Ok(total)
     }
@@ -712,6 +721,19 @@ impl App {
     /// shows, seasons or episodes. Unless `force`, seasons whose episodes are
     /// all up to date are skipped ("Already up to date"). Returns how many
     /// episodes it will listen to.
+    /// Asks the running job (credits, intros, analysis, optimizing) to stop after the file it is on.
+    pub fn cancel_job(&self) -> bool {
+        let running = self.job.lock().unwrap().as_ref().is_some_and(|j| !j.0.starts_with("Importing") && j.0 != "Syncing with Plex");
+        if running {
+            self.job_cancel.store(true, AtomicOrdering::SeqCst);
+        }
+        running
+    }
+
+    pub fn job_cancelled(&self) -> bool {
+        self.job_cancel.load(AtomicOrdering::SeqCst)
+    }
+
     pub fn detect_intros(self: &Arc<Self>, ids: Vec<u64>, force: bool) -> Result<usize, String> {
         use crate::intro;
         let mut job = self.job.lock().unwrap();
@@ -756,14 +778,19 @@ impl App {
             return Err(if force { "No season with at least two episodes to compare (or intro detection is off for this library)".into() } else { "Everything is already up to date".into() });
         }
         *job = Some(("Detecting intros".into(), 0, total));
+        self.job_cancel.store(false, AtomicOrdering::SeqCst);
         drop(job);
         let app = self.clone();
         let cache = self.data_dir.join("cache").join("intro");
         std::thread::spawn(move || {
             let (mut done, mut found, mut failed) = (0, 0, 0);
-            for eps in seasons {
+            'seasons: for eps in seasons {
                 let (mut prints, mut errors) = (vec![], vec![]);
                 for (_, path, size, modified) in &eps {
+                    // A season is only judged when all its episodes were listened to.
+                    if app.job_cancelled() {
+                        break 'seasons;
+                    }
                     let file = cache.join(intro::cache_name(path, *size, *modified));
                     let print = match intro::read_cached(&file) {
                         Some(p) => Ok(p),
@@ -804,11 +831,12 @@ impl App {
             }
             app.save();
             *app.job.lock().unwrap() = None;
+            let cancelled = app.job_cancel.swap(false, AtomicOrdering::SeqCst);
             let mut p = app.meta_progress.lock().unwrap();
             p.done += 1;
             let failed_txt = if failed > 0 { format!(", {failed} could not be read") } else { String::new() };
             p.last = json!({"id": null, "title": "Intro detection", "ok": failed == 0,
-                "message": format!("Intro detection finished: intros found in {found} of {total} episodes{failed_txt}"), "at": now()});
+                "message": format!("Intro detection {}: intros found in {found} of {total} episodes{failed_txt}", if cancelled { "cancelled" } else { "finished" }), "at": now()});
         });
         Ok(total)
     }

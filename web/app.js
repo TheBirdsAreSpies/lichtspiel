@@ -977,6 +977,14 @@ async function pollActivity() {
     : t('{label}: {done} of {total}', { label: t(st.job.label), done: st.job.done, total: st.job.total })), h('span', { class: 'pbar' }, h('i', { style: `width:${Math.round(100 * st.job.done / Math.max(1, st.job.total))}%` })));
   if (st.working_on || st.queued > 0) parts.push(h('span', { class: 'txt' }, t('Updating details') + (st.working_title ? ': ' + st.working_title : '') + (st.queued > 0 ? ' · ' + t('{n} left', { n: st.queued }) : '')));
   if (busy) {
+    // The jobs that go file by file can be stopped (after the file they are on).
+    if (st.job && !/^(Importing|Syncing)/.test(st.job.label)) {
+      parts.push(h('button', { class: 'small', onclick: async e => {
+        e.target.disabled = true;
+        try { await api('POST', '/api/job/cancel'); toast(t('Stopping after the current file…')); } catch (er) { toast(er.message, 6000); }
+        pollActivity();
+      } }, t('Cancel')));
+    }
     el.replaceChildren(h('span', { class: 'spin' }), ...parts);
     el.title = st.last && st.last.message ? t('Last: {msg}', { msg: t(st.last.message) }) : t('Background work on the server');
     el.style.display = 'flex';

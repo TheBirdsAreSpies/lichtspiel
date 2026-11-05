@@ -2,6 +2,7 @@
 //! problem reports, analysing files again, optimized versions,
 //! "Watch together" rooms, emptying a library's trash and deleting files.
 
+use std::sync::atomic::Ordering as AtomicOrdering;
 use crate::db::{self, now, Db, Item, User};
 use crate::server::*;
 use crate::transcode;
@@ -118,11 +119,13 @@ fn analyze_where(app: &Arc<App>, iid: u64, pick: impl FnOnce(&Db) -> Vec<u64>) -
     let total = ids.len();
     if total == 0 { return Err("There is no video file to analyze".into()); }
     *job = Some(("Analyzing".into(), 0, total));
+    app.job_cancel.store(false, AtomicOrdering::SeqCst);
     drop(job);
     let app = app.clone();
     std::thread::spawn(move || {
         let mut failed = 0;
         for (n, id) in ids.into_iter().enumerate() {
+            if app.job_cancelled() { break; }
             let files: Vec<db::MediaFile> = app.db.lock().unwrap().items.get(&id).map(|i| i.all_files().into_iter().cloned().collect()).unwrap_or_default();
             let mut read = vec![];
             for mut f in files {
@@ -142,10 +145,11 @@ fn analyze_where(app: &Arc<App>, iid: u64, pick: impl FnOnce(&Db) -> Vec<u64>) -
         }
         app.save();
         *app.job.lock().unwrap() = None;
+        let cancelled = app.job_cancel.swap(false, AtomicOrdering::SeqCst);
         let mut p = app.meta_progress.lock().unwrap();
         p.done += 1;
         p.last = json!({"id": iid, "title": "Analyze", "ok": failed == 0, "at": now(),
-            "message": if failed == 0 { format!("Analyzed {total} video(s)") } else { format!("Analyzed {total} video(s); {failed} file(s) could not be read") }});
+            "message": if cancelled { "Analysis cancelled".to_string() } else if failed == 0 { format!("Analyzed {total} video(s)") } else { format!("Analyzed {total} video(s); {failed} file(s) could not be read") }});
     });
     Ok(total)
 }
@@ -173,20 +177,23 @@ fn deep_where(app: &Arc<App>, iid: u64, pick: impl FnOnce(&Db) -> Vec<u64>) -> R
     let total = ids.len();
     if total == 0 { return Err("There is no video file to analyze".into()); }
     *job = Some(("Deep analysis".into(), 0, total));
+    app.job_cancel.store(false, AtomicOrdering::SeqCst);
     drop(job);
     let app = app.clone();
     std::thread::spawn(move || {
         let mut failed = 0;
         for (n, id) in ids.into_iter().enumerate() {
+            if app.job_cancelled() { break; }
             failed += deep_read(&app, id);
             *app.job.lock().unwrap() = Some(("Deep analysis".into(), n + 1, total));
         }
         app.save();
         *app.job.lock().unwrap() = None;
+        let cancelled = app.job_cancel.swap(false, AtomicOrdering::SeqCst);
         let mut p = app.meta_progress.lock().unwrap();
         p.done += 1;
         p.last = json!({"id": iid, "title": "Deep analysis", "ok": failed == 0, "at": now(),
-            "message": if failed == 0 { format!("Analyzed {total} video(s)") } else { format!("Analyzed {total} video(s); {failed} file(s) could not be read") }});
+            "message": if cancelled { "Deep analysis cancelled".to_string() } else if failed == 0 { format!("Analyzed {total} video(s)") } else { format!("Analyzed {total} video(s); {failed} file(s) could not be read") }});
     });
     Ok(total)
 }
@@ -250,12 +257,14 @@ pub fn optimize(app: &Arc<App>, iid: u64, preset: &str) -> Result<usize, String>
     let dir = app.data_dir.join("optimized");
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     *job = Some(("Optimizing".into(), 0, total * 100));
+    app.job_cancel.store(false, AtomicOrdering::SeqCst);
     drop(job);
     let app = app.clone();
     let preset = preset.to_string();
     std::thread::spawn(move || {
         let mut failed = 0;
         for (n, (id, file)) in todo.into_iter().enumerate() {
+            if app.job_cancelled() { break; }
             let out = optimized_path(&app, id);
             let tmp = out.with_extension("part.mp4");
             let Some(args) = transcode::optimize_args(&settings, &file, &preset, &tmp.to_string_lossy()) else { continue };
@@ -292,10 +301,11 @@ pub fn optimize(app: &Arc<App>, iid: u64, preset: &str) -> Result<usize, String>
         }
         app.save();
         *app.job.lock().unwrap() = None;
+        let cancelled = app.job_cancel.swap(false, AtomicOrdering::SeqCst);
         let mut p = app.meta_progress.lock().unwrap();
         p.done += 1;
         p.last = json!({"id": iid, "title": "Optimize", "ok": failed == 0, "at": now(),
-            "message": if failed == 0 { format!("Optimized {total} video(s)") } else { format!("Optimized {} of {total} video(s); the others failed (see the server log)", total - failed) }});
+            "message": if cancelled { "Optimizing cancelled".to_string() } else if failed == 0 { format!("Optimized {total} video(s)") } else { format!("Optimized {} of {total} video(s); the others failed (see the server log)", total - failed) }});
     });
     Ok(total)
 }
