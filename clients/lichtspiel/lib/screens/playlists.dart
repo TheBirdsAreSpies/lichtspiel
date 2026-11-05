@@ -15,7 +15,7 @@ String _dur(dynamic ms) {
 String plTitle(Map<String, dynamic> p) => '${p['title']}';
 
 /// Picks a playlist (or a new one) and adds the item; used by the detail page.
-Future<void> addToPlaylistDialog(BuildContext context, Api api, String itemId) async {
+Future<void> addToPlaylistDialog(BuildContext context, Api api, String itemId, {List<String>? ids}) async {
   final msg = ScaffoldMessenger.of(context);
   final pls = await api.playlists(kind: 'manual', owner: 'me', sort: 'title');
   if (!context.mounted) return;
@@ -31,11 +31,11 @@ Future<void> addToPlaylistDialog(BuildContext context, Api api, String itemId) a
     if (choice == 'new') {
       final name = await askText(context, 'Name der neuen Playlist');
       if (name == null || name.isEmpty) return;
-      await api.createPlaylist(name, ids: [itemId]);
+      await api.createPlaylist(name, ids: ids ?? [itemId]);
       msg.showSnackBar(SnackBar(content: Text('Zu „$name“ hinzugefügt')));
     } else {
       final p = choice as Map<String, dynamic>;
-      final added = await api.addToPlaylist('${p['id']}', itemId);
+      final added = await api.addToPlaylist('${p['id']}', itemId, ids: ids);
       msg.showSnackBar(SnackBar(content: Text(added ? 'Zu „${plTitle(p)}“ hinzugefügt' : 'Schon in dieser Playlist')));
     }
   } catch (e) {
@@ -76,11 +76,11 @@ Future<void> playPlaylist(BuildContext context, Api api, String id, {bool shuffl
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Diese Playlist ist leer')));
     return;
   }
-  if (shuffle) items = _smartShuffle(items);
+  if (shuffle) items = smartShuffle(items);
   Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: api, item: items.first, queue: items.sublist(1))));
 }
 
-List<Map<String, dynamic>> _smartShuffle(List<Map<String, dynamic>> src) {
+List<Map<String, dynamic>> smartShuffle(List<Map<String, dynamic>> src) {
   final left = [...src]..shuffle(Random());
   final out = <Map<String, dynamic>>[];
   while (left.isNotEmpty) {

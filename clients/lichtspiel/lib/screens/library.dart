@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/poster.dart';
+import 'edit.dart';
+import 'player.dart';
 import 'home.dart';
 import 'playlists.dart';
 
@@ -76,6 +78,7 @@ class LibraryScreen extends StatefulWidget {
 class _LibraryScreenState extends State<LibraryScreen> {
   static const page = 60;
   final items = <Map<String, dynamic>>[];
+  final picked = <String>{}; // ids chosen with the circle on a poster (multiple selection)
   final scroll = ScrollController();
   final search = TextEditingController();
   final from = TextEditingController(), to = TextEditingController();
@@ -109,6 +112,106 @@ class _LibraryScreenState extends State<LibraryScreen> {
       if (scroll.hasClients && scroll.position.pixels > scroll.position.maxScrollExtent - 600) loadMore();
     });
     reload();
+  }
+
+  String _id(Map<String, dynamic> i) => '${i['ratingKey'] ?? i['id']}';
+  List<Map<String, dynamic>> get chosen => [for (final i in items) if (picked.contains(_id(i))) i];
+
+  void say(String m) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
+
+  void toggle(Map<String, dynamic> i) => setState(() {
+        final id = _id(i);
+        if (!picked.remove(id)) picked.add(id);
+      });
+
+  /// Everything playable in the chosen titles (the episodes of a show, ...), in library order.
+  Future<List<Map<String, dynamic>>> leaves() async {
+    const playable = {'movie', 'episode', 'track', 'clip'};
+    final out = <Map<String, dynamic>>[];
+    for (final i in chosen) {
+      if (playable.contains(i['type'])) {
+        out.add(i);
+      } else {
+        out.addAll(await widget.api.allLeaves(_id(i)));
+      }
+    }
+    return out;
+  }
+
+  Future<void> playChosen({bool shuffle = false}) async {
+    try {
+      var list = await leaves();
+      if (!mounted) return;
+      if (list.isEmpty) return say('Nichts zum Abspielen');
+      if (shuffle) list = smartShuffle(list);
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: widget.api, item: list.first, queue: list.sublist(1))));
+    } catch (e) {
+      say('$e');
+    }
+  }
+
+  /// Runs [f] for the chosen ones, then tells what happened; [keep] leaves the selection in place.
+  Future<void> doChosen(Future<void> Function(List<String> ids) f, String done, {bool keep = false}) async {
+    final ids = picked.toList();
+    try {
+      await f(ids);
+      say(done);
+      for (final id in ids) {
+        final at = items.indexWhere((i) => _id(i) == id);
+        if (at >= 0) items[at].addAll(await widget.api.item(id));
+      }
+      if (!keep) picked.clear();
+      if (mounted) setState(() {});
+    } catch (e) {
+      say('$e');
+    }
+  }
+
+  Widget? selectionBar() {
+    if (picked.isEmpty) return null;
+    final admin = Poster.admin;
+    final one = picked.length == 1;
+    return BottomAppBar(
+      height: 64,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          Text(one ? '1 ausgewählt' : '${picked.length} ausgewählt', style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(width: 8),
+          TextButton(onPressed: () => setState(picked.clear), child: const Text('Auswahl aufheben')),
+          FilledButton.icon(onPressed: playChosen, icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
+          const SizedBox(width: 8),
+          TextButton(onPressed: () => doChosen((ids) => widget.api.setWatchlistAll(ids, true), 'Auf die Merkliste gesetzt'), child: const Text('+ Merkliste')),
+          TextButton(onPressed: () => doChosen((ids) => widget.api.setWatchedAll(ids, true), 'Als gesehen markiert'), child: const Text('Gesehen')),
+          TextButton(onPressed: () => doChosen((ids) => widget.api.setWatchedAll(ids, false), 'Als ungesehen markiert'), child: const Text('Ungesehen')),
+          TextButton(onPressed: () => addToPlaylistDialog(context, widget.api, picked.first, ids: picked.toList()), child: const Text('Zur Playlist')),
+          if (admin && one) TextButton(onPressed: () async { await editDetailsDialog(context, widget.api, await widget.api.item(picked.first)); await doChosen((_) async {}, 'Gespeichert', keep: true); }, child: const Text('Bearbeiten')),
+          PopupMenuButton<String>(
+            tooltip: 'Mehr',
+            onSelected: (v) {
+              switch (v) {
+                case 'shuffle':
+                  playChosen(shuffle: true);
+                case 'refresh':
+                  doChosen((ids) async { for (final id in ids) { await widget.api.post('/library/metadata/$id/refresh'); } }, 'Details werden geladen', keep: true);
+                case 'analyze':
+                  doChosen((ids) async { for (final id in ids) { await widget.api.post('/library/metadata/$id/analyze'); } }, 'Wird analysiert', keep: true);
+                case 'all':
+                  setState(() => picked.addAll(items.map(_id)));
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'shuffle', child: Text('Zufallswiedergabe')),
+              if (admin) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
+              if (admin) const PopupMenuItem(value: 'analyze', child: Text('Analysieren')),
+              const PopupMenuItem(value: 'all', child: Text('Alle auswählen')),
+            ],
+          ),
+        ]),
+      ),
+    );
   }
 
   @override
@@ -359,6 +462,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: widget.api, section: '${widget.section['key']}'))),
         ),
       ]),
+      bottomNavigationBar: selectionBar(),
       body: Column(children: [
         bar,
         if (chips != null) chips,
@@ -377,7 +481,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           itemCount: items.length + (loading ? 1 : 0),
                           itemBuilder: (_, i) => i >= items.length
                               ? const Center(child: CircularProgressIndicator())
-                              : Poster(api: widget.api, item: items[i], width: 170, onTap: () => openItem(context, widget.api, items[i])),
+                              : Poster(api: widget.api, item: items[i], width: 170, onTap: () => openItem(context, widget.api, items[i]), onPick: () => toggle(items[i]), picked: picked.contains(_id(items[i])), selecting: picked.isNotEmpty),
                         ),
                         if (letters.isNotEmpty)
                           Positioned(

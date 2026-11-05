@@ -159,6 +159,8 @@ class Api {
     }
   }
 
+  Future<void> setWatchedAll(List<String> ids, bool watched) async => post('/:/${watched ? 'scrobble' : 'unscrobble'}?key=${ids.join(',')}');
+  Future<void> setWatchlistAll(List<String> ids, bool on) async => post('/api/watchlist', {'ids': ids, 'watchlist': on});
   Future<void> setWatched(String id, bool watched) async => post('/:/${watched ? 'scrobble' : 'unscrobble'}?key=$id');
   Future<void> setFavorite(String id, bool on) async => put('/api/items/$id/favorite', {'favorite': on});
   Future<void> setWatchlist(String id, bool on) async => put('/api/items/$id/watchlist', {'watchlist': on});
@@ -178,8 +180,8 @@ class Api {
   Future<List<Map<String, dynamic>>> playlistItems(String id) async => metadata(await get('/playlists/$id/items'));
   Future<Map<String, dynamic>> createPlaylist(String title, {List<String> ids = const []}) async =>
       metadata(await post('/playlists', {'title': title, 'kind': 'manual', if (ids.isNotEmpty) 'ids': ids})).first;
-  Future<bool> addToPlaylist(String id, String itemId) async {
-    final r = await post('/playlists/$id/items', {'ids': [itemId]});
+  Future<bool> addToPlaylist(String id, String itemId, {List<String>? ids}) async {
+    final r = await post('/playlists/$id/items', {'ids': ids ?? [itemId]});
     return r is Map ? (r['added'] ?? 1) != 0 : true;
   }
   Future<void> updatePlaylist(String id, Map<String, dynamic> patch) async => put('/playlists/$id', patch);

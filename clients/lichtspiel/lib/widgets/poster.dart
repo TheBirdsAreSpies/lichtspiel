@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../screens/edit.dart';
@@ -15,7 +16,12 @@ class Poster extends StatefulWidget {
   final Map<String, dynamic> item;
   final VoidCallback onTap;
   final double width;
-  const Poster({super.key, required this.api, required this.item, required this.onTap, this.width = 140});
+  /// Multiple selection (libraries): [onPick] toggles this poster, [picked] says whether it is chosen,
+  /// [selecting] that something is chosen already, so a tap picks instead of opening.
+  final VoidCallback? onPick;
+  final bool picked;
+  final bool selecting;
+  const Poster({super.key, required this.api, required this.item, required this.onTap, this.width = 140, this.onPick, this.picked = false, this.selecting = false});
 
   @override
   State<Poster> createState() => _PosterState();
@@ -123,7 +129,15 @@ class _PosterState extends State<Poster> {
         child: GestureDetector(
           onSecondaryTapUp: (d) => menu(d.globalPosition),
           child: InkWell(
-            onTap: widget.onTap,
+            onTap: () {
+              final pick = widget.onPick;
+              if (pick != null && (widget.selecting || HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isShiftPressed)) {
+                pick();
+              } else {
+                widget.onTap();
+              }
+            },
+            onLongPress: widget.onPick,
             borderRadius: BorderRadius.circular(6),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               AspectRatio(
@@ -135,7 +149,7 @@ class _PosterState extends State<Poster> {
                     Image.network(widget.api.img(thumb), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Center(child: Text('$title', textAlign: TextAlign.center))),
                     if (missing) Container(color: Colors.black54),
                     BusyOverlay(item: item),
-                    if (missing) const Positioned(top: 4, left: 4, child: Tooltip(message: 'Datei fehlt – im Papierkorb der Mediathek', child: DecoratedBox(decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.all(Radius.circular(4))), child: Padding(padding: EdgeInsets.all(3), child: Icon(Icons.delete_outline, size: 18, color: Colors.redAccent))))),
+                    if (missing) const Positioned(top: 4, left: 36, child: Tooltip(message: 'Datei fehlt – im Papierkorb der Mediathek', child: DecoratedBox(decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.all(Radius.circular(4))), child: Padding(padding: EdgeInsets.all(3), child: Icon(Icons.delete_outline, size: 18, color: Colors.redAccent))))),
                     if (unseen > 0)
                       Positioned(top: 6, right: 6, child: Container(padding: const EdgeInsets.symmetric(horizontal: 7), decoration: BoxDecoration(color: const Color(0xFFE5A00D), borderRadius: BorderRadius.circular(10)), child: Text('$unseen', style: const TextStyle(color: Color(0xFF16120A), fontSize: 12, fontWeight: FontWeight.w700))))
                     else if (watched)
@@ -147,6 +161,21 @@ class _PosterState extends State<Poster> {
                           height: 24,
                           decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xB80E1013), border: Border.all(color: const Color(0xFFE5A00D), width: 1.5)),
                           child: const Icon(Icons.check, size: 15, color: Color(0xFFE5A00D)),
+                        ),
+                      ),
+                    if (widget.picked) Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5A00D), width: 3), borderRadius: BorderRadius.circular(6), color: const Color(0x33E5A00D)))),
+                    if (widget.onPick != null && (widget.picked || widget.selecting || show))
+                      Positioned(
+                        top: 6,
+                        left: 6,
+                        child: GestureDetector(
+                          onTap: widget.onPick,
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: widget.picked ? const Color(0xFFE5A00D) : Colors.black54, border: Border.all(color: widget.picked ? const Color(0xFFE5A00D) : Colors.white70, width: 1.5)),
+                            child: widget.picked ? const Icon(Icons.check, size: 16, color: Color(0xFF16120A)) : null,
+                          ),
                         ),
                       ),
                     if (off > 0 && dur > 0)
