@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
+import '../widgets/poster.dart';
 
 const _speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 const _qualities = {
@@ -602,6 +603,41 @@ class _PlayerScreenState extends State<PlayerScreen> {
     savePref('subLang', lang);
   }
 
+  /// Fetches a subtitle file again after its timing changed (the address gets a new tail so nothing is reused).
+  Future<void> reloadSub(Map x) async {
+    final t = SubtitleTrack.uri(widget.api.abs('${x['key']}${'${x['key']}'.contains('?') ? '&' : '?'}r=${DateTime.now().millisecondsSinceEpoch}'), title: '${x['title'] ?? ''}', language: '${x['language'] ?? ''}');
+    pickedSub = t;
+    await player.setSubtitleTrack(t);
+  }
+
+  void tell(String m) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m), duration: const Duration(seconds: 4)));
+  }
+
+  /// Owner: listen to the sound and move the subtitle lines onto the speech.
+  Future<void> syncSub(Map x) async {
+    tell('Höre auf den Ton … das dauert einen Moment');
+    try {
+      final r = await widget.api.post('${x['key']}/sync');
+      if (r['applied'] != true) return tell('${r['message'] ?? 'Nicht sicher genug, nichts verschoben'}');
+      await reloadSub(x);
+      tell('Untertitel um ${((r['offsetMs'] ?? 0) / 1000).toStringAsFixed(1).replaceAll('.', ',')} s verschoben');
+    } catch (e) {
+      tell('$e');
+    }
+  }
+
+  /// Owner: move a subtitle file by [ms], or back to how it was (null).
+  Future<void> nudgeSub(Map x, int? ms) async {
+    try {
+      final r = await widget.api.put('${x['key']}/timing', ms == null ? {'reset': true} : {'delta_ms': ms});
+      await reloadSub(x);
+      tell(ms == null ? 'Untertitel-Zeit zurückgesetzt' : 'Untertitel um ${(((r['offsetMs'] ?? 0) as num) / 1000).toStringAsFixed(1).replaceAll('.', ',')} s verschoben');
+    } catch (e) {
+      tell('$e');
+    }
+  }
+
   String trackName(dynamic t) {
     final parts = <String>[
       if ((t.language ?? '').toString().isNotEmpty) '${t.language}',
@@ -807,6 +843,15 @@ class _SettingsMenuState extends State<_SettingsMenu> {
               s.pickSubtitle(SubtitleTrack.uri(s.widget.api.abs('${x['key']}'), title: '${x['title'] ?? ''}', language: '${x['language'] ?? ''}'), lang: '${x['language'] ?? ''}');
               Navigator.pop(context);
             }),
+          if (Poster.admin)
+            for (final x in s.externalSubs)
+              if (curSub.uri && curSub.id.startsWith(s.widget.api.abs('${x['key']}'))) ...[
+                head('Zeit der Untertitel'),
+                ListTile(dense: true, title: const Text('Mit dem Ton abgleichen'), onTap: () { Navigator.pop(context); s.syncSub(x); }),
+                ListTile(dense: true, title: const Text('0,5 s früher'), onTap: () { Navigator.pop(context); s.nudgeSub(x, -500); }),
+                ListTile(dense: true, title: const Text('0,5 s später'), onTap: () { Navigator.pop(context); s.nudgeSub(x, 500); }),
+                ListTile(dense: true, title: const Text('Zeit zurücksetzen'), onTap: () { Navigator.pop(context); s.nudgeSub(x, null); }),
+              ],
           head('Untertitelgröße'),
           for (final e in _subSizes.entries)
             choice(e.value, s.subSize == e.key, () {
