@@ -88,6 +88,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   String container = '';
 
   int total = 0;
+  int fetched = 0; // how many the server has given us (items can be fewer: a title that moved between two pages is shown once)
   int gen = 0; // bumped on every change so a slow answer to an old question is dropped
   bool loading = false;
   String? error;
@@ -98,7 +99,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   String get sectionId => '${widget.section['key']}';
   String get sectionType => '${widget.section['type']}';
-  bool get done => items.length >= total && total > 0 || (total == 0 && !loading && error == null && gen > 0 && items.isEmpty);
+  bool get done => fetched >= total && total > 0 || (total == 0 && !loading && error == null && gen > 0 && items.isEmpty);
 
   @override
   void initState() {
@@ -133,6 +134,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final my = ++gen;
     setState(() {
       items.clear();
+      fetched = 0;
       total = 0;
       error = null;
       loading = true;
@@ -141,7 +143,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       final r = await widget.api.list(sectionId, q, size: page);
       if (my != gen || !mounted) return;
       setState(() {
-        items.addAll(r.items);
+        _add(r.items);
         total = r.total;
         loading = false;
         letters = [];
@@ -178,7 +180,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     jumping = true;
     try {
       final my = gen;
-      while (items.length <= offset && items.length < total && my == gen && mounted && error == null) {
+      while (items.length <= offset && fetched < total && my == gen && mounted && error == null) {
         if (loading) {
           await Future<void>.delayed(const Duration(milliseconds: 40));
         } else {
@@ -198,15 +200,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
+  /// Adds a page. While the server is changing titles (a scan, updating details) the sorting can move
+  /// a title from one page to the next, so one that is already shown is left out.
+  void _add(List<Map<String, dynamic>> page) {
+    fetched += page.length;
+    if (page.isEmpty) total = fetched; // the library got smaller meanwhile: nothing more to load
+    final seen = {for (final i in items) '${i['id'] ?? i['ratingKey']}'};
+    for (final i in page) {
+      if (seen.add('${i['id'] ?? i['ratingKey']}')) items.add(i);
+    }
+  }
+
   Future<void> loadMore() async {
-    if (loading || items.length >= total) return;
+    if (loading || fetched >= total) return;
     final my = gen;
     setState(() => loading = true);
     try {
-      final r = await widget.api.list(sectionId, q, start: items.length, size: page);
+      final r = await widget.api.list(sectionId, q, start: fetched, size: page);
       if (my != gen || !mounted) return;
       setState(() {
-        items.addAll(r.items);
+        _add(r.items);
         loading = false;
       });
     } catch (e) {
