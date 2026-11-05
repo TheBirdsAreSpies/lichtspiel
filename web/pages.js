@@ -1080,11 +1080,11 @@ async function personPage(key, qs) {
       : h('div', { class: 'card', style: 'opacity:.55', title: t('Not in your libraries') },
           h('div', { class: 'poster' }, c.poster ? h('img', { src: c.poster, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer' }) : null),
           h('div', { class: 't', title: c.title }, c.title), h('div', { class: 's' }, [c.year, c.role].filter(Boolean).join(' · ')));
-    more.replaceChildren(
+    more.replaceChildren(...[
       d.photos.length > 1 ? [h('h2', {}, t('Photos')), scroller('row', d.photos.map(p => h('a', { href: p.full, target: '_blank', rel: 'noreferrer' }, h('img', { src: p.url, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer', style: 'height:200px;border-radius:6px;display:block' }))))] : null,
       d.credits.length ? [h('h2', {}, t('Filmography') + ` (${mine.length}/${d.credits.length} ${t('in your libraries')})`),
         h('div', { class: 'grid' }, [...mine, ...others].map(card))] : null,
-      h('p', {}, h('button', { class: 'small', onclick: () => load(true) }, t('Reload details')), d.imdb_id ? [' ', h('a', { href: `https://www.imdb.com/name/${d.imdb_id}/`, target: '_blank', rel: 'noreferrer' }, 'IMDb')] : null));
+      h('p', {}, h('button', { class: 'small', onclick: () => load(true) }, t('Reload details')), d.imdb_id ? [' ', h('a', { href: `https://www.imdb.com/name/${d.imdb_id}/`, target: '_blank', rel: 'noreferrer' }, 'IMDb')] : null)].flat().filter(Boolean));
   };
   load(false);
 }
