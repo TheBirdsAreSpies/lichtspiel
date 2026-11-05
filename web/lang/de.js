@@ -877,8 +877,8 @@ I18N.add('de', 'Deutsch', {
     'Other folder…': 'Anderer Ordner…',
     'Folder on the Plex server': 'Ordner auf dem Plex-Server',
     'Same folder here': 'Derselbe Ordner hier',
-    'Only needed when Plex sees the videos under other paths than this server (e.g. /data/Filme there, /media/Filme here). Test connection suggests them.':
-      'Nur nötig, wenn Plex die Videos unter anderen Pfaden sieht als dieser Server (z. B. /data/Filme dort, /media/Filme hier). „Verbindung testen“ schlägt sie vor.',
+    'Only needed when Plex sees the videos under other paths than this server (e.g. /data/Filme there, /media/Filme here). Test connection lists the folders of Plex, choose the matching folder here for each.':
+      'Nur nötig, wenn Plex die Videos unter anderen Pfaden sieht als dieser Server (z. B. /data/Filme dort, /media/Filme hier). „Verbindung testen“ listet die Ordner von Plex auf; wähle dort für jeden den passenden Ordner hier.',
     'Sync': 'Abgleichen',
     'Resume points': 'Fortsetzungspunkte',
     'Ratings': 'Bewertungen',
@@ -893,6 +893,8 @@ I18N.add('de', 'Deutsch', {
     'same folder here': 'derselbe Ordner hier',
     'not in a library here': 'hier in keiner Bibliothek',
     'Use {path}': '{path} verwenden',
+    'not assigned': 'nicht zugeordnet',
+    'suggestion': 'Vorschlag',
     'Last sync': 'Letzter Abgleich',
     'Found here': 'Hier gefunden',
     'From Plex': 'Von Plex',

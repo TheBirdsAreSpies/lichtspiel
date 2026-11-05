@@ -285,6 +285,7 @@ async function plexSyncPanel() {
     const el = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap' }, f, '→', tt, pick,
       h('button', { class: 'small', onclick: () => folderPicker(p => { tt.value = p; }) }, t('Other folder…')),
       h('button', { class: 'small', onclick: () => { maps.splice(maps.indexOf(m), 1); el.remove(); } }, t('Remove')));
+    m.el = el;
     maps.push(m); mapBox.append(el);
   };
   st.path_map.forEach(r => addMap(r.from, r.to));
@@ -308,11 +309,21 @@ async function plexSyncPanel() {
     testOut.replaceChildren(h('div', { class: 'panel', style: 'background:var(--panel2)' },
       h('p', { style: 'margin-top:0' }, t('Connected to {server} (Plex {version})', { server: r.server || '?', version: r.version || '?' }), r.plex_name ? ' · ' + t('account {name}', { name: r.plex_name }) : ''),
       r.libraries.map(l => h('div', { style: 'margin:8px 0' }, h('b', {}, l.title), ' ', h('span', { class: 'tag' }, sectionKind(l.type)),
-        l.folders.map(f => h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;font-size:13px' },
-          h('code', { style: 'word-break:break-all' }, f.plex),
-          f.in_a_library ? h('span', { class: 'dim' }, '✓ ' + (f.here !== f.plex ? f.here : t('same folder here')))
-            : [h('span', { class: 'err' }, t('not in a library here')),
-              h('button', { class: 'small', onclick: e => { addMap(f.plex, f.suggested || ''); e.target.disabled = true; } }, f.suggested ? t('Use {path}', { path: f.suggested }) : t('Add a translation'))]))))));
+        l.folders.map(f => {
+          const here = S.sections.flatMap(s => (s.Location || []).map(x => x.path));
+          const cur = maps.find(m => m.f.value.trim() === f.plex);
+          const same = f.in_a_library && f.here === f.plex;
+          const sel = h('select', { onchange: e => {
+            const m = maps.find(x => x.f.value.trim() === f.plex), v = e.target.value;
+            if (!v) { if (m) { maps.splice(maps.indexOf(m), 1); m.el.remove(); } }
+            else if (m) m.tt.value = v; else addMap(f.plex, v);
+          } },
+            h('option', { value: '' }, same ? t('Same folder here') : t('not assigned')),
+            here.map(p => h('option', { value: p, selected: cur ? cur.tt.value.trim() === p : false }, p + (!cur && p === f.suggested ? ' (' + t('suggestion') + ')' : ''))));
+          return h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;font-size:13px' },
+            h('code', { style: 'word-break:break-all' }, f.plex), '→', sel,
+            !cur && !same && !f.in_a_library ? h('span', { class: 'err' }, t('not in a library here')) : null);
+        })))));
   };
   const lastBox = h('div', {});
   const name = id => (users.users.find(u => u.id === id) || {}).username || '?';
@@ -345,7 +356,7 @@ async function plexSyncPanel() {
     formRow(t('Plex accounts'), h('div', {}, accBox, h('button', { class: 'small', style: 'margin-top:6px', onclick: () => addRow(null) }, t('Add a Plex account'))),
       t('One X-Plex-Token per person. Find it in Plex Web: ⋯ on any movie → Get info → View XML; the address ends in X-Plex-Token=….'), true),
     formRow(t('Folder translation'), h('div', {}, mapBox, h('button', { class: 'small', style: 'margin-top:6px', onclick: () => addMap('', '') }, t('Add a translation'))),
-      t('Only needed when Plex sees the videos under other paths than this server (e.g. /data/Filme there, /media/Filme here). Test connection suggests them.'), true),
+      t('Only needed when Plex sees the videos under other paths than this server (e.g. /data/Filme there, /media/Filme here). Test connection lists the folders of Plex, choose the matching folder here for each.'), true),
     formRow(t('Sync'), h('div', { class: 'checks' }, box('watched', t('Watched')), box('resume', t('Resume points')), box('ratings', t('Ratings')))),
     formRow(t('Direction'), dir, t('With one direction only, the master side is copied as it is: a video unwatched on the master becomes unwatched on the other side too, and nothing is ever sent the other way.')),
     formRow(t('Automatically'), h('label', { style: 'display:flex;gap:8px;align-items:center;margin:0' }, on, t('every'), every, t('minutes'))),
