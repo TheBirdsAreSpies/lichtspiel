@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
 import 'libraries.dart';
+import 'server_settings.dart';
 import 'users.dart';
 
 String fmtDateTime(dynamic secs) {
@@ -35,6 +36,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: const Icon(Icons.video_library_outlined),
                 label: const Text('Bibliotheken'),
                 onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LibrariesScreen(api: widget.api))),
+              ),
+            if (widget.admin)
+              TextButton.icon(
+                icon: const Icon(Icons.dns_outlined),
+                label: const Text('Server'),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ServerSettingsScreen(api: widget.api))),
               ),
             if (widget.admin)
               TextButton.icon(
