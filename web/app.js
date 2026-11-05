@@ -1429,6 +1429,15 @@ async function findNext(it) {
       if (i >= 0 && all[i + 1]) next = all[i + 1];
     } catch (e) { /* no next episode then */ }
   }
+  // A film of a series: the next film of it that is not watched yet is offered at the end (not started by itself).
+  P.suggest = false;
+  if (!next && it.type === 'movie' && it.librarySectionID) {
+    try {
+      const hubs = (await GET(`/library/metadata/${it.id}/related?count=50`)).MediaContainer.Hub || [];
+      const list = ((hubs.find(x => x.hubIdentifier === 'movie.collection') || {}).Metadata || []).filter(x => !(x.viewCount > 0) && (x.year || 9999) >= (it.year || 0));
+      if (list.length) { next = list[0]; P.suggest = true; }
+    } catch (e) { /* no suggestion then */ }
+  }
   if (P.nextFor !== it.id) return; // another video started meanwhile
   P.next = next;
   $('#pnextbtn').hidden = !next;
@@ -1737,7 +1746,7 @@ video.addEventListener('ended', () => {
 function upNext() {
   const next = P.queue[0] || Q.list[0] || P.next;
   if (!next) return closePlayer(false);
-  if (!P.autoNext) return showNext(next, null);
+  if (!P.autoNext || (P.suggest && next === P.next)) return showNext(next, null);
   // Like Netflix: after a few episodes in a row without anyone touching anything, ask if somebody is still there.
   if ((P.autoRun || 0) >= STILL_WATCHING_AFTER) return showStillWatching(next);
   showNext(next, 10);

@@ -121,6 +121,14 @@ pub fn related(db: &Db, user: &User, it: &Item, count: usize) -> Vec<Hub> {
         list.truncate(count);
         hubs.push(Hub { title, identifier, context: context.into(), ids: list.iter().map(|i| i.id).collect(), more });
     };
+    // The films of the same series, in the order they came out (movies only); the player offers the next one.
+    if it.kind == ItemKind::Movie {
+        if let Some(c) = texts(db, user.id, it, "collection").into_iter().next() {
+            let mut list: Vec<&Item> = pool.iter().copied().filter(|o| texts(db, user.id, o, "collection").iter().any(|x| x.eq_ignore_ascii_case(&c))).collect();
+            list.sort_by(|a, b| a.year.unwrap_or(u32::MAX).cmp(&b.year.unwrap_or(u32::MAX)).then(a.sort_title.cmp(&b.sort_title)));
+            push(c, "movie.collection".into(), "hub.movie.collection", list);
+        }
+    }
     // Other editions: the same film more than once (movies only).
     if it.kind == ItemKind::Movie {
         let mut eds: Vec<&Item> = pool.iter().copied().filter(|o| o.sort_title.eq_ignore_ascii_case(&it.sort_title) && o.year == it.year).collect();

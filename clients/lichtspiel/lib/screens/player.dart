@@ -76,6 +76,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   List<double> credits = []; // seconds
   List<double>? intro; // start, end in seconds
   Map<String, dynamic>? next;
+  bool suggested = false; // the next film of a series: offered at the end, not started by itself
   late List<Map<String, dynamic>> queue = [...widget.queue];
   bool nextCard = false, stillWatching = false;
   int left = 0;
@@ -173,6 +174,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
           queue = all.sublist(i + 2);
         }
       } catch (_) {}
+    } else if (it['type'] == 'movie') {
+      try {
+        final hubs = await widget.api.related(id, count: 50);
+        final hub = hubs.where((h) => h['hubIdentifier'] == 'movie.collection').firstOrNull;
+        final year = ((it['year'] ?? 0) as num).toInt();
+        final list = [
+          for (final m in (hub?['Metadata'] as List? ?? const []))
+            if (((m['viewCount'] ?? 0) as num) <= 0 && ((m['year'] ?? 9999) as num) >= year) Map<String, dynamic>.from(m)
+        ];
+        if (list.isNotEmpty) {
+          next = list.first;
+          suggested = true;
+        }
+      } catch (_) {}
     }
     if (mounted) setState(() {});
   }
@@ -212,7 +227,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (mounted) Navigator.pop(context);
       return;
     }
-    if (!autoNext) {
+    if (!autoNext || suggested) {
       setState(() => nextCard = true);
     } else if (widget.autoRun >= _stillWatchingAfter) {
       askStillWatching();

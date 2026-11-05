@@ -149,9 +149,9 @@ class Api {
   }
 
   /// "Other editions", "More by the director", ... as hubs with a title and Metadata.
-  Future<List<Map<String, dynamic>>> related(String id) async {
+  Future<List<Map<String, dynamic>>> related(String id, {int count = 20}) async {
     try {
-      return ((await get('/library/metadata/$id/related?count=20'))['MediaContainer']?['Hub'] as List? ?? const [])
+      return ((await get('/library/metadata/$id/related?count=$count'))['MediaContainer']?['Hub'] as List? ?? const [])
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
     } catch (_) {
