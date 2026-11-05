@@ -72,6 +72,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   int? audioIdx; // the file's audio track asked from the server (when the picture is converted)
   bool converted = false; // the server sends the picture converted: the app sees one audio track only
   bool restoredAudio = false;
+  SubtitleTrack? pickedSub; // what was chosen here (the player's own state can lag behind or say "auto")
   // The chapter marks on the seek bar show like the bar itself: after the mouse moved, for three seconds.
   final ticksOn = ValueNotifier<bool>(false);
   Timer? ticksTimer;
@@ -192,6 +193,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         final cand = t.subtitle.where((s) => s.id != 'auto' && s.id != 'no' && _sameLang(s.language, subLang)).firstOrNull;
         if (cand != null) {
           restoredSub = true;
+          pickedSub = cand;
           player.setSubtitleTrack(cand);
         }
       }));
@@ -369,6 +371,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> pickSubtitle(SubtitleTrack t, {String lang = ''}) async {
+    pickedSub = t;
     await player.setSubtitleTrack(t);
     subLang = lang;
     restoredSub = true;
@@ -559,7 +562,7 @@ class _SettingsMenuState extends State<_SettingsMenu> {
     final curAudio = audios.any((t) => t.id == tr.id)
         ? tr
         : (audios.where((t) => s.audioLang.isNotEmpty && _sameLang(t.language, s.audioLang)).firstOrNull ?? (audios.isNotEmpty ? audios.first : tr));
-    final curSub = p.state.track.subtitle;
+    final curSub = s.pickedSub ?? p.state.track.subtitle;
     final children = <Widget>[];
     switch (page) {
       case 'subs':
