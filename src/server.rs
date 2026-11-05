@@ -723,11 +723,18 @@ impl App {
     /// episodes it will listen to.
     /// Asks the running job (credits, intros, analysis, optimizing) to stop after the file it is on.
     pub fn cancel_job(&self) -> bool {
-        let running = self.job.lock().unwrap().as_ref().is_some_and(|j| !j.0.starts_with("Importing") && j.0 != "Syncing with Plex");
+        let running = self.job.lock().unwrap().is_some();
         if running {
             self.job_cancel.store(true, AtomicOrdering::SeqCst);
         }
-        running
+        // Details waiting for their turn are dropped too; the one being fetched right now finishes.
+        let waiting = {
+            let mut q = self.meta_queue.lock().unwrap();
+            let n = q.len();
+            q.clear();
+            n > 0
+        };
+        running || waiting
     }
 
     pub fn job_cancelled(&self) -> bool {

@@ -710,15 +710,17 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 let mut job = app.job.lock().unwrap();
                 if job.is_some() { return fail(409, "Another job is running; try again when it has finished"); }
                 *job = Some(("Importing: starting".into(), 0, 6));
+                app.job_cancel.store(false, std::sync::atomic::Ordering::SeqCst);
             }
             let a = app.clone();
             std::thread::spawn(move || {
                 let r = crate::migrate::run(&a, &o);
                 *a.job.lock().unwrap() = None;
+                a.job_cancel.store(false, std::sync::atomic::Ordering::SeqCst);
                 if let Err(e) = &r { elog!("import: {e}"); }
                 let mut p = a.meta_progress.lock().unwrap();
                 p.done += 1;
-                p.last = json!({"id": null, "title": "Import", "ok": r.is_ok(), "message": match &r { Ok(v) => crate::migrate::summary(v), Err(e) => format!("Import failed: {e}") }, "at": now()});
+                p.last = json!({"id": null, "title": "Import", "ok": r.is_ok(), "message": match &r { Ok(v) => crate::migrate::summary(v), Err(e) if e == crate::migrate::CANCELLED => "Import cancelled (what was done so far is kept; import again to continue)".to_string(), Err(e) => format!("Import failed: {e}") }, "at": now()});
             });
             js(202, json!({"ok": true, "started": true}))
         }
@@ -740,7 +742,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("POST", ["api", "job", "cancel"]) => {
             if !user.admin { return fail(403, "Only an admin can do this"); }
-            if !app.cancel_job() { return fail(409, "No job is running that can be cancelled"); }
+            if !app.cancel_job() { return fail(409, "Nothing is running that can be cancelled"); }
             ok(json!({"ok": true}))
         }
         ("GET", ["api", "metadata", "status"]) => {

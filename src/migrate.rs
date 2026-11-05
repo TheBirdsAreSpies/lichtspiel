@@ -424,6 +424,9 @@ pub struct Options {
     pub accounts: HashMap<i64, u64>,
 }
 
+/// The error of an import that was cancelled between two of its steps.
+pub const CANCELLED: &str = "Cancelled";
+
 fn set_job(app: &App, label: &str, done: usize, total: usize) {
     *app.job.lock().unwrap() = Some((format!("Importing: {label}"), done, total));
 }
@@ -473,6 +476,7 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
     report["libraries_scanned"] = json!(scanned);
 
     // 2. Match files: old item → item here.
+    if app.job_cancelled() { return Err(CANCELLED.into()); }
     set_job(app, "matching files", 2, 6);
     let mut map: HashMap<i64, u64> = HashMap::new();
     let mut missing = vec![];
@@ -509,6 +513,7 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
 
     let mut db = app.db.lock().unwrap();
     // 3. Watched state, resume points, ratings.
+    if app.job_cancelled() { return Err(CANCELLED.into()); }
     set_job(app, "watched state and ratings", 3, 6);
     let (mut watched, mut resume, mut rated, mut skipped_accounts) = (0, 0, 0, HashSet::new());
     if o.watched {
@@ -544,6 +549,7 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
         "accounts_skipped": old.accounts.iter().filter(|(id, _)| skipped_accounts.contains(id)).map(|(_, n)| n.clone()).collect::<Vec<_>>()});
 
     // 4. Credits markers the old server found (it uses a trained model for that).
+    if app.job_cancelled() { return Err(CANCELLED.into()); }
     set_job(app, "credits markers", 4, 6);
     let mut markers = 0;
     if o.markers {
@@ -570,6 +576,7 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
     report["credits_markers"] = json!(markers);
 
     // 5. Titles, plots, genres … (kept: online details won't replace them).
+    if app.job_cancelled() { return Err(CANCELLED.into()); }
     set_job(app, "titles and plots", 5, 6);
     let mut details = 0;
     let (mut people, mut people_photos): (usize, Vec<(String, String)>) = (0, vec![]);
@@ -639,6 +646,7 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
     report["cast_entries"] = json!(people);
 
     // 6. Playlists (manual ones; smart ones use the old server's own rule format).
+    if app.job_cancelled() { return Err(CANCELLED.into()); }
     set_job(app, "playlists", 6, 6);
     let (mut made, mut updated) = (vec![], vec![]);
     let mut smart_skipped = vec![];

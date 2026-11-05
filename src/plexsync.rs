@@ -415,10 +415,19 @@ fn run(app: &Arc<App>) -> Result<Value, String> {
     let started = now();
     let shown = {
         let mut job = app.job.lock().unwrap();
-        if job.is_none() { *job = Some(("Syncing with Plex".into(), 0, c.accounts.len().max(1))); true } else { false }
+        if job.is_none() {
+            *job = Some(("Syncing with Plex".into(), 0, c.accounts.len().max(1)));
+            app.job_cancel.store(false, std::sync::atomic::Ordering::SeqCst);
+            true
+        } else {
+            false
+        }
     };
     let r = run_inner(app, &c);
-    if shown { *app.job.lock().unwrap() = None; }
+    if shown {
+        *app.job.lock().unwrap() = None;
+        app.job_cancel.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
     let report = match &r {
         Ok(accounts) => json!({"at": started, "finished_at": now(), "ok": accounts.iter().all(|a| a["error"].is_null()), "accounts": accounts}),
         Err(e) => json!({"at": started, "finished_at": now(), "ok": false, "error": e, "accounts": []}),
@@ -451,6 +460,7 @@ fn run_inner(app: &Arc<App>, c: &Config) -> Result<Vec<Value>, String> {
             Err(e) => rep["error"] = json!(e),
         }
         reports.push(rep);
+        if app.job_cancelled() { break; }
     }
     write_json(&state_path(app), &state)?;
     Ok(reports)
@@ -462,6 +472,7 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
     let mut plex: Vec<PlexItem> = vec![];
     for s in sections(url, &c.client_id, &acc.token)? {
         plex.extend(items(url, &c.client_id, &acc.token, &s)?);
+        if app.job_cancelled() { return Err("Cancelled".into()); }
     }
     let mut matched: Vec<(PlexItem, u64)> = vec![];
     let mut missing: Vec<String> = vec![];
@@ -547,7 +558,15 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
     app.save();
     // Then tell Plex. What could not be sent is agreed again next time.
     let mut errors: Vec<String> = vec![];
-    for (key, rk, push) in pushes {
+    let mut pushes = pushes.into_iter();
+    while let Some((key, rk, push)) = pushes.next() {
+        // Cancelled: what was not sent yet is agreed again next time.
+        if app.job_cancelled() {
+            state.items.remove(&key);
+            for (k, ..) in pushes { state.items.remove(&k); }
+            errors.push("Cancelled".into());
+            break;
+        }
         let q = format!("key={rk}&identifier={IDENT}");
         let r = match push {
             Push::Scrobble => request("GET", &format!("{url}/:/scrobble?{q}"), &c.client_id, &acc.token),
