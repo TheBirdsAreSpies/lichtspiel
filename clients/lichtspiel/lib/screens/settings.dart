@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import 'libraries.dart';
 import 'server_settings.dart';
@@ -77,17 +78,60 @@ Widget _panel(BuildContext context, String title, List<Widget> children) => Card
 
 void _say(BuildContext c, String s) => ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(s)));
 
-Future<String?> _askPassword(BuildContext context, String title) {
+Future<String?> _askPassword(BuildContext context, String title, {bool secret = true}) {
   final c = TextEditingController();
   return showDialog<String>(
     context: context,
     builder: (d) => AlertDialog(
       title: Text(title),
-      content: TextField(controller: c, obscureText: true, autofocus: true, onSubmitted: (v) => Navigator.pop(d, v)),
+      content: TextField(controller: c, obscureText: secret, autofocus: true, onSubmitted: (v) => Navigator.pop(d, v)),
       actions: [
         TextButton(onPressed: () => Navigator.pop(d), child: const Text('Abbrechen')),
         FilledButton(onPressed: () => Navigator.pop(d, c.text), child: const Text('OK')),
       ],
+    ),
+  );
+}
+
+/// Switching two-step sign-in on: the key to type into an authenticator app (or open its link), then a code from it.
+Future<void> _twoFactorDialog(BuildContext context, Api api, String secret, String uri) {
+  final code = TextEditingController();
+  String? err;
+  return showDialog(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, set) => AlertDialog(
+        title: const Text('Zweistufige Anmeldung einrichten'),
+        content: SizedBox(
+          width: 420,
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Tippe diesen Schlüssel in deine Authenticator-App ein oder öffne den Link auf diesem Gerät:'),
+            const SizedBox(height: 8),
+            SelectableText(secret, style: const TextStyle(fontSize: 18, fontFamily: 'monospace')),
+            Row(children: [
+              TextButton(onPressed: () => Clipboard.setData(ClipboardData(text: secret)), child: const Text('Schlüssel kopieren')),
+              TextButton(onPressed: () => launchUrl(Uri.parse(uri), mode: LaunchMode.externalApplication), child: const Text('In Authenticator öffnen')),
+            ]),
+            const SizedBox(height: 8),
+            const Text('Dann der 6-stellige Code, den sie anzeigt:'),
+            TextField(controller: code, keyboardType: TextInputType.number, decoration: InputDecoration(hintText: '123456', errorText: err)),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
+          FilledButton(
+            onPressed: () async {
+              try {
+                await api.post('/api/me/2fa/enable', {'code': code.text.trim()});
+                if (ctx.mounted) Navigator.pop(ctx);
+              } catch (e) {
+                set(() => err = '$e');
+              }
+            },
+            child: const Text('Einschalten'),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -141,7 +185,47 @@ class _AccountTabState extends State<_AccountTab> {
         ),
       ]),
       _panel(context, 'Zweistufige Anmeldung', [
-        Text(m['two_factor'] == true ? 'Die zweistufige Anmeldung ist eingeschaltet.' : 'Ausgeschaltet. Einrichten kannst du sie in der Web-App.'),
+        if (m['two_factor'] == true) ...[
+          const Text('Die zweistufige Anmeldung ist eingeschaltet.'),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton(
+              onPressed: () async {
+                final pw = await _askPassword(context, 'Dein Passwort');
+                if (pw == null || pw.isEmpty || !mounted) return;
+                final code = await _askPassword(context, 'Code aus der Authenticator-App', secret: false);
+                if (code == null || code.isEmpty) return;
+                await run(() async {
+                  await widget.api.post('/api/me/2fa/disable', {'password': pw, 'code': code});
+                  final fresh = await widget.api.get('/api/me');
+                  if (mounted) setState(() => me = Map<String, dynamic>.from(fresh));
+                }, 'Ausgeschaltet');
+              },
+              child: const Text('Ausschalten'),
+            ),
+          ),
+        ] else ...[
+          const Text('Beim Anmelden mit Passwort fragt der Server zusätzlich nach einem Code aus einer Authenticator-App (Google Authenticator, Aegis, 1Password …).'),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton(
+              onPressed: () async {
+                try {
+                  final x = await widget.api.post('/api/me/2fa/setup');
+                  if (!mounted) return;
+                  await _twoFactorDialog(context, widget.api, '${x['secret']}', '${x['uri']}');
+                  final fresh = await widget.api.get('/api/me');
+                  if (mounted) setState(() => me = Map<String, dynamic>.from(fresh));
+                } catch (e) {
+                  if (mounted) _say(context, '$e');
+                }
+              },
+              child: const Text('Einrichten'),
+            ),
+          ),
+        ],
       ]),
       _panel(context, 'Passwort', [
         Align(
