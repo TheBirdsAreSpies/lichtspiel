@@ -2297,6 +2297,12 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
     if let Some(r) = v.rating { o["userRating"] = json!(r); }
     if !it.content_rating.is_empty() { o["contentRating"] = json!(it.content_rating); }
     if !it.studio.is_empty() { o["studio"] = json!(it.studio); }
+    if it.kind == ItemKind::Movie {
+        // {edition-Theatrical} in the file name (or set by hand), shown under the poster.
+        let e = it.extra.get("edition").and_then(|v| v.as_str()).map(String::from)
+            .unwrap_or_else(|| it.file.as_ref().map(|f| crate::query::edition_of(&f.path)).unwrap_or_default());
+        if !e.is_empty() { o["editionTitle"] = json!(e); }
+    }
     if let Some(i) = it.index { o["index"] = json!(i); }
     for (k, name) in [("logo", "clearLogo"), ("square", "squareThumb")] {
         if it.extra.get(k).and_then(|v| v.as_str()).is_some() { o[name] = json!(format!("/library/metadata/{}/{k}?v={}", it.id, it.updated_at)); }

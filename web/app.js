@@ -209,6 +209,7 @@ $('#q').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer 
 function posterCard(it, opts = {}) {
   const prog = it.viewOffset && it.duration ? Math.min(1, it.viewOffset / it.duration) : 0;
   let title = it.title, sub = it.year || '';
+  if (it.editionTitle) sub = [it.year, it.editionTitle].filter(Boolean).join(' · ');
   if (it.type === 'episode') { title = it.grandparentTitle || it.title; sub = `${t('S{n}', { n: it.parentIndex || 0 })} ${t('E{n}', { n: it.index || 0 })} · ${it.title}`; }
   if (it.type === 'season') sub = it.parentTitle || '';
   if (it.type === 'show') sub = t('{n} episodes', { n: it.leafCount || 0 });

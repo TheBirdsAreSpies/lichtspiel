@@ -13,7 +13,7 @@ class Poster extends StatelessWidget {
   Widget build(BuildContext context) {
     final isEp = item['type'] == 'episode';
     final title = isEp ? (item['grandparentTitle'] ?? item['title']) : item['title'];
-    final sub = isEp ? 'S${item['parentIndex'] ?? '?'}E${item['index'] ?? '?'} · ${item['title']}' : (item['year']?.toString() ?? '');
+    final sub = isEp ? 'S${item['parentIndex'] ?? '?'}E${item['index'] ?? '?'} · ${item['title']}' : ([item['year']?.toString(), item['editionTitle']?.toString()].whereType<String>().where((e) => e.isNotEmpty).join(' · '));
     final dur = (item['duration'] ?? 0) as int;
     final off = (item['viewOffset'] ?? 0) as int;
     final thumb = isEp && item['grandparentThumb'] != null ? item['grandparentThumb'] : item['thumb'];
