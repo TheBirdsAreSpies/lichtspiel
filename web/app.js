@@ -642,9 +642,23 @@ async function sectionPage(id, qs) {
     loading = false;
   };
   const more = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting) && grid && loaded < total && !loading) addPage(loaded); }, { rootMargin: '900px' });
+  // A letter scrolls to its first poster (the pages up to there are loaded first), like Plex; nothing is filtered.
+  let jumping = false;
   const jump = async offset => {
-    grid = null; loaded = 0; holder.replaceChildren(sentinel); sentinel.textContent = t('Loading…'); window.scrollTo(0, 0);
-    await addPage(offset);
+    if (jumping) return; jumping = true;
+    try {
+      while (loaded <= offset && loaded < total) {
+        sentinel.textContent = t('Loading…');
+        while (loading) await new Promise(r => setTimeout(r, 40));
+        if (loaded <= offset) await addPage(loaded);
+        if (sentinel.textContent !== t('Loading…') && loaded < total && loaded <= offset) break; // a page failed
+      }
+      const card = grid && grid.children[Math.min(offset, grid.children.length - 1)];
+      if (card) {
+        const head = sticky.getBoundingClientRect().bottom;
+        window.scrollBy({ top: card.getBoundingClientRect().top - head - 12, behavior: 'smooth' });
+      }
+    } finally { jumping = false; }
   };
   // The letters at the side (only when sorted by title).
   const letters = h('div', { class: 'letters' });
