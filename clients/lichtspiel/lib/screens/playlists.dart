@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../widgets/poster.dart';
 import 'detail.dart';
 import 'library.dart';
 import 'player.dart';
@@ -15,20 +16,44 @@ String _dur(dynamic ms) {
 String plTitle(Map<String, dynamic> p) => '${p['title']}';
 
 /// Picks a playlist (or a new one) and adds the item; used by the detail page.
-Future<void> addToPlaylistDialog(BuildContext context, Api api, String itemId, {List<String>? ids}) async {
+/// With [item] (a movie or show) the owner can also put it into a collection of its library.
+Future<void> addToPlaylistDialog(BuildContext context, Api api, String itemId, {List<String>? ids, Map<String, dynamic>? item}) async {
   final msg = ScaffoldMessenger.of(context);
   final pls = await api.playlists(kind: 'manual', owner: 'me', sort: 'title');
+  var mine = <String>[];
+  var cols = <String>[];
+  final collectable = Poster.admin && item != null && ids == null && (item['type'] == 'movie' || item['type'] == 'show') && item['librarySectionID'] != null;
+  if (collectable) {
+    try {
+      final full = await api.item(itemId);
+      mine = [for (final c in (full['extra']?['collections'] as List? ?? const [])) '$c'];
+      cols = [for (final c in await api.sectionGroups('${item['librarySectionID']}', 'collections')) '${c['title']}'].where((c) => !mine.contains(c)).toList();
+    } catch (_) {}
+  }
   if (!context.mounted) return;
   final choice = await showDialog<Object>(
     context: context,
     builder: (c) => SimpleDialog(title: const Text('Zur Playlist hinzufügen'), children: [
       SimpleDialogOption(onPressed: () => Navigator.pop(c, 'new'), child: const Row(children: [Icon(Icons.add), SizedBox(width: 8), Text('Neue Playlist…')])),
       for (final p in pls) SimpleDialogOption(onPressed: () => Navigator.pop(c, p), child: Text(plTitle(p))),
+      if (collectable) ...[
+        const Divider(),
+        for (final name in cols) SimpleDialogOption(onPressed: () => Navigator.pop(c, 'coll:$name'), child: Text('Sammlung: $name')),
+        SimpleDialogOption(onPressed: () => Navigator.pop(c, 'newcoll'), child: const Row(children: [Icon(Icons.add), SizedBox(width: 8), Text('Neue Sammlung…')])),
+      ],
     ]),
   );
   if (choice == null || !context.mounted) return;
   try {
-    if (choice == 'new') {
+    if (choice == 'newcoll' || (choice is String && choice.startsWith('coll:'))) {
+      var name = choice is String && choice.startsWith('coll:') ? choice.substring(5) : '';
+      if (choice == 'newcoll') {
+        name = (await askText(context, 'Name der neuen Sammlung')) ?? '';
+        if (name.isEmpty) return;
+      }
+      await api.put('/library/metadata/$itemId', {'collections': [...mine, name]});
+      msg.showSnackBar(SnackBar(content: Text('Zu „$name“ hinzugefügt')));
+    } else if (choice == 'new') {
       final name = await askText(context, 'Name der neuen Playlist');
       if (name == null || name.isEmpty) return;
       await api.createPlaylist(name, ids: ids ?? [itemId]);

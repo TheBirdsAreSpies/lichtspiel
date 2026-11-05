@@ -288,7 +288,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 _toggle(item['favorite'] == true ? Icons.favorite : Icons.favorite_border, item['favorite'] == true, item['favorite'] == true ? 'Aus Favoriten entfernen' : 'Zu Favoriten', () => act(() => api.setFavorite(key, item['favorite'] != true))),
                 if (type != 'clip') _toggle(item['watchlist'] == true ? Icons.bookmark : Icons.bookmark_border, item['watchlist'] == true, item['watchlist'] == true ? 'Von der Merkliste entfernen' : 'Auf die Merkliste', () => act(() => api.setWatchlist(key, item['watchlist'] != true))),
                 if (DownloadRights.allowed && (playable || type == 'show' || type == 'season') && item['missing'] != true) OutlinedButton.icon(onPressed: () => downloadDialog(context, api, [item]), icon: const Icon(Icons.download), label: const Text('Herunterladen')),
-                if (playable || type == 'episode') OutlinedButton.icon(onPressed: () => addToPlaylistDialog(context, api, key), icon: const Icon(Icons.playlist_add), label: const Text('Zur Playlist')),
+                if (playable || type == 'episode') OutlinedButton.icon(onPressed: () => addToPlaylistDialog(context, api, key, item: item), icon: const Icon(Icons.playlist_add), label: const Text('Zur Playlist')),
                 _stars(item),
               ]),
               if (links.isNotEmpty)

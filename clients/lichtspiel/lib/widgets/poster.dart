@@ -7,6 +7,7 @@ import '../screens/player.dart';
 import 'activity.dart';
 import 'together.dart';
 import 'item_extras.dart';
+import '../screens/playlists.dart' show addToPlaylistDialog;
 import '../screens/downloads.dart';
 
 /// A poster card with title, subtitle, watched mark and progress bar. Focusable (D-pad / remote ready).
@@ -76,6 +77,8 @@ class _PosterState extends State<Poster> {
         if (widget.onRemoved != null) const PopupMenuItem(value: 'unresume', child: Text('Aus „Weiterschauen“ entfernen')),
         if (playable && item['missing'] != true && item['type'] != 'track') const PopupMenuItem(value: 'together', child: Text('Zusammen schauen…')),
         if (DownloadRights.allowed && (playable || const {'show', 'season'}.contains(item['type'])) && item['missing'] != true) const PopupMenuItem(value: 'download', child: Text('Herunterladen…')),
+        if (const {'movie', 'show', 'episode', 'track'}.contains(item['type'])) const PopupMenuItem(value: 'playlist', child: Text('Zur Playlist…')),
+        if (const {'movie', 'show', 'season', 'episode'}.contains(item['type'])) const PopupMenuItem(value: 'share', child: Text('Link kopieren')),
         if (item['type'] != 'clip' && item['type'] != 'collection') const PopupMenuItem(value: 'history', child: Text('Verlauf')),
         if (playable) const PopupMenuItem(value: 'report', child: Text('Problem melden…')),
         PopupMenuItem(value: 'watched', child: Text(watched ? 'Als ungesehen markieren' : 'Als gesehen markieren')),
@@ -90,6 +93,13 @@ class _PosterState extends State<Poster> {
         case 'queue':
           PlayerScreen.userQueue.add(item);
           say('Zur Warteschlange hinzugefügt – sie läuft nach dem aktuellen Video');
+          return;
+        case 'playlist':
+          await addToPlaylistDialog(context, widget.api, id, item: item);
+          return;
+        case 'share':
+          await Clipboard.setData(ClipboardData(text: '${widget.api.base}/#/item/$id'));
+          say('Link kopiert – wer ein Konto hier hat und die Mediathek sehen darf, kann ihn öffnen');
           return;
         case 'history':
           await historyDialog(context, widget.api, item);
