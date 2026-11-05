@@ -91,6 +91,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   int gen = 0; // bumped on every change so a slow answer to an old question is dropped
   bool loading = false;
   String? error;
+  List<({String key, int offset})> letters = [];
+  double gridWidth = 0;
+  bool jumping = false;
   List<Map<String, dynamic>>? available; // the kinds of filter and their values, loaded when first opened
 
   String get sectionId => '${widget.section['key']}';
@@ -141,12 +144,57 @@ class _LibraryScreenState extends State<LibraryScreen> {
         items.addAll(r.items);
         total = r.total;
         loading = false;
+        letters = [];
       });
+      loadLetters(my);
     } catch (e) {
       if (my == gen && mounted) setState(() {
         error = '$e';
         loading = false;
       });
+    }
+  }
+
+  /// The letters at the side (only when sorted by title): each with the position of its first poster.
+  Future<void> loadLetters(int my) async {
+    if (sortField != 'title' || total <= page ~/ 2) return;
+    try {
+      final dirs = await widget.api.firstCharacter(sectionId, q);
+      if (my != gen || !mounted) return;
+      var sum = 0;
+      final l = <({String key, int offset})>[];
+      for (final d in dirs) {
+        final before = sum;
+        sum += d.size;
+        l.add((key: d.key, offset: desc ? total - before - d.size : before));
+      }
+      setState(() => letters = l);
+    } catch (_) {}
+  }
+
+  /// Loads the pages up to the letter's first poster and scrolls there; nothing is filtered.
+  Future<void> jumpTo(int offset) async {
+    if (jumping) return;
+    jumping = true;
+    try {
+      final my = gen;
+      while (items.length <= offset && items.length < total && my == gen && mounted && error == null) {
+        if (loading) {
+          await Future<void>.delayed(const Duration(milliseconds: 40));
+        } else {
+          await loadMore();
+        }
+      }
+      if (!mounted || !scroll.hasClients || gridWidth <= 0) return;
+      const maxExtent = 170.0, spacing = 12.0, aspect = 0.48;
+      final inner = gridWidth - 16 - (letters.isEmpty ? 16 : 32);
+      final cols = (inner / (maxExtent + spacing)).ceil().clamp(1, 1000);
+      final w = (inner - (cols - 1) * spacing) / cols;
+      final rowH = w / aspect + spacing;
+      final target = (offset ~/ cols) * rowH;
+      scroll.animateTo(target.clamp(0.0, scroll.position.maxScrollExtent), duration: const Duration(milliseconds: 350), curve: Curves.easeOut);
+    } finally {
+      jumping = false;
     }
   }
 
@@ -306,15 +354,39 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ? Center(child: Text(error!))
               : items.isEmpty && !loading
                   ? const Center(child: Text('Nichts passt zu diesen Filtern.'))
-                  : GridView.builder(
-                      controller: scroll,
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 170, childAspectRatio: 0.48, crossAxisSpacing: 12, mainAxisSpacing: 12),
-                      itemCount: items.length + (loading ? 1 : 0),
-                      itemBuilder: (_, i) => i >= items.length
-                          ? const Center(child: CircularProgressIndicator())
-                          : Poster(api: widget.api, item: items[i], width: 170, onTap: () => openItem(context, widget.api, items[i])),
-                    ),
+                  : LayoutBuilder(builder: (context, box) {
+                      gridWidth = box.maxWidth;
+                      return Stack(children: [
+                        GridView.builder(
+                          controller: scroll,
+                          padding: EdgeInsets.fromLTRB(16, 16, letters.isEmpty ? 16 : 32, 16),
+                          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 170, childAspectRatio: 0.48, crossAxisSpacing: 12, mainAxisSpacing: 12),
+                          itemCount: items.length + (loading ? 1 : 0),
+                          itemBuilder: (_, i) => i >= items.length
+                              ? const Center(child: CircularProgressIndicator())
+                              : Poster(api: widget.api, item: items[i], width: 170, onTap: () => openItem(context, widget.api, items[i])),
+                        ),
+                        if (letters.isNotEmpty)
+                          Positioned(
+                            right: 2,
+                            top: 8,
+                            bottom: 8,
+                            width: 22,
+                            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                              for (final l in letters)
+                                Flexible(
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(maxHeight: 20),
+                                    child: InkWell(
+                                      onTap: () => jumpTo(l.offset),
+                                      child: Center(child: FittedBox(child: Text(l.key, style: const TextStyle(fontSize: 11, color: Colors.white60)))),
+                                    ),
+                                  ),
+                                ),
+                            ]),
+                          ),
+                      ]);
+                    }),
         ),
       ]),
     );

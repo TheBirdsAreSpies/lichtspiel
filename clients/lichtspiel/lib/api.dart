@@ -116,6 +116,12 @@ class Api {
     return (items: items, total: (r?['MediaContainer']?['totalSize'] ?? items.length) as int);
   }
 
+  /// The first letters of the titles with how many each has (for the letter bar).
+  Future<List<({String key, int size})>> firstCharacter(String sectionId, Map<String, String> q) async {
+    final r = await get('/library/sections/$sectionId/firstCharacter?${query({...q}..remove('sort'))}');
+    return ((r?['MediaContainer']?['Directory'] as List?) ?? const []).map((e) => (key: '${e['key']}', size: (e['size'] ?? 0) as int)).toList();
+  }
+
   /// The kinds of filter of a library with their values and counts (genre, year, age rating, unwatched, ...).
   Future<List<Map<String, dynamic>>> filters(String sectionId, {String type = ''}) async =>
       ((await get('/library/sections/$sectionId/filters${type.isEmpty ? '' : '?type=$type'}'))['MediaContainer']?['Filter'] as List? ?? const [])
