@@ -472,8 +472,9 @@ class _DetailScreenState extends State<DetailScreen> {
     final cur = ((item['userRating'] ?? 0) as num).round();
     return Row(mainAxisSize: MainAxisSize.min, children: [
       for (var i = 1; i <= 5; i++)
-        InkResponse(
-          onTap: () => act(() => api.rate(key, i * 2)),
+        // Left half of a star = half a star, right half = the whole star (as in the web app).
+        GestureDetector(
+          onTapUp: (d) => act(() => api.rate(key, d.localPosition.dx < 13 ? i * 2 - 1 : i * 2)),
           child: Icon(cur >= i * 2 ? Icons.star : (cur == i * 2 - 1 ? Icons.star_half : Icons.star_border), color: cur >= i * 2 - 1 ? _gold : Colors.white38, size: 26),
         ),
       if (cur > 0) TextButton(onPressed: () => act(() => api.rate(key, -1)), child: const Text('löschen')),
