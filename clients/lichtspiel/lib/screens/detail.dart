@@ -124,6 +124,25 @@ class _DetailScreenState extends State<DetailScreen> {
     if (mounted) load(); // refresh resume position and watched marks
   }
 
+  /// All songs of an artist or album, one after the other; shuffled, the same artist does not come twice in a row while others are left.
+  Future<void> playMusic(bool shuffle) async {
+    var songs = await api.allLeaves(widget.id);
+    if (songs.isEmpty) return;
+    if (shuffle) {
+      songs.shuffle();
+      final out = <Map<String, dynamic>>[];
+      while (songs.isNotEmpty) {
+        final last = out.isEmpty ? null : out.last['grandparentTitle'];
+        final i = songs.indexWhere((x) => x['grandparentTitle'] != last);
+        out.add(songs.removeAt(i < 0 ? 0 : i));
+      }
+      songs = out;
+    }
+    if (!mounted) return;
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: api, item: songs.first, queue: songs.sublist(1))));
+    if (mounted) load();
+  }
+
   Future<void> playNextEpisode() async {
     final leaves = await api.allLeaves(widget.id);
     if (leaves.isEmpty) return;
@@ -246,6 +265,10 @@ class _DetailScreenState extends State<DetailScreen> {
                   ),
                 if (trailer != null) OutlinedButton.icon(onPressed: () => play(trailer), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer'))
                 else if (online.isNotEmpty) OutlinedButton.icon(onPressed: () => _open('https://www.youtube.com/watch?v=${online.first['key']}'), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer (online)')),
+                if (leafCount > 0 && (type == 'artist' || type == 'album')) ...[
+                  FilledButton.icon(onPressed: () => playMusic(false), icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
+                  OutlinedButton.icon(onPressed: () => playMusic(true), icon: const Icon(Icons.shuffle), label: const Text('Zufall')),
+                ],
                 if (!playable && leafCount > 0 && (type == 'show' || type == 'season'))
                   FilledButton.icon(onPressed: playNextEpisode, icon: const Icon(Icons.play_arrow), label: const Text('Nächste Folge')),
                 _toggle(watched ? Icons.check_circle : Icons.check_circle_outline, watched, watched ? 'Als ungesehen markieren' : 'Als gesehen markieren', () => act(() => api.setWatched(key, !watched))),
