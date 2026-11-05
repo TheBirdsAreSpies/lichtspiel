@@ -331,14 +331,96 @@ fn lang_of(settings: &Settings) -> String {
 
 // ------------------------------------------------------------------ search
 
-pub fn search(settings: &Settings, kind: ItemKind, title: &str, year: Option<u32>) -> Result<Vec<Candidate>, String> {
-    let mut list = if !settings.tmdb_api_key.trim().is_empty() {
-        tmdb_search(settings, kind, title, year)?
+/// One lookup with exactly this title.
+fn search_one(settings: &Settings, kind: ItemKind, title: &str, year: Option<u32>) -> Result<Vec<Candidate>, String> {
+    if !settings.tmdb_api_key.trim().is_empty() {
+        tmdb_search(settings, kind, title, year)
     } else if kind == ItemKind::Show {
-        tvmaze_search(title, year)?
+        tvmaze_search(title, year)
     } else {
-        wiki_search(settings, title, year)?
+        wiki_search(settings, title, year)
+    }
+}
+
+/// Spellings of a title that are worth trying besides the typed one: "ae/oe/ue" as umlauts (and back), "ss" as ß
+/// (and back), without accents, and without punctuation. File names often lack the umlauts the title has.
+fn title_variants(title: &str) -> Vec<String> {
+    fn rep(s: &str, pairs: &[(&str, &str)]) -> String {
+        let mut out = s.to_string();
+        for (a, b) in pairs {
+            out = out.replace(a, b).replace(&a.to_uppercase(), &b.to_uppercase());
+            // "Ae" at the start of a word
+            let mut cap = a.chars();
+            if let Some(f) = cap.next() {
+                let a2 = format!("{}{}", f.to_uppercase(), cap.as_str());
+                let mut bc = b.chars();
+                let b2 = bc.next().map(|f| format!("{}{}", f.to_uppercase(), bc.as_str())).unwrap_or_default();
+                out = out.replace(&a2, &b2);
+            }
+        }
+        out
+    }
+    let mut v: Vec<String> = Vec::new();
+    let mut add = |x: String| {
+        let x = x.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !x.is_empty() && !v.iter().any(|y| y.eq_ignore_ascii_case(&x)) {
+            v.push(x);
+        }
     };
+    add(title.to_string());
+    add(rep(title, &[("ae", "ä"), ("oe", "ö"), ("ue", "ü")]));
+    add(rep(title, &[("ae", "ä"), ("oe", "ö"), ("ue", "ü"), ("ss", "ß")]));
+    add(rep(title, &[("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")]));
+    add(rep(title, &[("ä", "a"), ("ö", "o"), ("ü", "u"), ("ß", "ss"), ("é", "e"), ("è", "e"), ("à", "a"), ("ô", "o"), ("î", "i"), ("ç", "c")]));
+    add(title.chars().map(|c| if c.is_alphanumeric() || c.is_whitespace() { c } else { ' ' }).collect());
+    v
+}
+
+/// Looks the title up online. Tries other spellings (umlauts, accents, punctuation) as well, and when nothing
+/// turns up, the year is dropped and then the last words of the title one by one.
+pub fn search(settings: &Settings, kind: ItemKind, title: &str, year: Option<u32>) -> Result<Vec<Candidate>, String> {
+    let mut list: Vec<Candidate> = Vec::new();
+    let mut first_err: Option<String> = None;
+    let mut run = |t: &str, y: Option<u32>, list: &mut Vec<Candidate>| {
+        match search_one(settings, kind, t, y) {
+            Ok(found) => {
+                for c in found {
+                    if !list.iter().any(|x| x.source == c.source && x.id == c.id) {
+                        list.push(c);
+                    }
+                }
+            }
+            Err(e) => {
+                first_err.get_or_insert(e);
+            }
+        }
+    };
+    for t in title_variants(title).iter().take(4) {
+        run(t, year, &mut list);
+    }
+    if list.is_empty() && year.is_some() {
+        for t in title_variants(title).iter().take(4) {
+            run(t, None, &mut list);
+        }
+    }
+    if list.is_empty() {
+        // Fewer and fewer words from the front ("Arsen und Spitzenhaeubchen" -> "Arsen und" -> "Arsen").
+        let words: Vec<&str> = title.split_whitespace().collect();
+        for n in (1..words.len()).rev() {
+            let part = words[..n].join(" ");
+            for t in title_variants(&part).iter().take(3) {
+                run(t, None, &mut list);
+            }
+            if !list.is_empty() {
+                break;
+            }
+        }
+    }
+    if list.is_empty() {
+        if let Some(e) = first_err {
+            return Err(e);
+        }
+    }
     list.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     Ok(list)
 }
@@ -1236,5 +1318,19 @@ mod match_tests {
         assert!(score("arsen und spitzenhaeubchen", Some(1944), "Arsen und Spitzenhäubchen", Some(1944)) >= 1.15);
         assert!(score("die abbotts", Some(1997), "Die Abbotts - Wenn Haß die Liebe tötet", Some(1997)) >= 1.1);
         assert!(score("die abbotts", Some(1997), "Die Simpsons", Some(1997)) < 0.85);
+    }
+}
+
+#[cfg(test)]
+mod variant_tests {
+    use super::title_variants;
+
+    #[test]
+    fn umlaut_spellings_are_tried() {
+        let v = title_variants("Arsen und Spitzenhaeubchen");
+        assert!(v.contains(&"Arsen und Spitzenhäubchen".to_string()), "{v:?}");
+        let w = title_variants("Käse für Größe");
+        assert!(w.contains(&"Kaese fuer Groesse".to_string()), "{w:?}");
+        assert!(w.contains(&"Kase fur Grosse".to_string()), "{w:?}");
     }
 }
