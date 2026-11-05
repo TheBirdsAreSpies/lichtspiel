@@ -278,8 +278,12 @@ async function plexSyncPanel() {
     const f = h('input', { value: from || '', placeholder: t('Folder on the Plex server'), style: 'flex:1;min-width:200px' });
     const tt = h('input', { value: to || '', placeholder: t('Same folder here'), style: 'flex:1;min-width:200px' });
     const m = { f, tt };
-    const el = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap' }, f, '→', tt,
-      h('button', { class: 'small', onclick: () => folderPicker(p => { tt.value = p; }) }, t('Browse…')),
+    // The folders of the libraries set up here: the translation only helps when it ends in one of them.
+    const folders = S.sections.flatMap(s => (s.Location || []).map(l => [l.path, s.title]));
+    const pick = folders.length ? h('select', { title: t('Folder of a library'), onchange: e => { if (e.target.value) tt.value = e.target.value; e.target.value = ''; } },
+      h('option', { value: '' }, t('Folder of a library…')), folders.map(([p, title]) => h('option', { value: p }, title + ' – ' + p))) : null;
+    const el = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap' }, f, '→', tt, pick,
+      h('button', { class: 'small', onclick: () => folderPicker(p => { tt.value = p; }) }, t('Other folder…')),
       h('button', { class: 'small', onclick: () => { maps.splice(maps.indexOf(m), 1); el.remove(); } }, t('Remove')));
     maps.push(m); mapBox.append(el);
   };

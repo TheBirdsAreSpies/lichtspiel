@@ -872,6 +872,9 @@ I18N.add('de', 'Deutsch', {
       'Ein X-Plex-Token pro Person. So findest du ihn in Plex Web: ⋯ bei einem Film → Informationen abrufen → XML anzeigen; die Adresse endet auf X-Plex-Token=….',
     'Folder translation': 'Ordner-Übersetzung',
     'Add a translation': 'Übersetzung hinzufügen',
+    'Folder of a library…': 'Ordner einer Bibliothek…',
+    'Folder of a library': 'Ordner einer Bibliothek',
+    'Other folder…': 'Anderer Ordner…',
     'Folder on the Plex server': 'Ordner auf dem Plex-Server',
     'Same folder here': 'Derselbe Ordner hier',
     'Only needed when Plex sees the videos under other paths than this server (e.g. /data/Filme there, /media/Filme here). Test connection suggests them.':
