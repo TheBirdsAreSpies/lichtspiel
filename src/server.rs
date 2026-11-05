@@ -562,7 +562,12 @@ impl App {
             ItemKind::Show => vec![],
             _ => names.iter().rev().collect(),
         };
-        names.into_iter().find_map(|n| scanner::id_tag(n))
+        // Without a tag in the names, the match Plex made (kept by the import) decides.
+        names.into_iter().find_map(|n| scanner::id_tag(n)).or_else(|| {
+            let p = it.extra.get("plex_id")?;
+            let src = match p["source"].as_str()? { "imdb" => "imdb", "tmdb" => "tmdb", "tvdb" => "tvdb", _ => return None };
+            Some((src, p["id"].as_str()?.to_string()))
+        })
     }
 
     /// Title and year from the folder a movie's file is in, when that folder holds

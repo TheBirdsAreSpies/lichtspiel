@@ -115,6 +115,8 @@ pub struct Old {
     pub parts: Vec<(i64, String)>,
     pub settings: Vec<OldSetting>,
     pub genres: HashMap<i64, Vec<String>>,
+    /// Tag type 314: the external ids the new Plex agent keeps, like "imdb://tt0133093" or "tmdb://603".
+    pub external: HashMap<i64, Vec<String>>,
     /// Actors in order: (name, role, photo address). Tag type 6 "Role".
     pub cast: HashMap<i64, Vec<(String, String, String)>>,
     /// Tag type 4 "Director" and 5 "Writer".
@@ -260,6 +262,11 @@ pub fn read(src: &Path, work: &Path) -> Result<Old, String> {
             last_viewed: int(&r[5]).unwrap_or(0).max(0),
         })
         .collect();
+    for r in rows(&c, "select tg.metadata_item_id, t.tag from taggings tg join tags t on t.id = tg.tag_id where t.tag_type = 314", 2, w) {
+        if let Some(id) = int(&r[0]) {
+            old.external.entry(id).or_default().push(text(&r[1]));
+        }
+    }
     for r in rows(&c, "select tg.metadata_item_id, t.tag from taggings tg join tags t on t.id = tg.tag_id where t.tag_type = 1 order by tg.metadata_item_id, tg.\"index\"", 2, w) {
         if let Some(id) = int(&r[0]) {
             old.genres.entry(id).or_default().push(text(&r[1]));
@@ -324,6 +331,32 @@ fn db_date(t: i64) -> String {
 }
 
 // ------------------------------------------------------------------ paths
+
+/// The online entry Plex had picked for a movie or show, as (source, id) like a
+/// file name tag: from the external ids of the new agent ("imdb://tt0133093",
+/// "tmdb://603", "tvdb://81189"), or from the guid of an old agent
+/// ("com.plexapp.agents.imdb://tt0133093?lang=en", "...themoviedb://603", "...thetvdb://81189").
+pub fn plex_external_id(guid: &str, tags: &[String]) -> Option<(&'static str, String)> {
+    fn digits_or_tt(src: &str, v: &str) -> Option<String> {
+        let id: String = v.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+        let ok = if src == "imdb" { id.len() > 2 && id.starts_with("tt") && id[2..].chars().all(|c| c.is_ascii_digit()) } else { !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) };
+        ok.then_some(id)
+    }
+    let mut found: Vec<(&'static str, String)> = vec![];
+    for t in tags {
+        if let Some((s, v)) = t.split_once("://") {
+            let src = match s.trim().to_lowercase().as_str() { "imdb" => "imdb", "tmdb" => "tmdb", "tvdb" => "tvdb", _ => continue };
+            if let Some(id) = digits_or_tt(src, v.trim()) { found.push((src, id)); }
+        }
+    }
+    for (prefix, src) in [("com.plexapp.agents.imdb://", "imdb"), ("com.plexapp.agents.themoviedb://", "tmdb"), ("com.plexapp.agents.thetvdb://", "tvdb")] {
+        if let Some(v) = guid.strip_prefix(prefix) {
+            if let Some(id) = digits_or_tt(src, v) { found.push((src, id)); }
+        }
+    }
+    // TMDB is the most exact for a movie and works with and without a key; then IMDb, then TheTVDB.
+    ["tmdb", "imdb", "tvdb"].iter().find_map(|s| found.iter().find(|(f, _)| f == s).cloned())
+}
 
 /// Comparable form of a path (separators and letter case don't matter).
 pub fn path_key(p: &str) -> String {
@@ -645,6 +678,18 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
     report["details"] = json!(details);
     report["cast_entries"] = json!(people);
 
+    // The match Plex made: the online lookup takes exactly that entry instead of searching by title.
+    let mut linked = 0;
+    for (oid, id) in &map {
+        let Some(oi) = old.items.get(oid) else { continue };
+        if !matches!(oi.kind, 1 | 2) { continue; }
+        let Some((src, eid)) = plex_external_id(&oi.guid, old.external.get(oid).map(|v| v.as_slice()).unwrap_or(&[])) else { continue };
+        let Some(it) = db.items.get_mut(id) else { continue };
+        it.extra.insert("plex_id".into(), json!({"source": src, "id": eid}));
+        linked += 1;
+    }
+    report["matches"] = json!(linked);
+
     // 6. Playlists (manual ones; smart ones use the old server's own rule format).
     if app.job_cancelled() { return Err(CANCELLED.into()); }
     set_job(app, "playlists", 6, 6);
@@ -763,6 +808,19 @@ pub fn options_from(body: &Value, me: u64) -> Result<Options, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_plex_external_ids() {
+        let v = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let ext = plex_external_id;
+        assert_eq!(ext("plex://movie/5d776", &v(&["imdb://tt0133093", "tmdb://603", "tvdb://169"])), Some(("tmdb", "603".into())));
+        assert_eq!(ext("plex://movie/5d776", &v(&["imdb://tt0133093"])), Some(("imdb", "tt0133093".into())));
+        assert_eq!(ext("com.plexapp.agents.imdb://tt0133093?lang=en", &[]), Some(("imdb", "tt0133093".into())));
+        assert_eq!(ext("com.plexapp.agents.themoviedb://603?lang=de", &[]), Some(("tmdb", "603".into())));
+        assert_eq!(ext("com.plexapp.agents.thetvdb://81189?lang=en", &[]), Some(("tvdb", "81189".into())));
+        assert_eq!(ext("com.plexapp.agents.none://1", &[]), None);
+        assert_eq!(ext("local://5", &v(&["imdb://xx"])), None);
+    }
     #[test]
     fn paths() {
         let maps = vec![("D:\\Filme".to_string(), "/media/Filme".to_string()), ("D:\\".to_string(), "/media/other".to_string())];
