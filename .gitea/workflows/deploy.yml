@@ -7,6 +7,8 @@
 # Settings in Gitea (repository -> Settings -> Actions -> Variables); all optional:
 #   LICHTSPIEL_CONFIG   folder for the database and settings   (default /volume1/docker/lichtspiel)
 #   LICHTSPIEL_MEDIA    folder with the videos, read-only       (default /volume1/video)
+#   LICHTSPIEL_OLD_SERVER  the old Plex server's data folder for the import, read-only, shown as
+#                       /oldserver (e.g. /volume1/PlexMediaServer/AppData/Plex Media Server; default none)
 #   LICHTSPIEL_PORT     port on the Synology                    (default 8484)
 #   LICHTSPIEL_DOCKER_ARGS  more `docker run` options           (default --device /dev/dri:/dev/dri;
 #                       set it to a single space on a model without an Intel graphics chip)
@@ -23,6 +25,7 @@ env:
   MEDIA_DIR: ${{ vars.LICHTSPIEL_MEDIA || '/volume1/video' }}
   PORT: ${{ vars.LICHTSPIEL_PORT || '8484' }}
   DOCKER_ARGS: ${{ vars.LICHTSPIEL_DOCKER_ARGS || '--device /dev/dri:/dev/dri' }}
+  OLD_SERVER_DIR: ${{ vars.LICHTSPIEL_OLD_SERVER || '' }}
 
 jobs:
   deploy:
@@ -52,8 +55,13 @@ jobs:
         run: |
           start() {
             docker rm -f ${NAME} >/dev/null 2>&1 || true
-            docker run -d --name ${NAME} --restart unless-stopped -p ${PORT}:8484 \
-              -v "${CONFIG_DIR}:/config" -v "${MEDIA_DIR}:/media:ro" ${DOCKER_ARGS} "$1"
+            if [ -n "${OLD_SERVER_DIR}" ]; then
+              docker run -d --name ${NAME} --restart unless-stopped -p ${PORT}:8484 \
+                -v "${CONFIG_DIR}:/config" -v "${MEDIA_DIR}:/media:ro" -v "${OLD_SERVER_DIR}:/oldserver:ro" ${DOCKER_ARGS} "$1"
+            else
+              docker run -d --name ${NAME} --restart unless-stopped -p ${PORT}:8484 \
+                -v "${CONFIG_DIR}:/config" -v "${MEDIA_DIR}:/media:ro" ${DOCKER_ARGS} "$1"
+            fi
           }
           healthy() {
             for i in $(seq 1 45); do
