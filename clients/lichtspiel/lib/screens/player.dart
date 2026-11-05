@@ -69,6 +69,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool autoNext = true;
   String subLang = '';
   String audioLang = '';
+  int? audioIdx; // the file's audio track asked from the server (when the picture is converted)
+  bool converted = false; // the server sends the picture converted: the app sees one audio track only
   bool restoredAudio = false;
 
   List<Map<String, dynamic>> externalSubs = []; // subtitle files next to the video
@@ -153,9 +155,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> load(int atMs, {bool forceHls = false}) async {
-    final d = await widget.api.decision(id, quality: quality);
+    final d = await widget.api.decision(id, quality: quality, audio: audioIdx);
     method = '${d['method'] ?? ''}';
-    final useHls = forceHls || quality != 'original' || (d['allowed'] == true && d['method'] == 'transcode');
+    final useHls = forceHls || quality != 'original' || audioIdx != null || (d['allowed'] == true && d['method'] == 'transcode');
+    converted = useHls;
     final url = useHls ? '${d['hls']}' : '${d['direct'] ?? d['url']}';
     await player.open(Media(widget.api.abs(url), start: Duration(milliseconds: atMs)));
     await player.setRate(speed);
@@ -482,6 +485,12 @@ class _SettingsMenuState extends State<_SettingsMenu> {
   Widget build(BuildContext context) {
     final tracks = p.state.tracks;
     final audios = tracks.audio.where((t) => t.id != 'auto' && t.id != 'no').toList();
+    // A converted stream carries one audio track: the others are asked from the server.
+    final fileAudios = [
+      for (final x in ((s.it['Media'] as List?)?.isNotEmpty ?? false ? (s.it['Media'][0]['streams'] as List? ?? const []) : const []))
+        if (x['kind'] == 'audio') Map<String, dynamic>.from(x)
+    ];
+    final serverPick = s.converted && fileAudios.length > 1;
     final embedded = tracks.subtitle.where((t) => t.id != 'auto' && t.id != 'no').toList();
     final curAudio = p.state.track.audio;
     final curSub = p.state.track.subtitle;
@@ -532,6 +541,18 @@ class _SettingsMenuState extends State<_SettingsMenu> {
       case 'audio':
         children.addAll([
           back('Tonspur'),
+          if (serverPick)
+            for (final a in fileAudios)
+              choice(
+                [a['language'] ?? 'Ton', '${a['codec'] ?? ''}'.toUpperCase(), if ((a['channels'] ?? 0) != 0) '${a['channels']}ch', a['title'] ?? ''].where((e) => '$e'.isNotEmpty).join(' · '),
+                (s.audioIdx ?? fileAudios.first['index']) == a['index'],
+                () {
+                  Navigator.pop(context);
+                  s.audioIdx = (a['index'] as num).toInt();
+                  s.load(s.player.state.position.inMilliseconds);
+                },
+              )
+          else
           for (final t in audios)
             choice(s.trackName(t), curAudio.id == t.id, () {
               p.setAudioTrack(t);
@@ -556,7 +577,7 @@ class _SettingsMenuState extends State<_SettingsMenu> {
         children.addAll([
           entry('Qualität', _qualities[s.quality] ?? s.quality, 'quality'),
           entry('Wiedergabegeschwindigkeit', s.speed == 1 ? 'Normal' : '${s.speed.toString().replaceAll('.', ',')}×', 'speed'),
-          if (audios.length > 1) entry('Tonspur', audios.where((t) => t.id == curAudio.id).map(s.trackName).firstOrNull ?? 'Standard', 'audio'),
+          if (serverPick || audios.length > 1) entry('Tonspur', serverPick ? 'wählen' : audios.where((t) => t.id == curAudio.id).map(s.trackName).firstOrNull ?? 'Standard', 'audio'),
           entry('Untertitel', curSub.id == 'no' ? 'Aus' : s.trackName(curSub), 'subs'),
           if (s.chapters.isNotEmpty) entry('Kapitel', '${s.chapters.length}', 'chapters'),
           if (s.it['type'] == 'episode' || s.queue.isNotEmpty)

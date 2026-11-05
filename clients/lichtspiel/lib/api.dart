@@ -202,8 +202,8 @@ class Api {
   String abs(String path) => path.startsWith('http') ? path : '$base$path${path.contains('?') ? '&' : '?'}token=$token';
 
   /// The server's playback decision: direct file URL, HLS URL, resume position (ms).
-  Future<Map<String, dynamic>> decision(String id, {String quality = 'original'}) async =>
-      Map<String, dynamic>.from(await get('/library/metadata/$id/decision?native=1&quality=${Uri.encodeQueryComponent(quality)}'));
+  Future<Map<String, dynamic>> decision(String id, {String quality = 'original', int? audio}) async =>
+      Map<String, dynamic>.from(await get('/library/metadata/$id/decision?native=1&quality=${Uri.encodeQueryComponent(quality)}${audio == null ? '' : '&audio=$audio'}'));
 
   /// Reports the position. The answer says `stopped: true` (and a `message`) when the owner ended the playback.
   Future<Map<String, dynamic>?> timeline(String id, int ms, String state) async {

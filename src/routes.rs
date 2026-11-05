@@ -1016,6 +1016,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let tok = ctx.token.as_ref().map(|t| format!("&token={t}")).unwrap_or_default();
             let tok = if part > 0 { format!("&part={part}{tok}") } else { tok };
             let q = ctx.param("quality").unwrap_or("original");
+            // A chosen audio track travels with the stream addresses.
+            let tok = match ctx.num("audio") { Some(a) => format!("&audio={a}{tok}"), None => tok };
             let url = match d.method {
                 Method::Direct => format!("/library/parts/{iid}/file?x=1{tok}"),
                 _ => format!("/video/transcode/{iid}/stream.mp4?quality={q}{tok}"),
