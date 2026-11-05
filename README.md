@@ -315,7 +315,8 @@ Under **Direction** you can make one side the master instead: *Plex → here onl
 On the **Libraries** page, under **Import from your old server**, point the server at
 the old server's library database (`com.plexapp.plugins.library.db`, usually in
 `Plug-in Support/Databases`). It is found by itself in the usual places on Windows and in
-the Docker folder `/oldserver` (see `docker-compose.yml`; or set `LICHTSPIEL_OLD_SERVER`).
+the Docker folder `/oldserver` (on a Synology set `OLD_SERVER` to the old data folder in a `.env`
+file next to `docker-compose.yml`, see there; or set `LICHTSPIEL_OLD_SERVER`).
 The old database is only read, from a copy; nothing of the old server is changed.
 
 1. Press **Look inside**: you see the old libraries with their folders and the old accounts.
