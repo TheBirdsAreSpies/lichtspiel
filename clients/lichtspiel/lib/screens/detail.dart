@@ -429,6 +429,9 @@ class _DetailScreenState extends State<DetailScreen> {
             case 'analyze':
               await api.post('/library/metadata/$key/analyze');
               say('Analysiere…');
+            case 'credits':
+              await creditsDialog(context, api, item);
+              load();
             case 'split':
               await api.post('/library/metadata/$key/split');
               say('Die Versionen sind wieder eigene Titel');
@@ -443,6 +446,7 @@ class _DetailScreenState extends State<DetailScreen> {
         if (matchable) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
         if (item['Media'] != null) const PopupMenuItem(value: 'analyze', child: Text('Analysieren')),
         const PopupMenuItem(value: 'edit', child: Text('Details bearbeiten')),
+        if (type == 'movie' || type == 'episode') const PopupMenuItem(value: 'credits', child: Text('Abspann…')),
         if (matchable) PopupMenuItem(value: 'match', child: Text(matched ? 'Zuordnung korrigieren…' : 'Zuordnen…')),
         if (matchable && matched) const PopupMenuItem(value: 'unmatch', child: Text('Zuordnung aufheben')),
         if (item['Media'] is List && (item['Media'] as List).length > 1) const PopupMenuItem(value: 'split', child: Text('Zusammengeführte Versionen trennen')),

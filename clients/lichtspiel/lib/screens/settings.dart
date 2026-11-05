@@ -400,6 +400,27 @@ class _DevicesTabState extends State<_DevicesTab> {
     }
   }
 
+  /// Swaps the token this app uses for a new one (the old one stops working); [all] also ends every other sign-in.
+  Future<void> rotate(bool all) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        content: Text(all ? 'Ein neues Token erzeugen und alle anderen Geräte und Skripte abmelden?' : 'Ein neues Token erzeugen? Skripte mit dem alten Token funktionieren danach nicht mehr.'),
+        actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Ja'))],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final r = await widget.api.post('/api/tokens/rotate', {'all': all});
+      widget.api.token = r['token'];
+      await widget.api.save();
+      if (mounted) _say(context, all ? 'Neues Token; ${(r['revoked'] ?? 1) - 1} andere Anmeldung(en) beendet' : 'Neues Token; das alte gilt nicht mehr');
+    } catch (e) {
+      if (mounted) _say(context, '$e');
+    }
+    load();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (error != null) return Center(child: Text(error!));
@@ -408,6 +429,13 @@ class _DevicesTabState extends State<_DevicesTab> {
     if (l.isEmpty) return const Center(child: Text('Keine Geräte.'));
     return ListView(padding: const EdgeInsets.all(16), children: [
       const Padding(padding: EdgeInsets.only(bottom: 8), child: Text('Browser, Apps und Skripte, die an deinem Konto angemeldet sind.', style: TextStyle(color: Colors.white60))),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Wrap(spacing: 8, children: [
+          OutlinedButton(onPressed: () => rotate(false), child: const Text('Token erneuern')),
+          OutlinedButton(onPressed: () => rotate(true), child: const Text('Erneuern und überall sonst abmelden')),
+        ]),
+      ),
       for (final k in l)
         Card(
           child: ListTile(
