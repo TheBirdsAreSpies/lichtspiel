@@ -153,6 +153,31 @@ class Api {
   /// Your own rating on the server's 0-10 scale; -1 removes it.
   Future<void> rate(String id, int value) async => post('/:/rate?key=$id&rating=$value');
 
+  Future<dynamic> delete(String path) async => _decode(await http.delete(Uri.parse('$base$path'), headers: _headers));
+
+  /// Your watchlist with the library's filters; [q] as in [list].
+  Future<List<Map<String, dynamic>>> watchlist(Map<String, String> q) async => metadata(await get('/api/watchlist?${query(q)}'));
+
+  Future<List<Map<String, dynamic>>> playlists({String owner = '', String kind = '', String sort = 'pinned:desc,title', String section = ''}) async =>
+      metadata(await get('/playlists?${query({if (owner.isNotEmpty) 'owner': owner, if (kind.isNotEmpty) 'kind': kind, if (section.isNotEmpty) 'section': section, 'sort': sort})}'));
+
+  Future<Map<String, dynamic>> playlist(String id) async => metadata(await get('/playlists/$id')).first;
+  Future<List<Map<String, dynamic>>> playlistItems(String id) async => metadata(await get('/playlists/$id/items'));
+  Future<Map<String, dynamic>> createPlaylist(String title, {List<String> ids = const []}) async =>
+      metadata(await post('/playlists', {'title': title, 'kind': 'manual', if (ids.isNotEmpty) 'ids': ids})).first;
+  Future<bool> addToPlaylist(String id, String itemId) async {
+    final r = await post('/playlists/$id/items', {'ids': [itemId]});
+    return r is Map ? (r['added'] ?? 1) != 0 : true;
+  }
+  Future<void> updatePlaylist(String id, Map<String, dynamic> patch) async => put('/playlists/$id', patch);
+  Future<void> deletePlaylist(String id) async => delete('/playlists/$id');
+  Future<void> removeFromPlaylist(String id, String entry) async => delete('/playlists/$id/items/$entry');
+  Future<void> moveInPlaylist(String id, String entry, Object after) async => put('/playlists/$id/items/$entry/move?after=$after');
+
+  /// Collections (film series, own ones) or categories (genres) of a library as tiles with title and childCount.
+  Future<List<Map<String, dynamic>>> sectionGroups(String sectionId, String kind) async =>
+      metadata(await get('/library/sections/$sectionId/$kind'));
+
   Future<List<Map<String, dynamic>>> search(String q) async =>
       metadata(await get('/hubs/search?query=${Uri.encodeQueryComponent(q)}'));
 

@@ -4,6 +4,8 @@ import '../widgets/poster.dart';
 import 'dashboard.dart';
 import 'detail.dart';
 import 'library.dart';
+import 'playlists.dart';
+import 'watchlist.dart';
 
 void openItem(BuildContext context, Api api, Map<String, dynamic> it) {
   Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(api: api, id: '${it['ratingKey']}')));
@@ -57,6 +59,8 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: const InputDecoration(hintText: 'Suchen…', prefixIcon: Icon(Icons.search), border: InputBorder.none),
             ),
           ),
+          IconButton(tooltip: 'Merkliste', icon: const Icon(Icons.bookmark_border), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WatchlistScreen(api: api)))),
+          IconButton(tooltip: 'Playlists', icon: const Icon(Icons.playlist_play), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: api)))),
           if (admin) IconButton(tooltip: 'Dashboard', icon: const Icon(Icons.monitor_heart_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DashboardScreen(api: api)))),
           IconButton(tooltip: 'Aktualisieren', icon: const Icon(Icons.refresh), onPressed: reload),
           IconButton(tooltip: 'Abmelden', icon: const Icon(Icons.logout), onPressed: widget.onSignOut),

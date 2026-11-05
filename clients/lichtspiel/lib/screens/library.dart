@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/poster.dart';
 import 'home.dart';
+import 'playlists.dart';
 
 const _sortFields = {
   'title': 'Titel',
@@ -66,7 +67,8 @@ String _valueName(String f, String v) => f == 'video_resolution' ? (_resNames[v]
 class LibraryScreen extends StatefulWidget {
   final Api api;
   final Map<String, dynamic> section;
-  const LibraryScreen({super.key, required this.api, required this.section});
+  final Map<String, String> initialFilters;
+  const LibraryScreen({super.key, required this.api, required this.section, this.initialFilters = const {}});
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
@@ -98,6 +100,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   void initState() {
     super.initState();
+    filters.addAll(widget.initialFilters);
     scroll.addListener(() {
       if (scroll.hasClients && scroll.position.pixels > scroll.position.maxScrollExtent - 600) loadMore();
     });
@@ -276,7 +279,25 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ]),
           );
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.section['title']}')),
+      appBar: AppBar(title: Text('${widget.section['title']}'), actions: [
+        if (sectionType == 'movie' || sectionType == 'show') ...[
+          TextButton.icon(
+            icon: const Icon(Icons.collections_bookmark_outlined),
+            label: const Text('Sammlungen'),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'collections'))),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.category_outlined),
+            label: const Text('Kategorien'),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'categories'))),
+          ),
+        ],
+        TextButton.icon(
+          icon: const Icon(Icons.playlist_play),
+          label: const Text('Playlists'),
+          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: widget.api, section: '${widget.section['key']}'))),
+        ),
+      ]),
       body: Column(children: [
         bar,
         if (chips != null) chips,

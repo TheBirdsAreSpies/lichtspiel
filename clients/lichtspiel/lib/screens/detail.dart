@@ -4,6 +4,7 @@ import '../widgets/poster.dart';
 import 'home.dart';
 import 'person.dart';
 import 'player.dart';
+import 'playlists.dart';
 
 const _gold = Color(0xFFE5A00D);
 
@@ -197,6 +198,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 _toggle(watched ? Icons.check_circle : Icons.check_circle_outline, watched, watched ? 'Als ungesehen markieren' : 'Als gesehen markieren', () => act(() => api.setWatched(key, !watched))),
                 _toggle(item['favorite'] == true ? Icons.favorite : Icons.favorite_border, item['favorite'] == true, item['favorite'] == true ? 'Aus Favoriten entfernen' : 'Zu Favoriten', () => act(() => api.setFavorite(key, item['favorite'] != true))),
                 if (type != 'clip') _toggle(item['watchlist'] == true ? Icons.bookmark : Icons.bookmark_border, item['watchlist'] == true, item['watchlist'] == true ? 'Von der Merkliste entfernen' : 'Auf die Merkliste', () => act(() => api.setWatchlist(key, item['watchlist'] != true))),
+                if (playable || type == 'episode') OutlinedButton.icon(onPressed: () => addToPlaylistDialog(context, api, key), icon: const Icon(Icons.playlist_add), label: const Text('Zur Playlist')),
                 _stars(item),
               ]),
               if (media != null) Padding(padding: const EdgeInsets.only(top: 16), child: _fileInfo(item, media)),
