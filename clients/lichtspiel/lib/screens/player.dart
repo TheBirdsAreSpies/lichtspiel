@@ -411,7 +411,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (next != null) MaterialDesktopCustomButton(icon: const Icon(Icons.skip_next), onPressed: () => playNext()),
         const MaterialDesktopVolumeButton(),
         const MaterialDesktopPositionIndicator(),
+        if (chapters.isNotEmpty)
+          StreamBuilder<Duration>(
+            stream: player.stream.position,
+            builder: (_, snap) {
+              final ms = (snap.data ?? player.state.position).inMilliseconds;
+              var name = '';
+              for (final c in chapters) {
+                if (((c['start'] ?? 0) as num) <= ms) name = '${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}');
+              }
+              return name.isEmpty ? const SizedBox() : Padding(padding: const EdgeInsets.only(left: 12), child: Text('· $name', style: const TextStyle(fontSize: 12, color: Colors.white70)));
+            },
+          ),
         const Spacer(),
+        if (chapters.isNotEmpty) MaterialDesktopCustomButton(icon: const Icon(Icons.list), onPressed: () => openMenu('chapters')),
         MaterialDesktopCustomButton(icon: const Icon(Icons.closed_caption_outlined), onPressed: () => openMenu('subs')),
         MaterialDesktopCustomButton(icon: const Icon(Icons.settings), onPressed: () => openMenu()),
         const MaterialDesktopFullscreenButton(),
@@ -492,7 +505,11 @@ class _SettingsMenuState extends State<_SettingsMenu> {
     ];
     final serverPick = s.converted && fileAudios.length > 1;
     final embedded = tracks.subtitle.where((t) => t.id != 'auto' && t.id != 'no').toList();
-    final curAudio = p.state.track.audio;
+    final tr = p.state.track.audio;
+    // While the player is on "auto" it plays the preferred language, else the first track: show that one.
+    final curAudio = audios.any((t) => t.id == tr.id)
+        ? tr
+        : (audios.where((t) => s.audioLang.isNotEmpty && _sameLang(t.language, s.audioLang)).firstOrNull ?? (audios.isNotEmpty ? audios.first : tr));
     final curSub = p.state.track.subtitle;
     final children = <Widget>[];
     switch (page) {
@@ -565,6 +582,7 @@ class _SettingsMenuState extends State<_SettingsMenu> {
           for (final c in s.chapters)
             ListTile(
               dense: true,
+              selected: s.chapters.lastWhere((x) => ((x['start'] ?? 0) as num) <= p.state.position.inMilliseconds, orElse: () => s.chapters.first) == c,
               title: Text('${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}')),
               trailing: Text(_clock((c['start'] ?? 0) as int), style: const TextStyle(color: Colors.white60)),
               onTap: () {
