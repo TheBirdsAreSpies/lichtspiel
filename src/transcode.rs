@@ -4,7 +4,7 @@
 //! direct play, and multi-channel audio mixed down to stereo when
 //! transcoding.
 
-use crate::db::{Item, MediaFile, Settings};
+use crate::db::{MediaFile, Settings};
 use serde::Serialize;
 use serde_json::{json, Value};
 
