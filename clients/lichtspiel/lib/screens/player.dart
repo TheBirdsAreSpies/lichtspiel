@@ -41,6 +41,16 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
+const _iso3 = {'en': 'eng', 'de': 'deu', 'fr': 'fra', 'es': 'spa', 'it': 'ita', 'pt': 'por', 'nl': 'nld', 'sv': 'swe', 'da': 'dan', 'no': 'nor', 'fi': 'fin', 'pl': 'pol', 'ru': 'rus', 'tr': 'tur', 'ja': 'jpn', 'ko': 'kor', 'zh': 'zho'};
+
+/// A track language (two or three letters, bibliographic or terminologic) against a two-letter preference.
+bool _sameLang(String? track, String want) {
+  final t = (track ?? '').toLowerCase();
+  if (t.isEmpty) return false;
+  final w = want.toLowerCase();
+  return t == w || t == _iso3[w] || (w == 'de' && t == 'ger') || (w == 'fr' && t == 'fre') || (w == 'zh' && t == 'chi') || (w == 'nl' && t == 'dut');
+}
+
 class _PlayerScreenState extends State<PlayerScreen> {
   final player = Player();
   late final VideoController controller = VideoController(player);
@@ -58,6 +68,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   int subSize = 100;
   bool autoNext = true;
   String subLang = '';
+  String audioLang = '';
+  bool restoredAudio = false;
 
   List<Map<String, dynamic>> externalSubs = []; // subtitle files next to the video
   List<Map<String, dynamic>> chapters = [];
@@ -83,6 +95,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     subSize = p.getInt('subSize') ?? 100;
     autoNext = p.getBool('autoNext') ?? true;
     subLang = p.getString('subLang') ?? '';
+    audioLang = p.getString('audioLang') ?? '';
   }
 
   Future<void> savePref(String k, Object v) async {
@@ -118,8 +131,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (c) finished();
       }));
       subs.add(player.stream.tracks.listen((t) {
+        if (!restoredAudio && audioLang.isNotEmpty) {
+          final a = t.audio.where((x) => x.id != 'auto' && x.id != 'no' && _sameLang(x.language, audioLang)).firstOrNull;
+          if (a != null) {
+            restoredAudio = true;
+            player.setAudioTrack(a);
+          }
+        }
         if (restoredSub || subLang.isEmpty) return;
-        final cand = t.subtitle.where((s) => s.id != 'auto' && s.id != 'no' && (s.language ?? '') == subLang).firstOrNull;
+        final cand = t.subtitle.where((s) => s.id != 'auto' && s.id != 'no' && _sameLang(s.language, subLang)).firstOrNull;
         if (cand != null) {
           restoredSub = true;
           player.setSubtitleTrack(cand);
