@@ -377,8 +377,10 @@ tried on a real Synology, so the graphics-chip conversion there is untested.
 check. If the new version does not become healthy, the previous one is started again and the run
 fails (you get Gitea's usual mail). Run it by hand under *Actions → Build and deploy → Run workflow*.
 
-It needs a Gitea runner (`act_runner`) on the Synology that can reach Docker: the runner's
-container mounts `/var/run/docker.sock`. The workflow uses these settings (Gitea: repository →
+It needs a Gitea runner (`act_runner`) with the label `nas` on the Synology. Its steps run on the
+Synology itself (host mode), so `git` and `docker` must be usable there: run the runner as root or
+let its user use Docker (on a runner container: mount `/var/run/docker.sock`, and the image needs
+`git` and the `docker` command). The workflow uses these settings (Gitea: repository →
 Settings → Actions → Variables); all are optional:
 
 | Variable | Default | |

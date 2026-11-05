@@ -1,7 +1,7 @@
 # Builds Lichtspiel on every push to main and starts the new version on the Synology.
 #
-# The runner (act_runner) runs on the Synology and talks to its Docker, so the image is built
-# there and the container is replaced. Steps: tests -> image -> replace the container -> health
+# The runner (act_runner, label "nas") runs on the Synology and uses its Docker, so the image is
+# built there and the container is replaced. Steps: tests -> image -> replace the container -> health
 # check (if the new version does not become healthy, the previous one is started again).
 #
 # Settings in Gitea (repository -> Settings -> Actions -> Variables); all optional:
@@ -27,14 +27,21 @@ env:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # The label of the runner on the Synology ("nas"): its steps run on the Synology itself, so
+    # git and docker must be there (no Node.js needed, so no actions/checkout).
+    runs-on: nas
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Docker reachable?
+      - name: Git and Docker there?
         run: |
+          command -v git >/dev/null || { echo "git is not installed on the runner."; exit 1; }
           docker version --format 'Docker {{.Server.Version}}' || {
-            echo "The runner cannot reach Docker. Mount /var/run/docker.sock into the runner (see README: Automatic build)."; exit 1; }
+            echo "The runner cannot use Docker (is it allowed to? on a Synology: run act_runner as root or add its user to the docker group)."; exit 1; }
+
+      - name: Fetch the code
+        run: |
+          git init -q .
+          git -c http.extraheader="Authorization: token ${{ github.token }}" fetch -q --depth 1 "${{ github.server_url }}/${{ github.repository }}.git" "${{ github.sha }}"
+          git checkout -q --force FETCH_HEAD
 
       - name: Tests
         run: docker build --target test -t ${NAME}-test .
