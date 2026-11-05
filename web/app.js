@@ -935,7 +935,7 @@ async function pollActivity() {
   const busy = st.queued > 0 || st.working_on || st.job || scanning.length;
   // The poster being updated right now shows a spinner (library and detail page).
   document.querySelectorAll('.poster.busy').forEach(e => e.classList.remove('busy'));
-  if (st.working_on) document.querySelectorAll(`.poster[data-id="${st.working_on}"]`).forEach(e => e.classList.add('busy'));
+  for (const wid of (st.working_ids || (st.working_on ? [st.working_on] : []))) document.querySelectorAll(`.poster[data-id="${wid}"]`).forEach(e => e.classList.add('busy'));
   const parts = [];
   if (scanning.length) parts.push(h('span', { class: 'txt' }, t('Scanning {name}', { name: scanning.join(', ') })));
   // Optimizing counts in hundredths of a video: shown as a percentage.

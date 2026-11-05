@@ -695,7 +695,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["api", "metadata", "status"]) => {
             let q = app.meta_queue.lock().unwrap().len();
-            let busy = *app.meta_busy.lock().unwrap();
+            let busy_all: Vec<u64> = app.meta_busy.lock().unwrap().clone();
+            let busy = busy_all.first().copied().unwrap_or(0);
             let busy_title = if busy == 0 { None } else { app.db.lock().unwrap().items.get(&busy).map(|i| i.title.clone()) };
             let p = app.meta_progress.lock().unwrap();
             let job = app.job.lock().unwrap().clone();
@@ -705,7 +706,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 let db = app.db.lock().unwrap();
                 db.sections.iter().filter(|s| scanning_ids.contains(&s.id) && db.can_see_section(&user, s.id)).map(|s| s.name.clone()).collect()
             };
-            ok(json!({"queued": q, "scanning": scanning, "working_on": if busy == 0 { Value::Null } else { json!(busy) }, "working_title": busy_title,
+            ok(json!({"queued": q, "scanning": scanning, "working_on": if busy == 0 { Value::Null } else { json!(busy) }, "working_title": busy_title, "working_ids": busy_all,
                 "done": p.done, "failed": p.failed, "last": p.last,
                 "job": job.map(|(label, done, total)| json!({"label": label, "done": done, "total": total})),
                 // For the owner's "playing now" button in the top bar.

@@ -122,7 +122,7 @@ pub struct App {
     /// Movies and shows waiting for online details: (item id, force).
     pub meta_queue: Mutex<std::collections::VecDeque<(u64, bool)>>,
     /// Item being looked up right now (0 = none).
-    pub meta_busy: Mutex<u64>,
+    pub meta_busy: Mutex<Vec<u64>>,
     pub meta_progress: Mutex<MetaProgress>,
     /// Background jobs other than details (credits detection): (label, done, total).
     pub job: Mutex<Option<(String, usize, usize)>>,
@@ -226,7 +226,7 @@ impl App {
             started_at: now(),
             port: Mutex::new(DEFAULT_PORT),
             meta_queue: Mutex::new(Default::default()),
-            meta_busy: Mutex::new(0),
+            meta_busy: Mutex::new(Vec::new()),
             meta_progress: Mutex::new(MetaProgress::default()),
             job: Mutex::new(None),
             stats: Default::default(),
@@ -1293,9 +1293,9 @@ impl App {
             if !self.settings().metadata_enabled && !force {
                 continue;
             }
-            *self.meta_busy.lock().unwrap() = id;
+            self.meta_busy.lock().unwrap().push(id);
             let r = self.match_online(id, None, force);
-            *self.meta_busy.lock().unwrap() = 0;
+            self.meta_busy.lock().unwrap().retain(|&b| b != id);
             {
                 // What the web app shows while details are being updated.
                 let title = self.db.lock().unwrap().items.get(&id).map(|i| i.title.clone()).unwrap_or_default();
@@ -2017,7 +2017,7 @@ pub fn start_background(app: &Arc<App>) {
     });
     // Online details for new movies and shows.
     let a = app.clone();
-    std::thread::spawn(move || a.metadata_worker());
+    for _ in 0..3 { let a = a.clone(); std::thread::spawn(move || a.metadata_worker()); }
     // Converting downloads, one after the other.
     crate::downloads::start(app);
     // Watched state with a Plex server, both ways (when switched on).
