@@ -418,6 +418,7 @@ const PART_NAMES: [&str; 14] = [
 
 /// The library in a data folder without starting a server (for the
 /// screenshot): the SQLite file, or an older version's JSON file.
+#[cfg(feature = "console")]
 pub fn read_library(data_dir: &Path) -> Option<Db> {
     let file = data_dir.join(FILE_NAME);
     if file.exists() {
