@@ -183,6 +183,66 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   List<Map<String, dynamic>> externalSubs = []; // subtitle files next to the video
   List<Map<String, dynamic>> chapters = [];
+
+  // The words of a song: lines that follow the music (.lrc, with times) or plain text.
+  List<Map<String, dynamic>> lyrics = [];
+  bool lyricsSynced = false, lyricsOn = true;
+  final lyricScroll = ScrollController();
+
+  void loadLyrics() {
+    if (it['type'] != 'track') return;
+    widget.api.get('/library/metadata/$id/lyrics').then((l) {
+      final lines = ((l is Map ? l['lines'] : null) as List?) ?? const [];
+      if (!mounted || lines.isEmpty) return;
+      setState(() {
+        lyrics = [for (final x in lines) Map<String, dynamic>.from(x)];
+        lyricsSynced = l['synced'] == true;
+      });
+    }).catchError((_) {}); // a song without words
+  }
+
+  Widget lyricsPanel() {
+    if (lyrics.isEmpty || !lyricsOn) return const SizedBox.shrink();
+    return Positioned(
+      top: 40,
+      bottom: 110,
+      right: 16,
+      width: 380,
+      child: DecoratedBox(
+          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
+          child: StreamBuilder<Duration>(
+            stream: player.stream.position,
+            builder: (_, snap) {
+              final now = (snap.data ?? player.state.position).inMilliseconds;
+              var cur = -1;
+              if (lyricsSynced) {
+                for (var i = 0; i < lyrics.length; i++) {
+                  if (((lyrics[i]['t'] ?? 0) as num) <= now) cur = i;
+                }
+                if (cur >= 0 && lyricScroll.hasClients) {
+                  final target = (cur * 34.0 - 100).clamp(0.0, lyricScroll.position.maxScrollExtent);
+                  if ((lyricScroll.offset - target).abs() > 30) lyricScroll.animateTo(target, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+                }
+              }
+              return ListView.builder(
+                controller: lyricScroll,
+                padding: const EdgeInsets.all(12),
+                itemExtent: lyricsSynced ? 34 : null,
+                itemCount: lyrics.length,
+                itemBuilder: (_, i) {
+                  final x = lyrics[i];
+                  final text = '${x['text'] ?? ''}';
+                  return InkWell(
+                    onTap: lyricsSynced && x['t'] != null ? () => player.seek(Duration(milliseconds: (x['t'] as num).toInt())) : null,
+                    child: Text(text.isEmpty ? ' ' : text, style: TextStyle(fontSize: 16, color: !lyricsSynced || i == cur ? Colors.white : Colors.white54, fontWeight: i == cur ? FontWeight.w700 : FontWeight.normal)),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+    );
+  }
   List<double> credits = []; // seconds
   List<double>? intro; // start, end in seconds
   Map<String, dynamic>? next;
@@ -321,6 +381,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (mounted) setState(() => chapters = c);
       });
       findNext();
+      loadLyrics();
       await load(((it['viewOffset'] ?? 0) as num).toInt());
       subs.add(player.stream.error.listen((e) async {
         if (e.isEmpty) return;
@@ -493,6 +554,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     ticker?.cancel();
     countdown?.cancel();
     ticksTimer?.cancel();
+    lyricScroll.dispose();
     ticksOn.dispose();
     hoverPos.dispose();
     for (final s in subs) {
@@ -639,6 +701,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         const Spacer(),
         if (chapters.isNotEmpty) MaterialDesktopCustomButton(icon: const Icon(Icons.list), onPressed: () => openMenu('chapters')),
+        if (lyrics.isNotEmpty) MaterialDesktopCustomButton(icon: Icon(lyricsOn ? Icons.lyrics : Icons.lyrics_outlined), onPressed: () => setState(() => lyricsOn = !lyricsOn)),
         MaterialDesktopCustomButton(icon: const Icon(Icons.closed_caption_outlined), onPressed: () => openMenu('subs')),
         MaterialDesktopCustomButton(icon: const Icon(Icons.settings), onPressed: () => openMenu()),
         const MaterialDesktopFullscreenButton(),
@@ -674,7 +737,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 subtitleViewConfiguration: SubtitleViewConfiguration(
                   style: TextStyle(fontSize: 32 * subSize / 100, color: Colors.white, backgroundColor: const Color(0x99000000), height: 1.3),
                 ),
-                controls: (state) => Listener(onPointerHover: (e) { mouseMoved(); hoverPos.value = e.localPosition; }, onPointerDown: (_) => mouseMoved(), child: Stack(children: [MaterialDesktopVideoControls(state), chapterTicks(), seekTip(), overlay()])),
+                controls: (state) => Listener(onPointerHover: (e) { mouseMoved(); hoverPos.value = e.localPosition; }, onPointerDown: (_) => mouseMoved(), child: Stack(children: [MaterialDesktopVideoControls(state), chapterTicks(), seekTip(), lyricsPanel(), overlay()])),
               ),
             ),
     );
