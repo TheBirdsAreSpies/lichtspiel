@@ -3,6 +3,7 @@ import '../api.dart';
 import '../widgets/poster.dart';
 import 'home.dart';
 import 'person.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'player.dart';
 import 'playlists.dart';
 
@@ -131,6 +132,19 @@ class _DetailScreenState extends State<DetailScreen> {
       ['Idee', ..._strings(x['creators'] ?? (type != 'show' ? topExtra['creators'] : null))],
     ].where((r) => r.length > 1).toList();
     final genres = _strings(item['genres']);
+    final ids = Map<String, dynamic>.from(x['ids'] ?? topExtra['ids'] ?? const {});
+    final links = <List<String>>[
+      if (ids['imdb'] != null) ['IMDb', 'https://www.imdb.com/title/${ids['imdb']}'],
+      if (ids['tmdb'] != null) ['TMDB', 'https://www.themoviedb.org/${type == 'movie' ? 'movie' : 'tv'}/${ids['tmdb']}'],
+      if (type == 'movie' && (ids['tmdb'] != null || ids['imdb'] != null)) ['Letterboxd', ids['tmdb'] != null ? 'https://letterboxd.com/tmdb/${ids['tmdb']}' : 'https://letterboxd.com/imdb/${ids['imdb']}'],
+      if (ids['tvmaze'] != null) ['TVmaze', 'https://www.tvmaze.com/shows/${ids['tvmaze']}'],
+      if (ids['wikipedia'] != null) ['Wikipedia', '${ids['wikipedia']}'],
+      if (ids['wikidata'] != null) ['Wikidata', 'https://www.wikidata.org/wiki/${ids['wikidata']}'],
+    ];
+    final online = (type == 'movie' || type == 'show' ? (x['trailers'] as List? ?? const []) : const [])
+        .where((v) => v is Map && v['key'] != null)
+        .map((v) => Map<String, dynamic>.from(v as Map))
+        .toList();
     final released = '${x['originally_available'] ?? ''}';
     final extras = (item['Extras'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e)).toList();
     final trailer = extras.where((e) => e['extraType'] == 'trailer').firstOrNull;
@@ -192,7 +206,8 @@ class _DetailScreenState extends State<DetailScreen> {
                 if (playable && off > 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: Text('Fortsetzen bei ${fmtClock(off)}')),
                 if (playable && off > 0) OutlinedButton(onPressed: () => play({...item, 'viewOffset': 0}), child: const Text('Von vorn')),
                 if (playable && off == 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
-                if (trailer != null) OutlinedButton.icon(onPressed: () => play(trailer), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer')),
+                if (trailer != null) OutlinedButton.icon(onPressed: () => play(trailer), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer'))
+                else if (online.isNotEmpty) OutlinedButton.icon(onPressed: () => _open('https://www.youtube.com/watch?v=${online.first['key']}'), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer (online)')),
                 if (!playable && leafCount > 0 && (type == 'show' || type == 'season'))
                   FilledButton.icon(onPressed: playNextEpisode, icon: const Icon(Icons.play_arrow), label: const Text('Nächste Folge')),
                 _toggle(watched ? Icons.check_circle : Icons.check_circle_outline, watched, watched ? 'Als ungesehen markieren' : 'Als gesehen markieren', () => act(() => api.setWatched(key, !watched))),
@@ -201,6 +216,11 @@ class _DetailScreenState extends State<DetailScreen> {
                 if (playable || type == 'episode') OutlinedButton.icon(onPressed: () => addToPlaylistDialog(context, api, key), icon: const Icon(Icons.playlist_add), label: const Text('Zur Playlist')),
                 _stars(item),
               ]),
+              if (links.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Wrap(spacing: 8, runSpacing: 4, children: [for (final l in links) ActionChip(avatar: const Icon(Icons.open_in_new, size: 14), label: Text(l[0]), onPressed: () => _open(l[1]))]),
+                ),
               if (media != null) Padding(padding: const EdgeInsets.only(top: 16), child: _fileInfo(item, media)),
             ]),
           ),
@@ -237,7 +257,7 @@ class _DetailScreenState extends State<DetailScreen> {
             ]),
           ),
         ],
-        if (extras.isNotEmpty) ...[
+        if (extras.isNotEmpty || online.isNotEmpty) ...[
           _h('Extras'),
           SizedBox(
             height: 170,
@@ -255,6 +275,22 @@ class _DetailScreenState extends State<DetailScreen> {
                       ),
                       Text('${e['title']}', maxLines: 1, overflow: TextOverflow.ellipsis),
                       Text(fmtMs((e['duration'] ?? 0) as int), style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                    ]),
+                  ),
+                ),
+              for (final v in online)
+                InkWell(
+                  onTap: () => _open('https://www.youtube.com/watch?v=${v['key']}'),
+                  child: Container(
+                    width: 170,
+                    margin: const EdgeInsets.only(right: 12),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network('https://i.ytimg.com/vi/${v['key']}/mqdefault.jpg', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10, child: const Icon(Icons.play_circle_outline)))),
+                      ),
+                      Text('${v['name'] ?? 'Trailer'}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                      const Text('online · YouTube', style: TextStyle(fontSize: 12, color: Colors.white54)),
                     ]),
                   ),
                 ),
@@ -282,6 +318,12 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Widget _h(String t) => Padding(padding: const EdgeInsets.only(top: 24, bottom: 8), child: Text(t, style: Theme.of(context).textTheme.titleMedium));
+
+  Future<void> _open(String url) async {
+    if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication) && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Der Link ließ sich nicht öffnen')));
+    }
+  }
 
   Widget _tag(String t) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
