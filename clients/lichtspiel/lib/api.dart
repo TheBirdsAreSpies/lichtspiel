@@ -134,6 +134,12 @@ class Api {
     return Map<String, dynamic>.from(r?['MediaContainer'] ?? r);
   }
 
+  /// From TMDB: biography, birth, more photos and the filmography (each with `item` when it is in a library).
+  Future<Map<String, dynamic>> personDetails(String key, String name, {bool refresh = false}) async {
+    final r = await get('/library/people/${Uri.encodeComponent(key)}/details?name=${Uri.encodeQueryComponent(name)}${refresh ? '&refresh=1' : ''}');
+    return Map<String, dynamic>.from(r?['MediaContainer'] ?? r);
+  }
+
   Future<Map<String, dynamic>> item(String id) async => metadata(await get('/library/metadata/$id')).first;
   Future<List<Map<String, dynamic>>> children(String id) async => metadata(await get('/library/metadata/$id/children'));
   Future<List<Map<String, dynamic>>> allLeaves(String id) async => metadata(await get('/library/metadata/$id/allLeaves'));
