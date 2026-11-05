@@ -156,6 +156,7 @@ class _DetailScreenState extends State<DetailScreen> {
     final dur = (item['duration'] ?? 0) as int;
     final meta = [
       if (item['year'] != null) '${item['year']}',
+      if ((item['editionTitle'] ?? '').toString().isNotEmpty) '${item['editionTitle']}',
       if (type == 'episode') 'Staffel ${item['parentIndex']}',
       if (dur > 0) fmtMs(dur),
       if (item['contentRating'] != null) '${item['contentRating']}',
