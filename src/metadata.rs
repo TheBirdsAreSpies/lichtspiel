@@ -1201,6 +1201,25 @@ pub fn read_imdb_ratings(file: &Path, wanted: &std::collections::HashSet<String>
     Ok(out)
 }
 
+/// Wikidata genre names are often "drama film", "Buddy-Film" or "Buddy-Cop-Film":
+/// keep them short ("Drama", "Buddy", "Buddy-Cop"), with a capital first letter.
+pub fn clean_genre(g: &str) -> String {
+    let mut g = g.trim().to_string();
+    for suffix in [" film", "-film", " movie", "-movie"] {
+        let l = g.to_lowercase();
+        if l.ends_with(suffix) && g.len() > suffix.len() + 1 {
+            g.truncate(g.len() - suffix.len());
+            break;
+        }
+    }
+    let g = g.trim_matches(|c: char| c == '-' || c.is_whitespace());
+    let mut it = g.chars();
+    match it.next() {
+        Some(c) => c.to_uppercase().collect::<String>() + it.as_str(),
+        None => String::new(),
+    }
+}
+
 fn wiki_fetch(settings: &Settings, q: &str) -> Result<Details, String> {
     let lang = lang_of(settings);
     let ents = wd_entities(&[q.to_string()], &lang, "claims|labels|descriptions|sitelinks")?;
@@ -1232,18 +1251,7 @@ fn wiki_fetch(settings: &Settings, q: &str) -> Result<Details, String> {
         let role = c["qualifiers"]["P453"][0]["datavalue"]["value"]["id"].as_str().map(|r| lbl(r)).unwrap_or_default();
         Some(json!({"name": lbl(id), "role": role, "photo": photos.get(id), "person_id": format!("wd-{id}")}))
     }).filter(|c| c["name"] != "").collect();
-    let mut genres = list("P136", 6);
-    for g in &mut genres {
-        // Wikidata genre names are often "drama film" / "Filmdrama": keep them short.
-        for suffix in [" film", " movie"] {
-            if g.ends_with(suffix) && g.len() > suffix.len() + 2 {
-                g.truncate(g.len() - suffix.len());
-            }
-        }
-        if let Some(c) = g.get(0..1) {
-            *g = c.to_uppercase() + &g[1..];
-        }
-    }
+    let genres: Vec<String> = list("P136", 6).iter().map(|g| clean_genre(g)).filter(|g| !g.is_empty()).collect();
     let (plot, poster) = {
         let mut plot = None;
         // Wikidata's "film poster" (P3383) is a real poster; the articles' pictures next.
@@ -1366,5 +1374,19 @@ mod variant_tests {
         assert_eq!(a[0], "Der Affe im Menschen", "{a:?}");
         assert_eq!(title_variants("Affe im Menschen, Der (1990)")[0], "Der Affe im Menschen (1990)");
         assert_eq!(title_variants("Hallo, Welt")[0], "Hallo, Welt");
+    }
+}
+
+#[cfg(test)]
+mod genre_tests {
+    use super::clean_genre;
+    #[test]
+    fn genre_suffixes_are_cut() {
+        assert_eq!(clean_genre("Buddy-Film"), "Buddy");
+        assert_eq!(clean_genre("Buddy-Cop-Film"), "Buddy-Cop");
+        assert_eq!(clean_genre("drama film"), "Drama");
+        assert_eq!(clean_genre("buddy-"), "Buddy");
+        assert_eq!(clean_genre("Film"), "Film");
+        assert_eq!(clean_genre("Komödie"), "Komödie");
     }
 }

@@ -1516,9 +1516,10 @@ pub fn normalize_genre(g: &str) -> String {
     if let Some(m) = mapped { return if lower == "family" || lower == "sci-fi & fantasy" { t.to_string() } else { m.to_string() }; }
     for suffix in ["film", "filme"] {
         if let Some(stem) = lower.strip_suffix(suffix) {
+            // "Buddy-Film" → "Buddy" (not "Buddy-"), "Buddy-Cop-Film" → "Buddy-Cop".
+            let stem = stem.trim_end_matches('-');
             if stem.chars().count() >= 4 && !stem.ends_with(' ') {
-                let mut c = stem.chars();
-                return c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default();
+                return stem.split('-').map(|w| { let mut c = w.chars(); c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default() }).collect::<Vec<_>>().join("-");
             }
         }
     }
@@ -1574,6 +1575,8 @@ mod normalize_tests {
         assert_eq!(normalize_genre("Sci-Fi"), "Science Fiction");
         assert_eq!(normalize_genre("Film Noir"), "Film Noir");
         assert_eq!(normalize_genre("Drama"), "Drama");
+        assert_eq!(normalize_genre("Buddy-Film"), "Buddy");
+        assert_eq!(normalize_genre("Buddy-Cop-Film"), "Buddy-Cop");
     }
     #[test]
     fn articles_are_left_off_when_asked() {
