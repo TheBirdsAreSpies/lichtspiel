@@ -992,6 +992,16 @@ impl App {
         if choice.is_none() && tagged.is_none() && stored.is_none() && status_recent && !force {
             return Err("No match was found recently; use Fix match".into());
         }
+        // A match made before a TMDB key was entered (Wikidata, TVmaze) is moved to TMDB when it finds the
+        // title for sure: those matches often have no poster, and a refresh would keep them for ever.
+        let stored = match stored {
+            Some((ref src, _)) if choice.is_none() && tagged.is_none() && src != "tmdb" && !settings.tmdb_api_key.trim().is_empty() => {
+                let better = metadata::search(&settings, kind, &title, year).ok()
+                    .and_then(|c| c.into_iter().next()).filter(|c| c.source == "tmdb" && metadata::acceptable(c));
+                better.map(|c| (c.source, c.id)).or(stored)
+            }
+            other => other,
+        };
         let (source, mid) = match choice.or(tagged).or(stored) {
             Some(x) => x,
             None => {
