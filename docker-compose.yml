@@ -11,10 +11,13 @@ services:
       - /volume1/docker/lichtspiel:/config       # library, users, playlists, plugins, settings
       #   (set up before the rename? keep your old folder, e.g. /volume1/docker/mediaserver)
       - /volume1/video:/media:ro                 # your movies and TV shows (read-only)
-      # To import from your old server (Libraries page → Import), uncomment
-      # the line that matches your old installation (read-only; it is not changed):
-      # - "/volume1/PlexMediaServer/AppData/Plex Media Server:/oldserver:ro"            # DSM 7 package
-      # - "/volume1/Plex/Library/Application Support/Plex Media Server:/oldserver:ro"   # DSM 6 package
+      # To import from your old server (Libraries page → Import), set OLD_SERVER to its data
+      # folder (a .env file next to this one, or the project's environment settings in
+      # Container Manager). Read-only; the old server is not changed. Without it, an empty
+      # folder is mounted and nothing is found.
+      #   DSM 7 package: OLD_SERVER=/volume1/PlexMediaServer/AppData/Plex Media Server
+      #   DSM 6 package: OLD_SERVER=/volume1/Plex/Library/Application Support/Plex Media Server
+      - "${OLD_SERVER:-/volume1/docker/lichtspiel/oldserver}:/oldserver:ro"
     # Hardware transcoding on Intel-based models: keep these lines and set
     # "Hardware acceleration" to VAAPI in the web app's Settings.
     devices:
