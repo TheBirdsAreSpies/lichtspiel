@@ -69,6 +69,7 @@ class _PosterState extends State<Poster> {
       context: context,
       position: RelativeRect.fromLTRB(at.dx, at.dy, size.width - at.dx, size.height - at.dy),
       items: [
+        if (playable && !(item['missing'] == true)) const PopupMenuItem(value: 'queue', child: Text('Zur Warteschlange')),
         if (widget.onRemoved != null) const PopupMenuItem(value: 'unresume', child: Text('Aus „Weiterschauen“ entfernen')),
         PopupMenuItem(value: 'watched', child: Text(watched ? 'Als ungesehen markieren' : 'Als gesehen markieren')),
         if (Poster.admin && matchable) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
@@ -79,6 +80,10 @@ class _PosterState extends State<Poster> {
     if (v == null || !mounted) return;
     try {
       switch (v) {
+        case 'queue':
+          PlayerScreen.userQueue.add(item);
+          say('Zur Warteschlange hinzugefügt – sie läuft nach dem aktuellen Video');
+          return;
         case 'unresume':
           await widget.api.post('/api/continue/remove', {'ids': [id]});
           say('Aus „Weiterschauen“ entfernt');

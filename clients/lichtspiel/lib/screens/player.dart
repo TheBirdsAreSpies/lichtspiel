@@ -32,6 +32,8 @@ String _clock(int ms) {
 /// With a quality below "Original" the server converts (HLS). Settings like the web player: quality, speed,
 /// audio track, subtitles and their size, chapters, skip intro, next episode by itself, "still watching?".
 class PlayerScreen extends StatefulWidget {
+  /// "Zur Warteschlange": plays before anything else that would follow (kept while the app runs).
+  static final List<Map<String, dynamic>> userQueue = [];
   final Api api;
   final Map<String, dynamic> item;
   final List<Map<String, dynamic>> queue; // what follows (a playlist, the rest of a season, ...)
@@ -272,7 +274,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> findNext() async {
-    if (queue.isNotEmpty) {
+    if (PlayerScreen.userQueue.isNotEmpty) {
+      next = PlayerScreen.userQueue.first;
+    } else if (queue.isNotEmpty) {
       next = queue.first;
     } else if (it['type'] == 'episode' && it['grandparentRatingKey'] != null) {
       try {
@@ -378,6 +382,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       widget.api.timeline(id, 0, 'stopped');
     }
     ended = true;
+    PlayerScreen.userQueue.removeWhere((x) => '${x['ratingKey'] ?? x['id']}' == '${n['ratingKey'] ?? n['id']}');
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => PlayerScreen(api: widget.api, item: n, queue: queue.isNotEmpty && queue.first == n ? queue.sublist(1) : queue, autoRun: auto ? widget.autoRun + 1 : 0)),
