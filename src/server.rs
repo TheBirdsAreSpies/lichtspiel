@@ -2364,50 +2364,59 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
         // Where the intro runs (ms), for the player's "Skip intro".
         if let Some((s, e)) = db.intro_marker(it) { o["intro"] = json!({"start": s, "end": e}); }
     }
-    if let Some(f) = &it.file {
+    // The file, then (if merged by hand) the other versions of it: 4K first.
+    {
+        let mut versions: Vec<&Item> = db.items.values().filter(|x| x.version_of() == Some(it.id)).collect();
+        versions.sort_by_key(|x| (std::cmp::Reverse(x.file.as_ref().and_then(|f| f.video()).map(|v| v.height).unwrap_or(0)), x.id));
+        let mut list: Vec<Value> = vec![];
+        for m in std::iter::once(it).chain(versions) {
+            let Some(f) = &m.file else { continue };
         let vid = f.video();
-        let aud = f.audio();
-        let mut media = json!({
-            "id": it.id,
-            "container": f.container,
-            "formatName": f.format_name,
-            "size": f.size,
-            "bitrate": f.bitrate / 1000,
-            "videoCodec": vid.map(|v| v.codec.clone()).unwrap_or_default(),
-            "width": vid.map(|v| v.width).unwrap_or(0),
-            "height": vid.map(|v| v.height).unwrap_or(0),
-            "bitDepth": vid.map(|v| v.bit_depth).unwrap_or(0),
-            "audioCodec": aud.map(|a| a.codec.clone()).unwrap_or_default(),
-            "audioChannels": aud.map(|a| a.channels).unwrap_or(0),
-            "probed": f.probed,
-            "deepAnalysisVersion": if crate::deep::is_current(f) { f.deep_version } else { 0 },
-            "requiredBandwidths": if crate::deep::is_current(f) { f.required_kbps.iter().map(|k| k.to_string()).collect::<Vec<_>>().join(",") } else { String::new() },
-            // A split movie has a Part per file; they play one after the other.
-            "Part": it.all_files().iter().enumerate().map(|(n, p)| json!({
-                "key": if n == 0 { format!("/library/parts/{}/file", it.id) } else { format!("/library/parts/{}/file?part={n}", it.id) },
-                "part": n, "size": p.size, "container": p.container, "duration": p.duration_ms,
-            })).collect::<Vec<_>>(),
-        });
-        if detail {
-            media["streams"] = json!(f.streams);
-            let mut subs: Vec<Value> = f
-                .streams
-                .iter()
-                .filter(|s| s.kind == "subtitle")
-                .enumerate()
-                .map(|(n, s)| json!({"key": format!("/library/parts/{}/subtitles/{}", it.id, n), "language": s.language, "codec": s.codec, "title": s.title, "forced": s.forced, "sdh": s.sdh, "embedded": true,
-                    "offsetMs": crate::handlers::subtitle_timing(it, &n.to_string()).map(|t| t.offset_ms)}))
-                .collect();
-            for (n, p) in f.external_subtitles.iter().enumerate() {
-                subs.push(json!({"key": format!("/library/parts/{}/subtitles/x{}", it.id, n), "file": Path::new(p).file_name().map(|s| s.to_string_lossy().to_string()), "embedded": false,
-                    "offsetMs": crate::handlers::subtitle_timing(it, &format!("x{n}")).map(|t| t.offset_ms)}));
+            let aud = f.audio();
+            let mut media = json!({
+                "id": m.id,
+                "container": f.container,
+                "formatName": f.format_name,
+                "size": f.size,
+                "bitrate": f.bitrate / 1000,
+                "videoCodec": vid.map(|v| v.codec.clone()).unwrap_or_default(),
+                "width": vid.map(|v| v.width).unwrap_or(0),
+                "height": vid.map(|v| v.height).unwrap_or(0),
+                "bitDepth": vid.map(|v| v.bit_depth).unwrap_or(0),
+                "audioCodec": aud.map(|a| a.codec.clone()).unwrap_or_default(),
+                "audioChannels": aud.map(|a| a.channels).unwrap_or(0),
+                "probed": f.probed,
+                "deepAnalysisVersion": if crate::deep::is_current(f) { f.deep_version } else { 0 },
+                "requiredBandwidths": if crate::deep::is_current(f) { f.required_kbps.iter().map(|k| k.to_string()).collect::<Vec<_>>().join(",") } else { String::new() },
+                // A split movie has a Part per file; they play one after the other.
+                "Part": m.all_files().iter().enumerate().map(|(n, p)| json!({
+                    "key": if n == 0 { format!("/library/parts/{}/file", m.id) } else { format!("/library/parts/{}/file?part={n}", m.id) },
+                    "part": n, "size": p.size, "container": p.container, "duration": p.duration_ms,
+                })).collect::<Vec<_>>(),
+            });
+            if detail {
+                media["streams"] = json!(f.streams);
+                let mut subs: Vec<Value> = f
+                    .streams
+                    .iter()
+                    .filter(|s| s.kind == "subtitle")
+                    .enumerate()
+                    .map(|(n, s)| json!({"key": format!("/library/parts/{}/subtitles/{}", m.id, n), "language": s.language, "codec": s.codec, "title": s.title, "forced": s.forced, "sdh": s.sdh, "embedded": true,
+                        "offsetMs": crate::handlers::subtitle_timing(m, &n.to_string()).map(|t| t.offset_ms)}))
+                    .collect();
+                for (n, p) in f.external_subtitles.iter().enumerate() {
+                    subs.push(json!({"key": format!("/library/parts/{}/subtitles/x{}", m.id, n), "file": Path::new(p).file_name().map(|s| s.to_string_lossy().to_string()), "embedded": false,
+                        "offsetMs": crate::handlers::subtitle_timing(m, &format!("x{n}")).map(|t| t.offset_ms)}));
+                }
+                media["subtitles"] = json!(subs);
+                if user.admin {
+                    media["file"] = json!(f.path);
+                }
             }
-            media["subtitles"] = json!(subs);
-            if user.admin {
-                media["file"] = json!(f.path);
+            media["edition"] = json!(m.extra.get("edition").and_then(|v| v.as_str()).map(String::from).unwrap_or_else(|| crate::query::edition_of(&f.path)));
+            list.push(media);
             }
-        }
-        o["Media"] = json!([media]);
+        if !list.is_empty() { o["Media"] = json!(list); }
     }
     // Trailers, featurettes, deleted scenes … of a movie.
     if detail && it.kind == ItemKind::Movie {
@@ -2457,7 +2466,7 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
 
 pub fn section_json(db: &Db, s: &Section) -> Value {
     let top = db.items.values().filter(|i| i.section_id == s.id && i.parent_id.is_none()).count();
-    let playable = db.items.values().filter(|i| i.section_id == s.id && i.kind.playable() && !i.is_extra()).count();
+    let playable = db.items.values().filter(|i| i.section_id == s.id && i.kind.playable() && !i.hidden()).count();
     let trash = db.items.values().filter(|i| i.section_id == s.id && i.extra.contains_key(crate::scanner::MISSING)).count();
     json!({
         "key": s.id.to_string(), "id": s.id, "title": s.name, "type": s.kind.as_str(),
@@ -2597,7 +2606,7 @@ pub fn recently_added(db: &Db, user: &User, kind: Option<ItemKind>, limit: usize
         .filter(|i| match kind {
             Some(k) => i.kind == k,
             None => i.kind.playable(),
-        } && !i.is_extra())
+        } && !i.hidden())
         .collect();
     v.sort_by(|a, b| b.added_at.cmp(&a.added_at).then(b.id.cmp(&a.id)));
     v.into_iter().take(limit).map(|i| i.id).collect()
@@ -2661,7 +2670,7 @@ pub fn continue_watching(db: &Db, user: &User) -> Vec<u64> {
     let mut started: Vec<(u64, u64)> = db
         .items
         .values()
-        .filter(|i| i.kind.playable() && !i.is_extra() && db.can_see_item(user, i))
+        .filter(|i| i.kind.playable() && !i.hidden() && db.can_see_item(user, i))
         .filter_map(|i| {
             let v = db.view(user.id, i.id);
             (v.view_offset_ms > 0 && now().saturating_sub(v.last_viewed_at) <= window).then_some((i.id, v.last_viewed_at))

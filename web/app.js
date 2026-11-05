@@ -317,6 +317,7 @@ function pickGrid(items, cardOpts) {
       { label: t('Add to queue'), run: async () => { for (const it of chosen()) await addToQueue(it); } },
       S.me.can_download ? { label: t('Download…'), run: () => downloadDialog(ids().map(id => items.find(x => x.id === id))) } : null,
       admin ? '-' : null,
+      admin && picked.size > 1 && chosen().every(x => x.type === chosen()[0].type && (x.type === 'movie' || x.type === 'episode')) ? { label: t('Merge into one…'), run: () => mergeDialog(chosen(), () => { clear(); render(); }) } : null,
       admin ? { label: t('Refresh metadata'), run: () => eachItem(it => `/library/metadata/${it.id}/refresh`, n => t('Downloading details for {n} titles', { n })) } : null,
       admin ? { label: t('Analyze'), run: async () => { await eachItem(it => `/library/metadata/${it.id}/analyze`, () => t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
       admin && one ? { label: t('Optimize…'), run: () => optimizeDialog(chosen()[0]) } : null,
@@ -776,6 +777,11 @@ async function itemPage(id) {
   markNav('');
   const it = meta(await GET('/library/metadata/' + id))[0];
   const m = it.Media && it.Media[0];
+  // Merged by hand (admin: "Merge"): several files of the same title; the choice is remembered per title.
+  const vers = (it.Media || []).length > 1 ? it.Media : null;
+  let vi = vers ? Math.min(Number(store.get('version:' + id, 0)) || 0, vers.length - 1) : 0;
+  const playV = (at) => play(vi > 0 ? Object.assign({}, it, { id: vers[vi].id, ratingKey: String(vers[vi].id), Media: undefined }) : it, at);
+  const versionName = v => [v.height ? (v.height >= 2000 ? '4K' : v.height + 'p') : '', v.edition, v.size ? fmtSize(v.size) : ''].filter(Boolean).join(' · ');
   const kids = ['show', 'season', 'artist', 'album'].includes(it.type) ? meta(await GET(`/library/metadata/${id}/children`)) : [];
   const refresh = () => itemPage(id);
   const watched = it.leafCount ? it.viewedLeafCount === it.leafCount : it.viewCount > 0;
@@ -822,9 +828,11 @@ async function itemPage(id) {
         links.length ? h('div', { class: 'dim', style: 'margin-top:6px' }, t('More: '), links.map(([n, u], i) => [i ? ' · ' : '', h('a', { href: u, target: '_blank', rel: 'noopener' }, n)])) : null,
         // Play first; the toggles as round icons (their state shows in colour); everything else under "⋯".
         h('div', { class: 'actions item-actions' },
-          m && it.viewOffset ? h('button', { class: 'primary big', onclick: () => play(it, it.viewOffset / 1000) }, t('▶ Resume from {time}', { time: fmtTime(it.viewOffset / 1000) })) : null,
-          m && it.viewOffset ? iconBtn('restart', t('▶ Play from start'), () => play(it, 0)) : null,
-          m && !it.viewOffset ? h('button', { class: 'primary big', onclick: () => play(it, 0) }, t('▶ Play')) : null,
+          m && it.viewOffset ? h('button', { class: 'primary big', onclick: () => playV(it.viewOffset / 1000) }, t('▶ Resume from {time}', { time: fmtTime(it.viewOffset / 1000) })) : null,
+          m && it.viewOffset ? iconBtn('restart', t('▶ Play from start'), () => playV(0)) : null,
+          m && !it.viewOffset ? h('button', { class: 'primary big', onclick: () => playV(0) }, t('▶ Play')) : null,
+          vers ? h('select', { title: t('Version'), 'aria-label': t('Version'), onchange: e => { vi = Number(e.target.value); store.set('version:' + id, vi); } },
+            vers.map((v, i) => h('option', { value: i, selected: i === vi }, versionName(v)))) : null,
           // A trailer file next to the movie first, else the first online trailer.
           localTrailer ? h('button', { class: 'big', onclick: () => play(localTrailer, 0) }, t('▶ Trailer'))
             : onlineVideos.length ? h('button', { class: 'big', onclick: () => playOnlineVideo(onlineVideos[0]) }, t('▶ Trailer')) : null,

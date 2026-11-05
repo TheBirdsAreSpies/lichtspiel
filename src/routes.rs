@@ -76,6 +76,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/library/metadata/{id}/analyze", "Admin: read the files again with ffprobe (streams, length; in the background)"),
     ("POST", "/library/metadata/{id}/deepanalyze", "Admin: deep analysis: read every packet to work out the connection speed the files need (in the background)"),
     ("POST", "/library/metadata/{id}/optimize", "Admin: save a version every browser plays directly {quality: original|tv|mobile} (in the background; played instead of converting)"),
+    ("POST", "/api/merge", "Admin: merge movies or episodes into one with several versions (1080p, 4K …) {ids: [first = the one that stays, ..]}; the others are left out of the lists and offered on its page"),
+    ("POST", "/library/metadata/{id}/split", "Admin: take the merged versions apart again (?version=<id> for just one of them) → {split}"),
     ("DELETE", "/library/metadata/{id}/optimize", "Admin: delete the optimized versions"),
     ("GET", "/api/log", "Admin: the server's recent messages (the last 500) → {lines: [{t, msg}]}, oldest first"),
     ("GET", "/api/optimized", "Admin: every optimized version → {items: [{id, title, quality, size}]}"),
@@ -1012,6 +1014,42 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["library", "metadata", iid, "history"]) => match id(iid) { Some(i) => crate::actions::history(app, &user, i), None => fail(404, "Not found") },
         ("POST", ["library", "metadata", iid, "report"]) => match id(iid) { Some(i) => crate::actions::report_problem(app, ctx, &user, i), None => fail(404, "Not found") },
+        ("POST", ["api", "merge"]) => {
+            if !admin { return need_admin(); }
+            let ids: Vec<u64> = ctx.body["ids"].as_array().map(|a| a.iter().filter_map(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))).collect()).unwrap_or_default();
+            let mut db = app.db.lock().unwrap();
+            let Some(&main) = ids.first() else { return fail(400, "ids is needed") };
+            if ids.len() < 2 { return fail(400, "Pick at least two to merge"); }
+            let Some(m) = db.items.get(&main) else { return fail(404, "Not found") };
+            if m.version_of().is_some() || m.is_extra() || !matches!(m.kind, ItemKind::Movie | ItemKind::Episode) || m.file.is_none() { return fail(400, "That can't be merged into"); }
+            let kind = m.kind;
+            let mut others = vec![];
+            for i in &ids[1..] {
+                if *i == main { continue; }
+                let Some(o) = db.items.get(i) else { return fail(404, "Not found") };
+                if o.kind != kind || o.is_extra() || o.file.is_none() || o.version_of().is_some() { return fail(400, "Only movies with movies and episodes with episodes can be merged"); }
+                others.push(*i);
+            }
+            // What the others had as versions moves along.
+            let moved: Vec<u64> = db.items.values().filter(|x| x.version_of().is_some_and(|p| others.contains(&p))).map(|x| x.id).collect();
+            for i in others.iter().chain(moved.iter()) {
+                if let Some(o) = db.items.get_mut(i) { o.extra.insert("version_of".into(), json!(main)); }
+            }
+            drop(db);
+            app.save();
+            ok(json!({"merged": others.len() + moved.len(), "id": main}))
+        }
+        ("POST", ["library", "metadata", iid, "split"]) => {
+            if !admin { return need_admin(); }
+            let Some(iid) = id(iid) else { return fail(404, "Not found") };
+            let only = ctx.num("version");
+            let mut db = app.db.lock().unwrap();
+            let vs: Vec<u64> = db.items.values().filter(|x| x.version_of() == Some(iid) && only.is_none_or(|o| o == x.id)).map(|x| x.id).collect();
+            for v in &vs { if let Some(o) = db.items.get_mut(v) { o.extra.remove("version_of"); } }
+            drop(db);
+            app.save();
+            ok(json!({"split": vs.len()}))
+        }
         ("DELETE", ["library", "metadata", iid]) => match id(iid) { Some(i) => crate::actions::delete_media(app, &user, i), None => fail(404, "Not found") },
         ("POST", ["library", "metadata", iid, "deepanalyze"]) => {
             if !admin { return need_admin(); }
@@ -1115,7 +1153,9 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         // ---------------- watch state
         (_, [":", "timeline"]) => {
             let key = ctx.body_or_param("ratingKey").or(ctx.body_or_param("key"));
-            let Some(iid) = key.and_then(|k| k.rsplit('/').next().and_then(|x| x.parse().ok())) else { return fail(400, "ratingKey is needed") };
+            let Some(iid) = key.and_then(|k| k.rsplit('/').next().and_then(|x| x.parse::<u64>().ok())) else { return fail(400, "ratingKey is needed") };
+            // A merged version counts for the item it was merged into.
+            let iid = app.db.lock().unwrap().items.get(&iid).and_then(|i| i.version_of()).unwrap_or(iid);
             let time = ctx.body_or_param("time").and_then(|t| t.parse::<f64>().ok()).unwrap_or(0.0).max(0.0) as u64;
             let state = ctx.body_or_param("state").unwrap_or_else(|| "playing".into());
             timeline(app, &user, iid, time, &state, ctx.body_or_param("client").unwrap_or_default(), ctx.viewer())
@@ -1123,10 +1163,12 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         (_, [":", "scrobble"]) | (_, [":", "unscrobble"]) => {
             // One item, or several at once: key=1,2,3 (the library's multiple selection).
             let key = ctx.body_or_param("key").or(ctx.body_or_param("ratingKey")).unwrap_or_default();
-            let ids: Vec<u64> = key.split(',').filter_map(|k| k.trim().parse::<u64>().ok()).collect();
+            let mut ids: Vec<u64> = key.split(',').filter_map(|k| k.trim().parse::<u64>().ok()).collect();
             if ids.is_empty() { return fail(400, "key is needed") }
             let watched = segs[1] == "scrobble";
             let mut db = app.db.lock().unwrap();
+            // A merged version counts for the item it was merged into.
+            for i in ids.iter_mut() { if let Some(p) = db.items.get(i).and_then(|x| x.version_of()) { *i = p; } }
             if ids.iter().any(|i| !db.items.contains_key(i)) { return fail(404, "Not found"); }
             for leaf in ids.iter().flat_map(|i| db.leaves(*i)).collect::<Vec<_>>() {
                 let v = db.view_mut(user.id, leaf);
@@ -1351,7 +1393,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                     }))
             };
             let mut ids: Vec<u64> = db.items.values()
-                .filter(|i| db.can_see_item(&user, i) && i.kind != ItemKind::Season && !i.is_extra())
+                .filter(|i| db.can_see_item(&user, i) && i.kind != ItemKind::Season && !i.hidden())
                 .filter(|i| by_title(i) || by_other(i))
                 .map(|i| i.id)
                 .collect();

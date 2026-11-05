@@ -1236,6 +1236,9 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
     } } : null,
     admin && play && opts.detail ? { label: t('Credits…'), run: () => creditsDialog(it) } : null,
     admin ? { label: t('Optimize…'), run: () => optimizeDialog(it) } : null,
+    admin && opts.detail && (it.Media || []).length > 1 ? { label: t('Split the merged versions'), run: async () => {
+      const r = await api('POST', `/library/metadata/${it.id}/split`); toast(t('{n} versions are separate titles again', { n: r.split })); changed();
+    } } : null,
     S.me.can_download && it.type !== 'clip' ? { label: t('Download…'), run: () => downloadDialog([it]) } : null,
     admin && it.librarySectionID ? { label: t('Grant access…'), run: () => grantAccess(it) } : null,
     '-',
@@ -1302,6 +1305,22 @@ function copyBox(title, url, note) {
     h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: copy }, t('Copy link')), h('button', { onclick: () => box.remove() }, t('Close')))]);
   inp.select();
   return box;
+}
+
+// Several movies (or episodes) that are really one: the first stays, the others become its versions.
+function mergeDialog(list, done) {
+  let main = 0;
+  const box = modal(t('Merge into one'), [
+    h('p', { class: 'dim' }, t('The one you pick stays with its details. The others are left out of the lists and offered on its page as other versions to play. Taking them apart again is possible.')),
+    list.map((x, i) => h('label', { class: 'row', style: 'display:flex;gap:8px;align-items:center;margin:6px 0' },
+      h('input', { type: 'radio', name: 'mainitem', checked: i === 0, onchange: () => { main = i; }, style: 'width:auto' }),
+      h('span', {}, `${x.title}${x.year ? ' (' + x.year + ')' : ''}${x.editionTitle ? ' · ' + x.editionTitle : ''}${x.Media && x.Media[0] && x.Media[0].height ? ' · ' + x.Media[0].height + 'p' : ''}`))),
+    h('div', { class: 'actions' },
+      h('button', { class: 'primary', onclick: async () => {
+        const ids = [list[main].id, ...list.filter((_, i) => i !== main).map(x => x.id)];
+        try { const r = await api('POST', '/api/merge', { ids }); box.remove(); toast(t('{n} merged into one', { n: r.merged + 1 })); done(); } catch (e) { toast(e.message); }
+      } }, t('Merge')),
+      h('button', { onclick: () => box.remove() }, t('Cancel')))]);
 }
 
 // ---------- queue: plays after what is playing now (kept per browser)

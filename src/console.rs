@@ -62,7 +62,7 @@ fn view_of(db: &Db, playing: Vec<String>, transcodes: usize, plugins: Vec<(Strin
         address,
         sections: db.sections.iter().map(|s| {
             let top = db.items.values().filter(|i| i.section_id == s.id && i.parent_id.is_none()).count();
-            let vids = db.items.values().filter(|i| i.section_id == s.id && i.kind.playable() && !i.is_extra()).count();
+            let vids = db.items.values().filter(|i| i.section_id == s.id && i.kind.playable() && !i.hidden()).count();
             (s.id, s.name.clone(), s.kind, top, vids)
         }).collect(),
         continue_watching: server::continue_watching(db, &admin).iter().filter_map(|i| db.items.get(i)).map(|i| {

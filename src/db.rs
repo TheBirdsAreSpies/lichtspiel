@@ -381,6 +381,15 @@ impl Item {
     pub fn is_extra(&self) -> bool {
         self.kind == ItemKind::Video && self.extra.contains_key("extra_type")
     }
+    /// Another version (1080p, 4K …) of the movie or episode in `version_of`: merged into it by
+    /// hand, shown on its page as a choice and left out of the lists.
+    pub fn version_of(&self) -> Option<u64> {
+        self.extra.get("version_of").and_then(|v| v.as_u64())
+    }
+    /// Left out of the lists: an extra, or a version of another item.
+    pub fn hidden(&self) -> bool {
+        self.is_extra() || self.version_of().is_some()
+    }
     /// The file and every further part, in playing order.
     pub fn all_files(&self) -> Vec<&MediaFile> {
         self.file.iter().chain(self.parts.iter()).collect()

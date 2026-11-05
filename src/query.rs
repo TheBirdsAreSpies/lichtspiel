@@ -206,7 +206,7 @@ fn duplicates(db: &Db) -> std::rc::Rc<std::collections::HashSet<u64>> {
         return hit;
     }
     let mut groups: HashMap<(u64, String), Vec<u64>> = HashMap::new();
-    for i in db.items.values().filter(|i| i.file.is_some() && !i.is_extra()) {
+    for i in db.items.values().filter(|i| i.file.is_some() && !i.hidden()) {
         let k = match i.kind {
             ItemKind::Episode => match (i.parent_id, i.index) {
                 (Some(p), Some(n)) => (p, format!("e{n}")),
@@ -651,7 +651,7 @@ pub fn run_smart(db: &Db, user: &User, q: &SmartQuery) -> Vec<u64> {
         .values()
         .filter(|i| db.can_see_item(user, i))
         .filter(|i| q.sections.is_empty() || q.sections.contains(&i.section_id))
-        .filter(|i| (i.kind.playable() || asks_container) && !i.is_extra())
+        .filter(|i| (i.kind.playable() || asks_container) && !i.hidden())
         .filter(|i| matches_all(db, user.id, i, &q.rules, q.match_all))
         .map(|i| i.id)
         .collect();

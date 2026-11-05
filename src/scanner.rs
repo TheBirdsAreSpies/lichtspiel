@@ -1348,6 +1348,11 @@ pub fn prune_empty(db: &mut Db, section: u64) -> Vec<u64> {
         db.items.remove(&id);
         out.push(id);
     }
+    // Versions whose main item is gone show up on their own again.
+    let loose: Vec<u64> = db.items.values().filter(|i| i.version_of().is_some_and(|p| !db.items.contains_key(&p))).map(|i| i.id).collect();
+    for id in loose {
+        if let Some(i) = db.items.get_mut(&id) { i.extra.remove("version_of"); }
+    }
     for _ in 0..2 {
         let kids = children_map(db);
         let empty: Vec<u64> = db.items.values()
