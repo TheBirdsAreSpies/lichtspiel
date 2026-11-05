@@ -225,7 +225,11 @@ function posterCard(it, opts = {}) {
   // The "…" menu redraws the card after a change; opts.onReplace learns of the new one.
   const more = e => {
     e.stopPropagation();
-    itemMenu(it, e.currentTarget, () => { const fresh = posterCard(it, opts); card.replaceWith(fresh); if (opts.onReplace) opts.onReplace(fresh); });
+    // After a change (match, refresh, unmatch, watched …) the card is redrawn with what the server has now.
+    itemMenu(it, e.currentTarget, async () => {
+      try { Object.assign(it, meta(await GET('/library/metadata/' + it.id))[0]); } catch (err) { /* keep what we have */ }
+      const fresh = posterCard(it, opts); card.replaceWith(fresh); if (opts.onReplace) opts.onReplace(fresh);
+    });
   };
   // The pencil (admins) edits the details right here; the card is redrawn with what was saved.
   const edit = async e => {
