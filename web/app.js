@@ -543,7 +543,7 @@ function filterUI({ st, go, advRules, lastKey, loadFilters }) {
         return h('button', { class: 'fp-item' + (f.filter === cur ? ' cur' : '') + (val ? ' on' : ''), onclick: () => { cur = f.filter; try { localStorage.setItem(lastKey, cur); } catch (e) { /* none */ } drawLeft(); drawRight(); } },
           h('span', {}, filterName(f.filter)), h('small', { class: 'dim' }, val ? valueName(f.filter, val).slice(0, 14) : '›'));
       };
-      left.replaceChildren(...states.map(entry), states.length ? h('hr') : null, ...main.map(entry), more.length ? h('hr') : null, ...more.map(entry),
+      left.replaceChildren(...states.map(entry), states.length ? h('hr') : '', ...main.map(entry), more.length ? h('hr') : '', ...more.map(entry),
         h('hr'), h('button', { class: 'fp-item', onclick: () => { closePanel(); advancedDialog(); } }, h('span', {}, t('Advanced filters…')), h('small', { class: 'dim' }, advRules.length ? String(advRules.length) : '')));
     };
     drawLeft(); drawRight();

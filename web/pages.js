@@ -430,7 +430,7 @@ async function importPanel() {
         try { await api('POST', '/api/import/old-server', body); e.target.disabled = true; toast(t('Import started — progress is shown at the top'), 5000); pollActivity(); waitDone(); }
         catch (er) { toast(er.message, 6000); }
       } }, t('Import'))),
-      pv.warnings.length ? h('p', { class: 'dim', style: 'font-size:12px' }, t('Notes: ') + pv.warnings.map(w => t(w)).join('; ')) : null);
+      pv.warnings.length ? h('p', { class: 'dim', style: 'font-size:12px' }, t('Notes: ') + pv.warnings.map(w => t(w)).join('; ')) : '');
   };
   const waitDone = async () => {
     for (let i = 0; i < 2400; i++) {
