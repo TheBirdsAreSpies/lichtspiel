@@ -244,6 +244,22 @@ class _LibrariesScreenState extends State<LibrariesScreen> {
                 },
                 child: const Text('Intros erkennen'),
               ),
+            OutlinedButton(onPressed: () => run(() => api.post('/library/sections/$id/refreshMetadata'), ok: 'Details für ${s['title']} werden neu geladen'), child: const Text('Details neu laden')),
+            OutlinedButton(onPressed: () => run(() => api.post('/library/sections/$id/analyze'), ok: 'Dateien werden neu gelesen'), child: const Text('Dateien analysieren')),
+            OutlinedButton(onPressed: () => run(() => api.post('/library/sections/$id/deepanalyze'), ok: 'Tiefenanalyse läuft im Hintergrund'), child: const Text('Tiefenanalyse')),
+            OutlinedButton(
+              onPressed: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (d) => AlertDialog(
+                    content: Text('Nicht mehr verfügbare Titel (Dateien fehlen) aus „${s['title']}“ endgültig entfernen?'),
+                    actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Papierkorb leeren'))],
+                  ),
+                );
+                if (ok == true) run(() => api.post('/library/sections/$id/emptyTrash'), ok: 'Papierkorb geleert');
+              },
+              child: const Text('Papierkorb leeren'),
+            ),
             OutlinedButton(onPressed: () => foldersDialog(s), child: const Text('Ordner')),
             TextButton(onPressed: () => remove(s), child: const Text('Entfernen', style: TextStyle(color: Colors.redAccent))),
           ]),
