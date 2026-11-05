@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
+import 'libraries.dart';
 import 'users.dart';
 
 String fmtDateTime(dynamic secs) {
@@ -29,6 +30,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         appBar: AppBar(
           title: const Text('Einstellungen'),
           actions: [
+            if (widget.admin)
+              TextButton.icon(
+                icon: const Icon(Icons.video_library_outlined),
+                label: const Text('Bibliotheken'),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LibrariesScreen(api: widget.api))),
+              ),
             if (widget.admin)
               TextButton.icon(
                 icon: const Icon(Icons.group_outlined),
