@@ -18,7 +18,6 @@ on:
   workflow_dispatch:
 
 env:
-  DOCKER_BUILDKIT: "1"
   NAME: lichtspiel
   CONFIG_DIR: ${{ vars.LICHTSPIEL_CONFIG || '/volume1/docker/lichtspiel' }}
   MEDIA_DIR: ${{ vars.LICHTSPIEL_MEDIA || '/volume1/video' }}

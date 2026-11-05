@@ -4,19 +4,24 @@
 FROM rust:1-slim-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock build.rs ./
+# The dependencies first, with an empty program: this layer stays cached while only the source
+# changes, so a build after a small change takes minutes instead of a quarter of an hour.
+# (No BuildKit needed: the Synology's Docker often has no buildx.)
+RUN mkdir src && echo 'fn main() {}' > src/main.rs \
+ && cargo build --release --no-default-features \
+ && rm -rf src
 COPY src ./src
 COPY web ./web
 # The commit the image is built from (shown in the web app; the Gitea workflow passes it).
 ARG GIT_SHA=
-# The status window is left out: a NAS has no screen.
-# The cache mounts keep the downloaded crates and the compiled dependencies between builds, so a
-# build after a small change takes minutes instead of a quarter of an hour (needs BuildKit, the default).
-RUN --mount=type=cache,target=/usr/local/cargo/registry     --mount=type=cache,target=/src/target     cargo build --release --no-default-features  && cp target/release/lichtspiel-server /lichtspiel-server
+# The status window is left out: a NAS has no screen. (touch: the copied files are older than the
+# empty program built above, and cargo would take it for up to date.)
+RUN touch src/main.rs && cargo build --release --no-default-features
 
 # `docker build --target test .` runs the tests (the automatic build on Gitea does this first).
 FROM build AS test
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=cache,target=/usr/local/cargo/registry     --mount=type=cache,target=/src/target     cargo test --release --no-default-features
+RUN cargo test --release --no-default-features
 
 FROM debian:bookworm-slim
 # ffmpeg does the transcoding; the VA drivers let Intel-based Synology models
@@ -25,7 +30,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg python3 ca-certificates mesa-va-drivers \
  && if [ "$(dpkg --print-architecture)" = "amd64" ]; then apt-get install -y --no-install-recommends i965-va-driver intel-media-va-driver; fi \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=build /lichtspiel-server /usr/local/bin/lichtspiel-server
+COPY --from=build /src/target/release/lichtspiel-server /usr/local/bin/lichtspiel-server
 COPY plugins /opt/lichtspiel/plugins
 ENV LICHTSPIEL_DATA=/config \
     LICHTSPIEL_PORT=8484 \
