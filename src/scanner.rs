@@ -237,13 +237,8 @@ pub fn id_tag(name: &str) -> Option<(&'static str, String)> {
 /// Turns "The.Matrix.1999.1080p.BluRay" or "The Matrix (1999)" into
 /// ("The Matrix", Some(1999)).
 pub fn parse_title_year(raw: &str) -> (String, Option<u32>) {
-    let mut s = raw.to_string();
-    if !s.contains(' ') {
-        s = s.replace(['.', '_'], " ");
-    } else {
-        s = s.replace('_', " ");
-    }
-    // Drop bracketed tags like [1080p] but keep (1999).
+    let s = raw.replace('_', " ");
+    // Drop bracketed tags like [1080p] or {edition-Final Cut} but keep (1999).
     let mut cleaned = String::new();
     let mut depth = 0;
     for c in s.chars() {
@@ -254,6 +249,10 @@ pub fn parse_title_year(raw: &str) -> (String, Option<u32>) {
             _ => {}
         }
     }
+    // Dots are word separators when the name has no spaces (checked after the tags are gone,
+    // so a space inside "{edition-Final Cut}" doesn't keep "Apocalypse.Now.1979" in one piece).
+    let cleaned = cleaned.trim().to_string();
+    let cleaned = if cleaned.contains(' ') { cleaned } else { cleaned.replace('.', " ") };
     let words: Vec<&str> = cleaned.split_whitespace().enumerate()
         .filter(|(i, w)| *i == 0 || !EDITION_WORDS.contains(&w.trim_matches(|c: char| c == '(' || c == ')' || c == '-' || c == ',').to_lowercase().as_str()))
         .map(|(_, w)| w).collect();
@@ -1710,6 +1709,7 @@ title=Two
         assert_eq!(id_tag("Show [tvdbid=81189]"), Some(("tvdb", "81189".into())));
         assert_eq!(id_tag("Film {imdb-12}"), None);
         assert_eq!(id_tag("Film {edition-Final Cut}"), None);
+        assert_eq!(parse_title_year("Apocalypse.Now.1979.Final.Cut.Remastered.German.AC3.DL.1080p.BluRay.x265-FuN {edition-Final Cut}"), ("Apocalypse Now".into(), Some(1979)));
         assert_eq!(parse_title_year("Batman Begins (2005) {imdb-tt0372784}"), ("Batman Begins".into(), Some(2005)));
     }
     #[test]
