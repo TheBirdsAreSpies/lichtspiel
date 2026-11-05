@@ -1045,6 +1045,25 @@ async function apiPage() {
 }
 
 // ---------- an actor and everything they are in
+// The photos of a person, large on the page: click or Esc closes, the arrow keys (or the sides) go to the next.
+function photoViewer(photos, at) {
+  const img = h('img', { alt: '', referrerpolicy: 'no-referrer', style: 'max-width:92vw;max-height:92vh;border-radius:6px;box-shadow:0 8px 40px #000a' });
+  const box = h('div', { style: 'position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;cursor:zoom-out' }, img);
+  const show = n => { at = (n + photos.length) % photos.length; img.src = photos[at].full; };
+  const close = () => { box.remove(); document.removeEventListener('keydown', key, true); };
+  const key = e => {
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowRight') show(at + 1);
+    else if (e.key === 'ArrowLeft') show(at - 1);
+    else return;
+    e.preventDefault(); e.stopImmediatePropagation();
+  };
+  box.addEventListener('click', e => { if (e.target === img && photos.length > 1) show(at + 1); else close(); });
+  document.addEventListener('keydown', key, true);
+  show(at);
+  document.body.append(box);
+}
+
 async function personPage(key, qs) {
   markNav('');
   const name = new URLSearchParams(qs || '').get('name') || '';
@@ -1098,7 +1117,7 @@ async function personPage(key, qs) {
     const viewSwitch = () => h('p', {}, ['grid', 'list'].map(v => h('button', { class: 'small', style: 'margin-right:6px', onclick: () => { store.set('filmoView', v); drawFilmo(); } }, v === 'list' ? t('List') : t('Grid'))));
     drawFilmo();
     more.replaceChildren(...[
-      d.photos.length > 1 ? [h('h2', {}, t('Photos')), scroller('row', d.photos.map(p => h('a', { href: p.full, target: '_blank', rel: 'noreferrer' }, h('img', { src: p.url, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer', style: 'height:200px;border-radius:6px;display:block' }))))] : null,
+      d.photos.length > 1 ? [h('h2', {}, t('Photos')), scroller('row', d.photos.map((p, i) => h('a', { href: p.full, onclick: e => { e.preventDefault(); photoViewer(d.photos, i); } }, h('img', { src: p.url, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer', style: 'height:200px;border-radius:6px;display:block' }))))] : null,
       d.credits.length ? [h('h2', {}, t('Filmography') + ` (${mine.length}/${d.credits.length} ${t('in your libraries')})`), viewSwitch(), filmo] : null,
       h('p', {}, h('button', { class: 'small', onclick: () => load(true) }, t('Reload details')), d.imdb_id ? [' ', h('a', { href: `https://www.imdb.com/name/${d.imdb_id}/`, target: '_blank', rel: 'noreferrer' }, 'IMDb')] : null)].flat().filter(Boolean));
   };
