@@ -385,6 +385,7 @@ async function importPanel() {
         h('div', {}, t('Playlists')), h('div', {}, [...(p.created || []), ...(p.updated || [])].join(', ') || t('none')),
         h('div', {}, t('Credits markers')), h('div', {}, String(r.credits_markers)),
         h('div', {}, t('Titles and plots')), h('div', {}, t('{n} items', { n: r.details })),
+        r.matches != null ? [h('div', {}, t('Online match from Plex')), h('div', {}, t('{n} items', { n: r.matches }))] : null,
         (p.smart_not_imported || []).length ? [h('div', {}, t('Not imported')), h('div', {}, t('smart playlists (their rules work differently here): ') + p.smart_not_imported.join(', '))] : null,
         (w.accounts_skipped || []).length ? [h('div', {}, t('Accounts skipped')), h('div', {}, w.accounts_skipped.join(', '))] : null),
       f.not_found ? h('details', { style: 'margin-top:8px' }, h('summary', { class: 'dim' }, t('{n} files were not found here — check the folder translation', { n: f.not_found })),
