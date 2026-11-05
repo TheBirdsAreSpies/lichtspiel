@@ -4,6 +4,7 @@ import '../api.dart';
 import 'detail.dart';
 import 'library.dart';
 import 'player.dart';
+import 'smart.dart';
 
 String _dur(dynamic ms) {
   final m = ((ms is num ? ms : 0) / 60000).round();
@@ -157,6 +158,16 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
             reload();
           },
         ),
+        TextButton.icon(
+          icon: const Icon(Icons.auto_awesome_outlined),
+          label: const Text('Neue intelligente Playlist'),
+          onPressed: () async {
+            final id = await smartEditor(context, widget.api);
+            if (id == null || !mounted) return;
+            await Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: widget.api, id: id)));
+            reload();
+          },
+        ),
       ]),
       body: Column(children: [
         Padding(
@@ -280,6 +291,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                 await api.updatePlaylist(widget.id, {'pinned': p['pinned'] != true});
               case 'share':
                 await api.updatePlaylist(widget.id, {'shared': p['shared'] != true});
+              case 'rules':
+                await smartEditor(context, api, playlist: p);
               case 'copy':
                 final r = await api.post('/playlists/${widget.id}/copy', {});
                 if (mounted && r is Map) {
@@ -299,6 +312,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             if (editable) const PopupMenuItem(value: 'rename', child: Text('Umbenennen')),
             if (editable) PopupMenuItem(value: 'pin', child: Text(p['pinned'] == true ? 'Von der Startseite entfernen' : 'Auf der Startseite zeigen')),
             if (editable && !isDefault) PopupMenuItem(value: 'share', child: Text(p['shared'] == true ? 'Nicht mehr teilen' : 'Mit allen teilen')),
+            if (p['smart'] == true && editable) const PopupMenuItem(value: 'rules', child: Text('Regeln bearbeiten')),
             if (p['smart'] == true) const PopupMenuItem(value: 'copy', child: Text('Als normale Playlist speichern')),
             if (editable && !isDefault) const PopupMenuItem(value: 'delete', child: Text('Löschen')),
           ],
