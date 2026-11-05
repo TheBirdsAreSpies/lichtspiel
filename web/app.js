@@ -1852,7 +1852,8 @@ $('#pback').addEventListener('click', () => nudge(-10));
 $('#pfwd').addEventListener('click', () => nudge(30));
 $('#pnextbtn').addEventListener('click', () => { report('stopped'); playNext(); });
 $('#pmute').addEventListener('click', () => { video.muted = !video.muted; if (!video.muted && video.volume === 0) video.volume = 0.5; });
-$('#pvolume').addEventListener('input', e => { video.volume = Number(e.target.value); video.muted = video.volume === 0; });
+// The last and first bit of the track count as full and silent (the thumb's travel is shorter than the track).
+$('#pvolume').addEventListener('input', e => { let v = Number(e.target.value); if (v > 0.96) v = 1; if (v < 0.03) v = 0; video.volume = v; video.muted = v === 0; });
 $('#ptime').addEventListener('click', () => { P.remaining = !P.remaining; store.set('timeLeft', P.remaining ? '1' : '0'); drawBar(); });
 $('#pfull').addEventListener('click', toggleFull);
 $('#ppip').addEventListener('click', togglePip);
