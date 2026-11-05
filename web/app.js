@@ -235,7 +235,7 @@ function posterCard(it, opts = {}) {
     });
   };
   const card = h('div', { class: 'card' + (seen ? ' watched' : '') + (it.missing ? ' missing' : '') + (['artist', 'album', 'track'].includes(it.type) ? ' music' : ''), onauxclick: e => { if (e.button === 1) { e.preventDefault(); window.open(location.pathname + '#/item/' + it.id, '_blank'); } }, onmousedown: e => { if (e.button === 1) e.preventDefault(); }, onclick: e => { if (!(opts.pick && opts.pick(e, false))) location.hash = '#/item/' + it.id; } },
-    h('div', { class: 'poster' }, h('img', { src: withTok(img), loading: 'lazy', alt: '' }),
+    h('div', { class: 'poster', 'data-id': it.id }, h('img', { src: withTok(img), loading: 'lazy', alt: '' }),
       it.missing ? h('span', { class: 'gone', title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null,
       prog > 0 ? h('div', { class: 'bar' }, h('i', { style: `width:${prog * 100}%` })) : null,
       it.leafCount && unseen > 0 ? h('span', { class: 'badge' }, unseen) : null,
@@ -773,7 +773,7 @@ async function itemPage(id) {
     hero,
     h('div', { class: 'dim', style: 'margin-bottom:10px;position:relative' }, crumbs),
     h('div', { class: 'detail' },
-      h('div', { class: 'poster' }, h('img', { src: withTok(it.thumb), alt: '' }),
+      h('div', { class: 'poster', 'data-id': id }, h('img', { src: withTok(it.thumb), alt: '' }),
         isPlayable(it) && !it.missing ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: () => play(it, (it.viewOffset || 0) / 1000) }, icon('play')) : null),
       h('div', { class: 'info' },
         h('h1', { style: 'margin-bottom:4px' }, it.type === 'episode' ? `${it.index}. ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : it.clearLogo ? h('img', { src: withTok(it.clearLogo), alt: it.title, title: it.title, style: 'max-height:96px;max-width:100%;object-fit:contain;display:block', onerror: e => e.target.replaceWith(document.createTextNode(it.title)) }) : it.title,
@@ -928,6 +928,9 @@ async function pollActivity() {
   drawPlayingBtn(st.playing);
   const scanning = st.scanning || [];
   const busy = st.queued > 0 || st.working_on || st.job || scanning.length;
+  // The poster being updated right now shows a spinner (library and detail page).
+  document.querySelectorAll('.poster.busy').forEach(e => e.classList.remove('busy'));
+  if (st.working_on) document.querySelectorAll(`.poster[data-id="${st.working_on}"]`).forEach(e => e.classList.add('busy'));
   const parts = [];
   if (scanning.length) parts.push(h('span', { class: 'txt' }, t('Scanning {name}', { name: scanning.join(', ') })));
   // Optimizing counts in hundredths of a video: shown as a percentage.
