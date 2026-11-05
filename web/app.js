@@ -1853,6 +1853,21 @@ $('#pfwd').addEventListener('click', () => nudge(30));
 $('#pnextbtn').addEventListener('click', () => { report('stopped'); playNext(); });
 $('#pmute').addEventListener('click', () => { video.muted = !video.muted; if (!video.muted && video.volume === 0) video.volume = 0.5; });
 // The last and first bit of the track count as full and silent (the thumb's travel is shorter than the track).
+// Dragging works from the pointer's position on the track, also past either end (so 100 % and 0 % are easy to hit),
+// and keeps the controls awake meanwhile.
+{
+  const vol = $('#pvolume');
+  const setFrom = e => {
+    const r = vol.getBoundingClientRect(), pad = 8; // the thumb's half width
+    let v = Math.max(0, Math.min(1, (e.clientX - r.left - pad) / Math.max(1, r.width - 2 * pad)));
+    if (v > 0.96) v = 1; if (v < 0.03) v = 0;
+    vol.value = v; video.volume = v; video.muted = v === 0;
+  };
+  vol.addEventListener('pointerdown', e => { if (e.button) return; e.preventDefault(); vol.focus(); vol.setPointerCapture(e.pointerId); vol.dataset.drag = '1'; setFrom(e); wake(); });
+  vol.addEventListener('pointermove', e => { if (vol.dataset.drag) { setFrom(e); wake(); } });
+  const done = e => { delete vol.dataset.drag; wake(); };
+  vol.addEventListener('pointerup', done); vol.addEventListener('pointercancel', done);
+}
 $('#pvolume').addEventListener('input', e => { let v = Number(e.target.value); if (v > 0.96) v = 1; if (v < 0.03) v = 0; video.volume = v; video.muted = v === 0; });
 $('#ptime').addEventListener('click', () => { P.remaining = !P.remaining; store.set('timeLeft', P.remaining ? '1' : '0'); drawBar(); });
 $('#pfull').addEventListener('click', toggleFull);
