@@ -344,7 +344,37 @@ fn search_one(settings: &Settings, kind: ItemKind, title: &str, year: Option<u32
 
 /// Spellings of a title that are worth trying besides the typed one: "ae/oe/ue" as umlauts (and back), "ss" as ß
 /// (and back), without accents, and without punctuation. File names often lack the umlauts the title has.
+/// "Affe im Menschen, Der" -> "Der Affe im Menschen" (library-style names put the article last).
+fn move_article_front(title: &str) -> Option<String> {
+    const ARTICLES: [&str; 16] = ["der", "die", "das", "ein", "eine", "the", "a", "an", "le", "la", "les", "il", "el", "un", "une", "los"];
+    let t = title.trim();
+    // An optional year in brackets may follow: "Affe im Menschen, Der (1990)".
+    let (head, tail) = match t.rfind('(') {
+        Some(i) if t.ends_with(')') && t[i + 1..t.len() - 1].chars().all(|c| c.is_ascii_digit()) => (t[..i].trim_end(), &t[i..]),
+        _ => (t, ""),
+    };
+    let (rest, art) = head.rsplit_once(',')?;
+    let art = art.trim();
+    if rest.trim().is_empty() || !ARTICLES.contains(&art.to_lowercase().as_str()) {
+        return None;
+    }
+    let out = format!("{} {}", art, rest.trim());
+    Some(if tail.is_empty() { out } else { format!("{out} {tail}") })
+}
+
 fn title_variants(title: &str) -> Vec<String> {
+    if let Some(front) = move_article_front(title) {
+        let mut v = title_variants_plain(&front);
+        let orig = title.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !v.iter().any(|x| x.eq_ignore_ascii_case(&orig)) {
+            v.insert(1.min(v.len()), orig);
+        }
+        return v;
+    }
+    title_variants_plain(title)
+}
+
+fn title_variants_plain(title: &str) -> Vec<String> {
     fn rep(s: &str, pairs: &[(&str, &str)]) -> String {
         let mut out = s.to_string();
         for (a, b) in pairs {
@@ -395,11 +425,11 @@ pub fn search(settings: &Settings, kind: ItemKind, title: &str, year: Option<u32
             }
         }
     };
-    for t in title_variants(title).iter().take(4) {
+    for t in title_variants(title).iter().take(5) {
         run(t, year, &mut list);
     }
     if list.is_empty() && year.is_some() {
-        for t in title_variants(title).iter().take(4) {
+        for t in title_variants(title).iter().take(5) {
             run(t, None, &mut list);
         }
     }
@@ -1332,5 +1362,9 @@ mod variant_tests {
         let w = title_variants("Käse für Größe");
         assert!(w.contains(&"Kaese fuer Groesse".to_string()), "{w:?}");
         assert!(w.contains(&"Kase fur Grosse".to_string()), "{w:?}");
+        let a = title_variants("Affe im Menschen, Der");
+        assert_eq!(a[0], "Der Affe im Menschen", "{a:?}");
+        assert_eq!(title_variants("Affe im Menschen, Der (1990)")[0], "Der Affe im Menschen (1990)");
+        assert_eq!(title_variants("Hallo, Welt")[0], "Hallo, Welt");
     }
 }
