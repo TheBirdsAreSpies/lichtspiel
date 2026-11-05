@@ -4,6 +4,7 @@ import '../widgets/poster.dart';
 import 'home.dart';
 import 'person.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'edit.dart';
 import 'player.dart';
 import 'playlists.dart';
 
@@ -56,12 +57,16 @@ class _DetailScreenState extends State<DetailScreen> {
   List<Map<String, dynamic>> chapters = [];
   List<Map<String, dynamic>> related = [];
   String? error;
+  bool admin = false;
 
   Api get api => widget.api;
 
   @override
   void initState() {
     super.initState();
+    api.get('/api/me').then((m) {
+      if (mounted && m is Map) setState(() => admin = m['admin'] == true);
+    }).catchError((_) {});
     load();
   }
 
@@ -166,7 +171,7 @@ class _DetailScreenState extends State<DetailScreen> {
     ].join(' › ');
 
     return Scaffold(
-      appBar: AppBar(),
+      appBar: AppBar(actions: [if (admin) _adminMenu(item)]),
       body: ListView(padding: const EdgeInsets.all(20), children: [
         if (crumbs.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(crumbs, style: dim)),
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -318,6 +323,56 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Widget _h(String t) => Padding(padding: const EdgeInsets.only(top: 24, bottom: 8), child: Text(t, style: Theme.of(context).textTheme.titleMedium));
+
+  Widget _adminMenu(Map<String, dynamic> item) {
+    final type = '${item['type']}';
+    final matchable = type == 'movie' || type == 'show';
+    final matched = item['extra']?['metadata_source'] != null;
+    void say(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    return PopupMenuButton<String>(
+      tooltip: 'Verwalten',
+      onSelected: (v) async {
+        try {
+          switch (v) {
+            case 'edit':
+              if (await editDetailsDialog(context, api, item)) load();
+            case 'match':
+              if (await matchDialog(context, api, item)) load();
+            case 'unmatch':
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (d) => AlertDialog(
+                  content: Text('Die Online-Details von „${item['title']}“ entfernen? Der Titel fällt auf den Dateinamen zurück und wird erst wieder automatisch zugeordnet, wenn du eine Zuordnung wählst.'),
+                  actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Zuordnung aufheben'))],
+                ),
+              );
+              if (ok == true) {
+                final r = await api.delete('/library/metadata/$key/match');
+                if (r is Map && r['message'] != null) say('${r['message']}');
+                load();
+              }
+            case 'refresh':
+              say('Lade Details…');
+              final r = await api.post('/library/metadata/$key/refresh');
+              if (r is Map && r['message'] != null) say('${r['message']}');
+              load();
+            case 'analyze':
+              await api.post('/library/metadata/$key/analyze');
+              say('Analysiere…');
+          }
+        } catch (e) {
+          say('$e');
+        }
+      },
+      itemBuilder: (_) => [
+        if (matchable) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
+        if (item['Media'] != null) const PopupMenuItem(value: 'analyze', child: Text('Analysieren')),
+        const PopupMenuItem(value: 'edit', child: Text('Details bearbeiten')),
+        if (matchable) PopupMenuItem(value: 'match', child: Text(matched ? 'Zuordnung korrigieren…' : 'Zuordnen…')),
+        if (matchable && matched) const PopupMenuItem(value: 'unmatch', child: Text('Zuordnung aufheben')),
+      ],
+    );
+  }
 
   Future<void> _open(String url) async {
     if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication) && mounted) {
