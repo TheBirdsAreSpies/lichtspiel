@@ -5,6 +5,7 @@ import '../api.dart';
 import '../screens/edit.dart';
 import '../screens/player.dart';
 import 'activity.dart';
+import 'together.dart';
 
 /// A poster card with title, subtitle, watched mark and progress bar. Focusable (D-pad / remote ready).
 /// With the mouse over it, a play button, (admins) an edit pencil and a "…" menu appear, as in the web app.
@@ -71,6 +72,7 @@ class _PosterState extends State<Poster> {
       items: [
         if (playable && !(item['missing'] == true)) const PopupMenuItem(value: 'queue', child: Text('Zur Warteschlange')),
         if (widget.onRemoved != null) const PopupMenuItem(value: 'unresume', child: Text('Aus „Weiterschauen“ entfernen')),
+        if (playable && item['missing'] != true && item['type'] != 'track') const PopupMenuItem(value: 'together', child: Text('Zusammen schauen…')),
         PopupMenuItem(value: 'watched', child: Text(watched ? 'Als ungesehen markieren' : 'Als gesehen markieren')),
         if (Poster.admin && matchable) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
         if (Poster.admin) const PopupMenuItem(value: 'edit', child: Text('Details bearbeiten')),
@@ -83,6 +85,9 @@ class _PosterState extends State<Poster> {
         case 'queue':
           PlayerScreen.userQueue.add(item);
           say('Zur Warteschlange hinzugefügt – sie läuft nach dem aktuellen Video');
+          return;
+        case 'together':
+          await watchTogether(context, widget.api, item);
           return;
         case 'unresume':
           await widget.api.post('/api/continue/remove', {'ids': [id]});

@@ -38,7 +38,8 @@ class PlayerScreen extends StatefulWidget {
   final Map<String, dynamic> item;
   final List<Map<String, dynamic>> queue; // what follows (a playlist, the rest of a season, ...)
   final int autoRun; // episodes in a row that played by themselves
-  const PlayerScreen({super.key, required this.api, required this.item, this.queue = const [], this.autoRun = 0});
+  final String? together; // the code of a "Zusammen schauen" room: play, pause and jumps are shared
+  const PlayerScreen({super.key, required this.api, required this.item, this.queue = const [], this.autoRun = 0, this.together});
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
@@ -192,6 +193,96 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool restoredSub = false, ended = false;
   String method = '';
 
+  // ---- Zusammen schauen: everyone in the room plays the same thing at the same place.
+  Timer? tgTimer;
+  int tgSeq = 0;
+  DateTime tgQuiet = DateTime.now(); // changes before this are ours following the room, not told to the others
+  dynamic tgMe;
+  String tgNames = '';
+  bool tgSwitching = false; // moving to another video of the room: do not leave it
+  int tgLastPos = 0;
+  DateTime tgLastAt = DateTime.now();
+
+  Future<void> tgStart() async {
+    final code = widget.together!;
+    try {
+      final me = await widget.api.get('/api/me');
+      tgMe = me is Map ? me['id'] : null;
+      final st = await widget.api.get('/api/together/$code');
+      tgSeq = (st['seq'] as num).toInt();
+      tgQuiet = DateTime.now().add(const Duration(seconds: 3));
+      tgDraw(st);
+      if (st['paused'] == true) await player.pause();
+    } catch (e) {
+      if (mounted) setState(() => error = '$e');
+      return;
+    }
+    subs.add(player.stream.playing.listen((_) => tgSend()));
+    tgLastPos = player.state.position.inMilliseconds;
+    tgLastAt = DateTime.now();
+    tgTimer = Timer.periodic(const Duration(seconds: 2), (_) => tgPoll());
+  }
+
+  void tgDraw(dynamic st) {
+    final others = [for (final m in (st['members'] as List? ?? const [])) if (m['id'] != tgMe) '${m['name']}'];
+    final text = others.isEmpty ? 'zusammen (wartet auf andere)' : 'zusammen mit ${others.join(', ')}';
+    if (text != tgNames && mounted) {
+      final first = tgNames.isEmpty;
+      setState(() => tgNames = text);
+      if (!first) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Zusammen schauen: ${others.isEmpty ? 'allein' : others.join(', ')}')));
+    }
+  }
+
+  Future<void> tgSend({Map<String, dynamic> extra = const {}}) async {
+    final code = widget.together;
+    if (code == null || !mounted || DateTime.now().isBefore(tgQuiet)) return;
+    try {
+      final st = await widget.api.post('/api/together/$code', {'position': player.state.position.inMilliseconds, 'paused': !player.state.playing, ...extra});
+      if (st is Map && st['seq'] is num) tgSeq = tgSeq > (st['seq'] as num).toInt() ? tgSeq : (st['seq'] as num).toInt();
+    } catch (_) {}
+  }
+
+  Future<void> tgPoll() async {
+    final code = widget.together;
+    if (code == null || !mounted || tgSwitching) return;
+    // A jump made here (the seek bar, the arrow keys) is told to the others.
+    final pos = player.state.position.inMilliseconds;
+    final expected = tgLastPos + (player.state.playing ? DateTime.now().difference(tgLastAt).inMilliseconds : 0);
+    tgLastPos = pos;
+    tgLastAt = DateTime.now();
+    if ((pos - expected).abs() > 3000) tgSend();
+    dynamic st;
+    try {
+      st = await widget.api.get('/api/together/$code');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        Navigator.maybePop(context);
+      }
+      return;
+    }
+    if (!mounted) return;
+    tgDraw(st);
+    final seq = (st['seq'] as num).toInt();
+    if (seq <= tgSeq) return;
+    tgSeq = seq;
+    tgQuiet = DateTime.now().add(const Duration(seconds: 2));
+    if ('${st['item']}' != id) {
+      tgSwitching = true;
+      ended = true;
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: widget.api, item: {'id': st['item'], 'ratingKey': '${st['item']}', 'viewOffset': st['position']}, together: code)));
+      return;
+    }
+    final want = (st['position'] as num).toInt();
+    if ((player.state.position.inMilliseconds - want).abs() > 2000) {
+      await player.seek(Duration(milliseconds: want));
+      tgLastPos = want;
+      tgLastAt = DateTime.now();
+    }
+    if (st['paused'] == true && player.state.playing) await player.pause();
+    if (st['paused'] != true && !player.state.playing) await player.play();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -257,6 +348,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         }
       }));
       ticker = Timer.periodic(const Duration(seconds: 10), (_) => report(player.state.playing ? 'playing' : 'paused'));
+      if (widget.together != null) tgStart();
     } catch (e) {
       if (mounted) setState(() => error = '$e');
     }
@@ -382,15 +474,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
       widget.api.timeline(id, 0, 'stopped');
     }
     ended = true;
+    if (widget.together != null) {
+      tgSwitching = true;
+      tgQuiet = DateTime.now();
+      widget.api.post('/api/together/${widget.together}', {'item': '${n['ratingKey'] ?? n['id']}', 'position': 0, 'paused': false}).catchError((_) {});
+    }
     PlayerScreen.userQueue.removeWhere((x) => '${x['ratingKey'] ?? x['id']}' == '${n['ratingKey'] ?? n['id']}');
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => PlayerScreen(api: widget.api, item: n, queue: queue.isNotEmpty && queue.first == n ? queue.sublist(1) : queue, autoRun: auto ? widget.autoRun + 1 : 0)),
+      MaterialPageRoute(builder: (_) => PlayerScreen(api: widget.api, item: n, queue: queue.isNotEmpty && queue.first == n ? queue.sublist(1) : queue, autoRun: auto ? widget.autoRun + 1 : 0, together: widget.together)),
     );
   }
 
   @override
   void dispose() {
+    tgTimer?.cancel();
+    if (widget.together != null && !tgSwitching) widget.api.delete('/api/together/${widget.together}').catchError((_) {});
     ticker?.cancel();
     countdown?.cancel();
     ticksTimer?.cancel();
@@ -516,7 +615,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final title = it['type'] == 'episode' ? '${it['grandparentTitle'] ?? ''} · S${it['parentIndex'] ?? 0}E${it['index'] ?? 0} · ${it['title']}' : '${it['title'] ?? widget.item['title'] ?? ''}';
     final top = <Widget>[
       MaterialDesktopCustomButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.maybePop(context)),
-      Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16)))),
+      Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(tgNames.isEmpty ? title : '$title · $tgNames', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16)))),
       if (method.isNotEmpty) Text(const {'direct': 'Direkt', 'remux': 'Umgepackt', 'transcode': 'Umgewandelt'}[method] ?? method, style: const TextStyle(fontSize: 12, color: Colors.white60)),
     ];
     final theme = MaterialDesktopVideoControlsThemeData(

@@ -3,6 +3,7 @@ import '../api.dart';
 import '../widgets/activity.dart';
 import '../widgets/poster.dart';
 import '../widgets/queue.dart';
+import '../widgets/together.dart';
 import 'dashboard.dart';
 import 'detail.dart';
 import 'library.dart';
@@ -70,6 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           IconButton(tooltip: 'Warteschlange', icon: const Icon(Icons.queue_music), onPressed: () => showQueueDialog(context, api)),
+          IconButton(tooltip: 'Zusammen schauen: Raum beitreten', icon: const Icon(Icons.groups_outlined), onPressed: () => joinTogetherDialog(context, api)),
           IconButton(tooltip: 'Merkliste', icon: const Icon(Icons.bookmark_border), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WatchlistScreen(api: api)))),
           IconButton(tooltip: 'Playlists', icon: const Icon(Icons.playlist_play), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: api)))),
           if (admin) IconButton(tooltip: 'Dashboard', icon: const Icon(Icons.monitor_heart_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DashboardScreen(api: api)))),
