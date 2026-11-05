@@ -111,6 +111,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/:/unscrobble", "Mark unwatched ?key= (several: key=1,2,3)"),
     ("POST", "/:/rate", "Your rating ?key= &rating=0-10"),
     ("PUT", "/api/items/{id}/favorite", "{favorite: true|false}"),
+    ("POST", "/api/continue/remove", "Take titles off your Continue Watching row without marking them watched {ids: [..]}; they come back once watched again"),
     ("PUT", "/api/items/{id}/watchlist", "Put a movie, show, season or episode on your watchlist or take it off {watchlist: true|false}; watching it takes it off by itself (a show once every episode is watched)"),
     ("POST", "/api/me/prefs", "Settings that follow you from browser to browser {key: text, …}; null removes a key (GET /api/me returns them as prefs)"),
     ("POST", "/api/me/profile", "Your full name {full_name}"),
@@ -1131,6 +1132,19 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             drop(db);
             app.save();
             ok(json!({"ok": true, "watchlist": on}))
+        }
+        ("POST", ["api", "continue", "remove"]) => {
+            // Take titles off Continue Watching without marking them watched {ids: [..]}.
+            let ids: Vec<u64> = ctx.body.get("ids").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_u64().or(x.as_str().and_then(|s| s.parse().ok()))).collect()).unwrap_or_default();
+            if ids.is_empty() { return fail(400, "ids are needed") }
+            let mut db = app.db.lock().unwrap();
+            if ids.iter().any(|i| !db.items.contains_key(i)) { return fail(404, "Not found"); }
+            for leaf in ids.iter().flat_map(|i| db.leaves(*i)).collect::<Vec<_>>() {
+                db.view_mut(user.id, leaf).cw_hidden_at = now();
+            }
+            drop(db);
+            app.save();
+            ok(json!({"ok": true}))
         }
         ("GET", ["library", "metadata", iid, "theme"]) => crate::handlers::theme(app, ctx, &user, iid),
         ("GET", ["api", "preroll"]) => crate::handlers::preroll(app, ctx),

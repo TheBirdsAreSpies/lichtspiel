@@ -472,6 +472,8 @@ I18N.add('de', 'Deutsch', {
     'Pick one title to edit its details': 'Wähle genau einen Titel zum Bearbeiten aus',
     'Downloading details for {n} titles': 'Details für {n} Titel werden geladen',
     'Edit': 'Bearbeiten',
+    'Remove from Continue Watching': 'Aus „Weiterschauen“ entfernen',
+    'Removed from Continue Watching': 'Aus „Weiterschauen“ entfernt',
     '♥ Favorite': '♥ Favorit',
     '♡ Favorite': '♡ Favorit',
     'Download': 'Herunterladen',

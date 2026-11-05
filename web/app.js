@@ -229,7 +229,7 @@ function posterCard(it, opts = {}) {
     itemMenu(it, e.currentTarget, async () => {
       try { Object.assign(it, meta(await GET('/library/metadata/' + it.id))[0]); } catch (err) { /* keep what we have */ }
       const fresh = posterCard(it, opts); card.replaceWith(fresh); if (opts.onReplace) opts.onReplace(fresh);
-    });
+    }, { cont: opts.cont, removed: () => card.remove() });
   };
   // The pencil (admins) edits the details right here; the card is redrawn with what was saved.
   const edit = async e => {
@@ -388,7 +388,7 @@ function scroller(cls, kids) {
   return h('div', { class: 'rowwrap' }, l, row, r);
 }
 // Row titles come from the server in English ("Continue Watching", "More by …").
-const row = (title, items) => items.length ? [h('h2', {}, t(title)), scroller('row', items.map(i => posterCard(i)))] : null;
+const row = (title, items) => items.length ? [h('h2', {}, t(title)), scroller('row', items.map(i => posterCard(i, { cont: title === 'Continue Watching' })))] : null;
 
 // ---------- home, search, browse
 async function homePage() {

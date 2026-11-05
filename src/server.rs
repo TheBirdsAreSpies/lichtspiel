@@ -2662,6 +2662,8 @@ pub fn continue_watching(db: &Db, user: &User) -> Vec<u64> {
             started.push((id, when));
         }
     }
+    // Taken off by hand: stays off until the person watches (the show or the title) again.
+    started.retain(|(id, when)| { let h = db.view(user.id, *id).cw_hidden_at; h == 0 || *when > h });
     started.sort_by(|a, b| b.1.cmp(&a.1));
     started.truncate(db.settings.continue_watching_limit.max(1));
     started.into_iter().map(|s| s.0).collect()

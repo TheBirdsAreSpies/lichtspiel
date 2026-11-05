@@ -1137,6 +1137,9 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
     { label: t('Watch together'), run: () => watchTogether(it) },
     { label: t('Share'), run: () => shareItem(it) },
     { label: t('Add to queue'), run: () => addToQueue(it) },
+    opts.cont ? { label: t('Remove from Continue Watching'), run: async () => {
+      await api('POST', '/api/continue/remove', { ids: [it.id] }); if (opts.removed) opts.removed(); toast(t('Removed from Continue Watching'));
+    } } : null,
     it.type === 'clip' ? null : { label: it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), run: async () => { await toggleWatchlist(it); changed(); } },
     { label: t('Add to …'), sub: () => addToEntries(it, changed) },
     { label: watched ? t('Mark as unwatched') : t('Mark as watched'), run: async () => {

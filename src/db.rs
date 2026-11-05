@@ -610,6 +610,9 @@ pub struct ViewState {
     /// so one viewing counts once.
     #[serde(default)]
     pub finished: bool,
+    /// Taken off Continue Watching at this time (unix seconds); it comes back once watched again.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cw_hidden_at: u64,
 }
 
 fn is_zero(n: &u64) -> bool {
