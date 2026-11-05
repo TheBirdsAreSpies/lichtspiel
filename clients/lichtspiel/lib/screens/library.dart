@@ -169,6 +169,52 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
+  /// Several movies (or episodes) become one title with several versions; the chosen main one stays visible.
+  Future<void> mergeChosen() async {
+    final list = chosen;
+    if (list.length < 2) return;
+    var main = _id(list.first);
+    String name(Map<String, dynamic> i) => i['type'] == 'episode' ? 'S${i['parentIndex'] ?? 0}E${i['index'] ?? 0} ${i['title']}' : '${i['title']}${i['year'] != null ? ' (${i['year']})' : ''}';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: const Text('Zu einem Titel zusammenführen'),
+          content: SizedBox(
+            width: 420,
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Die anderen erscheinen danach als Versionen dieses Titels. Fortschritt und „gesehen“ zählen für den Titel.', style: TextStyle(color: Colors.white54)),
+              const SizedBox(height: 8),
+              const Text('Hauptversion:'),
+              for (final i in list)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(main == _id(i) ? Icons.radio_button_checked : Icons.radio_button_off),
+                  title: Text(name(i), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onTap: () => set(() => main = _id(i)),
+                ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Zusammenführen')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final ids = [main, for (final i in list) if (_id(i) != main) _id(i)];
+    try {
+      await widget.api.post('/api/merge', {'ids': ids});
+      say('${ids.length} zu einem Titel zusammengeführt');
+      picked.clear();
+      await reload();
+    } catch (e) {
+      say('$e');
+    }
+  }
+
   Widget? selectionBar() {
     if (picked.isEmpty) return null;
     final admin = Poster.admin;
@@ -198,6 +244,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   doChosen((ids) async { for (final id in ids) { await widget.api.post('/library/metadata/$id/refresh'); } }, 'Details werden geladen', keep: true);
                 case 'analyze':
                   doChosen((ids) async { for (final id in ids) { await widget.api.post('/library/metadata/$id/analyze'); } }, 'Wird analysiert', keep: true);
+                case 'merge':
+                  mergeChosen();
                 case 'all':
                   setState(() => picked.addAll(items.map(_id)));
               }
@@ -206,6 +254,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
               const PopupMenuItem(value: 'shuffle', child: Text('Zufallswiedergabe')),
               if (admin) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
               if (admin) const PopupMenuItem(value: 'analyze', child: Text('Analysieren')),
+              if (admin && picked.length > 1 && chosen.every((i) => i['type'] == chosen.first['type'] && (i['type'] == 'movie' || i['type'] == 'episode')))
+                const PopupMenuItem(value: 'merge', child: Text('Zu einem Titel zusammenführen…')),
               const PopupMenuItem(value: 'all', child: Text('Alle auswählen')),
             ],
           ),

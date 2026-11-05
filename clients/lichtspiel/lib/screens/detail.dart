@@ -392,6 +392,11 @@ class _DetailScreenState extends State<DetailScreen> {
             case 'analyze':
               await api.post('/library/metadata/$key/analyze');
               say('Analysiere…');
+            case 'split':
+              await api.post('/library/metadata/$key/split');
+              say('Die Versionen sind wieder eigene Titel');
+              ver = 0;
+              load();
           }
         } catch (e) {
           say('$e');
@@ -403,6 +408,7 @@ class _DetailScreenState extends State<DetailScreen> {
         const PopupMenuItem(value: 'edit', child: Text('Details bearbeiten')),
         if (matchable) PopupMenuItem(value: 'match', child: Text(matched ? 'Zuordnung korrigieren…' : 'Zuordnen…')),
         if (matchable && matched) const PopupMenuItem(value: 'unmatch', child: Text('Zuordnung aufheben')),
+        if (item['Media'] is List && (item['Media'] as List).length > 1) const PopupMenuItem(value: 'split', child: Text('Zusammengeführte Versionen trennen')),
       ],
     );
   }
