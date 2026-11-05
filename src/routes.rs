@@ -860,8 +860,16 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 (it.kind, file_title, it.year)
             };
             if !matches!(kind, ItemKind::Movie | ItemKind::Show) { return fail(400, "Details are looked up for movies and shows"); }
-            let title = ctx.param("title").filter(|t| !t.trim().is_empty()).map(String::from).unwrap_or(title);
-            let year = match ctx.param("year") { Some(y) => y.parse().ok(), None => year };
+            // A title that is still a file name ("Apocalypse.Now.1979.Final.Cut.1080p… {edition-Final Cut}",
+            // also the stored one of an item scanned before) is read like the scanner does:
+            // "Apocalypse Now", 1979. Any other typed title is used as it is.
+            let typed = ctx.param("title").filter(|t| !t.trim().is_empty()).map(String::from);
+            let (title, parsed_year) = match typed {
+                Some(t) if !t.contains(['.', '{', '[']) => (t, None),
+                other => crate::scanner::parse_title_year(&other.unwrap_or(title)),
+            };
+            // An empty year means "no year" (but the year read from a file name is kept); no parameter means the item's own.
+            let year = match ctx.param("year").map(str::trim) { Some("") => parsed_year, Some(y) => y.parse().ok(), None => parsed_year.or(year) };
             match crate::metadata::search(&app.settings(), kind, &title, year) {
                 Ok(c) => ok(json!({"title": title, "year": year, "matches": c})),
                 Err(e) => fail(502, &e),
