@@ -419,7 +419,7 @@ async function importPanel() {
     out.replaceChildren(
       h('p', {}, t('Found: {movies} movies, {shows} shows, {episodes} episodes, {watched} watched, {resume} resume points, {ratings} ratings, {playlists} playlists (+{smart} smart), {markers} credits markers.',
         { movies: c.movies, shows: c.shows, episodes: c.episodes, watched: c.watched_states, resume: c.resume_points, ratings: c.ratings, playlists: c.playlists, smart: c.smart_playlists, markers: c.credits_markers })),
-      h('h3', {}, t('Folders')), h('p', { class: 'dim' }, t('Where each folder of the old server is on this server. In Docker your video share is usually under /media.')), libs,
+      h('h3', {}, t('Folders')), h('p', { class: 'dim' }, t('Where each folder of the old server is on this server. In Docker your video share is usually under /media.')), ...libs,
       h('h3', {}, t('People')), h('p', { class: 'dim' }, t('Whose watched state, ratings and playlists go to which user here. Invite the others first to bring theirs over, then import again.')),
       h('table', {}, accounts),
       h('h3', {}, t('What to bring over')),
