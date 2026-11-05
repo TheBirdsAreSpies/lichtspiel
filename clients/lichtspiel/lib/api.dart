@@ -177,6 +177,12 @@ class Api {
   Future<dynamic> delete(String path) async => _decode(await http.delete(Uri.parse('$base$path'), headers: _headers));
 
   /// Your watchlist with the library's filters; [q] as in [list].
+  /// The filters of the library menu with the values found on the watchlist.
+  Future<List<Map<String, dynamic>>> watchlistFilters({String type = ''}) async =>
+      ((await get('/api/watchlist/filters?includeAdvanced=1${type.isEmpty ? '' : '&type=$type'}'))['MediaContainer']?['Filter'] as List? ?? const [])
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+
   Future<List<Map<String, dynamic>>> watchlist(Map<String, String> q) async => metadata(await get('/api/watchlist?${query(q)}'));
 
   Future<List<Map<String, dynamic>>> playlists({String owner = '', String kind = '', String sort = 'pinned:desc,title', String section = ''}) async =>

@@ -64,8 +64,8 @@ const _groupMain = ['genre', 'year', 'decade', 'content_rating', 'collection', '
 const _resNames = {'4k': '4K', '1080': '1080p', '720': '720p', '480': '480p', 'sd': 'SD'};
 const _containers = ['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'];
 
-String _filterName(String f) => _filterNames[f] ?? f;
-String _valueName(String f, String v) => f == 'video_resolution' ? (_resNames[v] ?? v) : f == 'decade' ? '${v}er' : v;
+String filterName(String f) => _filterNames[f] ?? f;
+String valueName(String f, String v) => f == 'video_resolution' ? (_resNames[v] ?? v) : f == 'decade' ? '${v}er' : v;
 
 class LibraryScreen extends StatefulWidget {
   final Api api;
@@ -412,7 +412,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (!mounted) return;
     await showDialog(
       context: context,
-      builder: (_) => _FilterDialog(
+      builder: (_) => FilterDialog(
         available: available!,
         filters: filters,
         onChanged: reload,
@@ -480,7 +480,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: Wrap(spacing: 8, runSpacing: 4, children: [
               for (final e in filters.entries)
                 InputChip(
-                  label: Text(e.value == 'true' ? _filterName(e.key) : e.value == 'false' ? '${_filterName(e.key)}: nein' : '${_filterName(e.key)}: ${_valueName(e.key, e.value)}'),
+                  label: Text(e.value == 'true' ? filterName(e.key) : e.value == 'false' ? '${filterName(e.key)}: nein' : '${filterName(e.key)}: ${valueName(e.key, e.value)}'),
                   onDeleted: () {
                     filters.remove(e.key);
                     reload();
@@ -576,16 +576,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
 /// The filter menu: the kinds of filter on the left (states first, then the lists of values), the values of the
 /// chosen one with a search box on the right. Every choice applies at once, like on the web.
-class _FilterDialog extends StatefulWidget {
+class FilterDialog extends StatefulWidget {
   final List<Map<String, dynamic>> available;
   final Map<String, String> filters;
   final VoidCallback onChanged;
-  const _FilterDialog({required this.available, required this.filters, required this.onChanged});
+  const FilterDialog({required this.available, required this.filters, required this.onChanged});
   @override
-  State<_FilterDialog> createState() => _FilterDialogState();
+  State<FilterDialog> createState() => FilterDialogState();
 }
 
-class _FilterDialogState extends State<_FilterDialog> {
+class FilterDialogState extends State<FilterDialog> {
   String cur = '';
   final needle = TextEditingController();
 
@@ -625,7 +625,7 @@ class _FilterDialogState extends State<_FilterDialog> {
       return ListTile(
         dense: true,
         selected: val.isNotEmpty,
-        title: Text(_filterName(name)),
+        title: Text(filterName(name)),
         trailing: val.isNotEmpty ? const Icon(Icons.check, size: 18) : (f['count'] != null ? Text('${f['count']}', style: const TextStyle(color: Colors.white54)) : null),
         onTap: () => set(name, val.isNotEmpty ? null : 'true'),
       );
@@ -633,8 +633,8 @@ class _FilterDialogState extends State<_FilterDialog> {
     return ListTile(
       dense: true,
       selected: name == cur,
-      title: Text(_filterName(name), style: TextStyle(fontWeight: val.isNotEmpty ? FontWeight.bold : null)),
-      trailing: val.isNotEmpty ? Text(_valueName(name, val), style: const TextStyle(fontSize: 12, color: Colors.white54)) : const Icon(Icons.chevron_right, size: 18),
+      title: Text(filterName(name), style: TextStyle(fontWeight: val.isNotEmpty ? FontWeight.bold : null)),
+      trailing: val.isNotEmpty ? Text(valueName(name, val), style: const TextStyle(fontSize: 12, color: Colors.white54)) : const Icon(Icons.chevron_right, size: 18),
       onTap: () => setState(() {
         cur = name;
         needle.clear();
@@ -647,7 +647,7 @@ class _FilterDialogState extends State<_FilterDialog> {
     final f = byName[cur];
     final on = widget.filters[cur] ?? '';
     final n = needle.text.trim().toLowerCase();
-    final values = f == null ? const <Map>[] : (f['values'] as List? ?? const []).cast<Map>().where((v) => n.isEmpty || _valueName(cur, '${v['value']}').toLowerCase().contains(n)).toList();
+    final values = f == null ? const <Map>[] : (f['values'] as List? ?? const []).cast<Map>().where((v) => n.isEmpty || valueName(cur, '${v['value']}').toLowerCase().contains(n)).toList();
     final size = MediaQuery.of(context).size;
     return Dialog(
       child: SizedBox(
@@ -671,7 +671,7 @@ class _FilterDialogState extends State<_FilterDialog> {
                       child: TextField(
                         controller: needle,
                         onChanged: (_) => setState(() {}),
-                        decoration: InputDecoration(isDense: true, hintText: '${_filterName(cur)} suchen …', prefixIcon: const Icon(Icons.search, size: 18), border: const OutlineInputBorder()),
+                        decoration: InputDecoration(isDense: true, hintText: '${filterName(cur)} suchen …', prefixIcon: const Icon(Icons.search, size: 18), border: const OutlineInputBorder()),
                       ),
                     ),
                     Expanded(
@@ -684,7 +684,7 @@ class _FilterDialogState extends State<_FilterDialog> {
                                 return ListTile(
                                   dense: true,
                                   selected: v == on,
-                                  title: Text(_valueName(cur, v)),
+                                  title: Text(valueName(cur, v)),
                                   trailing: Text('${values[i]['count'] ?? ''}', style: const TextStyle(color: Colors.white54)),
                                   onTap: () => set(cur, v == on ? null : v),
                                 );
