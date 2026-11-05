@@ -128,6 +128,12 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
       ]),
       'metadata': ('Film- und Seriendetails', [
         const _F('metadata_enabled', 'Handlung, Besetzung, Poster und Folgentitel aus dem Internet laden', _T.flag),
+        const _F('meta_cast', 'Besetzung und Team', _T.flag, help: 'Schauspieler mit Rollen und Fotos, Regie, Drehbuch, Produktion.'),
+        _F('cast_photos_limit', 'Schauspielerfotos pro Film oder Serie', _T.pick, options: _nums([10, 20, 40, 100], (n) => '$n', zeroLabel: 'Keine'), help: 'Die Besetzungsliste bleibt; nur so viele Fotos werden gespeichert.'),
+        const _F('meta_person_details', 'Details zu Personen', _T.flag, help: 'Biografie, Geburtsdaten, weitere Fotos und Filmografie. Braucht einen TMDB-Schlüssel; wird beim Öffnen der Seite geladen.'),
+        const _F('meta_artwork', 'Poster und Hintergründe', _T.flag, help: 'Aus: nur Bilder aus deinen Ordnern.'),
+        const _F('meta_episodes', 'Staffeln und Folgen', _T.flag, help: 'Folgennamen, Handlung, Sendedatum und Standbilder.'),
+        const _F('meta_ratings', 'Bewertungen', _T.flag, help: 'Bewertungen der Online-Quelle.'),
         _F('metadata_language', 'Sprache von Titeln, Handlungen und Folgennamen', _T.pick, options: langs, help: 'Eine Änderung lädt die Details im Hintergrund neu.'),
         const _F('imdb_ratings_file', 'IMDb-Bewertungen aus IMDbs Bewertungsdatei', _T.flag, help: 'Lädt einmal pro Woche ca. 9 MB.'),
         const _F('tmdb_api_key', 'TMDB-API-Schlüssel (optional)', _T.text, help: 'Ohne Schlüssel: Wikipedia/Wikidata und TVmaze. Mit Schlüssel bessere Treffer, Darstellerfotos, übersetzte Handlungen.'),
