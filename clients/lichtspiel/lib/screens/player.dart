@@ -76,11 +76,68 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // The chapter marks on the seek bar show like the bar itself: after the mouse moved, for three seconds.
   final ticksOn = ValueNotifier<bool>(false);
   Timer? ticksTimer;
+  final hoverPos = ValueNotifier<Offset?>(null); // the mouse over the video (for the seek bar's time, chapter and still)
 
   void mouseMoved() {
     if (!ticksOn.value) ticksOn.value = true;
     ticksTimer?.cancel();
     ticksTimer = Timer(const Duration(seconds: 3), () => ticksOn.value = false);
+  }
+
+  static String clock(int ms) {
+    final t = ms ~/ 1000, h = t ~/ 3600, m = (t % 3600) ~/ 60, sec = t % 60;
+    String two(int n) => n.toString().padLeft(2, '0');
+    return h > 0 ? '$h:${two(m)}:${two(sec)}' : '$m:${two(sec)}';
+  }
+
+  /// Over the seek bar: the time, the chapter's name and a still from the server, like the web app.
+  Widget seekTip() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: ValueListenableBuilder<Offset?>(
+          valueListenable: hoverPos,
+          builder: (_, pos, __) => LayoutBuilder(builder: (_, box) {
+            final total = player.state.duration.inMilliseconds;
+            if (pos == null || total <= 0) return const SizedBox();
+            final fromBottom = box.maxHeight - pos.dy;
+            if (fromBottom < 52 || fromBottom > 96 || pos.dx < 16 || pos.dx > box.maxWidth - 16) return const SizedBox();
+            final ms = ((pos.dx - 16) / (box.maxWidth - 32) * total).round().clamp(0, total);
+            Map<String, dynamic>? chap;
+            if (chapters.length > 1) {
+              for (final c in chapters) {
+                if (((c['start'] ?? 0) as num) <= ms) chap = c;
+              }
+            }
+            final name = chap == null ? '' : ' · ${chap['title']}'.replaceFirstMapped(RegExp(r'Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}');
+            const w = 208.0;
+            final left = (pos.dx - w / 2).clamp(8.0, box.maxWidth - w - 8);
+            final step = ms ~/ 10000 * 10;
+            return Stack(children: [
+              Positioned(
+                left: left,
+                bottom: 100,
+                width: w,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(6)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      if (it['Media'] != null)
+                        AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: Image.network(widget.api.abs('/library/parts/$id/frame?t=$step'), fit: BoxFit.cover, gaplessPlayback: true, errorBuilder: (_, __, ___) => const SizedBox()),
+                        ),
+                      const SizedBox(height: 4),
+                      Text('${clock(ms)}$name', textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12)),
+                    ]),
+                  ),
+                ),
+              ),
+            ]);
+          }),
+        ),
+      ),
+    );
   }
 
   /// Thin marks on the seek bar at the start of each chapter (the first one is the start).
@@ -333,6 +390,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     countdown?.cancel();
     ticksTimer?.cancel();
     ticksOn.dispose();
+    hoverPos.dispose();
     for (final s in subs) {
       s.cancel();
     }
@@ -512,7 +570,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 subtitleViewConfiguration: SubtitleViewConfiguration(
                   style: TextStyle(fontSize: 32 * subSize / 100, color: Colors.white, backgroundColor: const Color(0x99000000), height: 1.3),
                 ),
-                controls: (state) => Listener(onPointerHover: (_) => mouseMoved(), onPointerDown: (_) => mouseMoved(), child: Stack(children: [MaterialDesktopVideoControls(state), chapterTicks(), overlay()])),
+                controls: (state) => Listener(onPointerHover: (e) { mouseMoved(); hoverPos.value = e.localPosition; }, onPointerDown: (_) => mouseMoved(), child: Stack(children: [MaterialDesktopVideoControls(state), chapterTicks(), seekTip(), overlay()])),
               ),
             ),
     );
