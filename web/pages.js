@@ -892,6 +892,13 @@ async function settingsPage(tab, qs) {
     ],
     metadata: [
       chk('metadata_enabled', t('Download plot, cast, posters and episode titles from the internet')),
+      h('h3', {}, t('What is downloaded')),
+      chk('meta_cast', t('Cast and crew'), t('Actors with their roles and photos, directors, writers and producers.')),
+      sel('cast_photos_limit', t('Actor photos per movie or show'), [[0, t('None')], [10, '10'], [20, '20'], [40, '40'], [100, '100']], t('The cast list itself is kept; only this many photos are saved on the server.')),
+      chk('meta_person_details', t('Details about people'), t('Biography, birth, more photos and the filmography on an actor’s page. Needs a TMDB key; loaded when the page is opened.')),
+      chk('meta_artwork', t('Posters and backgrounds'), t('Pictures of movies, shows and seasons. Off: only pictures from your folders are used.')),
+      chk('meta_episodes', t('Seasons and episodes'), t('Episode names, plots, air dates and stills.')),
+      chk('meta_ratings', t('Ratings'), t('Scores from the online source (IMDb ratings from the ratings file are set below).')),
       sel('metadata_language', t('Language of titles, plots and episode names'), r.languages.map(l => [l.code, l.name]), t('Used by every library that is set to "Same as server" on the Libraries page (each library can have its own). Changing it downloads the details again in the background — watch the progress at the top of the page. Show episode names are only translated with a TMDB key.')),
       chk('imdb_ratings_file', t('Show IMDb ratings from IMDb’s ratings file'), t('Downloads IMDb’s free ratings list (about 9 MB) once a week. Rotten Tomatoes and Metacritic scores come from Wikidata; the TMDB score needs a TMDB key.')),
       formRow('', h('button', { class: 'small', onclick: async () => {

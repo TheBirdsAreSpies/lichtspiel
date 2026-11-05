@@ -1047,7 +1047,25 @@ impl App {
                 }
             }
         };
-        let d = metadata::fetch(&settings, kind, &source, &mid, &seasons)?;
+        let mut d = metadata::fetch(&settings, kind, &source, &mid, &seasons)?;
+        // What the settings leave out (Settings → Metadata).
+        if !settings.meta_cast {
+            for k in ["cast", "directors", "writers", "producers", "creators"] { d.meta["extra"][k] = json!([]); }
+        }
+        if !settings.meta_artwork {
+            d.poster_url = None;
+            d.art_url = None;
+            for s in d.seasons.iter_mut() { s.poster_url = None; }
+            for e in d.episodes.iter_mut() { e.still_url = None; }
+        }
+        if !settings.meta_episodes {
+            d.seasons.clear();
+            d.episodes.clear();
+        }
+        if !settings.meta_ratings {
+            if let Some(o) = d.meta.as_object_mut() { o.remove("rating"); o.remove("audienceRating"); }
+            if let Some(o) = d.meta["extra"].as_object_mut() { o.remove("ratings"); }
+        }
         // Pictures (downloaded without holding the library lock).
         let dir = self.metadata_dir(id);
         let got = |url: &Option<String>, name: &str, dir: &Path| -> Option<String> {

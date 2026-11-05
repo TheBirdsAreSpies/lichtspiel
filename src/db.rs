@@ -863,6 +863,18 @@ pub struct Settings {
     /// none (the theme music helper, by TheTVDB number).
     #[serde(default = "yes")]
     pub theme_music_online: bool,
+    /// What of the online details is loaded (all on by default): people, pictures, seasons and episodes, and the
+    /// biography and filmography on a person's page.
+    #[serde(default = "yes")]
+    pub meta_cast: bool,
+    #[serde(default = "yes")]
+    pub meta_artwork: bool,
+    #[serde(default = "yes")]
+    pub meta_episodes: bool,
+    #[serde(default = "yes")]
+    pub meta_ratings: bool,
+    #[serde(default = "yes")]
+    pub meta_person_details: bool,
     /// Also look for English trailers when the library's language has none.
     #[serde(default = "yes")]
     pub trailers_english: bool,
@@ -1136,6 +1148,11 @@ impl Default for Settings {
             refresh_metadata: true,
             trailers_online: true,
             theme_music_online: true,
+            meta_cast: true,
+            meta_artwork: true,
+            meta_episodes: true,
+            meta_ratings: true,
+            meta_person_details: true,
             trailers_english: true,
             trailers_red_band: false,
             group_recent_episodes: false,
