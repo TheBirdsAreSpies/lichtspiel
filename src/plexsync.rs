@@ -68,6 +68,9 @@ pub struct Config {
     /// Takes over the intro and credits markers Plex found, where this server has none (never the other way).
     #[serde(default = "yes")]
     pub markers: bool,
+    /// Takes over which online entry (IMDb/TMDB/TVDB) Plex matched a movie or show with, where this server has no match of its own.
+    #[serde(default = "yes")]
+    pub matches: bool,
     /// "both", "from_plex" (Plex is the master: this server copies it) or "to_plex" (this server is the master).
     #[serde(default = "both")]
     pub direction: String,
@@ -93,7 +96,7 @@ fn both() -> String {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { enabled: false, url: String::new(), interval_minutes: interval(), watched: true, resume: true, ratings: true, markers: true, direction: both(), path_map: vec![], accounts: vec![], client_id: String::new() }
+        Config { enabled: false, url: String::new(), interval_minutes: interval(), watched: true, resume: true, ratings: true, markers: true, matches: true, direction: both(), path_map: vec![], accounts: vec![], client_id: String::new() }
     }
 }
 
@@ -169,7 +172,7 @@ pub fn public(app: &App) -> Value {
     let last = std::fs::read(last_path(app)).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok());
     json!({
         "enabled": c.enabled, "url": c.url, "interval_minutes": c.interval_minutes,
-        "watched": c.watched, "resume": c.resume, "ratings": c.ratings, "markers": c.markers, "direction": c.direction,
+        "watched": c.watched, "resume": c.resume, "ratings": c.ratings, "markers": c.markers, "matches": c.matches, "direction": c.direction,
         "path_map": c.path_map,
         "accounts": c.accounts.iter().map(|a| json!({"id": a.id, "token_hint": hint(&a.token), "user_id": a.user_id, "plex_name": a.plex_name,
             "username": db.user(a.user_id).map(|u| u.username.clone())})).collect::<Vec<_>>(),
@@ -186,7 +189,7 @@ pub fn update(app: &App, body: &Value) -> Result<Value, String> {
     if let Some(v) = body.get("enabled").and_then(Value::as_bool) { c.enabled = v; }
     if let Some(v) = body.get("url").and_then(Value::as_str) { c.url = v.trim().to_string(); }
     if let Some(v) = body.get("interval_minutes").and_then(Value::as_u64) { c.interval_minutes = v.clamp(1, 24 * 60); }
-    for (k, f) in [("watched", &mut c.watched), ("resume", &mut c.resume), ("ratings", &mut c.ratings), ("markers", &mut c.markers)] {
+    for (k, f) in [("watched", &mut c.watched), ("resume", &mut c.resume), ("ratings", &mut c.ratings), ("markers", &mut c.markers), ("matches", &mut c.matches)] {
         if let Some(v) = body.get(k).and_then(Value::as_bool) { *f = v; }
     }
     if let Some(v) = body.get("direction").and_then(Value::as_str) {
@@ -256,6 +259,10 @@ struct PlexItem {
     offset: u64,
     last: u64,
     rating: Option<f32>,
+    /// Plex's own guid and its external ids ("imdb://tt0133093", "tmdb://603", ...), for a movie; an episode's show.
+    guid: String,
+    ids: Vec<String>,
+    show_rk: Option<String>,
 }
 
 /// An item's markers as Plex tells them: (intro (start, end) ms, credits start ms).
@@ -295,12 +302,34 @@ fn num(v: &Value) -> Option<f64> {
     v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
 }
 
-fn items(url: &str, client: &str, token: &str, s: &PlexSection) -> Result<Vec<PlexItem>, String> {
+fn guid_ids(m: &Value) -> Vec<String> {
+    m["Guid"].as_array().into_iter().flatten().filter_map(|g| g["id"].as_str().map(String::from)).collect()
+}
+
+/// The movies, or episodes of a show library. For a show library the shows' external ids are
+/// collected into `shows` too (by Plex's key).
+fn items(url: &str, client: &str, token: &str, s: &PlexSection, shows: &mut HashMap<String, (String, Vec<String>)>) -> Result<Vec<PlexItem>, String> {
     let kind = match s.kind.as_str() { "movie" => 1, "show" => 4, _ => return Ok(vec![]) };
+    if kind == 4 {
+        let mut start = 0;
+        loop {
+            let v = request("GET", &format!("{url}/library/sections/{}/all?type=2&includeGuids=1&X-Plex-Container-Start={start}&X-Plex-Container-Size={PAGE}", s.key), client, token)?;
+            let mc = &v["MediaContainer"];
+            let list = mc["Metadata"].as_array().cloned().unwrap_or_default();
+            let n = list.len();
+            for m in list {
+                let rk = m["ratingKey"].as_str().map(String::from).unwrap_or_else(|| m["ratingKey"].to_string());
+                shows.insert(rk, (m["guid"].as_str().unwrap_or("").to_string(), guid_ids(&m)));
+            }
+            let total = num(&mc["totalSize"]).map(|t| t as usize).unwrap_or(0);
+            start += n;
+            if n == 0 || n < PAGE || start >= total { break; }
+        }
+    }
     let mut out = vec![];
     let mut start = 0;
     loop {
-        let v = request("GET", &format!("{url}/library/sections/{}/all?type={kind}&X-Plex-Container-Start={start}&X-Plex-Container-Size={PAGE}", s.key), client, token)?;
+        let v = request("GET", &format!("{url}/library/sections/{}/all?type={kind}&includeGuids=1&X-Plex-Container-Start={start}&X-Plex-Container-Size={PAGE}", s.key), client, token)?;
         let mc = &v["MediaContainer"];
         let list = mc["Metadata"].as_array().cloned().unwrap_or_default();
         let n = list.len();
@@ -316,6 +345,9 @@ fn items(url: &str, client: &str, token: &str, s: &PlexSection) -> Result<Vec<Pl
                 offset: num(&m["viewOffset"]).unwrap_or(0.0) as u64,
                 last: num(&m["lastViewedAt"]).unwrap_or(0.0) as u64,
                 rating: num(&m["userRating"]).map(|r| r as f32).filter(|r| *r > 0.0),
+                guid: m["guid"].as_str().unwrap_or("").to_string(),
+                ids: guid_ids(&m),
+                show_rk: m["grandparentRatingKey"].as_str().map(String::from).or_else(|| num(&m["grandparentRatingKey"]).map(|n| (n as u64).to_string())),
             });
         }
         let total = num(&mc["totalSize"]).map(|t| t as usize).unwrap_or(0);
@@ -496,8 +528,9 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
     let u = acc.user_id;
     if app.db.lock().unwrap().user(u).is_none() { return Err("The person for this Plex account no longer exists".into()); }
     let mut plex: Vec<PlexItem> = vec![];
+    let mut shows: HashMap<String, (String, Vec<String>)> = HashMap::new();
     for s in sections(url, &c.client_id, &acc.token)? {
-        plex.extend(items(url, &c.client_id, &acc.token, &s)?);
+        plex.extend(items(url, &c.client_id, &acc.token, &s, &mut shows)?);
         if app.job_cancelled() { return Err("Cancelled".into()); }
     }
     let mut matched: Vec<(PlexItem, u64)> = vec![];
@@ -582,6 +615,41 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
         }
     }
     app.save();
+    // Which online entry Plex matched a movie or show with: kept as the match here, and the details
+    // (title, poster, plot) are fetched for exactly that entry. Titles that already have a match
+    // here keep it until their details are refreshed (then Plex's entry wins).
+    let mut matches_taken = 0;
+    if c.matches && c.direction != "to_plex" {
+        let mut queue: Vec<u64> = vec![];
+        {
+            let mut db = app.db.lock().unwrap();
+            let mut seen: std::collections::HashSet<u64> = Default::default();
+            for (p, id) in &matched {
+                if !seen.insert(*id) { continue; }
+                let Some(it) = db.items.get(id) else { continue };
+                let (target, guid, ids) = match it.kind {
+                    ItemKind::Movie => (*id, p.guid.clone(), p.ids.clone()),
+                    ItemKind::Episode => {
+                        let Some(top) = crate::server::App::top_level(&db, *id) else { continue };
+                        let Some((g, i)) = p.show_rk.as_ref().and_then(|k| shows.get(k)) else { continue };
+                        (top, g.clone(), i.clone())
+                    }
+                    _ => continue,
+                };
+                let Some((src, eid)) = crate::migrate::plex_external_id(&guid, &ids) else { continue };
+                let Some(t) = db.items.get_mut(&target) else { continue };
+                if t.extra.contains_key("plex_id") || t.extra.get("unmatched_by_hand").and_then(Value::as_bool) == Some(true) { continue; }
+                let unmatched = !t.extra.contains_key("metadata_source");
+                t.extra.insert("plex_id".into(), json!({"source": src, "id": eid}));
+                matches_taken += 1;
+                if unmatched { queue.push(target); }
+            }
+        }
+        if matches_taken > 0 {
+            app.save();
+            app.queue_online_details(&queue, false);
+        }
+    }
     // Intro and credits markers Plex found, where this server has none. Plex is asked once per item
     // and week; an item with a marker is not asked again.
     let mut markers_taken = 0;
@@ -653,7 +721,7 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
     Ok(json!({
         "plex_items": plex_items, "matched": matched.len(), "not_found": missing.len(),
         "not_found_examples": missing.iter().take(8).collect::<Vec<_>>(),
-        "to_here": here.json(), "to_plex": there.json(), "markers": markers_taken,
+        "to_here": here.json(), "to_plex": there.json(), "markers": markers_taken, "matches": matches_taken,
         "error": if errors.is_empty() { Value::Null } else { json!(format!("Not everything reached Plex: {}", errors.join("; "))) },
     }))
 }
