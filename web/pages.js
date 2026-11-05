@@ -1080,10 +1080,26 @@ async function personPage(key, qs) {
       : h('div', { class: 'card', style: 'opacity:.55', title: t('Not in your libraries') },
           h('div', { class: 'poster' }, c.poster ? h('img', { src: c.poster, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer' }) : null),
           h('div', { class: 't', title: c.title }, c.title), h('div', { class: 's' }, [c.year, c.role].filter(Boolean).join(' · ')));
+    const row = c => {
+      const img = c.item ? withTok(c.item.thumb) : c.poster;
+      const title = c.item ? h('a', { href: '#/item/' + c.item.id }, h('b', {}, c.title)) : h('b', {}, c.title);
+      return h('div', { class: 'li', style: c.item ? '' : 'opacity:.6' },
+        img ? h('img', { src: img, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer' }) : h('div', { style: 'width:44px;height:66px' }),
+        h('div', { class: 'grow' }, title, h('div', { class: 'dim' }, [c.year, c.type === 'show' ? t('Show') : t('Movie'), c.role].filter(Boolean).join(' · '))),
+        h('span', { class: 'dim' }, c.item ? t('In your libraries') : t('Not in your libraries')));
+    };
+    const all = [...mine, ...others];
+    const filmo = h('div', {});
+    const drawFilmo = () => {
+      const list = store.get('filmoView', 'grid') === 'list';
+      filmo.className = list ? 'list' : 'grid';
+      filmo.replaceChildren(...all.map(list ? row : card));
+    };
+    const viewSwitch = () => h('p', {}, ['grid', 'list'].map(v => h('button', { class: 'small', style: 'margin-right:6px', onclick: () => { store.set('filmoView', v); drawFilmo(); } }, v === 'list' ? t('List') : t('Grid'))));
+    drawFilmo();
     more.replaceChildren(...[
       d.photos.length > 1 ? [h('h2', {}, t('Photos')), scroller('row', d.photos.map(p => h('a', { href: p.full, target: '_blank', rel: 'noreferrer' }, h('img', { src: p.url, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer', style: 'height:200px;border-radius:6px;display:block' }))))] : null,
-      d.credits.length ? [h('h2', {}, t('Filmography') + ` (${mine.length}/${d.credits.length} ${t('in your libraries')})`),
-        h('div', { class: 'grid' }, [...mine, ...others].map(card))] : null,
+      d.credits.length ? [h('h2', {}, t('Filmography') + ` (${mine.length}/${d.credits.length} ${t('in your libraries')})`), viewSwitch(), filmo] : null,
       h('p', {}, h('button', { class: 'small', onclick: () => load(true) }, t('Reload details')), d.imdb_id ? [' ', h('a', { href: `https://www.imdb.com/name/${d.imdb_id}/`, target: '_blank', rel: 'noreferrer' }, 'IMDb')] : null)].flat().filter(Boolean));
   };
   load(false);

@@ -15,6 +15,7 @@ class PersonScreen extends StatefulWidget {
 
 class _PersonScreenState extends State<PersonScreen> {
   late final Future<Map<String, dynamic>> data = widget.api.person(widget.keyId, widget.name);
+  static bool asList = false; // the filmography as a list (kept while the app runs)
   late Future<Map<String, dynamic>> details = widget.api.personDetails(widget.keyId, widget.name);
 
   static String day(String? iso) {
@@ -59,6 +60,31 @@ class _PersonScreenState extends State<PersonScreen> {
           ],
           if (credits.isNotEmpty) ...[
             head('Filmografie (${mine.length} von ${credits.length} in deinen Bibliotheken)'),
+            Row(children: [
+              IconButton(tooltip: 'Raster', isSelected: !asList, onPressed: () => setState(() => asList = false), icon: const Icon(Icons.grid_view)),
+              IconButton(tooltip: 'Liste', isSelected: asList, onPressed: () => setState(() => asList = true), icon: const Icon(Icons.view_list)),
+            ]),
+            if (asList)
+              for (final c in [...mine, ...others])
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  enabled: true,
+                  leading: SizedBox(
+                    width: 44,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Opacity(
+                        opacity: c['item'] != null ? 1 : .55,
+                        child: Image.network(c['item'] != null ? widget.api.img('${c['item']['thumb']}') : '${c['poster'] ?? ''}', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)),
+                      ),
+                    ),
+                  ),
+                  title: Text('${c['title']}', style: TextStyle(color: c['item'] != null ? null : Colors.white60)),
+                  subtitle: Text([c['year'], c['type'] == 'show' ? 'Serie' : 'Film', c['role']].where((x) => x != null && '$x'.isNotEmpty).join(' · ')),
+                  trailing: Text(c['item'] != null ? 'In deinen Bibliotheken' : 'Nicht in deinen Bibliotheken', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                  onTap: c['item'] == null ? null : () => openItem(context, widget.api, Map<String, dynamic>.from(c['item'])),
+                )
+            else
             Wrap(spacing: 12, runSpacing: 16, children: [
               for (final c in [...mine, ...others])
                 SizedBox(
