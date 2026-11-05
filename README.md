@@ -370,6 +370,30 @@ The Docker image was built and tested on an Intel/AMD (x86-64) computer: the ful
 passes inside it, including converting video and downloading movie details. It was not
 tried on a real Synology, so the graphics-chip conversion there is untested.
 
+### Automatic build and deploy (Gitea)
+
+`.gitea/workflows/deploy.yml` builds and starts a new version on the Synology after every push to
+`main`: tests (`docker build --target test .`), the image, the container is replaced, then a health
+check. If the new version does not become healthy, the previous one is started again and the run
+fails (you get Gitea's usual mail). Run it by hand under *Actions → Build and deploy → Run workflow*.
+
+It needs a Gitea runner (`act_runner`) on the Synology that can reach Docker: the runner's
+container mounts `/var/run/docker.sock`. The workflow uses these settings (Gitea: repository →
+Settings → Actions → Variables); all are optional:
+
+| Variable | Default | |
+|---|---|---|
+| `LICHTSPIEL_CONFIG` | `/volume1/docker/lichtspiel` | folder for the database and settings (`/config`) |
+| `LICHTSPIEL_MEDIA` | `/volume1/video` | folder with the videos, mounted read-only as `/media` |
+| `LICHTSPIEL_PORT` | `8484` | port on the Synology |
+| `LICHTSPIEL_DOCKER_ARGS` | `--device /dev/dri:/dev/dri` | more `docker run` options; set a single space on a model without an Intel graphics chip |
+
+The container is called `lichtspiel`; the workflow removes one with that name and creates it
+again, with the data folder untouched. If you started Lichtspiel before as a Container Manager
+project, delete that project (not the folder) so the two do not fight over the name and the port.
+The first run takes 10–20 minutes (it compiles everything); later runs reuse the compiled
+dependencies and take a few minutes.
+
 To reach it from outside your home, use the Synology reverse proxy (Control Panel → Login
 Portal → Advanced → Reverse Proxy) with HTTPS, and put that address into Settings →
 "Address used in invite links" so invite links point to it.

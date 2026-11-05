@@ -1,0 +1,78 @@
+# Builds Lichtspiel on every push to main and starts the new version on the Synology.
+#
+# The runner (act_runner) runs on the Synology and talks to its Docker, so the image is built
+# there and the container is replaced. Steps: tests -> image -> replace the container -> health
+# check (if the new version does not become healthy, the previous one is started again).
+#
+# Settings in Gitea (repository -> Settings -> Actions -> Variables); all optional:
+#   LICHTSPIEL_CONFIG   folder for the database and settings   (default /volume1/docker/lichtspiel)
+#   LICHTSPIEL_MEDIA    folder with the videos, read-only       (default /volume1/video)
+#   LICHTSPIEL_PORT     port on the Synology                    (default 8484)
+#   LICHTSPIEL_DOCKER_ARGS  more `docker run` options           (default --device /dev/dri:/dev/dri;
+#                       set it to a single space on a model without an Intel graphics chip)
+name: Build and deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOCKER_BUILDKIT: "1"
+  NAME: lichtspiel
+  CONFIG_DIR: ${{ vars.LICHTSPIEL_CONFIG || '/volume1/docker/lichtspiel' }}
+  MEDIA_DIR: ${{ vars.LICHTSPIEL_MEDIA || '/volume1/video' }}
+  PORT: ${{ vars.LICHTSPIEL_PORT || '8484' }}
+  DOCKER_ARGS: ${{ vars.LICHTSPIEL_DOCKER_ARGS || '--device /dev/dri:/dev/dri' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker reachable?
+        run: |
+          docker version --format 'Docker {{.Server.Version}}' || {
+            echo "The runner cannot reach Docker. Mount /var/run/docker.sock into the runner (see README: Automatic build)."; exit 1; }
+
+      - name: Tests
+        run: docker build --target test -t ${NAME}-test .
+
+      - name: Build the image
+        run: |
+          # Keep the version that is running now as "previous" for the way back.
+          running=$(docker inspect --format '{{.Image}}' ${NAME} 2>/dev/null || true)
+          [ -n "$running" ] && docker tag "$running" ${NAME}:previous || true
+          docker build -t ${NAME}:latest -t ${NAME}:${GITHUB_SHA::8} .
+
+      - name: Replace the container
+        run: |
+          start() {
+            docker rm -f ${NAME} >/dev/null 2>&1 || true
+            docker run -d --name ${NAME} --restart unless-stopped -p ${PORT}:8484 \
+              -v "${CONFIG_DIR}:/config" -v "${MEDIA_DIR}:/media:ro" ${DOCKER_ARGS} "$1"
+          }
+          healthy() {
+            for i in $(seq 1 45); do
+              s=$(docker inspect --format '{{.State.Health.Status}}' ${NAME} 2>/dev/null || echo none)
+              [ "$s" = healthy ] && return 0
+              [ "$(docker inspect --format '{{.State.Running}}' ${NAME} 2>/dev/null)" = true ] || return 1
+              sleep 4
+            done
+            return 1
+          }
+          start ${NAME}:latest
+          if healthy; then
+            echo "Lichtspiel ${GITHUB_SHA::8} is running."
+          else
+            echo "The new version did not become healthy:"; docker logs --tail 60 ${NAME} || true
+            if docker image inspect ${NAME}:previous >/dev/null 2>&1; then
+              echo "Starting the previous version again."
+              start ${NAME}:previous
+            fi
+            exit 1
+          fi
+
+      - name: Tidy up
+        run: docker image prune -f >/dev/null || true
