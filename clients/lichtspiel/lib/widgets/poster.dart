@@ -27,7 +27,9 @@ class Poster extends StatefulWidget {
   final bool selecting;
   /// Set in the "Continue Watching" row: the menu offers to take the title off it, then calls [onRemoved].
   final VoidCallback? onRemoved;
-  const Poster({super.key, required this.api, required this.item, required this.onTap, this.width = 140, this.onPick, this.picked = false, this.selecting = false, this.onRemoved});
+  /// Replaces the line under the title (the value a library is sorted by, like rating or length).
+  final String? caption;
+  const Poster({super.key, required this.api, required this.item, required this.onTap, this.width = 140, this.onPick, this.picked = false, this.selecting = false, this.onRemoved, this.caption});
 
   @override
   State<Poster> createState() => _PosterState();
@@ -238,7 +240,7 @@ class _PosterState extends State<Poster> {
               ),
               const SizedBox(height: 6),
               Text('$title', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
-              Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+              Text(widget.caption != null && widget.caption!.isNotEmpty ? widget.caption! : sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.white54)),
             ]),
           ),
         ),

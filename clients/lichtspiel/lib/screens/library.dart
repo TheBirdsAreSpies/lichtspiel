@@ -396,6 +396,68 @@ class _LibraryScreenState extends State<LibraryScreen> {
     reload();
   }
 
+  /// What a poster says under its title, by the way the library is sorted (like the web app).
+  String? sortCaption(Map<String, dynamic> it) {
+    String dur(num ms) {
+      final m = (ms / 60000).round();
+      if (m < 1) return '${(ms / 1000).round().clamp(1, 59)} s';
+      return m >= 60 ? '${m ~/ 60} h ${m % 60} min' : '$m min';
+    }
+
+    String rel(num sec) {
+      final d = ((DateTime.now().millisecondsSinceEpoch / 1000 - sec) / 86400).round();
+      String n(int v, String one, String many) => v == 1 ? 'vor 1 $one' : 'vor $v $many';
+      if (d < 1) return 'heute';
+      if (d < 14) return n(d, 'Tag', 'Tagen');
+      if (d < 60) return n((d / 7).round(), 'Woche', 'Wochen');
+      if (d < 730) return n((d / 30.4).round(), 'Monat', 'Monaten');
+      return n((d / 365).round(), 'Jahr', 'Jahren');
+    }
+
+    String num1(num v) => v.toStringAsFixed(1).replaceAll('.', ',');
+    final scores = it['scores'] is Map ? it['scores'] as Map : const {};
+    final media = (it['Media'] is List && (it['Media'] as List).isNotEmpty && (it['Media'] as List).first is Map) ? (it['Media'] as List).first as Map : const {};
+    const src = {'imdb': 'IMDb', 'tmdb': 'TMDB', 'rotten_tomatoes': 'RT', 'metacritic': 'MC'};
+    String? score(List<String> keys) {
+      for (final k in keys) {
+        if (scores[k] != null && '${scores[k]}'.isNotEmpty) return '${src[k]} ${'${scores[k]}'.replaceAll('/10', '')}';
+      }
+      return null;
+    }
+
+    num? n(String k) => it[k] is num ? it[k] as num : null;
+    switch (sortField) {
+      case 'duration':
+        return n('duration') != null && n('duration')! > 0 ? dur(n('duration')!) : null;
+      case 'release_date':
+        final d = DateTime.tryParse('${it['originallyAvailableAt'] ?? ''}');
+        return d != null ? '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}' : '${it['year'] ?? ''}';
+      case 'audience_rating':
+        return score(['imdb', 'tmdb']) ?? (n('rating') != null && n('rating')! > 0 ? num1(n('rating')!) : null);
+      case 'critic_rating':
+        return score(['rotten_tomatoes', 'metacritic']);
+      case 'user_rating':
+        return n('userRating') != null && n('userRating')! > 0 ? '★' * (n('userRating')! / 2).round() : null;
+      case 'content_rating':
+        return it['contentRating']?.toString();
+      case 'progress':
+        return n('viewOffset') != null && n('viewOffset')! > 0 && n('duration') != null && n('duration')! > 0 ? '${(100 * n('viewOffset')! / n('duration')!).round()} %' : null;
+      case 'view_count':
+        return n('viewCount') != null && n('viewCount')! > 0 ? '${n('viewCount')!.toInt()}× gesehen' : null;
+      case 'added_at':
+        return n('addedAt') != null && n('addedAt')! > 0 ? rel(n('addedAt')!) : null;
+      case 'last_viewed_at':
+        return n('lastViewedAt') != null && n('lastViewedAt')! > 0 ? rel(n('lastViewedAt')!) : null;
+      case 'resolution':
+        final h = media['height'];
+        return h is num && h > 0 ? (h >= 2000 ? '4K' : '${h.toInt()}p') : null;
+      case 'bitrate':
+        final b = media['bitrate'];
+        return b is num && b > 0 ? '${num1(b / 1000)} Mbit/s' : null;
+    }
+    return null;
+  }
+
   void setSort(String f) {
     sortField = f;
     desc = !_sortAsc.contains(f);
@@ -535,7 +597,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           itemCount: items.length + (loading ? 1 : 0),
                           itemBuilder: (_, i) => i >= items.length
                               ? const Center(child: CircularProgressIndicator())
-                              : Poster(api: widget.api, item: items[i], width: 170, onTap: () => openItem(context, widget.api, items[i]), onPick: () => toggle(items[i]), picked: picked.contains(_id(items[i])), selecting: picked.isNotEmpty),
+                              : Poster(api: widget.api, item: items[i], width: 170, caption: sortCaption(items[i]), onTap: () => openItem(context, widget.api, items[i]), onPick: () => toggle(items[i]), picked: picked.contains(_id(items[i])), selecting: picked.isNotEmpty),
                         ),
                         if (letters.isNotEmpty)
                           Positioned(
