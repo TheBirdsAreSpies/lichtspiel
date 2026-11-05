@@ -203,7 +203,7 @@ class Api {
 
   /// The server's playback decision: direct file URL, HLS URL, resume position (ms).
   Future<Map<String, dynamic>> decision(String id, {String quality = 'original'}) async =>
-      Map<String, dynamic>.from(await get('/library/metadata/$id/decision?quality=${Uri.encodeQueryComponent(quality)}'));
+      Map<String, dynamic>.from(await get('/library/metadata/$id/decision?native=1&quality=${Uri.encodeQueryComponent(quality)}'));
 
   /// Reports the position. The answer says `stopped: true` (and a `message`) when the owner ended the playback.
   Future<Map<String, dynamic>?> timeline(String id, int ms, String state) async {

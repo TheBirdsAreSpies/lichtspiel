@@ -408,6 +408,7 @@ fn transcode_request_plain(ctx: &Ctx) -> transcode::Request {
         h264_level: ctx.param("level").and_then(transcode::parse_level),
         burn_subtitle: ctx.num("subtitle").map(|n| n as u32),
         boost_dialogue: false,
+        native: ctx.param("native") == Some("1"),
     }
 }
 

@@ -75,6 +75,8 @@ pub struct Request {
     pub burn_subtitle: Option<u32>,
     /// Lift the dialogue when surround sound is mixed down to stereo.
     pub boost_dialogue: bool,
+    /// The app's own player (libmpv) plays every container and codec: nothing needs converting for the format.
+    pub native: bool,
 }
 
 /// H.264 level limits (level×10, max frame size in macroblocks, max bitrate kbit/s, max buffer kbit).
@@ -136,7 +138,8 @@ const TONEMAP: &str = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,t
 
 pub fn decide(file: &MediaFile, req: &Request) -> Decision {
     let mut reasons = vec![];
-    let container_ok = BROWSER_CONTAINERS.contains(&file.container.as_str())
+    let container_ok = req.native
+        || BROWSER_CONTAINERS.contains(&file.container.as_str())
         || (file.probed && file.video().is_none() && BROWSER_AUDIO_CONTAINERS.contains(&file.container.as_str()))
         || req.extra_containers.iter().any(|c| c == &file.container);
     if !container_ok {
@@ -145,7 +148,8 @@ pub fn decide(file: &MediaFile, req: &Request) -> Decision {
     let v = file.video();
     let a = file.audio();
     let vcodec = v.map(|v| v.codec.as_str()).unwrap_or("");
-    let video_ok = !file.probed
+    let video_ok = req.native
+        || !file.probed
         || v.is_none()
         || BROWSER_VIDEO.contains(&vcodec)
         || req.extra_video.iter().any(|c| c == vcodec);
@@ -154,11 +158,11 @@ pub fn decide(file: &MediaFile, req: &Request) -> Decision {
     }
     // A codec the browser said it plays (HEVC in Chrome with a hardware decoder) may be 10-bit.
     let client_codec = req.extra_video.iter().any(|c| c == vcodec);
-    let depth_ok = v.is_none_or(|v| v.bit_depth <= MAX_DIRECT_BIT_DEPTH || (client_codec && v.bit_depth <= 10));
+    let depth_ok = req.native || v.is_none_or(|v| v.bit_depth <= MAX_DIRECT_BIT_DEPTH || (client_codec && v.bit_depth <= 10));
     if !depth_ok {
         reasons.push(format!("{}-bit video needs converting to 8-bit", v.map(|v| v.bit_depth).unwrap_or(0)));
     }
-    let audio_ok = a.is_none_or(|a| BROWSER_AUDIO.contains(&a.codec.as_str()) && a.channels <= MAX_DIRECT_AUDIO_CHANNELS);
+    let audio_ok = req.native || a.is_none_or(|a| BROWSER_AUDIO.contains(&a.codec.as_str()) && a.channels <= MAX_DIRECT_AUDIO_CHANNELS);
     if !audio_ok {
         if let Some(a) = a {
             reasons.push(format!("audio {} with {} channels needs converting", a.codec, a.channels));
