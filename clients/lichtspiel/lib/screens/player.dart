@@ -72,6 +72,53 @@ class _PlayerScreenState extends State<PlayerScreen> {
   int? audioIdx; // the file's audio track asked from the server (when the picture is converted)
   bool converted = false; // the server sends the picture converted: the app sees one audio track only
   bool restoredAudio = false;
+  // The chapter marks on the seek bar show like the bar itself: after the mouse moved, for three seconds.
+  final ticksOn = ValueNotifier<bool>(false);
+  Timer? ticksTimer;
+
+  void mouseMoved() {
+    if (!ticksOn.value) ticksOn.value = true;
+    ticksTimer?.cancel();
+    ticksTimer = Timer(const Duration(seconds: 3), () => ticksOn.value = false);
+  }
+
+  /// Thin marks on the seek bar at the start of each chapter (the first one is the start).
+  Widget chapterTicks() {
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 56 + 18 - 7,
+      height: 14,
+      child: IgnorePointer(
+        child: ValueListenableBuilder<bool>(
+          valueListenable: ticksOn,
+          builder: (_, on, __) => AnimatedOpacity(
+            opacity: on ? 1 : 0,
+            duration: const Duration(milliseconds: 150),
+            child: StreamBuilder<Duration>(
+              stream: player.stream.duration,
+              builder: (_, snap) {
+                final total = (snap.data ?? player.state.duration).inMilliseconds;
+                if (total <= 0 || chapters.length < 2) return const SizedBox();
+                return LayoutBuilder(
+                  builder: (_, box) => Stack(children: [
+                    for (final c in chapters.skip(1))
+                      Positioned(
+                        left: (box.maxWidth * (((c['start'] ?? 0) as num) / total).clamp(0.0, 1.0)) - 1,
+                        top: 0,
+                        bottom: 0,
+                        width: 3,
+                        child: const DecoratedBox(decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black87, blurRadius: 2)])),
+                      ),
+                  ]),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   List<Map<String, dynamic>> externalSubs = []; // subtitle files next to the video
   List<Map<String, dynamic>> chapters = [];
@@ -282,6 +329,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void dispose() {
     ticker?.cancel();
     countdown?.cancel();
+    ticksTimer?.cancel();
+    ticksOn.dispose();
     for (final s in subs) {
       s.cancel();
     }
@@ -460,7 +509,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 subtitleViewConfiguration: SubtitleViewConfiguration(
                   style: TextStyle(fontSize: 32 * subSize / 100, color: Colors.white, backgroundColor: const Color(0x99000000), height: 1.3),
                 ),
-                controls: (state) => Stack(children: [MaterialDesktopVideoControls(state), overlay()]),
+                controls: (state) => Listener(onPointerHover: (_) => mouseMoved(), onPointerDown: (_) => mouseMoved(), child: Stack(children: [MaterialDesktopVideoControls(state), chapterTicks(), overlay()])),
               ),
             ),
     );
