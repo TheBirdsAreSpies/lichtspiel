@@ -403,6 +403,42 @@ class _DetailScreenState extends State<DetailScreen> {
         ],
       );
 
+  /// The mark of a review site in front of its score (drawn in code, like the web app's).
+  Widget _mark(String key, String score) {
+    final n = double.tryParse(RegExp(r'[\d.]+').stringMatch(score) ?? '') ?? 0;
+    Widget box(String t, Color bg, Color fg, {double w = 38, double r = 4}) => Container(
+          width: w,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(r)),
+          child: Text(t, style: TextStyle(color: fg, fontWeight: FontWeight.w900, fontSize: 13)),
+        );
+    switch (key) {
+      case 'imdb':
+        return box('IMDb', const Color(0xFFF5C518), Colors.black, w: 44);
+      case 'rotten_tomatoes':
+        return n >= 60
+            ? Stack(alignment: Alignment.center, children: const [
+                Icon(Icons.circle, size: 26, color: Color(0xFFFA320A)),
+                Positioned(top: 0, child: Icon(Icons.eco, size: 12, color: Color(0xFF00912D))),
+              ])
+            : const Icon(Icons.star, size: 26, color: Color(0xFF0AC855));
+      case 'rotten_tomatoes_audience':
+        final pct = score.contains('/5') ? n * 20 : (score.contains('/10') ? n * 10 : n);
+        return Text('🍿', style: TextStyle(fontSize: 22, color: pct >= 60 ? null : Colors.grey));
+      case 'metacritic':
+        return box('M', n >= 61 ? const Color(0xFF00CE7A) : (n >= 40 ? const Color(0xFFFFBD3F) : const Color(0xFFFF6874)), const Color(0xFF1A1A1A), w: 26, r: 5);
+      default:
+        return Container(
+          width: 46,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF90CEA1), Color(0xFF3CBEC9), Color(0xFF00B3E5)]), borderRadius: BorderRadius.circular(12)),
+          child: const Text('TMDB', style: TextStyle(color: Color(0xFF032541), fontWeight: FontWeight.w900, fontSize: 11)),
+        );
+    }
+  }
+
   Widget _scores(Map<String, dynamic> r) {
     final chips = <Widget>[];
     for (final e in _scoreNames.entries) {
@@ -415,9 +451,12 @@ class _DetailScreenState extends State<DetailScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Text(e.value, style: const TextStyle(fontSize: 12, color: Colors.white60)),
-            const SizedBox(width: 6),
-            Text('${s['score']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            _mark(e.key, '${s['score']}'),
+            const SizedBox(width: 8),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text('${s['score']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, height: 1.1)),
+              Text(count != null ? '$count ${s['count_label'] == 'reviews' ? 'Kritiken' : 'Stimmen'}' : e.value, style: const TextStyle(fontSize: 11, color: Colors.white54)),
+            ]),
           ]),
         ),
       ));

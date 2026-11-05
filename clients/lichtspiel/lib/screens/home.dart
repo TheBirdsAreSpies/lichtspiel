@@ -31,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     widget.api.get('/api/me').then((m) {
-      if (mounted && m is Map) setState(() => admin = m['admin'] == true);
+      if (mounted && m is Map) setState(() => Poster.admin = admin = m['admin'] == true);
       if (mounted && m is Map && m['admin'] == true) Activity.start(widget.api);
     }).catchError((_) {});
   }

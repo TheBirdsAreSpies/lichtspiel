@@ -1,9 +1,16 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../screens/edit.dart';
+import '../screens/player.dart';
 import 'activity.dart';
 
 /// A poster card with title, subtitle, watched mark and progress bar. Focusable (D-pad / remote ready).
-class Poster extends StatelessWidget {
+/// With the mouse over it, a play button, (admins) an edit pencil and a "…" menu appear, as in the web app.
+class Poster extends StatefulWidget {
+  /// Set once the signed-in person is known to be the owner.
+  static bool admin = false;
+
   final Api api;
   final Map<String, dynamic> item;
   final VoidCallback onTap;
@@ -11,41 +18,159 @@ class Poster extends StatelessWidget {
   const Poster({super.key, required this.api, required this.item, required this.onTap, this.width = 140});
 
   @override
+  State<Poster> createState() => _PosterState();
+}
+
+class _PosterState extends State<Poster> {
+  bool hover = false;
+
+  Map<String, dynamic> get item => widget.item;
+  String get id => '${item['ratingKey'] ?? item['id']}';
+  bool get playable => const {'movie', 'episode', 'track', 'clip'}.contains(item['type']);
+  bool get touch => defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
+
+  bool get watched {
+    final leaves = (item['leafCount'] ?? 0) as num;
+    if (leaves > 0) return ((item['viewedLeafCount'] ?? 0) as num) >= leaves;
+    return ((item['viewCount'] ?? 0) as num) > 0;
+  }
+
+  void say(String m) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
+
+  /// Fetch what the server has now, so the card shows the change.
+  Future<void> reload() async {
+    try {
+      final fresh = await widget.api.item(id);
+      item.addAll(fresh);
+      if (mounted) setState(() {});
+    } catch (_) {}
+  }
+
+  Future<void> play() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: widget.api, item: item)));
+    reload();
+  }
+
+  Future<void> menu(Offset at) async {
+    final matchable = item['type'] == 'movie' || item['type'] == 'show';
+    final matched = item['extra']?['metadata_source'] != null;
+    final size = MediaQuery.of(context).size;
+    final v = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(at.dx, at.dy, size.width - at.dx, size.height - at.dy),
+      items: [
+        PopupMenuItem(value: 'watched', child: Text(watched ? 'Als ungesehen markieren' : 'Als gesehen markieren')),
+        if (Poster.admin && matchable) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
+        if (Poster.admin) const PopupMenuItem(value: 'edit', child: Text('Details bearbeiten')),
+        if (Poster.admin && matchable) PopupMenuItem(value: 'match', child: Text(matched ? 'Zuordnung korrigieren…' : 'Zuordnen…')),
+      ],
+    );
+    if (v == null || !mounted) return;
+    try {
+      switch (v) {
+        case 'watched':
+          await widget.api.setWatched(id, !watched);
+          say(watched ? 'Als ungesehen markiert' : 'Als gesehen markiert');
+        case 'refresh':
+          say('Lade Details…');
+          final r = await widget.api.post('/library/metadata/$id/refresh');
+          if (r is Map && r['message'] != null) say('${r['message']}');
+        case 'edit':
+          await edit();
+          return;
+        case 'match':
+          await matchDialog(context, widget.api, await widget.api.item(id));
+      }
+    } catch (e) {
+      say('$e');
+    }
+    await reload();
+  }
+
+  Future<void> edit() async {
+    await editDetailsDialog(context, widget.api, await widget.api.item(id));
+    await reload();
+  }
+
+  Widget round(IconData icon, String tip, VoidCallback onTap, {double size = 18, double pad = 6}) => Tooltip(
+        message: tip,
+        child: Material(
+          color: Colors.black54,
+          shape: const CircleBorder(),
+          child: InkWell(customBorder: const CircleBorder(), onTap: onTap, child: Padding(padding: EdgeInsets.all(pad), child: Icon(icon, size: size, color: Colors.white))),
+        ),
+      );
+
+  @override
   Widget build(BuildContext context) {
     final isEp = item['type'] == 'episode';
     final title = isEp ? (item['grandparentTitle'] ?? item['title']) : item['title'];
     final sub = isEp ? 'S${item['parentIndex'] ?? '?'}E${item['index'] ?? '?'} · ${item['title']}' : ([item['year']?.toString(), item['editionTitle']?.toString()].whereType<String>().where((e) => e.isNotEmpty).join(' · '));
-    final dur = (item['duration'] ?? 0) as int;
-    final off = (item['viewOffset'] ?? 0) as int;
+    final dur = ((item['duration'] ?? 0) as num).toInt();
+    final off = ((item['viewOffset'] ?? 0) as num).toInt();
     final thumb = isEp && item['grandparentThumb'] != null ? item['grandparentThumb'] : item['thumb'];
     final missing = item['missing'] == true;
-    final watched = ((item['viewCount'] ?? 0) as int) > 0;
+    final leaves = ((item['leafCount'] ?? 0) as num).toInt();
+    final unseen = leaves > 0 ? leaves - ((item['viewedLeafCount'] ?? 0) as num).toInt() : 0;
+    final show = hover || touch;
     return SizedBox(
-      width: width,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          AspectRatio(
-            aspectRatio: 2 / 3,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Stack(fit: StackFit.expand, children: [
-                Container(color: Colors.white10),
-                Image.network(api.img(thumb), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Center(child: Text('$title', textAlign: TextAlign.center))),
-                if (missing) Container(color: Colors.black54),
-                BusyOverlay(item: item),
-                if (missing) const Positioned(top: 4, left: 4, child: Tooltip(message: 'Datei fehlt – im Papierkorb der Mediathek', child: DecoratedBox(decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.all(Radius.circular(4))), child: Padding(padding: EdgeInsets.all(3), child: Icon(Icons.delete_outline, size: 18, color: Colors.redAccent))))),
-                if (watched) const Positioned(top: 4, right: 4, child: Icon(Icons.check_circle, size: 18, color: Color(0xFFE5A00D))),
-                if (off > 0 && dur > 0)
-                  Positioned(left: 0, right: 0, bottom: 0, child: LinearProgressIndicator(value: (off / dur).clamp(0, 1).toDouble(), minHeight: 3)),
-              ]),
-            ),
+      width: widget.width,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => hover = true),
+        onExit: (_) => setState(() => hover = false),
+        child: GestureDetector(
+          onSecondaryTapUp: (d) => menu(d.globalPosition),
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(6),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              AspectRatio(
+                aspectRatio: 2 / 3,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Stack(fit: StackFit.expand, children: [
+                    Container(color: Colors.white10),
+                    Image.network(widget.api.img(thumb), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Center(child: Text('$title', textAlign: TextAlign.center))),
+                    if (missing) Container(color: Colors.black54),
+                    BusyOverlay(item: item),
+                    if (missing) const Positioned(top: 4, left: 4, child: Tooltip(message: 'Datei fehlt – im Papierkorb der Mediathek', child: DecoratedBox(decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.all(Radius.circular(4))), child: Padding(padding: EdgeInsets.all(3), child: Icon(Icons.delete_outline, size: 18, color: Colors.redAccent))))),
+                    if (unseen > 0)
+                      Positioned(top: 6, right: 6, child: Container(padding: const EdgeInsets.symmetric(horizontal: 7), decoration: BoxDecoration(color: const Color(0xFFE5A00D), borderRadius: BorderRadius.circular(10)), child: Text('$unseen', style: const TextStyle(color: Color(0xFF16120A), fontSize: 12, fontWeight: FontWeight.w700))))
+                    else if (watched)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xB80E1013), border: Border.all(color: const Color(0xFFE5A00D), width: 1.5)),
+                          child: const Icon(Icons.check, size: 15, color: Color(0xFFE5A00D)),
+                        ),
+                      ),
+                    if (off > 0 && dur > 0)
+                      Positioned(left: 0, right: 0, bottom: 0, child: LinearProgressIndicator(value: (off / dur).clamp(0, 1).toDouble(), minHeight: 3)),
+                    if (show && playable && !missing) Center(child: round(Icons.play_arrow, 'Abspielen', play, size: 30, pad: 10)),
+                    if (show && Poster.admin && item['type'] != 'clip') Positioned(left: 6, bottom: 10, child: round(Icons.edit_outlined, 'Details bearbeiten', edit)),
+                    if (show && item['type'] != 'clip')
+                      Positioned(
+                        right: 6,
+                        bottom: 10,
+                        child: Builder(builder: (c) => round(Icons.more_vert, 'Mehr', () {
+                              final b = c.findRenderObject() as RenderBox;
+                              menu(b.localToGlobal(Offset.zero));
+                            })),
+                      ),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text('$title', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
+              Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            ]),
           ),
-          const SizedBox(height: 6),
-          Text('$title', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
-          Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.white54)),
-        ]),
+        ),
       ),
     );
   }
