@@ -299,10 +299,34 @@ function pickGrid(items, cardOpts) {
     toast(watched ? t('{n} marked as watched', { n: idx.length }) : t('{n} marked as unwatched', { n: idx.length }));
     clear();
   };
+  const chosen = () => [...picked].sort((x, y) => x - y).map(i => items[i]);
+  // Everything playable in the picked titles (episodes of a show, tracks of an album …), in order.
+  const leaves = async () => (await Promise.all(chosen().map(leavesOf))).flat();
+  const playPicked = shuffle => async () => {
+    let list = await leaves();
+    if (!list.length) return toast(t('Nothing to add'));
+    if (shuffle) list = smartShuffle(list);
+    const [first, ...rest] = list;
+    play(first, !shuffle && first.viewOffset ? first.viewOffset / 1000 : 0, rest);
+  };
+  const eachItem = async (path, msg) => { const list = chosen(); for (const it of list) await api('POST', path(it)); toast(msg(list.length)); };
+  const moreMenu = e => {
+    const admin = S.me.admin, one = picked.size === 1;
+    openMenu(e.currentTarget, [
+      { label: t('Shuffle'), run: playPicked(true) },
+      { label: t('Add to queue'), run: async () => { for (const it of chosen()) await addToQueue(it); } },
+      S.me.can_download ? { label: t('Download…'), run: () => downloadDialog(ids().map(id => items.find(x => x.id === id))) } : null,
+      admin ? '-' : null,
+      admin ? { label: t('Refresh metadata'), run: () => eachItem(it => `/library/metadata/${it.id}/refresh`, n => t('Downloading details for {n} titles', { n })) } : null,
+      admin ? { label: t('Analyze'), run: async () => { await eachItem(it => `/library/metadata/${it.id}/analyze`, () => t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
+      admin && one ? { label: t('Optimize…'), run: () => optimizeDialog(chosen()[0]) } : null,
+      '-',
+      { label: t('Select all'), run: () => { items.forEach((_, i) => picked.add(i)); draw(); } },
+    ], null, 'left');
+  };
   const bar = h('div', { class: 'pickbar' }, count,
-    h('button', { class: 'small', onclick: mark(true) }, t('Mark watched')),
-    h('button', { class: 'small', onclick: mark(false) }, t('Mark unwatched')),
-    playlistMenu,
+    h('button', { class: 'small', onclick: () => clear() }, t('Clear selection')),
+    h('button', { class: 'small primary', onclick: playPicked(false) }, t('▶ Play')),
     h('button', { class: 'small', onclick: async () => {
       const on = !(cardOpts && cardOpts.watchlistPage), idx = [...picked];
       const r = await api('POST', '/api/watchlist', { ids: ids(), watchlist: on });
@@ -311,9 +335,11 @@ function pickGrid(items, cardOpts) {
       for (const i of idx) items[i].watchlist = true;
       clear();
     } }, cardOpts && cardOpts.watchlistPage ? t('Remove from watchlist') : t('+ Watchlist')),
-    S.me.can_download ? h('button', { class: 'small', onclick: () => downloadDialog(ids().map(id => items.find(x => x.id === id))) }, t('Download…')) : null,
-    h('button', { class: 'small', onclick: () => { items.forEach((_, i) => picked.add(i)); draw(); } }, t('Select all')),
-    h('button', { class: 'small', title: t('Clear selection'), onclick: () => clear() }, '✕'));
+    h('button', { class: 'small', onclick: mark(true) }, t('Mark watched')),
+    h('button', { class: 'small', onclick: mark(false) }, t('Mark unwatched')),
+    playlistMenu,
+    S.me.admin ? h('button', { class: 'small', onclick: async () => { if (picked.size !== 1) return toast(t('Pick one title to edit its details')); editItem(await fullItem(chosen()[0])); } }, t('Edit')) : null,
+    h('button', { class: 'small', title: t('More'), 'aria-label': t('More'), onclick: moreMenu }, '⋯'));
   const draw = () => {
     cards.forEach((c, i) => c.classList.toggle('picked', picked.has(i)));
     grid.classList.toggle('picking', picked.size > 0);
@@ -952,7 +978,8 @@ async function pollActivity() {
     setTimeout(() => { if (!$('#activity .spin')) el.style.display = 'none'; }, 8000);
   }
   // Show new details as soon as they arrive (unless something is open on top).
-  if (ACT.done >= 0 && st.done > ACT.done && !document.querySelector('.modal') && $('#player').style.display !== 'flex') {
+  // A picked selection in the library stays: the page is not redrawn under it.
+  if (ACT.done >= 0 && st.done > ACT.done && !document.querySelector('.modal') && !document.querySelector('.grid.picking') && $('#player').style.display !== 'flex') {
     const hash = location.hash.slice(1) || '/';
     const onItem = hash.match(/^\/item\/(\d+)/);
     const fresh = Date.now() - ACT.lastRefresh > 8000;
