@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/poster.dart';
 import 'edit.dart';
+import 'downloads.dart';
 import 'player.dart';
 import 'home.dart';
 import 'playlists.dart';
@@ -244,6 +245,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   doChosen((ids) async { for (final id in ids) { await widget.api.post('/library/metadata/$id/refresh'); } }, 'Details werden geladen', keep: true);
                 case 'analyze':
                   doChosen((ids) async { for (final id in ids) { await widget.api.post('/library/metadata/$id/analyze'); } }, 'Wird analysiert', keep: true);
+                case 'download':
+                  downloadDialog(context, widget.api, chosen);
                 case 'merge':
                   mergeChosen();
                 case 'all':
@@ -256,6 +259,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               if (admin) const PopupMenuItem(value: 'analyze', child: Text('Analysieren')),
               if (admin && picked.length > 1 && chosen.every((i) => i['type'] == chosen.first['type'] && (i['type'] == 'movie' || i['type'] == 'episode')))
                 const PopupMenuItem(value: 'merge', child: Text('Zu einem Titel zusammenführen…')),
+              if (DownloadRights.allowed) const PopupMenuItem(value: 'download', child: Text('Herunterladen…')),
               const PopupMenuItem(value: 'all', child: Text('Alle auswählen')),
             ],
           ),

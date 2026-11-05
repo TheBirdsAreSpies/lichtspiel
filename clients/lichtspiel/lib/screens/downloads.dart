@@ -1,0 +1,232 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../api.dart';
+import '../widgets/poster.dart';
+import 'detail.dart' show fmtSize;
+
+const dlQualities = {
+  'original': 'Originalqualität',
+  '1080p-8': '1080p 8 Mbit/s',
+  '720p-4': '720p 4 Mbit/s',
+  '720p-3': '720p 3 Mbit/s',
+  '720p-2': '720p 2 Mbit/s',
+  '480p-1.5': '480p 1,5 Mbit/s',
+  '320p-0.7': '320p 0,7 Mbit/s',
+};
+
+/// Whether the signed-in person may download / have videos converted (set by the home screen from /api/me).
+class DownloadRights {
+  static bool allowed = false;
+  static bool convert = true;
+}
+
+/// Saving a file: the system browser downloads it (the link carries the token).
+Future<void> saveFile(BuildContext context, Api api, String url) async {
+  if (!await launchUrl(Uri.parse(api.abs(url)), mode: LaunchMode.externalApplication) && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Die Datei ließ sich nicht öffnen')));
+  }
+}
+
+/// "Herunterladen…" for one or several movies, episodes, seasons or shows.
+Future<void> downloadDialog(BuildContext context, Api api, List<Map<String, dynamic>> items) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final nav = Navigator.of(context);
+  if (!DownloadRights.allowed) {
+    messenger.showSnackBar(const SnackBar(content: Text('Downloads sind nicht erlaubt')));
+    return;
+  }
+  var q = 'original';
+  final title = items.length == 1 ? '${items.first['title']}' : '${items.length} ausgewählt';
+  final go = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, set) => AlertDialog(
+        title: Text('„$title“ herunterladen'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          DropdownButton<String>(
+            value: q,
+            isExpanded: true,
+            onChanged: (v) => set(() => q = v ?? 'original'),
+            items: [for (final e in dlQualities.entries) DropdownMenuItem(value: e.key, enabled: e.key == 'original' || DownloadRights.convert, child: Text(e.value))],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            q == 'original'
+                ? 'Die Datei, wie sie auf dem Server liegt. Sie ist sofort fertig.'
+                : 'Wird auf dem Server in MP4 (H.264, Stereo) umgewandelt, das überall läuft. Du findest sie unter „Downloads“ mit Fortschritt und lädst sie von dort, wenn sie fertig ist. Eine Datei, die schon klein genug ist, kommt unverändert.',
+            style: const TextStyle(color: Colors.white54),
+          ),
+          if (!DownloadRights.convert)
+            const Padding(padding: EdgeInsets.only(top: 8), child: Text('Du darfst keine Videos umwandeln lassen, deshalb geht nur die Originalqualität.', style: TextStyle(color: Colors.white54))),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Herunterladen')),
+        ],
+      ),
+    ),
+  );
+  if (go != true) return;
+  try {
+    final r = await api.post('/api/downloads', {
+      'ids': [for (final i in items) '${i['ratingKey'] ?? i['id']}'],
+      'quality': q,
+    });
+    num n(String k) => (r[k] ?? 0) as num;
+    final parts = [
+      if (n('ready') > 0) '${n('ready')} fertig',
+      if (n('queued') > 0) '${n('queued')} werden umgewandelt',
+      if (n('already') > 0) '${n('already')} schon vorhanden',
+      if (n('refused') > 0) '${n('refused')} ausgelassen (du darfst nicht umwandeln)',
+    ];
+    messenger.showSnackBar(SnackBar(
+      content: Text('Downloads: ${parts.join(', ')}'),
+      action: SnackBarAction(label: 'Öffnen', onPressed: () => nav.push(MaterialPageRoute(builder: (_) => DownloadsScreen(api: api)))),
+    ));
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text('$e')));
+  }
+}
+
+class DownloadsScreen extends StatefulWidget {
+  final Api api;
+  const DownloadsScreen({super.key, required this.api});
+  @override
+  State<DownloadsScreen> createState() => _DownloadsScreenState();
+}
+
+class _DownloadsScreenState extends State<DownloadsScreen> {
+  static const states = {'queued': 'Wartet', 'converting': 'Wird umgewandelt', 'ready': 'Fertig', 'failed': 'Fehlgeschlagen'};
+  Map<String, dynamic>? data;
+  String? error;
+  bool all = false;
+  Timer? timer;
+
+  @override
+  void initState() {
+    super.initState();
+    reload();
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> reload() async {
+    timer?.cancel();
+    try {
+      final r = await widget.api.get('/api/downloads${all ? '?all=1' : ''}');
+      if (!mounted) return;
+      setState(() {
+        data = Map<String, dynamic>.from(r);
+        error = null;
+      });
+      if (((r['queued'] ?? 0) as num) + ((r['converting'] ?? 0) as num) > 0) timer = Timer(const Duration(seconds: 2), reload);
+    } catch (e) {
+      if (mounted) setState(() => error = '$e');
+    }
+  }
+
+  Future<void> run(Future<dynamic> Function() f) async {
+    try {
+      await f();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+    reload();
+  }
+
+  String name(Map d) {
+    final x = d['item'];
+    if (x is! Map || x['title'] == null) return '(nicht mehr in der Mediathek)';
+    return x['type'] == 'episode' ? '${x['grandparentTitle'] ?? ''} · S${x['parentIndex'] ?? 0}E${x['index'] ?? 0} ${x['title']}' : '${x['title']}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = data;
+    final list = ((d?['downloads'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e)).toList();
+    final busy = ((d?['queued'] ?? 0) as num) + ((d?['converting'] ?? 0) as num);
+    final finished = ((d?['ready'] ?? 0) as num) + ((d?['failed'] ?? 0) as num);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Downloads'), actions: [
+        if (finished > 0) TextButton(onPressed: () => run(() => widget.api.delete('/api/downloads?state=finished${all ? '&all=1' : ''}')), child: const Text('Fertige entfernen')),
+      ]),
+      body: error != null
+          ? Center(child: Text(error!))
+          : d == null
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(padding: const EdgeInsets.all(16), children: [
+                  Text(
+                    d['allowed'] == true
+                        ? 'Über „Herunterladen…“ bei einem Film, einer Folge, Staffel oder Serie.${(d['keep_days'] ?? 0) != 0 ? ' Umgewandelte Kopien bleiben ${d['keep_days']} Tage auf dem Server.' : ''}'
+                        : 'Downloads sind für dein Konto abgeschaltet. Frag den Besitzer des Servers.',
+                    style: const TextStyle(color: Colors.white54),
+                  ),
+                  const SizedBox(height: 8),
+                  Text([if (busy > 0) '$busy werden umgewandelt', '${d['ready'] ?? 0} fertig', if (((d['failed'] ?? 0) as num) > 0) '${d['failed']} fehlgeschlagen'].join(' · ')),
+                  if (Poster.admin)
+                    CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      value: all,
+                      onChanged: (v) {
+                        all = v ?? false;
+                        reload();
+                      },
+                      title: const Text('Downloads von allen'),
+                    ),
+                  if (list.isEmpty) const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Noch nichts heruntergeladen.'))),
+                  for (final x in list) _row(x),
+                ]),
+    );
+  }
+
+  Widget _row(Map<String, dynamic> x) {
+    final state = '${x['state']}';
+    final parts = ((x['parts'] ?? 1) as num).toInt();
+    final size = (x['size'] ?? 0) as num;
+    final info = [
+      dlQualities['${x['quality']}'] ?? '${x['quality']}',
+      if (x['original'] == true && x['quality'] != 'original') 'unverändert (passt schon)',
+      states[state] ?? state,
+      if (state == 'converting') '${x['progress']} %',
+      if (size > 0) fmtSize(size),
+      if (all && x['user'] != null) '${x['user']}',
+    ].join(' · ');
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(children: [
+          if (x['thumb'] != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Image.network(widget.api.img('${x['thumb']}'), width: 40, height: 60, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 60)),
+            ),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(name(x), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text(info, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              if (state == 'converting' || state == 'queued')
+                Padding(padding: const EdgeInsets.only(top: 6), child: LinearProgressIndicator(value: ((x['progress'] ?? 0) as num) / 100)),
+              if (state == 'failed' && x['error'] != null) Text('${x['error']}', style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+            ]),
+          ),
+          if (state == 'ready' && parts > 1)
+            for (var n = 0; n < parts; n++) TextButton(onPressed: () => saveFile(context, widget.api, '${x['url']}?part=$n'), child: Text('Teil ${n + 1}'))
+          else if (state == 'ready')
+            FilledButton(onPressed: () => saveFile(context, widget.api, '${x['url']}'), child: const Text('Speichern')),
+          if (state == 'failed') TextButton(onPressed: () => run(() => widget.api.post('/api/downloads/${x['id']}/retry')), child: const Text('Nochmal')),
+          IconButton(
+            tooltip: state == 'converting' ? 'Stoppen und entfernen' : 'Entfernen',
+            icon: const Icon(Icons.close),
+            onPressed: () => run(() => widget.api.delete('/api/downloads/${x['id']}')),
+          ),
+        ]),
+      ),
+    );
+  }
+}

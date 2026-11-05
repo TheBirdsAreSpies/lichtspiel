@@ -6,6 +6,7 @@ import '../widgets/queue.dart';
 import '../widgets/together.dart';
 import 'dashboard.dart';
 import 'detail.dart';
+import 'downloads.dart';
 import 'library.dart';
 import 'playlists.dart';
 import 'settings.dart';
@@ -33,7 +34,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     widget.api.get('/api/me').then((m) {
-      if (mounted && m is Map) setState(() => Poster.admin = admin = m['admin'] == true);
+      if (mounted && m is Map) {
+        DownloadRights.allowed = m['can_download'] == true;
+        DownloadRights.convert = m['admin'] == true || m['allow_transcode'] != false;
+        setState(() => Poster.admin = admin = m['admin'] == true);
+      }
       if (mounted && m is Map && m['admin'] == true) Activity.start(widget.api);
     }).catchError((_) {});
   }
@@ -72,6 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           IconButton(tooltip: 'Warteschlange', icon: const Icon(Icons.queue_music), onPressed: () => showQueueDialog(context, api)),
           IconButton(tooltip: 'Zusammen schauen: Raum beitreten', icon: const Icon(Icons.groups_outlined), onPressed: () => joinTogetherDialog(context, api)),
+          if (DownloadRights.allowed) IconButton(tooltip: 'Downloads', icon: const Icon(Icons.download_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DownloadsScreen(api: api)))),
           IconButton(tooltip: 'Merkliste', icon: const Icon(Icons.bookmark_border), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WatchlistScreen(api: api)))),
           IconButton(tooltip: 'Playlists', icon: const Icon(Icons.playlist_play), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: api)))),
           if (admin) IconButton(tooltip: 'Dashboard', icon: const Icon(Icons.monitor_heart_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DashboardScreen(api: api)))),
