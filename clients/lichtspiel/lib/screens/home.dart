@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../widgets/activity.dart';
 import '../widgets/poster.dart';
 import 'dashboard.dart';
 import 'detail.dart';
@@ -31,7 +32,14 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     widget.api.get('/api/me').then((m) {
       if (mounted && m is Map) setState(() => admin = m['admin'] == true);
+      if (mounted && m is Map && m['admin'] == true) Activity.start(widget.api);
     }).catchError((_) {});
+  }
+
+  @override
+  void dispose() {
+    Activity.stop();
+    super.dispose();
   }
 
   Future<void> reload() async {

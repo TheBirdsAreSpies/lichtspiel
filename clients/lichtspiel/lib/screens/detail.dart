@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../widgets/activity.dart';
 import '../widgets/poster.dart';
 import 'home.dart';
 import 'person.dart';
@@ -182,7 +183,10 @@ class _DetailScreenState extends State<DetailScreen> {
               aspectRatio: 2 / 3,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.network(api.img(item['thumb']), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)),
+                child: Stack(fit: StackFit.expand, children: [
+                  Image.network(api.img(item['thumb']), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)),
+                  BusyOverlay(item: item),
+                ]),
               ),
             ),
           ),

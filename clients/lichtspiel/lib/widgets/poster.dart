@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
+import 'activity.dart';
 
 /// A poster card with title, subtitle, watched mark and progress bar. Focusable (D-pad / remote ready).
 class Poster extends StatelessWidget {
@@ -31,6 +32,7 @@ class Poster extends StatelessWidget {
               child: Stack(fit: StackFit.expand, children: [
                 Container(color: Colors.white10),
                 Image.network(api.img(thumb), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Center(child: Text('$title', textAlign: TextAlign.center))),
+                BusyOverlay(item: item),
                 if (watched) const Positioned(top: 4, right: 4, child: Icon(Icons.check_circle, size: 18, color: Color(0xFFE5A00D))),
                 if (off > 0 && dur > 0)
                   Positioned(left: 0, right: 0, bottom: 0, child: LinearProgressIndicator(value: (off / dur).clamp(0, 1).toDouble(), minHeight: 3)),
