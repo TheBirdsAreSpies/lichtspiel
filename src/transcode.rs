@@ -472,14 +472,16 @@ fn audio_args(file: &MediaFile, req: &Request) -> Vec<String> {
 }
 
 /// ffmpeg arguments for a progressive, seekable-by-restart MP4 stream on stdout.
-pub fn progressive_args(settings: &Settings, item: &Item, file: &MediaFile, d: &Decision, req: &Request, offset_s: f64) -> Vec<String> {
-    let _ = item;
+pub fn progressive_args(settings: &Settings, file: &MediaFile, d: &Decision, req: &Request, offset_s: f64) -> Vec<String> {
     let burn = burn_settings(settings, file, req);
     let method = if burn.is_some() { Method::Transcode } else if d.method == Method::Direct { Method::Remux } else { d.method.clone() };
     let (pre, mut video) = video_args(burn.as_ref().map(|b| &b.0).unwrap_or(settings), d, &method, req.video_quality.unwrap_or(99), req.h264_level);
     let mut a: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into()];
     a.extend(pre);
     if offset_s > 0.0 {
+        // A copied picture can only start at a key frame, before the asked-for time. Sound cut exactly there would play
+        // ahead of the picture by the difference, so with a copied picture the sound starts at the key frame as well.
+        if method == Method::Remux { a.push("-noaccurate_seek".into()); }
         a.extend(["-ss".into(), format!("{offset_s:.3}")]);
     }
     a.extend(["-i".into(), file.path.clone()]);
@@ -549,6 +551,9 @@ pub fn hls_args(settings: &Settings, file: &MediaFile, d: &Decision, req: &Reque
     let mut a: Vec<String> = vec!["-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into()];
     a.extend(pre);
     if offset_s > 0.0 {
+        // A copied picture can only start at a key frame, before the asked-for time. Sound cut exactly there would play
+        // ahead of the picture by the difference, so with a copied picture the sound starts at the key frame as well.
+        if method == Method::Remux { a.push("-noaccurate_seek".into()); }
         a.extend(["-ss".into(), format!("{offset_s:.3}")]);
     }
     a.extend(["-i".into(), file.path.clone()]);

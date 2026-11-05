@@ -583,7 +583,7 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     }
     let settings = app.settings();
     let offset = ctx.param("offset").and_then(|o| o.parse::<f64>().ok()).unwrap_or(0.0).max(0.0);
-    let args = transcode::progressive_args(&settings, &it, &f, &d, &req, offset);
+    let args = transcode::progressive_args(&settings, &f, &d, &req, offset);
     let child = Command::new(&settings.ffmpeg).args(&args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
     let mut child = match child {
         Ok(c) => c,
