@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'api.dart';
@@ -19,6 +20,7 @@ class LichtspielApp extends StatefulWidget {
 class _LichtspielAppState extends State<LichtspielApp> {
   Api? api;
   bool loading = true;
+  final navKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
@@ -47,6 +49,15 @@ class _LichtspielAppState extends State<LichtspielApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navKey,
+      // The mouse's "back" button (button 4) goes one screen back, like in a browser.
+      builder: (context, child) => Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (e) {
+          if (e.kind == PointerDeviceKind.mouse && (e.buttons & kBackMouseButton) != 0) navKey.currentState?.maybePop();
+        },
+        child: child ?? const SizedBox.shrink(),
+      ),
       title: 'Lichtspiel',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true).copyWith(
