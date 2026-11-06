@@ -211,6 +211,27 @@ fn open_copy(src: &Path, work: &Path) -> Result<Connection, String> {
     Ok(c)
 }
 
+/// Only the old server's credits markers, by file path (`path_key`): so the
+/// credits detection can take them instead of searching the picture.
+pub fn credits_by_path(src: &Path, work: &Path) -> Result<HashMap<String, Vec<u64>>, String> {
+    let c = open_copy(src, work)?;
+    let mut warnings = vec![];
+    let sql = "select mp.file, tg.time_offset from taggings tg join tags t on t.id = tg.tag_id \
+               join media_items mi on mi.metadata_item_id = tg.metadata_item_id join media_parts mp on mp.media_item_id = mi.id \
+               where t.tag_type = 12 and lower(coalesce(nullif(tg.text, ''), t.tag)) = 'credits' and tg.time_offset > 0 and mp.file is not null";
+    let mut out: HashMap<String, Vec<u64>> = HashMap::new();
+    for r in rows(&c, sql, 2, &mut warnings) {
+        if let Some(ms) = int(&r[1]).filter(|m| *m > 0) {
+            out.entry(path_key(&text(&r[0]))).or_default().push(ms as u64);
+        }
+    }
+    for v in out.values_mut() {
+        v.sort();
+        v.dedup();
+    }
+    Ok(out)
+}
+
 pub fn read(src: &Path, work: &Path) -> Result<Old, String> {
     let c = open_copy(src, work)?;
     let mut old = Old::default();

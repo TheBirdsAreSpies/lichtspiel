@@ -716,11 +716,18 @@ impl App {
         let app = self.clone();
         std::thread::spawn(move || {
             let (mut found, mut failed) = (0, 0);
+            // The old Plex server's markers first (same file path): no need to search the picture for those.
+            let from_plex = crate::migrate::detect()
+                .and_then(|p| crate::migrate::credits_by_path(&p, &app.data_dir.join("cache").join("old-markers")).map_err(|e| elog!("old server's credits markers: {e}")).ok())
+                .unwrap_or_default();
             for (n, (id, path, duration)) in files.into_iter().enumerate() {
                 if app.job_cancelled() {
                     break;
                 }
-                let r = crate::scanner::find_credits(&ffmpeg, &ffprobe, &path, duration, picture);
+                let r = match from_plex.get(&crate::migrate::path_key(&path)) {
+                    Some(c) if !force => Ok((c.clone(), "imported")),
+                    _ => crate::scanner::find_credits(&ffmpeg, &ffprobe, &path, duration, picture),
+                };
                 if let Some(f) = app.db.lock().unwrap().items.get_mut(&id).and_then(|i| i.last_file_mut()) {
                     match r {
                         Ok((c, how)) => {
