@@ -134,6 +134,9 @@ pub struct App {
     pub job_cancel: AtomicBool,
     /// The running credits or intro detection was started by the server itself (not by a button).
     pub job_auto: AtomicBool,
+    /// An automatic credits or intro run was cancelled by hand: the server does not start one by itself
+    /// again until a run is started by hand (or the server restarts).
+    pub auto_paused: AtomicBool,
     /// It was stopped only to let the details go first: it ends quietly and starts again later.
     pub job_yield: AtomicBool,
     /// What the running job works through, in order (its label, then the names): for the activity panel.
@@ -243,6 +246,7 @@ impl App {
             job: Mutex::new(None),
             job_cancel: AtomicBool::new(false),
             job_auto: AtomicBool::new(false),
+            auto_paused: AtomicBool::new(false),
             job_yield: AtomicBool::new(false),
             job_items: Mutex::new((String::new(), vec![])),
             stats: Default::default(),
@@ -675,6 +679,9 @@ impl App {
     /// credits detection off and, unless `force`, files that are already up to
     /// date or failed more than 3 times. Returns how many videos it will check.
     pub fn detect_credits(self: &Arc<Self>, ids: Vec<u64>, force: bool) -> Result<usize, String> {
+        if force {
+            self.auto_paused.store(false, AtomicOrdering::SeqCst);
+        }
         let mut job = self.job.lock().unwrap();
         if job.is_some() {
             return Err("Another job (credits detection or ratings) is already running; try again in a moment".into());
@@ -794,6 +801,9 @@ impl App {
         let running = self.job.lock().unwrap().is_some();
         if running {
             self.job_cancel.store(true, AtomicOrdering::SeqCst);
+            if self.job_auto.load(AtomicOrdering::SeqCst) {
+                self.auto_paused.store(true, AtomicOrdering::SeqCst);
+            }
         }
         // Details waiting for their turn are dropped too; the one being fetched right now finishes.
         let waiting = {
@@ -836,6 +846,9 @@ impl App {
     }
 
     pub fn detect_intros(self: &Arc<Self>, ids: Vec<u64>, force: bool) -> Result<usize, String> {
+        if force {
+            self.auto_paused.store(false, AtomicOrdering::SeqCst);
+        }
         use crate::intro;
         let mut job = self.job.lock().unwrap();
         if job.is_some() {
@@ -2249,7 +2262,8 @@ pub fn start_background(app: &Arc<App>) {
             };
             // Credits and intros come last: only when no details are waiting or being fetched.
             let idle = a.meta_queue.lock().unwrap().is_empty() && a.meta_busy.lock().unwrap().is_empty() && a.job.lock().unwrap().is_none();
-            if due && idle {
+            let paused = a.auto_paused.load(AtomicOrdering::SeqCst);
+            if due && idle && !paused {
                 let pending = a.credits_pending();
                 if !pending.is_empty() {
                     last_scheduled = Instant::now();
@@ -2263,7 +2277,7 @@ pub fn start_background(app: &Arc<App>) {
                 "scheduled" => last_intro.elapsed() >= Duration::from_secs(86400),
                 _ => false,
             };
-            if intro_due && idle {
+            if intro_due && idle && !paused {
                 let pending = a.intros_pending();
                 if !pending.is_empty() {
                     last_intro = Instant::now();
