@@ -465,7 +465,8 @@ fn typed_id(s: &str) -> Option<(&'static str, String)> {
     let digits = |x: &str| !x.is_empty() && x.chars().all(|c| c.is_ascii_digit());
     let imdb = |x: &str| x.strip_prefix("tt").is_some_and(|d| d.len() >= 6 && digits(d));
     // From a page address: …/title/tt0068646/ or …/movie/603-the-matrix
-    if let Some(p) = s.split("imdb.com/title/").nth(1) {
+    // (also with a language in between: imdb.com/de/title/tt…)
+    if let Some(p) = s.contains("imdb.com/").then(|| s.split("/title/").nth(1)).flatten() {
         let id: String = p.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
         return imdb(&id).then_some(("imdb", id));
     }
@@ -498,6 +499,7 @@ mod typed_id_tests {
         assert_eq!(typed_id("tmdb-603"), Some(("tmdb", "603".into())));
         assert_eq!(typed_id("https://www.themoviedb.org/movie/603-the-matrix"), Some(("tmdb", "603".into())));
         assert_eq!(typed_id("https://www.imdb.com/title/tt0068646/?ref_=x"), Some(("imdb", "tt0068646".into())));
+        assert_eq!(typed_id("https://www.imdb.com/de/title/tt0813980/"), Some(("imdb", "tt0813980".into())));
         assert_eq!(typed_id("1917"), None);
         assert_eq!(typed_id("Tt Man"), None);
     }
@@ -505,7 +507,18 @@ mod typed_id_tests {
 
 /// The one entry an id points to, shaped like a search hit.
 fn search_by_id(settings: &Settings, kind: ItemKind, src: &str, id: &str) -> Result<Vec<Candidate>, String> {
-    let (source, id) = resolve_id(settings, kind, src, id)?;
+    let (source, id) = match resolve_id(settings, kind, src, id) {
+        Ok(r) => r,
+        Err(e) => {
+            // Maybe the id is of the other kind (a series for a movie or the other way round): say so.
+            let (other, name, mine) = if kind == ItemKind::Show { (ItemKind::Movie, "movie", "show") } else { (ItemKind::Show, "show", "movie") };
+            return Err(if resolve_id(settings, other, src, id).is_ok() {
+                format!("{src}-{id} is a {name}, but this item is a {mine}")
+            } else {
+                e
+            });
+        }
+    };
     let d = fetch(settings, kind, &source, &id, &[])?;
     let m = &d.meta;
     Ok(vec![Candidate {
