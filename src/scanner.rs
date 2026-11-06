@@ -614,13 +614,28 @@ pub fn credits_start(kinds: &[FrameKind], min_len: usize) -> Option<usize> {
 /// 1 and 15 minutes) and returns where the end credits start (ms), None when
 /// there are none, or an error when ffmpeg can't read the file.
 pub fn detect_credits_in_video(ffmpeg: &str, path: &str, duration_ms: u64) -> Result<Option<u64>, String> {
-    use std::io::Read as _;
-    use std::process::Stdio;
     if duration_ms < 60_000 {
         return Ok(None);
     }
-    let window = (duration_ms * 3 / 10).clamp(60_000, 15 * 60_000).min(duration_ms);
-    let start_ms = duration_ms - window;
+    let full = (duration_ms * 3 / 10).clamp(60_000, 15 * 60_000).min(duration_ms);
+    // Most credits are short: look at the last 5 minutes first, and only when the credits reach back to the
+    // start of that window (they may be longer) or the video is longer than that, look at the whole window.
+    const QUICK: u64 = 5 * 60_000;
+    if full > QUICK {
+        let start_ms = duration_ms - QUICK;
+        match credits_in_window(ffmpeg, path, start_ms)? {
+            Some(ms) if ms > start_ms + 30_000 => return Ok(Some(ms)),
+            None => return Ok(None),
+            Some(_) => {}
+        }
+    }
+    credits_in_window(ffmpeg, path, duration_ms - full)
+}
+
+/// The credits start found in the picture from `start_ms` to the end of the file.
+fn credits_in_window(ffmpeg: &str, path: &str, start_ms: u64) -> Result<Option<u64>, String> {
+    use std::io::Read as _;
+    use std::process::Stdio;
     let mut child = Command::new(ffmpeg)
         .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-skip_frame", "nokey", "-ss", &format!("{:.3}", start_ms as f64 / 1000.0), "-i"])
         .arg(path)

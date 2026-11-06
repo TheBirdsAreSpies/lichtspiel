@@ -715,40 +715,52 @@ impl App {
         self.set_job_items("Detecting credits", &files.iter().map(|f| f.0).collect::<Vec<_>>());
         let app = self.clone();
         std::thread::spawn(move || {
-            let (mut found, mut failed) = (0, 0);
+            let (found, failed) = (std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0));
             // The old Plex server's markers first (same file path): no need to search the picture for those.
             let from_plex = crate::migrate::detect()
                 .and_then(|p| crate::migrate::credits_by_path(&p, &app.data_dir.join("cache").join("old-markers")).map_err(|e| elog!("old server's credits markers: {e}")).ok())
                 .unwrap_or_default();
-            for (n, (id, path, duration)) in files.into_iter().enumerate() {
-                if app.job_cancelled() {
-                    break;
-                }
-                let r = match from_plex.get(&crate::migrate::path_key(&path)) {
-                    Some(c) if !force => Ok((c.clone(), "imported")),
-                    _ => crate::scanner::find_credits(&ffmpeg, &ffprobe, &path, duration, picture),
-                };
-                if let Some(f) = app.db.lock().unwrap().items.get_mut(&id).and_then(|i| i.last_file_mut()) {
-                    match r {
-                        Ok((c, how)) => {
-                            found += usize::from(!c.is_empty());
-                            f.credits_ms = c;
-                            f.credits_source = how.into();
-                            f.credits_checked = db::CREDITS_DETECTOR_VERSION;
-                            f.credits_errors = 0;
+            // Several files at once: each one is a separate ffmpeg that mostly waits for the disk.
+            let (next, done) = (std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0));
+            let workers = std::thread::available_parallelism().map_or(2, |n| n.get()).clamp(2, 4);
+            std::thread::scope(|sc| {
+                for _ in 0..workers {
+                    sc.spawn(|| loop {
+                        if app.job_cancelled() {
+                            break;
                         }
-                        Err(e) => {
-                            failed += 1;
-                            f.credits_errors += 1;
-                            elog!("credits detection for item {id}: {e}");
-                            if f.credits_errors > db::CREDITS_MAX_ERRORS {
-                                elog!("credits detection for item {id} has failed too many times; it will not be retried automatically");
+                        let n = next.fetch_add(1, AtomicOrdering::SeqCst);
+                        let Some((id, path, duration)) = files.get(n) else { break };
+                        let id = *id;
+                        let r = match from_plex.get(&crate::migrate::path_key(path)) {
+                            Some(c) if !force => Ok((c.clone(), "imported")),
+                            _ => crate::scanner::find_credits(&ffmpeg, &ffprobe, path, *duration, picture),
+                        };
+                        if let Some(f) = app.db.lock().unwrap().items.get_mut(&id).and_then(|i| i.last_file_mut()) {
+                            match r {
+                                Ok((c, how)) => {
+                                    found.fetch_add(usize::from(!c.is_empty()), AtomicOrdering::SeqCst);
+                                    f.credits_ms = c;
+                                    f.credits_source = how.into();
+                                    f.credits_checked = db::CREDITS_DETECTOR_VERSION;
+                                    f.credits_errors = 0;
+                                }
+                                Err(e) => {
+                                    failed.fetch_add(1, AtomicOrdering::SeqCst);
+                                    f.credits_errors += 1;
+                                    elog!("credits detection for item {id}: {e}");
+                                    if f.credits_errors > db::CREDITS_MAX_ERRORS {
+                                        elog!("credits detection for item {id} has failed too many times; it will not be retried automatically");
+                                    }
+                                }
                             }
                         }
-                    }
+                        let d = done.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                        *app.job.lock().unwrap() = Some(("Detecting credits".into(), d, total));
+                    });
                 }
-                *app.job.lock().unwrap() = Some(("Detecting credits".into(), n + 1, total));
-            }
+            });
+            let (found, failed) = (found.into_inner(), failed.into_inner());
             app.save();
             *app.job.lock().unwrap() = None;
             let cancelled = app.job_cancel.swap(false, AtomicOrdering::SeqCst);
