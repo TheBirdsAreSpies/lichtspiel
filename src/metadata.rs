@@ -449,6 +449,14 @@ pub fn search(settings: &Settings, kind: ItemKind, title: &str, year: Option<u32
             }
         }
     }
+    // TMDB has nothing (or is not reachable): TVmaze for shows and Wikidata for movies may still know it.
+    if list.is_empty() && !settings.tmdb_api_key.trim().is_empty() {
+        let mut free = settings.clone();
+        free.tmdb_api_key.clear();
+        if let Ok(found) = search(&free, kind, title, year) {
+            list = found;
+        }
+    }
     if list.is_empty() {
         if let Some(e) = first_err {
             return Err(e);
@@ -507,7 +515,14 @@ mod typed_id_tests {
 
 /// The one entry an id points to, shaped like a search hit.
 fn search_by_id(settings: &Settings, kind: ItemKind, src: &str, id: &str) -> Result<Vec<Candidate>, String> {
-    let (source, id) = match resolve_id(settings, kind, src, id) {
+    let free = || {
+        let mut f = settings.clone();
+        f.tmdb_api_key.clear();
+        f
+    };
+    // Not on TMDB: TVmaze (shows) or Wikidata (movies) may still have it.
+    let found = resolve_id(settings, kind, src, id).or_else(|e| if settings.tmdb_api_key.trim().is_empty() { Err(e) } else { resolve_id(&free(), kind, src, id).map_err(|_| e) });
+    let (source, id) = match found {
         Ok(r) => r,
         Err(e) => {
             // Maybe the id is of the other kind (a series for a movie or the other way round): say so.
