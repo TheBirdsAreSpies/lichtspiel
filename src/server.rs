@@ -731,7 +731,8 @@ impl App {
             let from_plex = old_db
                 .and_then(|p| crate::migrate::credits_by_path(&p, &app.data_dir.join("cache").join("old-markers")).map_err(|e| elog!("old server's credits markers: {e}")).ok())
                 .unwrap_or_default();
-            elog!("credits detection: {} files with credits markers in the old server's database", from_plex.len());
+            let taken = std::sync::atomic::AtomicUsize::new(0);
+            elog!("credits detection: {} files with credits markers in the old server's database; {} videos to check", from_plex.len(), total);
             // Several files at once: each one is a separate ffmpeg that mostly waits for the disk.
             let (next, done) = (std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0));
             let workers = std::thread::available_parallelism().map_or(2, |n| n.get()).clamp(2, 4);
@@ -745,7 +746,13 @@ impl App {
                         let Some((id, path, duration)) = files.get(n) else { break };
                         let id = *id;
                         let r = match from_plex.get(path) {
-                            Some(c) if !force => Ok((c.clone(), "imported")),
+                            Some(c) if !force => {
+                                let t = taken.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                                if t % 1000 == 0 {
+                                    elog!("credits detection: {t} videos took their markers from the old server so far");
+                                }
+                                Ok((c.clone(), "imported"))
+                            }
                             _ => crate::scanner::find_credits(&ffmpeg, &ffprobe, path, *duration, picture),
                         };
                         if let Some(f) = app.db.lock().unwrap().items.get_mut(&id).and_then(|i| i.last_file_mut()) {
@@ -773,6 +780,7 @@ impl App {
                 }
             });
             let (found, failed) = (found.into_inner(), failed.into_inner());
+            elog!("credits detection ended: {} of {total} videos took the old server's markers, the rest was searched in the picture", taken.into_inner());
             app.save();
             *app.job.lock().unwrap() = None;
             let cancelled = app.job_cancel.swap(false, AtomicOrdering::SeqCst);
