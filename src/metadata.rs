@@ -409,6 +409,9 @@ fn title_variants_plain(title: &str) -> Vec<String> {
 /// Looks the title up online. Tries other spellings (umlauts, accents, punctuation) as well, and when nothing
 /// turns up, the year is dropped and then the last words of the title one by one.
 pub fn search(settings: &Settings, kind: ItemKind, title: &str, year: Option<u32>) -> Result<Vec<Candidate>, String> {
+    if let Some((src, id)) = typed_id(title) {
+        return search_by_id(settings, kind, src, &id);
+    }
     let mut list: Vec<Candidate> = Vec::new();
     let mut first_err: Option<String> = None;
     let mut run = |t: &str, y: Option<u32>, list: &mut Vec<Candidate>| {
@@ -453,6 +456,67 @@ pub fn search(settings: &Settings, kind: ItemKind, title: &str, year: Option<u32
     }
     list.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     Ok(list)
+}
+
+/// An id typed into the search box: "tt0068646", "imdb:tt0068646", "tmdb:603", "tmdb-603".
+/// Also accepts the address of an IMDb / TMDB page.
+fn typed_id(s: &str) -> Option<(&'static str, String)> {
+    let s = s.trim().to_lowercase();
+    let digits = |x: &str| !x.is_empty() && x.chars().all(|c| c.is_ascii_digit());
+    let imdb = |x: &str| x.strip_prefix("tt").is_some_and(|d| d.len() >= 6 && digits(d));
+    // From a page address: …/title/tt0068646/ or …/movie/603-the-matrix
+    if let Some(p) = s.split("imdb.com/title/").nth(1) {
+        let id: String = p.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+        return imdb(&id).then_some(("imdb", id));
+    }
+    for part in ["themoviedb.org/movie/", "themoviedb.org/tv/"] {
+        if let Some(p) = s.split(part).nth(1) {
+            let id: String = p.chars().take_while(|c| c.is_ascii_digit()).collect();
+            return digits(&id).then_some(("tmdb", id));
+        }
+    }
+    let rest = s.strip_prefix("imdb").map(|r| ("imdb", r)).or_else(|| s.strip_prefix("tmdb").map(|r| ("tmdb", r)));
+    if let Some((src, r)) = rest {
+        let id = r.trim_start_matches([':', '-', ' ', '=']).trim().to_string();
+        return match src {
+            "imdb" if imdb(&id) => Some(("imdb", id)),
+            "tmdb" if digits(&id) => Some(("tmdb", id)),
+            _ => None,
+        };
+    }
+    // A bare number stays a title ("1917", "300"); a TMDB id needs the "tmdb" prefix.
+    imdb(&s).then_some(("imdb", s))
+}
+
+#[cfg(test)]
+mod typed_id_tests {
+    use super::typed_id;
+    #[test]
+    fn ids_in_the_search_box() {
+        assert_eq!(typed_id("tt0068646"), Some(("imdb", "tt0068646".into())));
+        assert_eq!(typed_id(" IMDb: tt0068646 "), Some(("imdb", "tt0068646".into())));
+        assert_eq!(typed_id("tmdb-603"), Some(("tmdb", "603".into())));
+        assert_eq!(typed_id("https://www.themoviedb.org/movie/603-the-matrix"), Some(("tmdb", "603".into())));
+        assert_eq!(typed_id("https://www.imdb.com/title/tt0068646/?ref_=x"), Some(("imdb", "tt0068646".into())));
+        assert_eq!(typed_id("1917"), None);
+        assert_eq!(typed_id("Tt Man"), None);
+    }
+}
+
+/// The one entry an id points to, shaped like a search hit.
+fn search_by_id(settings: &Settings, kind: ItemKind, src: &str, id: &str) -> Result<Vec<Candidate>, String> {
+    let (source, id) = resolve_id(settings, kind, src, id)?;
+    let d = fetch(settings, kind, &source, &id, &[])?;
+    let m = &d.meta;
+    Ok(vec![Candidate {
+        source,
+        id,
+        title: m["title"].as_str().unwrap_or("").to_string(),
+        year: m["year"].as_u64().map(|y| y as u32),
+        summary: m["summary"].as_str().unwrap_or("").to_string(),
+        thumb: d.poster_url.clone(),
+        score: 1.2,
+    }])
 }
 
 /// Which entry an id tag from a file or folder name ("{imdb-tt0068646}", see
