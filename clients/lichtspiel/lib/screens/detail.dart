@@ -40,8 +40,7 @@ String _audioTracks(Map media) {
     final lang = '${a['language'] ?? ''}';
     final title = '${a['title'] ?? ''}';
     return [if (lang.isNotEmpty) _langNames[lang.toLowerCase()] ?? lang, '${a['codec'] ?? ''}'.toUpperCase(), _channels(a['channels']), if (title.isNotEmpty && title != lang) title].where((s) => s.isNotEmpty).join(' · ');
-  }).join('
-');
+  }).join('\n');
 }
 
 String _channels(dynamic n) => const {1: 'Mono', 2: 'Stereo', 3: '2.1', 6: '5.1', 7: '6.1', 8: '7.1'}[n] ?? (n == null ? '' : '$n Kanäle');
