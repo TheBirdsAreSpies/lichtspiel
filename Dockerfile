@@ -2,6 +2,9 @@
 # Builds for the machine it runs on (Intel/AMD x86_64 or ARM64 Synology models).
 
 FROM rust:1-slim-bookworm AS build
+# What the tests need (ffmpeg, python3). Installed first, before any file is copied, so this layer
+# stays cached: after a code change only the program itself is compiled again, not downloaded again.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY Cargo.toml Cargo.lock build.rs ./
 # The dependencies first, with an empty program: this layer stays cached while only the source
@@ -20,7 +23,6 @@ RUN touch src/main.rs && cargo build --release --no-default-features
 
 # `docker build --target test .` runs the tests (the automatic build on Gitea does this first).
 FROM build AS test
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN cargo test --release --no-default-features
 
 FROM debian:bookworm-slim
