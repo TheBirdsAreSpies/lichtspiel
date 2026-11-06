@@ -717,9 +717,14 @@ impl App {
         std::thread::spawn(move || {
             let (found, failed) = (std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0));
             // The old Plex server's markers first (same file path): no need to search the picture for those.
-            let from_plex = crate::migrate::detect()
+            let old_db = crate::migrate::detect();
+            if old_db.is_none() {
+                elog!("credits detection: no old Plex database found (set OLD_SERVER), so every video is searched");
+            }
+            let from_plex = old_db
                 .and_then(|p| crate::migrate::credits_by_path(&p, &app.data_dir.join("cache").join("old-markers")).map_err(|e| elog!("old server's credits markers: {e}")).ok())
                 .unwrap_or_default();
+            elog!("credits detection: {} files with credits markers in the old server's database", from_plex.len());
             // Several files at once: each one is a separate ffmpeg that mostly waits for the disk.
             let (next, done) = (std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0));
             let workers = std::thread::available_parallelism().map_or(2, |n| n.get()).clamp(2, 4);
@@ -732,7 +737,7 @@ impl App {
                         let n = next.fetch_add(1, AtomicOrdering::SeqCst);
                         let Some((id, path, duration)) = files.get(n) else { break };
                         let id = *id;
-                        let r = match from_plex.get(&crate::migrate::path_key(path)) {
+                        let r = match from_plex.get(path) {
                             Some(c) if !force => Ok((c.clone(), "imported")),
                             _ => crate::scanner::find_credits(&ffmpeg, &ffprobe, path, *duration, picture),
                         };

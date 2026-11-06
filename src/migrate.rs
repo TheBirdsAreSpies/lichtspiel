@@ -213,23 +213,63 @@ fn open_copy(src: &Path, work: &Path) -> Result<Connection, String> {
 
 /// Only the old server's credits markers, by file path (`path_key`): so the
 /// credits detection can take them instead of searching the picture.
-pub fn credits_by_path(src: &Path, work: &Path) -> Result<HashMap<String, Vec<u64>>, String> {
+pub fn credits_by_path(src: &Path, work: &Path) -> Result<CreditsIndex, String> {
     let c = open_copy(src, work)?;
     let mut warnings = vec![];
     let sql = "select mp.file, tg.time_offset from taggings tg join tags t on t.id = tg.tag_id \
                join media_items mi on mi.metadata_item_id = tg.metadata_item_id join media_parts mp on mp.media_item_id = mi.id \
                where t.tag_type = 12 and lower(coalesce(nullif(tg.text, ''), t.tag)) = 'credits' and tg.time_offset > 0 and mp.file is not null";
-    let mut out: HashMap<String, Vec<u64>> = HashMap::new();
+    let mut by_file: HashMap<String, Vec<u64>> = HashMap::new();
     for r in rows(&c, sql, 2, &mut warnings) {
         if let Some(ms) = int(&r[1]).filter(|m| *m > 0) {
-            out.entry(path_key(&text(&r[0]))).or_default().push(ms as u64);
+            by_file.entry(path_key(&text(&r[0]))).or_default().push(ms as u64);
         }
     }
-    for v in out.values_mut() {
+    let mut idx = CreditsIndex::default();
+    for (k, mut v) in by_file {
         v.sort();
         v.dedup();
+        // The same last folders + file name are also a match when the old server saw the files under another
+        // root (a share path, a mount). A tail that two different files share is left out.
+        for (n, tails) in [&mut idx.tail3, &mut idx.tail2].into_iter().enumerate() {
+            let t = path_tail(&k, 3 - n);
+            match tails.get(&t) {
+                Some(Some(old)) if *old != v => {
+                    tails.insert(t, None);
+                }
+                Some(_) => {}
+                None => {
+                    tails.insert(t, Some(v.clone()));
+                }
+            }
+        }
+        idx.exact.insert(k, v);
     }
-    Ok(out)
+    Ok(idx)
+}
+
+/// The old server's credits markers, found by full path or, failing that, by the last path parts.
+#[derive(Default)]
+pub struct CreditsIndex {
+    exact: HashMap<String, Vec<u64>>,
+    tail3: HashMap<String, Option<Vec<u64>>>,
+    tail2: HashMap<String, Option<Vec<u64>>>,
+}
+
+impl CreditsIndex {
+    pub fn get(&self, path: &str) -> Option<&Vec<u64>> {
+        let k = path_key(path);
+        self.exact.get(&k).or_else(|| self.tail3.get(&path_tail(&k, 3)).and_then(|v| v.as_ref())).or_else(|| self.tail2.get(&path_tail(&k, 2)).and_then(|v| v.as_ref()))
+    }
+    pub fn len(&self) -> usize {
+        self.exact.len()
+    }
+}
+
+/// The last `n` parts of a `path_key`.
+fn path_tail(k: &str, n: usize) -> String {
+    let parts: Vec<&str> = k.split('/').filter(|p| !p.is_empty()).collect();
+    parts[parts.len().saturating_sub(n)..].join("/")
 }
 
 pub fn read(src: &Path, work: &Path) -> Result<Old, String> {
@@ -872,5 +912,23 @@ mod tests {
         assert_eq!(path_key("C:\\Movies\\A.mkv"), path_key("c:/movies/a.mkv"));
         assert_eq!(date_to_epoch("1970-01-02 00:00:10"), Some(86410));
         assert_eq!(db_date(86400 * 365), "1971-01-01");
+    }
+}
+
+#[cfg(test)]
+mod credits_index_tests {
+    use super::*;
+    #[test]
+    fn finds_files_under_another_root() {
+        let mut idx = CreditsIndex::default();
+        let v = vec![2_648_297u64];
+        let k = path_key("/volume1/Serien/Daisy Jones/Season 1/S01E01.mkv");
+        for (n, t) in [&mut idx.tail3, &mut idx.tail2].into_iter().enumerate() {
+            t.insert(path_tail(&k, 3 - n), Some(v.clone()));
+        }
+        idx.exact.insert(k, v.clone());
+        assert_eq!(idx.get("/data/tv/Daisy Jones/Season 1/S01E01.mkv"), Some(&v));
+        assert_eq!(idx.get(r"D:\Daisy Jones\Season 1\S01E01.mkv"), Some(&v));
+        assert_eq!(idx.get("/data/tv/Other/Season 1/S01E02.mkv"), None);
     }
 }
