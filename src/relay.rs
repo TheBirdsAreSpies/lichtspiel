@@ -232,9 +232,11 @@ mod tests {
         std::thread::spawn(move || {
             for mut s in web.incoming().flatten() {
                 let peer = s.peer_addr().unwrap();
-                let who = real_client(peer).map(|i| i.to_string()).unwrap_or("none".into());
+                // Read first: the relay registers the caller before it passes any data on, but not
+                // necessarily before this connection is accepted (a slow machine, like a NAS, shows it).
                 let mut buf = [0u8; 16];
                 let n = s.read(&mut buf).unwrap_or(0);
+                let who = real_client(peer).map(|i| i.to_string()).unwrap_or("none".into());
                 let _ = write!(s, "{who}:{}", String::from_utf8_lossy(&buf[..n]));
             }
         });
