@@ -62,6 +62,12 @@ const fmtDateTime = sec => sec ? new Date(sec * 1000).toLocaleString(I18N.lang, 
 const fmtSize = b => b > 1e9 ? fmtNum(b / 1e9, 1) + ' GB' : fmtNum(b / 1e6, 0) + ' MB';
 const CONTAINER_NAMES = { matroska: 'MKV', mov: 'MP4', mp4: 'MP4', mpegts: 'TS', avi: 'AVI', webm: 'WebM' };
 const friendlyContainer = m => CONTAINER_NAMES[String(m.container || '').toLowerCase()] || String(m.container || '').toUpperCase();
+// Every audio track on its own line: "German · AC3 · 5.1" (the first file's main track when the file lists none).
+function audioTracks(m) {
+  const auds = (m.streams || []).filter(s => s.kind === 'audio');
+  if (!auds.length) return m.audioCodec ? [String(m.audioCodec).toUpperCase(), friendlyChannels(m.audioChannels)].filter(Boolean).join(' · ') : '–';
+  return auds.map(a => h('div', {}, [a.language ? langName(a.language) : '', String(a.codec || '').toUpperCase(), friendlyChannels(a.channels), a.title && a.title !== a.language ? a.title : ''].filter(Boolean).join(' · ')));
+}
 const friendlyChannels = n => ({ 1: 'Mono', 2: t('Stereo'), 3: '2.1', 6: '5.1', 7: '6.1', 8: '7.1' }[n] || (n ? t('{n} channels', { n }) : ''));
 
 async function api(method, path, body) {
@@ -849,7 +855,7 @@ async function itemPage(id) {
         m ? h('div', { class: 'panel kv' },
           h('div', {}, t('File type')), h('div', {}, `${friendlyContainer(m)} · ${fmtSize(m.size)}`),
           it.type === 'track' ? null : [h('div', {}, t('Video')), h('div', {}, m.videoCodec ? [String(m.videoCodec).toUpperCase(), `${m.width}×${m.height}`, m.bitDepth > 8 ? t('{n}-bit', { n: m.bitDepth }) : ''].filter(Boolean).join(' · ') : t('unknown (ffprobe not available)'))],
-          h('div', {}, t('Audio')), h('div', {}, m.audioCodec ? [String(m.audioCodec).toUpperCase(), friendlyChannels(m.audioChannels)].filter(Boolean).join(' · ') : '–'),
+          h('div', {}, t('Audio')), h('div', {}, audioTracks(m)),
           h('div', {}, t('Bitrate')), h('div', {}, m.bitrate ? fmtNum(m.bitrate / 1000, 1) + ' Mbit/s' : '–'),
           it.type === 'track' ? null : [h('div', {}, t('Subtitles')), h('div', {}, [...new Set((m.subtitles || []).map(s => s.language ? langName(s.language) : s.file || s.codec))].join(', ') || t('none'))],
           m.file ? [h('div', {}, t('Path')), h('div', { style: 'word-break:break-all' }, m.file)] : null,

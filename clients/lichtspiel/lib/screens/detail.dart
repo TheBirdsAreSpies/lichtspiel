@@ -30,6 +30,20 @@ String fmtSize(num b) => b > 1e9 ? '${(b / 1e9).toStringAsFixed(1)} GB' : '${(b 
 const _containers = {'matroska': 'MKV', 'mov': 'MP4', 'mp4': 'MP4', 'mpegts': 'TS', 'avi': 'AVI', 'webm': 'WebM'};
 String _container(Map m) => _containers['${m['container'] ?? ''}'.toLowerCase()] ?? '${m['container'] ?? ''}'.toUpperCase();
 
+const _langNames = {'ger': 'Deutsch', 'deu': 'Deutsch', 'de': 'Deutsch', 'eng': 'Englisch', 'en': 'Englisch', 'fre': 'Französisch', 'fra': 'Französisch', 'fr': 'Französisch', 'spa': 'Spanisch', 'es': 'Spanisch', 'ita': 'Italienisch', 'it': 'Italienisch', 'jpn': 'Japanisch', 'ja': 'Japanisch', 'por': 'Portugiesisch', 'rus': 'Russisch', 'dut': 'Niederländisch', 'nld': 'Niederländisch', 'pol': 'Polnisch', 'tur': 'Türkisch', 'swe': 'Schwedisch', 'dan': 'Dänisch', 'nor': 'Norwegisch', 'fin': 'Finnisch', 'kor': 'Koreanisch', 'chi': 'Chinesisch', 'zho': 'Chinesisch'};
+
+/// Every audio track on its own line: "Deutsch · AC3 · 5.1".
+String _audioTracks(Map media) {
+  final auds = ((media['streams'] as List?) ?? const []).whereType<Map>().where((s) => s['kind'] == 'audio').toList();
+  if (auds.isEmpty) return media['audioCodec'] == null ? '–' : ['${media['audioCodec']}'.toUpperCase(), _channels(media['audioChannels'])].where((s) => s.isNotEmpty).join(' · ');
+  return auds.map((a) {
+    final lang = '${a['language'] ?? ''}';
+    final title = '${a['title'] ?? ''}';
+    return [if (lang.isNotEmpty) _langNames[lang.toLowerCase()] ?? lang, '${a['codec'] ?? ''}'.toUpperCase(), _channels(a['channels']), if (title.isNotEmpty && title != lang) title].where((s) => s.isNotEmpty).join(' · ');
+  }).join('
+');
+}
+
 String _channels(dynamic n) => const {1: 'Mono', 2: 'Stereo', 3: '2.1', 6: '5.1', 7: '6.1', 8: '7.1'}[n] ?? (n == null ? '' : '$n Kanäle');
 
 const _scoreNames = {
@@ -572,7 +586,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 ? 'unbekannt'
                 : ['${media['videoCodec']}'.toUpperCase(), '${media['width']}×${media['height']}', if ((media['bitDepth'] ?? 0) > 8) '${media['bitDepth']}-bit'].join(' · ')
           ],
-        ['Audio', media['audioCodec'] == null ? '–' : ['${media['audioCodec']}'.toUpperCase(), _channels(media['audioChannels'])].where((s) => s.isNotEmpty).join(' · ')],
+        ['Audio', _audioTracks(media)],
         ['Bitrate', media['bitrate'] != null ? '${((media['bitrate'] as num) / 1000).toStringAsFixed(1)} Mbit/s' : '–'],
         if (type != 'track') ['Untertitel', subs.isEmpty ? 'keine' : subs],
         if (media['file'] != null) ['Pfad', '${media['file']}'],
