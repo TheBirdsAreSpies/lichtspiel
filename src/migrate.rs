@@ -84,6 +84,8 @@ pub struct OldItem {
     pub rating: Option<f64>,
     pub year: Option<i64>,
     pub aired: String,
+    /// When the old server added it (unix seconds).
+    pub added: i64,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -305,7 +307,7 @@ pub fn read(src: &Path, work: &Path) -> Result<Old, String> {
     }
     old.sections = secs;
     old.accounts = rows(&c, "select id, name from accounts order by id", 2, w).iter().map(|r| (int(&r[0]).unwrap_or(0), text(&r[1]))).collect();
-    for r in rows(&c, "select id, parent_id, metadata_type, guid, title, original_title, summary, tagline, studio, content_rating, rating, year, originally_available_at from metadata_items where metadata_type in (1, 2, 3, 4, 15)", 13, w) {
+    for r in rows(&c, "select id, parent_id, metadata_type, guid, title, original_title, summary, tagline, studio, content_rating, rating, year, originally_available_at, added_at from metadata_items where metadata_type in (1, 2, 3, 4, 15)", 14, w) {
         let it = OldItem {
             id: int(&r[0]).unwrap_or(0),
             parent: int(&r[1]),
@@ -323,6 +325,7 @@ pub fn read(src: &Path, work: &Path) -> Result<Old, String> {
                 Sql::Integer(t) => db_date(*t),
                 other => text(other).chars().take(10).collect(),
             },
+            added: int(&r[13]).unwrap_or(0).max(0),
         };
         old.items.insert(it.id, it);
     }
@@ -628,6 +631,15 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
     let by_guid: HashMap<&str, u64> = old.items.values().filter(|i| !i.guid.is_empty()).filter_map(|i| map.get(&i.id).map(|h| (i.guid.as_str(), *h))).collect();
 
     let mut db = app.db.lock().unwrap();
+    // The day the old server added things (not the day of this import): "Recently added" and the
+    // season premieres in Continue Watching depend on it.
+    for (oid, id) in &map {
+        let added = old.items.get(oid).map_or(0, |i| i.added);
+        if let Some(it) = db.items.get_mut(id).filter(|_| added > 0) {
+            it.added_at = it.added_at.min(added as u64);
+        }
+    }
+
     // 3. Watched state, resume points, ratings.
     if app.job_cancelled() { return Err(CANCELLED.into()); }
     set_job(app, "watched state and ratings", 3, 6);
