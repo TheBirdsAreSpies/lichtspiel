@@ -225,10 +225,26 @@ pub fn credits_by_path(src: &Path, work: &Path) -> Result<CreditsIndex, String> 
             by_file.entry(path_key(&text(&r[0]))).or_default().push(ms as u64);
         }
     }
+    Ok(index_by_path(by_file))
+}
+
+/// Only the old server's intro markers, by file path: (start, end) in ms as a two-item list.
+pub fn intros_by_path(src: &Path, work: &Path) -> Result<CreditsIndex, String> {
+    let c = open_copy(src, work)?;
+    let mut warnings = vec![];
+    let sql = "select mp.file, tg.time_offset, tg.end_time_offset from taggings tg join tags t on t.id = tg.tag_id \n               join media_items mi on mi.metadata_item_id = tg.metadata_item_id join media_parts mp on mp.media_item_id = mi.id \n               where t.tag_type = 12 and lower(coalesce(nullif(tg.text, ''), t.tag)) = 'intro' and tg.end_time_offset > tg.time_offset and mp.file is not null order by tg.id";
+    let mut by_file: HashMap<String, Vec<u64>> = HashMap::new();
+    for r in rows(&c, sql, 3, &mut warnings) {
+        if let (Some(s), Some(e)) = (int(&r[1]).filter(|m| *m >= 0), int(&r[2])) {
+            by_file.entry(path_key(&text(&r[0]))).or_insert_with(|| vec![s as u64, e as u64]);
+        }
+    }
+    Ok(index_by_path(by_file))
+}
+
+fn index_by_path(by_file: HashMap<String, Vec<u64>>) -> CreditsIndex {
     let mut idx = CreditsIndex::default();
-    for (k, mut v) in by_file {
-        v.sort();
-        v.dedup();
+    for (k, v) in by_file {
         // The same last folders + file name are also a match when the old server saw the files under another
         // root (a share path, a mount). A tail that two different files share is left out.
         for (n, tails) in [&mut idx.tail3, &mut idx.tail2].into_iter().enumerate() {
@@ -245,7 +261,7 @@ pub fn credits_by_path(src: &Path, work: &Path) -> Result<CreditsIndex, String> 
         }
         idx.exact.insert(k, v);
     }
-    Ok(idx)
+    idx
 }
 
 /// The old server's credits markers, found by full path or, failing that, by the last path parts.

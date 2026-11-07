@@ -909,7 +909,43 @@ impl App {
         let cache = self.data_dir.join("cache").join("intro");
         std::thread::spawn(move || {
             let (mut done, mut found, mut failed) = (0, 0, 0);
+            // The old Plex server's intro markers first (same file path): those episodes are not listened to.
+            let from_plex = crate::migrate::detect()
+                .and_then(|p| crate::migrate::intros_by_path(&p, &app.data_dir.join("cache").join("old-markers")).map_err(|e| elog!("old server's intro markers: {e}")).ok())
+                .unwrap_or_default();
+            elog!("intro detection: {} files with intro markers in the old server's database; {total} episodes to check", from_plex.len());
+            let mut taken = 0;
             'seasons: for eps in seasons {
+                let (mut known, mut eps): (Vec<_>, Vec<_>) = eps.into_iter().partition(|e| from_plex.get(&e.1).is_some_and(|m| m.len() == 2));
+                {
+                    let mut db = app.db.lock().unwrap();
+                    for (id, path, ..) in &known {
+                        let Some(f) = db.items.get_mut(id).and_then(|i| i.file.as_mut()) else { continue };
+                        f.intro_ms = from_plex.get(path).cloned().unwrap_or_default();
+                        f.intro_checked = intro::DETECTOR_VERSION;
+                        f.intro_errors = 0;
+                        taken += 1;
+                        found += 1;
+                    }
+                    // A single episode left has nothing to be compared with.
+                    if eps.len() < 2 {
+                        for (id, ..) in &eps {
+                            if let Some(f) = db.items.get_mut(id).and_then(|i| i.file.as_mut()) {
+                                f.intro_ms.clear();
+                                f.intro_checked = intro::DETECTOR_VERSION;
+                                f.intro_errors = 0;
+                            }
+                        }
+                    }
+                }
+                done += known.len();
+                known.clear();
+                *app.job.lock().unwrap() = Some(("Detecting intros".into(), done, total));
+                if eps.len() < 2 {
+                    done += eps.len();
+                    eps.clear();
+                    continue;
+                }
                 let (mut prints, mut errors) = (vec![], vec![]);
                 for (_, path, size, modified) in &eps {
                     // A season is only judged when all its episodes were listened to.
@@ -954,6 +990,7 @@ impl App {
                     }
                 }
             }
+            elog!("intro detection ended: {taken} of {total} episodes took the old server's intro markers");
             app.save();
             *app.job.lock().unwrap() = None;
             let cancelled = app.job_cancel.swap(false, AtomicOrdering::SeqCst);
