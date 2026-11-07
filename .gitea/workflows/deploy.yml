@@ -76,7 +76,10 @@ jobs:
           if healthy; then
             echo "Lichtspiel ${GITHUB_SHA::8} is running."
           else
-            echo "The new version did not become healthy:"; docker logs --tail 60 ${NAME} || true
+            echo "The new version did not become healthy:"
+            docker inspect --format 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} health={{if .State.Health}}{{.State.Health.Status}}{{end}} error={{.State.Error}}' ${NAME} || true
+            docker logs --tail 60 ${NAME} || true
+            echo "--- server.log (the app writes its messages there, not to the container log):"; tail -n 40 "${CONFIG_DIR}/server.log" || true
             if docker image inspect ${NAME}:previous >/dev/null 2>&1; then
               echo "Starting the previous version again."
               start ${NAME}:previous
