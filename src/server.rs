@@ -946,18 +946,37 @@ impl App {
                     eps.clear();
                     continue;
                 }
-                let (mut prints, mut errors) = (vec![], vec![]);
-                for (_, path, size, modified) in &eps {
-                    // A season is only judged when all its episodes were listened to.
-                    if app.job_cancelled() {
-                        break 'seasons;
+                // Several episodes at once: each one is a separate ffmpeg that mostly waits for the disk or the network.
+                let results: Vec<std::sync::Mutex<Option<Result<Vec<u32>, String>>>> = eps.iter().map(|_| std::sync::Mutex::new(None)).collect();
+                let (next, finished) = (std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0));
+                let workers = std::thread::available_parallelism().map_or(2, |n| n.get()).clamp(2, 4);
+                std::thread::scope(|sc| {
+                    for _ in 0..workers {
+                        sc.spawn(|| loop {
+                            // A season is only judged when all its episodes were listened to.
+                            if app.job_cancelled() {
+                                break;
+                            }
+                            let n = next.fetch_add(1, AtomicOrdering::SeqCst);
+                            let Some((_, path, size, modified)) = eps.get(n) else { break };
+                            let file = cache.join(intro::cache_name(path, *size, *modified));
+                            let print = match intro::read_cached(&file) {
+                                Some(p) => Ok(p),
+                                None => intro::fingerprint_file(&ffmpeg, path).inspect(|p| intro::write_cached(&file, p)),
+                            };
+                            *results[n].lock().unwrap() = Some(print);
+                            let d = finished.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                            *app.job.lock().unwrap() = Some(("Detecting intros".into(), done + d, total));
+                        });
                     }
-                    let file = cache.join(intro::cache_name(path, *size, *modified));
-                    let print = match intro::read_cached(&file) {
-                        Some(p) => Ok(p),
-                        None => intro::fingerprint_file(&ffmpeg, path).inspect(|p| intro::write_cached(&file, p)),
-                    };
-                    match print {
+                });
+                if app.job_cancelled() {
+                    break 'seasons;
+                }
+                done += eps.len();
+                let (mut prints, mut errors) = (vec![], vec![]);
+                for r in results {
+                    match r.into_inner().unwrap().unwrap_or_else(|| Err("not read".into())) {
                         Ok(p) => {
                             prints.push(p);
                             errors.push(None);
@@ -967,8 +986,6 @@ impl App {
                             errors.push(Some(e));
                         }
                     }
-                    done += 1;
-                    *app.job.lock().unwrap() = Some(("Detecting intros".into(), done, total));
                 }
                 let intros = intro::detect_season(&prints);
                 let mut db = app.db.lock().unwrap();
