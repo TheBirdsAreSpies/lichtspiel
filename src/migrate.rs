@@ -114,6 +114,8 @@ pub struct Old {
     /// (item id, file path)
     pub parts: Vec<(i64, String)>,
     pub settings: Vec<OldSetting>,
+    /// (account, item guid, viewed at) for every single viewing the old server logged.
+    pub views: Vec<(i64, String, i64)>,
     pub genres: HashMap<i64, Vec<String>>,
     /// Tag type 314: the external ids the new Plex agent keeps, like "imdb://tt0133093" or "tmdb://603".
     pub external: HashMap<i64, Vec<String>>,
@@ -338,6 +340,10 @@ pub fn read(src: &Path, work: &Path) -> Result<Old, String> {
             views: int(&r[4]).unwrap_or(0).max(0),
             last_viewed: int(&r[5]).unwrap_or(0).max(0),
         })
+        .collect();
+    old.views = rows(&c, "select account_id, guid, viewed_at from metadata_item_views where viewed_at > 0 and guid is not null", 3, w)
+        .iter()
+        .map(|r| (int(&r[0]).unwrap_or(0), text(&r[1]), int(&r[2]).unwrap_or(0)))
         .collect();
     for r in rows(&c, "select tg.metadata_item_id, t.tag from taggings tg join tags t on t.id = tg.tag_id where t.tag_type = 314", 2, w) {
         if let Some(id) = int(&r[0]) {
@@ -655,7 +661,25 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
             }
         }
     }
-    report["watched"] = json!({"watched": watched, "resume_points": resume, "ratings": rated,
+    // The play history: every viewing the old server logged; for watched items it has no log of, one viewing at the last time.
+    let mut history = 0;
+    if o.watched {
+        let mut logged: HashSet<(u64, u64)> = HashSet::new();
+        for (account, guid, at) in &old.views {
+            let (Some(user), Some(item)) = (o.accounts.get(account).copied(), by_guid.get(guid.as_str()).copied()) else { continue };
+            if !db.users.iter().any(|u| u.id == user) || !db.items.get(&item).is_some_and(|i| i.kind.playable()) { continue; }
+            db.record_play_at(user, item, false, *at as u64);
+            logged.insert((user, item));
+            history += 1;
+        }
+        for s in old.settings.iter().filter(|s| s.views > 0 && s.last_viewed > 0) {
+            let (Some(user), Some(item)) = (o.accounts.get(&s.account).copied(), by_guid.get(s.guid.as_str()).copied()) else { continue };
+            if logged.contains(&(user, item)) || !db.users.iter().any(|u| u.id == user) || !db.items.get(&item).is_some_and(|i| i.kind.playable()) { continue; }
+            db.record_play_at(user, item, false, s.last_viewed as u64);
+            history += 1;
+        }
+    }
+    report["watched"] = json!({"watched": watched, "history_entries": history, "resume_points": resume, "ratings": rated,
         "accounts_skipped": old.accounts.iter().filter(|(id, _)| skipped_accounts.contains(id)).map(|(_, n)| n.clone()).collect::<Vec<_>>()});
 
     // 4. Credits markers the old server found (it uses a trained model for that).
