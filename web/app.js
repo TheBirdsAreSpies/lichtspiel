@@ -183,15 +183,13 @@ async function invitePage(code) {
 // ---------- chrome
 async function boot() {
   I18N.applyStatic();
-  try { S.status = await GET('/api/status'); } catch (e) { S.status = null; }
+  // The four start-up questions go out together instead of one after the other.
+  const [status, me, secs, filters] = await Promise.all([GET('/api/status'), GET('/api/me'), GET('/library/sections'), GET('/api/filters')].map(p => p.catch(() => null)));
+  S.status = status;
   if (S.status) { $('#ver').textContent = `Lichtspiel ${S.status.version}${S.status.build ? ' · ' + S.status.build : ''}`; $('#ver').title = S.status.built_at ? t('Built {when}', { when: fmtDateTime(S.status.built_at) }) : ''; $('#sname').textContent = S.status.name; document.title = S.status.name === 'Lichtspiel' ? 'Lichtspiel' : `${S.status.name} · Lichtspiel`; }
   S.me = null;
   { // (Also without a token: networks set to need no sign-in are let in by the server.)
-    try {
-      S.me = await GET('/api/me'); pullPrefs();
-      S.sections = (await GET('/library/sections')).MediaContainer.Directory;
-      S.filters = await GET('/api/filters');
-    } catch (e) { S.me = null; }
+    if (me && secs && filters) { S.me = me; pullPrefs(); S.sections = secs.MediaContainer.Directory; S.filters = filters; }
   }
   drawChrome();
   // Settings → Web → remember the last page: open it again when the app is opened without an address.
@@ -262,7 +260,7 @@ function posterCard(it, opts = {}) {
     });
   };
   const card = h('div', { class: 'card' + (seen ? ' watched' : '') + (it.missing ? ' missing' : '') + (['artist', 'album', 'track'].includes(it.type) ? ' music' : ''), onauxclick: e => { if (e.button === 1) { e.preventDefault(); window.open(location.pathname + '#/item/' + it.id, '_blank'); } }, onmousedown: e => { if (e.button === 1) e.preventDefault(); }, onclick: e => { if (!(opts.pick && opts.pick(e, false))) location.hash = '#/item/' + it.id; } },
-    h('div', { class: 'poster', 'data-id': it.id }, h('img', { src: withTok(img), loading: 'lazy', alt: '' }),
+    h('div', { class: 'poster', 'data-id': it.id }, h('img', { src: withTok(img + (img.includes('?') ? '&' : '?') + 'w=360'), loading: 'lazy', alt: '' }),
       it.missing ? h('span', { class: 'gone', title: t('The file is gone from disk; the item is in the library’s trash'), 'aria-label': t('Unavailable') }, icon('trash')) : null,
       prog > 0 ? h('div', { class: 'bar' }, h('i', { style: `width:${prog * 100}%` })) : null,
       it.leafCount && unseen > 0 ? h('span', { class: 'badge' }, unseen) : null,
@@ -663,7 +661,7 @@ async function sectionPage(id, qs) {
     return q;
   };
   const sortParam = `${sortNow.field === 'show' ? 'episode_order' : sortNow.field}:${sortNow.desc ? 'desc' : 'asc'}`;
-  const listUrl = start => { const q = filterQuery(); q.set('sort', sortParam); q.set('start', start); q.set('size', PAGE_SIZE); return `/library/sections/${id}/all?${q}`; };
+  const listUrl = (start, size = PAGE_SIZE) => { const q = filterQuery(); q.set('sort', sortParam); q.set('start', start); q.set('size', size); return `/library/sections/${id}/all?${q}`; };
   const first = (await GET(listUrl(0))).MediaContainer;
   const total = first.totalSize;
   const pick = (key, opts, title) => {
@@ -684,10 +682,10 @@ async function sectionPage(id, qs) {
   const holder = h('div');
   let grid = null, loaded = 0, loading = false;
   const sentinel = h('div', { class: 'sentinel dim' });
-  const addPage = async (start, firstPage) => {
+  const addPage = async (start, firstPage, size) => {
     if (loading) return; loading = true;
     try {
-      const r = firstPage || (await GET(listUrl(start))).MediaContainer;
+      const r = firstPage || (await GET(listUrl(start, size))).MediaContainer;
       if (!grid) { grid = pickGrid(r.Metadata.slice(), cardOpts); holder.replaceChildren(grid, sentinel); }
       else grid._add(r.Metadata);
       loaded = start + r.Metadata.length;
@@ -704,7 +702,8 @@ async function sectionPage(id, qs) {
       while (loaded <= offset && loaded < total) {
         sentinel.textContent = t('Loading…');
         while (loading) await new Promise(r => setTimeout(r, 40));
-        if (loaded <= offset) await addPage(loaded);
+        // All the pages up to the letter in one request (one filter and sort on the server, not one per page).
+        if (loaded <= offset) await addPage(loaded, null, Math.ceil((offset + 1 - loaded) / PAGE_SIZE) * PAGE_SIZE);
         if (sentinel.textContent !== t('Loading…') && loaded < total && loaded <= offset) break; // a page failed
       }
       const card = grid && grid.children[Math.min(offset, grid.children.length - 1)];
