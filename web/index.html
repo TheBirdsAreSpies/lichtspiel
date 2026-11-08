@@ -493,6 +493,9 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   #main table.stack td[data-label=""]{justify-content:flex-start;flex-wrap:wrap}
   #main table.stack td[data-label=""]::before{display:none}
   #main table.stack td:empty{display:none}
+  #main table.stack td{width:auto!important}
+  #main table.stack td[data-label=""]{text-align:left}
+  #main table.stack code{white-space:normal;overflow-wrap:anywhere}
 }
 </style>
 </head>
@@ -557,8 +560,9 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   // Tables: remember each column's name on its cells, so a phone can show every row as a card (see .stack).
   var tagTables = function () {
     document.querySelectorAll('#main table:not(.stack)').forEach(function (tb) {
-      var head = tb.querySelector('tr'); if (!head || !head.querySelector('th')) return;
-      var names = Array.prototype.map.call(head.children, function (c) { return c.textContent.trim(); });
+      var head = tb.querySelector('tr'); if (!head) return;
+      // Without a header row the cells just stack, without column names.
+      var names = head.querySelector('th') ? Array.prototype.map.call(head.children, function (c) { return c.textContent.trim(); }) : [];
       tb.querySelectorAll('tr').forEach(function (tr) {
         if (tr.querySelector('th')) return;
         Array.prototype.forEach.call(tr.children, function (td, i) { td.setAttribute('data-label', names[i] || ''); });
