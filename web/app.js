@@ -532,6 +532,11 @@ const PAGE_SIZE = 120;
 // Where each library page was scrolled to (kept while the tab lives), so "back" lands where you left.
 const LIBPOS = (() => { try { return JSON.parse(sessionStorage.getItem('libpos') || '{}'); } catch (e) { return {}; } })();
 const saveLibPos = () => { try { sessionStorage.setItem('libpos', JSON.stringify(LIBPOS)); } catch (e) { /* none */ } };
+// The place in a library is for coming back (Back from a title). Clicking its link (side bar, tab) opens it at the top.
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('a[href^="#/section/"]');
+  if (a) delete LIBPOS[a.getAttribute('href')];
+}, true);
 
 // The filter menu of the library pages (also used by the watchlist): the button, the panel with the kinds of filter and their
 // values, the advanced rules and the chips of what is on. st holds the state (f.<name> = value, rules, rmatch), go() applies it.
