@@ -824,17 +824,21 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let db = app.db.lock().unwrap();
             let Some(sec) = db.sections.iter().find(|s| s.id == sid) else { return fail(404, "No such library") };
             if !db.can_see_section(&user, sid) { return fail(403, "You don't have access to this library"); }
-            let (_, ids) = section_ids(&db, &user, sid, sec, ctx);
-            let mut counts: std::collections::BTreeMap<char, usize> = Default::default();
-            for i in ids.iter().filter_map(|i| db.items.get(i)) {
+            let (_, mut ids) = section_ids(&db, &user, sid, sec, ctx);
+            // In the order the list has (A-Z): where each letter's titles begin and end. Worked out from the
+            // sorted list itself, so the letters land exactly, however titles with signs and umlauts sort.
+            query::sort_items(&db, user.id, &mut ids, "title:asc");
+            let mut spans: std::collections::BTreeMap<char, (usize, usize, usize)> = Default::default();
+            for (pos, i) in ids.iter().filter_map(|i| db.items.get(i)).enumerate() {
                 let c = i.sort_title.chars().next().map(|c| c.to_uppercase().next().unwrap_or(c)).filter(|c| c.is_alphabetic()).unwrap_or('#');
                 let c = match c { 'Ä' => 'A', 'Ö' => 'O', 'Ü' => 'U', c => c };
-                *counts.entry(c).or_default() += 1;
+                let e = spans.entry(c).or_insert((pos, pos, 0));
+                e.1 = pos;
+                e.2 += 1;
             }
-            // "#" first, as the titles sort: digits before letters.
-            let mut list: Vec<(char, usize)> = counts.into_iter().collect();
-            list.sort_by_key(|(c, _)| if *c == '#' { (0, *c) } else { (1, *c) });
-            ok(json!({"MediaContainer": {"size": list.len(), "total": ids.len(), "Directory": list.iter().map(|(c, n)| json!({"key": c.to_string(), "size": n})).collect::<Vec<_>>()}}))
+            let mut list: Vec<(char, (usize, usize, usize))> = spans.into_iter().collect();
+            list.sort_by_key(|(c, s)| (s.0, *c));
+            ok(json!({"MediaContainer": {"size": list.len(), "total": ids.len(), "Directory": list.iter().map(|(c, (first, last, n))| json!({"key": c.to_string(), "size": n, "start": first, "end": last + 1})).collect::<Vec<_>>()}}))
         }
         ("GET", ["library", "sections", sid, "genres"]) => {
             let Some(sid) = id(sid) else { return fail(404, "No such library") };

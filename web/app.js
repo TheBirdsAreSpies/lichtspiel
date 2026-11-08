@@ -764,10 +764,12 @@ async function sectionPage(id, qs) {
     GET(`/library/sections/${id}/firstCharacter?${filterQuery()}`).then(r => {
       const dirs = r.MediaContainer.Directory; let sum = 0;
       letters.replaceChildren(...dirs.map(d => {
-        const before = sum; sum += d.size;
-        const offset = sortNow.desc ? total - before - d.size : before;
-        const btn = h('button', { title: `${d.key} · ${d.size}`, onclick: () => jump(Math.max(0, offset)) }, d.key);
-        marks.push({ btn, from: Math.max(0, offset), to: Math.max(0, offset) + d.size });
+        // The server says where the letter's titles begin and end in the A-Z list (an older one only counts them).
+        const from = d.start !== undefined ? d.start : sum, to = d.end !== undefined ? d.end : sum + d.size;
+        sum += d.size;
+        const lo = Math.max(0, sortNow.desc ? total - to : from), hi = sortNow.desc ? total - from : to;
+        const btn = h('button', { title: `${d.key} · ${d.size}`, onclick: () => jump(lo) }, d.key);
+        marks.push({ btn, from: lo, to: hi });
         return btn;
       }));
       showPos();
