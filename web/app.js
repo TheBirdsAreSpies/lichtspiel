@@ -102,7 +102,15 @@ function authPage(title, intro, fields, button, submit) {
   set(form);
   const first = form.querySelector('input'); if (first) first.focus();
 }
-async function signedIn(token) { S.token = token; saveToken(token); location.hash = '#/'; await boot(); }
+// Right after signing in: say so at once and keep the empty sign-in form from coming back while the app loads.
+async function signedIn(token) {
+  S.token = token; saveToken(token);
+  S.signingIn = true;
+  set(h('div', { class: 'center' }, h('h1', {}, t('Signed in')), h('p', { class: 'dim' }, t('Loading your libraries…'))));
+  location.hash = '#/';
+  try { await boot(); } finally { S.signingIn = false; }
+  if (S.me) toast(t('Signed in as {name}', { name: S.me.username }));
+}
 async function loginPage() {
   authPage(t('Sign in'), S.status ? S.status.name : '', [['username', t('User name'), 'text', '', 'username'], ['password', t('Password'), 'password', '', 'current-password']], t('Sign in'),
     async v => {

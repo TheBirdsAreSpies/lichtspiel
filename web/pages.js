@@ -1805,7 +1805,7 @@ async function render() {
     }
   } catch (e) { set(h('div', { class: 'empty' }, t('Something went wrong: {msg}', { msg: e.message }))); }
 }
-window.addEventListener('hashchange', () => { if (!P.it) render(); });
+window.addEventListener('hashchange', () => { if (!P.it && !S.signingIn) render(); });
 boot();
 
 // Settings → Manage → Optimized versions: what is saved, how much room it takes, and a way to clear it.

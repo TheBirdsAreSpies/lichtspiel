@@ -348,6 +348,9 @@ I18N.add('de', 'Deutsch', {
 
     // ---------- sign in, setup, invites
     'Sign in': 'Anmelden',
+    'Signed in': 'Angemeldet',
+    'Signed in as {name}': 'Angemeldet als {name}',
+    'Loading your libraries…': 'Deine Bibliotheken werden geladen …',
     'User name': 'Benutzername',
     'Password': 'Passwort',
     'Welcome': 'Willkommen',
