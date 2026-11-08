@@ -83,12 +83,24 @@ fn ignored(rules: &[IgnoreRules], path: &Path) -> bool {
 
 /// `live`: the library this walk is a scan of, and how many files earlier folders gave; the progress
 /// then says how many videos are found so far and which folder it is in.
-fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, audio: bool, live: Option<(u64, usize)>) {
+/// A file the walk found. Size and change time come with the folder listing, so there is no
+/// extra round trip per file (what makes walking a network share slow).
+struct Listed {
+    path: PathBuf,
+    size: u64,
+    mtime: u64,
+}
+
+fn mtime_of(m: &std::fs::Metadata) -> u64 {
+    m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+fn walk(dir: &Path, out: &mut Vec<Listed>, depth: usize, audio: bool, live: Option<(u64, usize)>) {
     walk_in(dir, out, depth, &mut vec![], &mut vec![], audio, live);
 }
 
 /// Like `walk`, and lists the ignore files it read (`ignore_files`).
-fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<IgnoreRules>, ignore_files: &mut Vec<PathBuf>, audio: bool, live: Option<(u64, usize)>) {
+fn walk_in(dir: &Path, out: &mut Vec<Listed>, depth: usize, rules: &mut Vec<IgnoreRules>, ignore_files: &mut Vec<PathBuf>, audio: bool, live: Option<(u64, usize)>) {
     if depth > 12 {
         return;
     }
@@ -98,12 +110,13 @@ fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<Ign
     if let Some((section, before)) = live {
         step(section, "listing", before + out.len(), 0, &dir.to_string_lossy());
     }
-    let own = read_ignore(dir);
+    let mut entries: Vec<_> = rd.flatten().collect();
+    // Only a folder that has an ignore file is asked for it (no failed open in every folder).
+    let own = if entries.iter().any(|e| e.file_name() == IGNORE_FILE) { read_ignore(dir) } else { None };
     if own.is_some() {
         ignore_files.push(dir.join(IGNORE_FILE));
     }
     let pushed = own.map(|r| rules.push(r)).is_some();
-    let mut entries: Vec<_> = rd.flatten().collect();
     entries.sort_by_key(|e| e.file_name());
     for e in entries {
         let name = e.file_name().to_string_lossy().to_string();
@@ -119,7 +132,10 @@ fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<Ign
         match e.file_type() {
             Ok(t) if t.is_dir() => walk_in(&p, out, depth + 1, rules, ignore_files, audio, live),
             Ok(_) if audio => {
-                if crate::music::is_audio(&p) { out.push(p) }
+                if crate::music::is_audio(&p) {
+                    let m = e.metadata().ok();
+                    out.push(Listed { size: m.as_ref().map(|m| m.len()).unwrap_or(0), mtime: m.as_ref().map(mtime_of).unwrap_or(0), path: p })
+                }
             }
             Ok(_) if is_video(&p) => {
                 // Skip release "sample" clips (name is "sample", ends in "-sample"/".sample",
@@ -127,10 +143,12 @@ fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<Ign
                 let stem = p.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
                 let in_sample_dir = dir.file_name().is_some_and(|d| d.to_string_lossy().eq_ignore_ascii_case("sample"));
                 let is_sample = stem == "sample" || stem.ends_with("-sample") || stem.ends_with(".sample") || stem.ends_with("_sample") || in_sample_dir;
-                if is_sample && file_size(&p) < 300 * 1024 * 1024 {
+                let m = e.metadata().ok();
+                let size = m.as_ref().map(|m| m.len()).unwrap_or(0);
+                if is_sample && size < 300 * 1024 * 1024 {
                     continue;
                 }
-                out.push(p)
+                out.push(Listed { size, mtime: m.as_ref().map(mtime_of).unwrap_or(0), path: p })
             }
             _ => {}
         }
@@ -150,7 +168,12 @@ pub fn folder_signature(paths: &[String], audio: bool) -> u64 {
         let (mut files, mut ignores) = (vec![], vec![]);
         walk_in(Path::new(root), &mut files, 0, &mut vec![], &mut ignores, audio, None);
         // A changed ignore file counts as a change too.
-        for f in files.iter().chain(ignores.iter()) {
+        for f in &files {
+            f.path.hash(&mut h);
+            f.size.hash(&mut h);
+            f.mtime.hash(&mut h);
+        }
+        for f in &ignores {
             f.hash(&mut h);
             file_size(f).hash(&mut h);
             file_mtime(f).hash(&mut h);
@@ -1002,7 +1025,7 @@ where
         let mut files = vec![];
         walk(only.unwrap_or(&root), &mut files, 0, section.kind == SectionKind::Music, Some((section.id, found.len())));
         for f in files {
-            found.push(Found { size: file_size(&f), mtime: file_mtime(&f), path: f, root: root.clone() });
+            found.push(Found { size: f.size, mtime: f.mtime, path: f.path, root: root.clone() });
         }
     }
     let mut report = ScanReport { files_seen: found.len(), ..Default::default() };
