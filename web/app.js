@@ -1096,7 +1096,15 @@ async function pollActivity() {
   document.querySelectorAll('.poster.busy').forEach(e => e.classList.remove('busy'));
   for (const wid of (st.working_ids || (st.working_on ? [st.working_on] : []))) document.querySelectorAll(`.poster[data-id="${wid}"]`).forEach(e => e.classList.add('busy'));
   const parts = [];
-  if (scanning.length) parts.push(h('span', { class: 'txt' }, t('Scanning {name}', { name: scanning.join(', ') })));
+  // A scan says where it is: listing folders, then file n of m (with the file in the tooltip), then finishing.
+  const scanNote = p => p.phase === 'reading' && p.total ? t('Scanning {name}: {done} of {total}', { name: p.name, done: fmtNum(p.done), total: fmtNum(p.total) })
+    : p.phase === 'finishing' ? t('Scanning {name}: finishing', { name: p.name }) : t('Scanning {name}: looking through the folders', { name: p.name });
+  const scans = st.scan_progress || [];
+  for (const name of scanning.filter(n => !scans.some(p => p.name === n))) parts.push(h('span', { class: 'txt' }, t('Scanning {name}', { name })));
+  for (const p of scans) {
+    parts.push(h('span', { class: 'txt' }, scanNote(p)));
+    if (p.phase === 'reading' && p.total) parts.push(h('span', { class: 'pbar' }, h('i', { style: `width:${Math.round(100 * p.done / p.total)}%` })));
+  }
   // Optimizing counts in hundredths of a video: shown as a percentage.
   if (st.job) parts.push(h('span', { class: 'txt' }, st.job.label === 'Optimizing' ? t('{label}: {pct} %', { label: t(st.job.label), pct: Math.floor(100 * st.job.done / Math.max(1, st.job.total)) })
     : t('{label}: {done} of {total}', { label: t(st.job.label), done: st.job.done, total: st.job.total })), h('span', { class: 'pbar' }, h('i', { style: `width:${Math.round(100 * st.job.done / Math.max(1, st.job.total))}%` })));
@@ -1111,7 +1119,7 @@ async function pollActivity() {
       } }, t('Cancel')));
     }
     el.replaceChildren(h('span', { class: 'spin' }), ...parts);
-    el.title = [scanning.length ? t('Scanning {name}', { name: scanning.join(', ') }) : '', st.job ? t('{label}: {done} of {total}', { label: t(st.job.label), done: st.job.done, total: st.job.total }) : '',
+    el.title = [...scans.map(p => scanNote(p) + (p.current ? '\n' + p.current : '')), ...scanning.filter(n => !scans.some(p => p.name === n)).map(n => t('Scanning {name}', { name: n })), st.job ? t('{label}: {done} of {total}', { label: t(st.job.label), done: st.job.done, total: st.job.total }) : '',
       st.working_on || st.queued > 0 ? t('Updating details') + (st.working_title ? ': ' + st.working_title : '') + (st.queued > 0 ? ' · ' + t('{n} left', { n: st.queued }) : '') : '',
       st.last && st.last.message ? t('Last: {msg}', { msg: t(st.last.message) }) : ''].filter(Boolean).join('\n') || t('Background work on the server');
     el.style.display = 'flex';

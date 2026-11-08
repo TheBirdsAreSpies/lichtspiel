@@ -348,6 +348,9 @@ I18N.add('de', 'Deutsch', {
 
     // ---------- sign in, setup, invites
     'Sign in': 'Anmelden',
+    'Scanning {name}: {done} of {total}': '{name} wird durchsucht: {done} von {total}',
+    'Scanning {name}: finishing': '{name} wird durchsucht: Abschluss',
+    'Scanning {name}: looking through the folders': '{name} wird durchsucht: Ordner werden gelesen',
     'Mixed': 'Gemischt',
     'Edit {n} titles': '{n} Titel bearbeiten',
     'Only what you change is saved. A field that differs between the titles says “Mixed”.': 'Gespeichert wird nur, was du änderst. Ein Feld, das sich zwischen den Titeln unterscheidet, zeigt „Gemischt“.',
