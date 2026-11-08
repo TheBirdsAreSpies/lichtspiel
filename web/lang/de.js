@@ -348,6 +348,12 @@ I18N.add('de', 'Deutsch', {
 
     // ---------- sign in, setup, invites
     'Sign in': 'Anmelden',
+    'Mixed': 'Gemischt',
+    'Edit {n} titles': '{n} Titel bearbeiten',
+    'Only what you change is saved. A field that differs between the titles says “Mixed”.': 'Gespeichert wird nur, was du änderst. Ein Feld, das sich zwischen den Titeln unterscheidet, zeigt „Gemischt“.',
+    'What only some of the titles have stays as it is. Add it here to give it to all.': 'Was nur manche Titel haben, bleibt wie es ist. Trage es hier ein, damit alle es bekommen.',
+    'Nothing changed': 'Nichts geändert',
+    '{n} titles saved': '{n} Titel gespeichert',
     'Signed in': 'Angemeldet',
     'Signed in as {name}': 'Angemeldet als {name}',
     'Loading your libraries…': 'Deine Bibliotheken werden geladen …',

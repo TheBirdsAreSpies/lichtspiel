@@ -359,7 +359,17 @@ function pickGrid(items, cardOpts) {
     h('button', { class: 'small', onclick: mark(true) }, t('Mark watched')),
     h('button', { class: 'small', onclick: mark(false) }, t('Mark unwatched')),
     playlistMenu,
-    S.me.admin ? h('button', { class: 'small', onclick: async () => { if (picked.size !== 1) return toast(t('Pick one title to edit its details')); editItem(await fullItem(chosen()[0])); } }, t('Edit')) : null,
+    S.me.admin ? h('button', { class: 'small', onclick: async () => {
+      if (picked.size === 1) return editItem(await fullItem(chosen()[0]));
+      // Several titles: one dialog for all; afterwards the cards show what was saved.
+      bulkEdit(chosen(), async () => {
+        for (const i of [...picked]) {
+          try { Object.assign(items[i], meta(await GET('/library/metadata/' + items[i].id))[0]); } catch (err) { /* keep what we have */ }
+          const fresh = card(i); cards[i].replaceWith(fresh); cards[i] = fresh;
+        }
+        clear();
+      });
+    } }, t('Edit')) : null,
     h('button', { class: 'small', title: t('More'), 'aria-label': t('More'), onclick: moreMenu }, '⋯'));
   const draw = () => {
     cards.forEach((c, i) => c.classList.toggle('picked', picked.has(i)));
@@ -1257,6 +1267,84 @@ async function editItem(it, saved) {
       body.year = body.year ? Number(body.year) : null; body.rating = body.rating ? Number(String(body.rating).replace(',', '.')) : null;
       if (!body.sort_title.trim()) delete body.sort_title;
       await api('PUT', '/library/metadata/' + it.id, body); box.remove(); saved ? saved() : itemPage(it.id);
+    } }, t('Save')), h('button', { onclick: () => box.remove() }, t('Cancel')))]);
+}
+
+// Edit several titles at once. A field that is the same in all of them shows its value, one that
+// differs says "Mixed"; only what is changed is saved. Lists (genres, directors, labels …) add and remove:
+// what only some titles have stays unless it is taken out of the list here.
+async function bulkEdit(picked, saved) {
+  const its = await Promise.all(picked.map(fullItem));
+  const langs = ((await GET('/api/settings').catch(() => null)) || {}).languages || [];
+  const ex = it => it.extra || {};
+  const f = {};
+  const text = (k, label, get, o = {}) => {
+    const vals = its.map(it => { const v = get(it); return v == null ? '' : String(v); });
+    const mixed = vals.some(v => v !== vals[0]), init = mixed ? '' : vals[0];
+    const el = h(o.area ? 'textarea' : 'input', { value: init, type: o.type || 'text', placeholder: mixed ? t('Mixed') : '', style: 'width:100%' });
+    f[k] = { kind: 'text', el, init, num: o.num };
+    return formRow(label, el, null, o.area);
+  };
+  const tags = (k, label, get) => {
+    const lists = its.map(it => get(it) || []);
+    const common = lists[0].filter(v => lists.every(l => l.includes(v)));
+    const mixed = lists.some(l => l.length !== common.length);
+    const el = h('input', { value: common.join(', '), placeholder: mixed ? t('Mixed') : '', style: 'width:100%' });
+    f[k] = { kind: 'tags', el, common, get };
+    return formRow(label, el, mixed ? t('What only some of the titles have stays as it is. Add it here to give it to all.') : null);
+  };
+  const choice = (k, label, opts, get) => {
+    const vals = its.map(it => get(it) || ''), mixed = vals.some(v => v !== vals[0]), init = mixed ? '__mixed' : vals[0];
+    const el = h('select', {}, [...(mixed ? [['__mixed', t('Mixed')]] : []), ...opts].map(([v, n]) => h('option', { value: v, selected: v === init }, n)));
+    f[k] = { kind: 'text', el, init };
+    return formRow(label, el);
+  };
+  const movies = its.every(it => it.type === 'movie' || it.type === 'episode');
+  const panes = [
+    [t('General'), [
+      text('original_title', t('Original title'), it => ex(it).original_title),
+      movies ? text('edition', t('Edition (e.g. Director’s Cut)'), it => ex(it).edition) : null,
+      text('originally_available', t('Originally available'), it => (ex(it).originally_available || '').slice(0, 10), { type: 'date' }),
+      text('year', t('Year'), it => it.year, { num: true }), text('content_rating', t('Age rating'), it => it.contentRating), text('rating', t('Rating (0-10)'), it => it.rating, { num: true }),
+      text('studio', t('Studio'), it => it.studio), text('tagline', t('Tagline'), it => it.tagline), text('summary', t('Summary'), it => it.summary, { area: true })]],
+    [t('Tags'), [
+      tags('directors', t('Directors'), it => ex(it).directors), tags('countries', t('Countries'), it => ex(it).countries), tags('genres', t('Genres'), it => it.genres),
+      tags('writers', t('Writers'), it => ex(it).writers), tags('producers', t('Producers'), it => ex(it).producers), tags('collections', t('Collections'), it => ex(it).collections)]],
+    [t('Labels'), [tags('labels', t('Labels (comma separated)'), it => ex(it).labels)]],
+    [t('Advanced'), [
+      choice('language_override', t('Language for details'), [['', t('Library default')], ...langs.map(l => [l.code, l.name])], it => ex(it).language_override),
+      choice('credits_detection', t('Detect credits'), [['', t('Library default')], ['on', t('Yes')], ['off', t('No')]], it => ex(it).credits_detection),
+      choice('use_original_title', t('Use original title'), [['', t('Library default')], ['yes', t('Yes')], ['no', t('No')]], it => ex(it).use_original_title)]]];
+  const bodies = panes.map(([, kids], i) => h('div', { style: i ? 'display:none' : '' }, kids));
+  const links = panes.map(([name], i) => h('a', { href: '#', class: i ? '' : 'on', onclick: e => {
+    e.preventDefault(); links.forEach((l, j) => { l.classList.toggle('on', j === i); bodies[j].style.display = j === i ? '' : 'none'; });
+  } }, name));
+  const split = s => s.split(',').map(x => x.trim()).filter(Boolean);
+  // What to send to each title: only the fields that were changed.
+  const bodyFor = it => {
+    const body = {};
+    for (const [k, c] of Object.entries(f)) {
+      if (c.kind === 'tags') {
+        const now = split(c.el.value), add = now.filter(v => !c.common.includes(v)), del = c.common.filter(v => !now.includes(v));
+        if (!add.length && !del.length) continue;
+        body[k] = [...(c.get(it) || []).filter(v => !del.includes(v)), ...add.filter(v => !(c.get(it) || []).includes(v))];
+      } else if (c.el.value !== c.init && c.el.value !== '__mixed') {
+        const v = c.el.value;
+        body[k] = c.num ? (v === '' ? null : Number(String(v).replace(',', '.'))) : v;
+      }
+    }
+    return body;
+  };
+  const box = modal(t('Edit {n} titles', { n: its.length }), [
+    h('p', { class: 'dim', style: 'margin-top:0' }, t('Only what you change is saved. A field that differs between the titles says “Mixed”.')),
+    h('div', { class: 'tabs' }, links), bodies,
+    h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: async e => {
+      const jobs = its.map(it => [it, bodyFor(it)]).filter(([, b]) => Object.keys(b).length);
+      if (!jobs.length) { box.remove(); return toast(t('Nothing changed')); }
+      e.target.disabled = true;
+      try { for (const [it, b] of jobs) await api('PUT', '/library/metadata/' + it.id, b); }
+      catch (err) { e.target.disabled = false; return toast(err.message); }
+      box.remove(); toast(t('{n} titles saved', { n: jobs.length })); if (saved) saved();
     } }, t('Save')), h('button', { onclick: () => box.remove() }, t('Cancel')))]);
 }
 
