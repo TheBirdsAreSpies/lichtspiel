@@ -812,7 +812,27 @@ pub fn cast_photo(app: &Arc<App>, user: &User, iid: &str, n: &str) -> Resp {
     with_cache(serve_file(&p, mime, None, false))
 }
 
-pub fn thumb(app: &Arc<App>, user: &User, iid: &str) -> Resp {
+/// A smaller copy of a poster (`width` px wide, never enlarged), made once with ffmpeg and kept in
+/// cache/thumbs, so lists do not download every full-size original. None = use the original.
+fn scaled_poster(app: &Arc<App>, id: u64, src: &Path, width: u32) -> Option<PathBuf> {
+    let out = app.data_dir.join("cache").join("thumbs").join(format!("{id}_w{width}.jpg"));
+    let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    if std::fs::metadata(&out).is_ok_and(|m| m.len() > 0) && modified(&out) >= modified(src) { return Some(out); }
+    let _ = std::fs::create_dir_all(out.parent()?);
+    // Written under a name of its own and then renamed, so two requests never read a half-written picture.
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let tmp = out.with_file_name(format!("{id}_w{width}_{nanos}.tmp.jpg"));
+    let ran = Command::new(app.settings().ffmpeg)
+        .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i"]).arg(src)
+        .args(["-frames:v", "1", "-vf", &format!("scale='min({width},iw)':-2"), "-q:v", "4"]).arg(&tmp)
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+        .status().is_ok_and(|s| s.success());
+    if ran && std::fs::rename(&tmp, &out).is_ok() { return Some(out); }
+    let _ = std::fs::remove_file(&tmp);
+    None
+}
+
+pub fn thumb(app: &Arc<App>, user: &User, iid: &str, width: Option<u32>) -> Resp {
     let (poster, file, duration, title, kind, first_leaf, id) = {
         let db = app.db.lock().unwrap();
         let Some(it) = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)) else { return fail(404, "Not found") };
@@ -833,6 +853,9 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str) -> Resp {
     // The type is read from the file itself (a .jpg may really be a PNG);
     // something that is not a photo at all is skipped.
     if let Some((p, mime)) = poster.and_then(|p| crate::metadata::file_image_type(Path::new(&p)).map(|m| (p, m))) {
+        if let Some(small) = width.filter(|w| *w >= 64).and_then(|w| scaled_poster(app, id, Path::new(&p), w)) {
+            return with_cache(serve_file(&small, "image/jpeg", None, false));
+        }
         return with_cache(serve_file(Path::new(&p), mime, None, false));
     }
     let cache: PathBuf = app.data_dir.join("cache").join("thumbs").join(format!("{id}.jpg"));

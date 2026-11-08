@@ -2502,7 +2502,44 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
 
 // ---------------------------------------------------------------- JSON views
 
+/// Who is whose child and which items are merged versions of which, found in one pass over the
+/// library. A list of items builds it once; without it every item would scan the whole library.
+pub struct Index {
+    kids: HashMap<u64, Vec<u64>>,
+    versions: HashMap<u64, Vec<u64>>,
+}
+
+impl Index {
+    pub fn build(db: &Db) -> Index {
+        let mut kids: HashMap<u64, Vec<u64>> = HashMap::new();
+        let mut versions: HashMap<u64, Vec<u64>> = HashMap::new();
+        for i in db.items.values() {
+            if let Some(p) = i.parent_id { kids.entry(p).or_default().push(i.id); }
+            if let Some(v) = i.version_of() { versions.entry(v).or_default().push(i.id); }
+        }
+        Index { kids, versions }
+    }
+
+    /// Everything playable below an item (like `Db::leaves`).
+    pub fn leaves(&self, db: &Db, id: u64) -> Vec<u64> {
+        let mut out = vec![];
+        self.collect_leaves(db, id, &mut out);
+        out
+    }
+
+    fn collect_leaves(&self, db: &Db, id: u64, out: &mut Vec<u64>) {
+        let Some(item) = db.items.get(&id) else { return };
+        if item.kind.playable() { out.push(id); return; }
+        for c in self.kids.get(&id).into_iter().flatten() { self.collect_leaves(db, *c, out); }
+    }
+}
+
 pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
+    item_json_ix(db, user, it, detail, None)
+}
+
+/// Like `item_json`; with an index (for lists) the children and versions are looked up, not searched for.
+pub fn item_json_ix(db: &Db, user: &User, it: &Item, detail: bool, ix: Option<&Index>) -> Value {
     let v = db.view(user.id, it.id);
     let mut o = json!({
         "ratingKey": it.id.to_string(),
@@ -2553,11 +2590,11 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
         o["viewCount"] = json!(v.view_count);
         if v.last_viewed_at > 0 { o["lastViewedAt"] = json!(v.last_viewed_at); }
     } else {
-        let leaves = db.leaves(it.id);
+        let leaves = match ix { Some(ix) => ix.leaves(db, it.id), None => db.leaves(it.id) };
         let seen = leaves.iter().filter(|l| db.view(user.id, **l).view_count > 0).count();
         o["leafCount"] = json!(leaves.len());
         o["viewedLeafCount"] = json!(seen);
-        o["childCount"] = json!(db.children(it.id).len());
+        o["childCount"] = json!(match ix { Some(ix) => ix.kids.get(&it.id).map_or(0, |k| k.len()), None => db.children(it.id).len() });
         if it.kind == ItemKind::Album { o["releaseType"] = it.extra.get("release").cloned().unwrap_or(json!("album")); }
     }
     if let Some(p) = it.parent_id.and_then(|p| db.items.get(&p)) {
@@ -2579,7 +2616,10 @@ pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
     }
     // The file, then (if merged by hand) the other versions of it: 4K first.
     {
-        let mut versions: Vec<&Item> = db.items.values().filter(|x| x.version_of() == Some(it.id)).collect();
+        let mut versions: Vec<&Item> = match ix {
+            Some(ix) => ix.versions.get(&it.id).into_iter().flatten().filter_map(|i| db.items.get(i)).collect(),
+            None => db.items.values().filter(|x| x.version_of() == Some(it.id)).collect(),
+        };
         versions.sort_by_key(|x| (std::cmp::Reverse(x.file.as_ref().and_then(|f| f.video()).map(|v| v.height).unwrap_or(0)), x.id));
         let mut list: Vec<Value> = vec![];
         for m in std::iter::once(it).chain(versions) {
@@ -2806,8 +2846,9 @@ pub fn with_item(app: &Arc<App>, user: &User, iid: &str, f: impl FnOnce(&Db, &It
     }
 }
 
-pub fn hub(db: &Db, user: &User, key: &str, title: &str, ids: Vec<u64>) -> Value {
-    let list: Vec<Value> = ids.iter().filter_map(|i| db.items.get(i)).map(|i| item_json(db, user, i, false)).collect();
+/// One row of the home page; `ix` is built once for all the rows.
+pub fn hub_ix(db: &Db, user: &User, key: &str, title: &str, ids: Vec<u64>, ix: &Index) -> Value {
+    let list: Vec<Value> = ids.iter().filter_map(|i| db.items.get(i)).map(|i| item_json_ix(db, user, i, false, Some(ix))).collect();
     json!({"hubIdentifier": key, "title": title, "size": list.len(), "Metadata": list})
 }
 

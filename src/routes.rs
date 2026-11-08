@@ -806,7 +806,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let default_sort = if kind == ItemKind::Episode { "episode_order" } else { "title" };
             query::sort_items(&db, user.id, &mut ids, ctx.param("sort").filter(|s| !s.is_empty()).unwrap_or(default_sort));
             let (pg, off) = page(ctx, &ids);
-            let list: Vec<Value> = pg.iter().filter_map(|i| db.items.get(i)).map(|i| item_json(&db, &user, i, false)).collect();
+            let ix = Index::build(&db);
+            let list: Vec<Value> = pg.iter().filter_map(|i| db.items.get(i)).map(|i| item_json_ix(&db, &user, i, false, Some(&ix))).collect();
             ok(container(list, ids.len(), off, json!({"librarySectionID": sid, "librarySectionTitle": sec.name, "viewGroup": kind.as_str()})))
         }
         // How many items start with each letter (everything else under "#"), in A-Z order, for the
@@ -930,7 +931,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let n = list.len();
             ok(container(list, n, 0, json!({})))
         }),
-        ("GET", ["library", "metadata", iid, "thumb"]) | ("GET", ["library", "metadata", iid, "thumb", _]) => thumb(app, &user, iid),
+        ("GET", ["library", "metadata", iid, "thumb"]) | ("GET", ["library", "metadata", iid, "thumb", _]) => thumb(app, &user, iid, ctx.num("w").map(|w| w.min(4000) as u32)),
         ("GET", ["library", "metadata", iid, "cast", n]) => cast_photo(app, &user, iid, n),
         ("GET", ["library", "metadata", iid, slot @ ("logo" | "square")]) => custom_image(app, &user, iid, slot),
         ("PUT", ["library", "metadata", iid, "image", slot]) => { if !admin { return need_admin(); } set_image(app, iid, slot, &ctx.body) }
@@ -1368,14 +1369,15 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         // ---------------- hubs and search
         ("GET", ["hubs"]) | ("GET", ["hubs", "home"]) => {
             let db = app.db.lock().unwrap();
-            let mut hubs = vec![hub(&db, &user, "continueWatching", "Continue Watching", continue_watching(&db, &user))];
+            let ix = Index::build(&db);
+            let mut hubs = vec![hub_ix(&db, &user, "continueWatching", "Continue Watching", continue_watching(&db, &user), &ix)];
             let mut wl = crate::dashboard::watchlist_ids(&db, &user, "", None);
             wl.truncate(20);
-            hubs.push(hub(&db, &user, "watchlist", "Watchlist", wl));
+            hubs.push(hub_ix(&db, &user, "watchlist", "Watchlist", wl, &ix));
             // Rows for the time of year (Halloween, Christmas ...); ?date=MM-DD tries another day.
             let day = ctx.param("date").and_then(related::month_day).or_else(|| related::month_day(&db::today())).unwrap_or((1, 1));
             for o in related::occasion_rows(&db, &user, day, 20) {
-                hubs.push(hub(&db, &user, &o.identifier, &o.title, o.ids));
+                hubs.push(hub_ix(&db, &user, &o.identifier, &o.title, o.ids, &ix));
             }
             let episodes = if db.settings.group_recent_episodes {
                 let eps = recently_added(&db, &user, Some(ItemKind::Episode), 200);
@@ -1384,15 +1386,15 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 recently_added(&db, &user, Some(ItemKind::Episode), 20)
             };
             hubs.extend([
-                hub(&db, &user, "recentlyAddedMovies", "Recently Added Movies", recently_added(&db, &user, Some(ItemKind::Movie), 20)),
-                hub(&db, &user, "recentlyAddedEpisodes", "Recently Added TV", episodes),
-                hub(&db, &user, "recentlyAddedAlbums", "Recently Added Music", recently_added(&db, &user, Some(ItemKind::Album), 20)),
+                hub_ix(&db, &user, "recentlyAddedMovies", "Recently Added Movies", recently_added(&db, &user, Some(ItemKind::Movie), 20), &ix),
+                hub_ix(&db, &user, "recentlyAddedEpisodes", "Recently Added TV", episodes, &ix),
+                hub_ix(&db, &user, "recentlyAddedAlbums", "Recently Added Music", recently_added(&db, &user, Some(ItemKind::Album), 20), &ix),
             ]);
             for p in db.playlists.iter().filter(|p| p.pinned && visible_playlist(p, &user)) {
                 if matches!(p.default_key.as_deref(), Some("continue" | "recent_movies" | "recent_episodes")) { continue; }
                 let mut ids = query::playlist_items(&db, &user, p);
                 ids.truncate(20);
-                hubs.push(hub(&db, &user, &format!("playlist.{}", p.id), &p.title, ids));
+                hubs.push(hub_ix(&db, &user, &format!("playlist.{}", p.id), &p.title, ids, &ix));
             }
             hubs.retain(|h| h["size"].as_u64().unwrap_or(0) > 0);
             ok(json!({"MediaContainer": {"size": hubs.len(), "Hub": hubs}}))
@@ -1940,7 +1942,8 @@ fn narrow(db: &db::Db, user: &db::User, ids: Vec<u64>, ctx: &Ctx) -> Vec<u64> {
 }
 
 fn list_resp(db: &db::Db, user: &db::User, ids: &[u64], hub: &str) -> Resp {
-    let list: Vec<Value> = ids.iter().filter_map(|i| db.items.get(i)).map(|i| item_json(db, user, i, false)).collect();
+    let ix = Index::build(db);
+    let list: Vec<Value> = ids.iter().filter_map(|i| db.items.get(i)).map(|i| item_json_ix(db, user, i, false, Some(&ix))).collect();
     let n = list.len();
     ok(container(list, n, 0, json!({"hubIdentifier": hub})))
 }
