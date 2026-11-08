@@ -769,17 +769,24 @@ async function sectionPage(id, qs) {
   };
   // The letters at the side (only when sorted by title).
   const letters = h('div', { class: 'letters' });
-  const marks = []; // {btn, from, to}: the part of the list a letter stands for
+  const marks = []; // {btn, ranges}: the parts of the list a letter stands for
   if (sortNow.field === 'title' && total > PAGE_SIZE / 2) {
     GET(`/library/sections/${id}/firstCharacter?${filterQuery()}`).then(r => {
       const dirs = r.MediaContainer.Directory; let sum = 0;
-      letters.replaceChildren(...dirs.map(d => {
-        // The server says where the letter's titles begin and end in the A-Z list (an older one only counts them).
+      // A letter can have several runs in the list (Ä/Ö/Ü sort behind Z): one button, all its places.
+      const byKey = new Map();
+      for (const d of dirs) {
+        // The server says where a run begins and ends in the A-Z list (an older one only counts the titles).
         const from = d.start !== undefined ? d.start : sum, to = d.end !== undefined ? d.end : sum + d.size;
         sum += d.size;
-        const lo = Math.max(0, sortNow.desc ? total - to : from), hi = sortNow.desc ? total - from : to;
-        const btn = h('button', { title: `${d.key} · ${d.size}`, onclick: () => jump(lo) }, d.key);
-        marks.push({ btn, from: lo, to: hi });
+        const run = [Math.max(0, sortNow.desc ? total - to : from), sortNow.desc ? total - from : to];
+        const m = byKey.get(d.key) || { key: d.key, size: 0, ranges: [] };
+        m.size += d.size; m.ranges.push(run); byKey.set(d.key, m);
+      }
+      letters.replaceChildren(...[...byKey.values()].map(m => {
+        const lo = Math.min(...m.ranges.map(r => r[0]));
+        const btn = h('button', { title: `${m.key} · ${m.size}`, onclick: () => jump(lo) }, m.key);
+        marks.push({ btn, ranges: m.ranges });
         return btn;
       }));
       showPos();
@@ -826,7 +833,7 @@ async function sectionPage(id, qs) {
     if (forced !== null && Date.now() - forcedAt < 1500) pos = forced; else forced = null;
     lastPos = pos;
     countEl.textContent = t('{pos} / {total}', { pos: fmtNum(pos + 1), total: fmtNum(total) });
-    for (const m of marks) m.btn.classList.toggle('on', pos >= m.from && pos < m.to);
+    for (const m of marks) m.btn.classList.toggle('on', m.ranges.some(([lo, hi]) => pos >= lo && pos < hi));
   };
   const onPos = () => { if (!raf) raf = requestAnimationFrame(showPos); };
   window.addEventListener('scroll', onPos, { passive: true });

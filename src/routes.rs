@@ -828,17 +828,15 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             // In the order the list has (A-Z): where each letter's titles begin and end. Worked out from the
             // sorted list itself, so the letters land exactly, however titles with signs and umlauts sort.
             query::sort_items(&db, user.id, &mut ids, "title:asc");
-            let mut spans: std::collections::BTreeMap<char, (usize, usize, usize)> = Default::default();
+            // Runs of the same letter, one after the other: a letter whose titles are not all in one place (Ä, Ö, Ü
+            // sort behind Z; signs are scattered) has several runs.
+            let mut runs: Vec<(char, usize, usize)> = vec![];
             for (pos, i) in ids.iter().filter_map(|i| db.items.get(i)).enumerate() {
                 let c = i.sort_title.chars().next().map(|c| c.to_uppercase().next().unwrap_or(c)).filter(|c| c.is_alphabetic()).unwrap_or('#');
                 let c = match c { 'Ä' => 'A', 'Ö' => 'O', 'Ü' => 'U', c => c };
-                let e = spans.entry(c).or_insert((pos, pos, 0));
-                e.1 = pos;
-                e.2 += 1;
+                match runs.last_mut() { Some(r) if r.0 == c => r.2 = pos + 1, _ => runs.push((c, pos, pos + 1)) }
             }
-            let mut list: Vec<(char, (usize, usize, usize))> = spans.into_iter().collect();
-            list.sort_by_key(|(c, s)| (s.0, *c));
-            ok(json!({"MediaContainer": {"size": list.len(), "total": ids.len(), "Directory": list.iter().map(|(c, (first, last, n))| json!({"key": c.to_string(), "size": n, "start": first, "end": last + 1})).collect::<Vec<_>>()}}))
+            ok(json!({"MediaContainer": {"size": runs.len(), "total": ids.len(), "Directory": runs.iter().map(|(c, from, to)| json!({"key": c.to_string(), "size": to - from, "start": from, "end": to})).collect::<Vec<_>>()}}))
         }
         ("GET", ["library", "sections", sid, "genres"]) => {
             let Some(sid) = id(sid) else { return fail(404, "No such library") };
