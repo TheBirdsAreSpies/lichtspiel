@@ -1118,7 +1118,9 @@ async function pollActivity() {
   const parts = [];
   // A scan says where it is: listing folders, then file n of m (with the file in the tooltip), then finishing.
   const scanNote = p => p.phase === 'reading' && p.total ? t('Scanning {name}: {done} of {total}', { name: p.name, done: fmtNum(p.done), total: fmtNum(p.total) })
-    : p.phase === 'finishing' ? t('Scanning {name}: finishing', { name: p.name }) : t('Scanning {name}: looking through the folders', { name: p.name });
+    : p.phase === 'finishing' ? t('Scanning {name}: finishing', { name: p.name })
+    : p.done ? t('Scanning {name}: looking through the folders, {n} videos found', { name: p.name, n: fmtNum(p.done) })
+    : t('Scanning {name}: looking through the folders', { name: p.name });
   const scans = st.scan_progress || [];
   for (const name of scanning.filter(n => !scans.some(p => p.name === n))) parts.push(h('span', { class: 'txt' }, t('Scanning {name}', { name })));
   for (const p of scans) {

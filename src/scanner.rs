@@ -81,18 +81,23 @@ fn ignored(rules: &[IgnoreRules], path: &Path) -> bool {
     })
 }
 
-fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, audio: bool) {
-    walk_in(dir, out, depth, &mut vec![], &mut vec![], audio);
+/// `live`: the library this walk is a scan of, and how many files earlier folders gave; the progress
+/// then says how many videos are found so far and which folder it is in.
+fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, audio: bool, live: Option<(u64, usize)>) {
+    walk_in(dir, out, depth, &mut vec![], &mut vec![], audio, live);
 }
 
 /// Like `walk`, and lists the ignore files it read (`ignore_files`).
-fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<IgnoreRules>, ignore_files: &mut Vec<PathBuf>, audio: bool) {
+fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<IgnoreRules>, ignore_files: &mut Vec<PathBuf>, audio: bool, live: Option<(u64, usize)>) {
     if depth > 12 {
         return;
     }
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
+    if let Some((section, before)) = live {
+        step(section, "listing", before + out.len(), 0, &dir.to_string_lossy());
+    }
     let own = read_ignore(dir);
     if own.is_some() {
         ignore_files.push(dir.join(IGNORE_FILE));
@@ -112,7 +117,7 @@ fn walk_in(dir: &Path, out: &mut Vec<PathBuf>, depth: usize, rules: &mut Vec<Ign
             continue;
         }
         match e.file_type() {
-            Ok(t) if t.is_dir() => walk_in(&p, out, depth + 1, rules, ignore_files, audio),
+            Ok(t) if t.is_dir() => walk_in(&p, out, depth + 1, rules, ignore_files, audio, live),
             Ok(_) if audio => {
                 if crate::music::is_audio(&p) { out.push(p) }
             }
@@ -143,7 +148,7 @@ pub fn folder_signature(paths: &[String], audio: bool) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     for root in paths {
         let (mut files, mut ignores) = (vec![], vec![]);
-        walk_in(Path::new(root), &mut files, 0, &mut vec![], &mut ignores, audio);
+        walk_in(Path::new(root), &mut files, 0, &mut vec![], &mut ignores, audio, None);
         // A changed ignore file counts as a change too.
         for f in files.iter().chain(ignores.iter()) {
             f.hash(&mut h);
@@ -946,7 +951,7 @@ struct Found {
 /// How far a running scan is, per library: shown in the top bar of the web app.
 #[derive(Clone, Default)]
 pub struct ScanStep {
-    /// "listing" (walking the folders), "reading" (file by file) or "finishing".
+    /// "listing" (walking the folders; `done` = videos found so far, `current` = the folder), "reading" (file by file) or "finishing".
     pub phase: &'static str,
     pub done: usize,
     pub total: usize,
@@ -995,7 +1000,7 @@ where
         let root = PathBuf::from(root);
         if only.is_some_and(|o| !o.starts_with(&root)) { continue; }
         let mut files = vec![];
-        walk(only.unwrap_or(&root), &mut files, 0, section.kind == SectionKind::Music);
+        walk(only.unwrap_or(&root), &mut files, 0, section.kind == SectionKind::Music, Some((section.id, found.len())));
         for f in files {
             found.push(Found { size: file_size(&f), mtime: file_mtime(&f), path: f, root: root.clone() });
         }
