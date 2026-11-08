@@ -602,33 +602,62 @@ pub fn sort_items(db: &Db, user_id: u64, ids: &mut Vec<u64>, sort: &str) {
         return;
     }
     let seed = now() / 3600; // random order changes once an hour
+    use std::collections::HashMap;
+    // What each key sorts by is worked out once per item here, not again at every comparison
+    // (that was a watch-state copy and some strings per comparison: slow on big libraries).
+    enum Key {
+        Random,
+        Title,
+        Episode(HashMap<u64, (String, i64)>),
+        Field(HashMap<u64, FieldValue>),
+    }
+    let per_item = |f: &mut dyn FnMut(&Item) -> Option<()>| {
+        for id in ids.iter() {
+            if let Some(it) = db.items.get(id) { f(it); }
+        }
+    };
+    let prepared: Vec<Key> = keys
+        .iter()
+        .map(|(f, _)| match f.as_str() {
+            "random" => Key::Random,
+            "title" => Key::Title,
+            "episode_order" | "index" => {
+                let mut m = HashMap::new();
+                per_item(&mut |i: &Item| {
+                    let s = match field(db, user_id, i, "season") {
+                        FieldValue::Num(n) => n.unwrap_or(0.0),
+                        _ => 0.0,
+                    };
+                    m.insert(i.id, (sort_show(db, i), (s * 10000.0) as i64 + i.index.unwrap_or(0) as i64));
+                    Some(())
+                });
+                Key::Episode(m)
+            }
+            other => {
+                let mut m = HashMap::new();
+                per_item(&mut |i: &Item| { m.insert(i.id, field(db, user_id, i, other)); Some(()) });
+                Key::Field(m)
+            }
+        })
+        .collect();
     ids.sort_by(|a, b| {
         let (Some(ia), Some(ib)) = (db.items.get(a), db.items.get(b)) else {
             return Ordering::Equal;
         };
-        for (f, desc) in &keys {
-            let o = match f.as_str() {
-                "random" => hash_mix(*a, seed).cmp(&hash_mix(*b, seed)),
-                "title" => ia.sort_title.cmp(&ib.sort_title),
-                "episode_order" | "index" => {
-                    let k = |i: &Item| {
-                        let s = match field(db, user_id, i, "season") {
-                            FieldValue::Num(n) => n.unwrap_or(0.0),
-                            _ => 0.0,
-                        };
-                        (sort_show(db, i), (s * 10000.0) as i64 + i.index.unwrap_or(0) as i64)
-                    };
-                    k(ia).cmp(&k(ib))
-                }
-                _ => {
-                    let (x, y) = (field(db, user_id, ia, f), field(db, user_id, ib, f));
+        for ((_, desc), key) in keys.iter().zip(&prepared) {
+            let o = match key {
+                Key::Random => hash_mix(*a, seed).cmp(&hash_mix(*b, seed)),
+                Key::Title => ia.sort_title.cmp(&ib.sort_title),
+                Key::Episode(m) => m[a].cmp(&m[b]),
+                Key::Field(m) => {
+                    let (x, y) = (&m[a], &m[b]);
                     // Items without a value come last, whichever way it is sorted.
                     let empty = |v: &FieldValue| matches!(v, FieldValue::Num(None)) || matches!(v, FieldValue::Text(t) if t.iter().all(|s| s.is_empty()));
-                    match (empty(&x), empty(&y)) {
+                    match (empty(x), empty(y)) {
                         (true, true) => Ordering::Equal,
                         (true, false) => return Ordering::Greater,
                         (false, true) => return Ordering::Less,
-                        _ => cmp_field(&x, &y),
+                        _ => cmp_field(x, y),
                     }
                 }
             };
