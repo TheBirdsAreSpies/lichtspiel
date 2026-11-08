@@ -23,8 +23,8 @@ async function playlistsPage(qs) {
       h('button', { class: 'primary', onclick: () => smartEditor(null) }, t('+ New smart playlist'))),
     list.length ? h('div', { class: 'grid plgrid' }, list.map(pl => {
       const th = pl.thumbs || [];
-      const pic = th.length >= 4 ? h('div', { class: 'mosaic' }, th.slice(0, 4).map(u => h('img', { src: withTok(u), loading: 'lazy', alt: '' })))
-        : th.length ? h('img', { src: withTok(th[0]), loading: 'lazy', alt: '' }) : h('div', { class: 'initials' }, '♪');
+      const pic = th.length >= 4 ? h('div', { class: 'mosaic' }, th.slice(0, 4).map(u => h('img', { src: smallTok(u, 200), loading: 'lazy', alt: '' })))
+        : th.length ? h('img', { src: smallTok(th[0], 360), loading: 'lazy', alt: '' }) : h('div', { class: 'initials' }, '♪');
       return h('div', { class: 'card', onclick: () => { location.hash = '#/playlist/' + pl.id; } },
         h('div', { class: 'poster' }, pic,
           pl.leafCount ? h('button', { class: 'play', title: t('▶ Play'), 'aria-label': t('▶ Play'), onclick: e => { e.stopPropagation(); playPlaylist(pl.id); } }, icon('play')) : null),
@@ -105,7 +105,7 @@ async function playlistPage(id, qs) {
       h('input', { placeholder: t('Filter by title'), value: st.q, onchange: e => { st.q = e.target.value.trim(); go(); } }),
       h('span', { class: 'grow' }), h('span', { class: 'dim' }, t('{shown} of {all} items · {length}', { shown: res.totalSize, all: pl.leafCount, length: fmtDur(pl.duration) }))),
     items.length ? h('div', { class: 'list' }, items.map((it, i) => h('div', { class: 'li' },
-      h('img', { src: withTok(it.squareThumb || (it.type === 'episode' && it.grandparentThumb ? it.grandparentThumb : it.thumb)), loading: 'lazy', style: it.squareThumb || it.type === 'track' ? 'object-fit:cover' : '' }),
+      h('img', { src: smallTok(it.squareThumb || (it.type === 'episode' && it.grandparentThumb ? it.grandparentThumb : it.thumb), 120), loading: 'lazy', style: it.squareThumb || it.type === 'track' ? 'object-fit:cover' : '' }),
       h('div', { class: 'grow' }, h('a', { href: '#/item/' + it.id }, h('b', {}, it.type === 'episode' ? `${it.grandparentTitle} · ${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} ${it.title}` : it.type === 'track' ? `${it.grandparentTitle || ''} · ${it.title}` : it.title)),
         h('div', { class: 'dim' }, [it.type === 'track' ? it.parentTitle : null, it.year, fmtDur(it.duration), it.viewCount ? t('✓ watched') : '', it.viewOffset ? t('stopped at {time}', { time: fmtTime(it.viewOffset / 1000) }) : ''].filter(Boolean).join(' · '))),
       reorder ? [h('button', { class: 'small', title: t('Move up'), onclick: () => move(i, -1) }, '↑'), h('button', { class: 'small', title: t('Move down'), onclick: () => move(i, 1) }, '↓')] : null,
