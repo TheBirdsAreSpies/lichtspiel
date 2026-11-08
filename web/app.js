@@ -412,8 +412,13 @@ function scroller(cls, kids) {
 const row = (title, items) => items.length ? [h('h2', {}, t(title)), scroller('row', items.map(i => posterCard(i, { cont: title === 'Continue Watching' })))] : null;
 
 // ---------- home, search, browse
+// Grey placeholders while a page's rows are still on their way.
+const skeletonRows = n => Array.from({ length: n }, () => [h('div', { class: 'skel skel-h' }),
+  h('div', { class: 'row' }, Array.from({ length: 10 }, () => h('div', { class: 'card' }, h('div', { class: 'poster skel' }), h('div', { class: 'skel skel-t' }))))]);
 async function homePage() {
   markNav('home');
+  // Answer the click at once; the rows come when the server has them.
+  if (S.sections.length) set(h('h1', {}, t('Home')), skeletonRows(2));
   const hubs = (await GET('/hubs')).MediaContainer.Hub;
   if (!S.sections.length) {
     return set(h('h1', {}, t('Welcome')), h('div', { class: 'empty' },

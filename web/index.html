@@ -433,6 +433,10 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 .chips .chip{display:inline-flex;align-items:center;gap:10px;padding:4px 10px 4px 12px}
 .chips .chip span{margin-left:2px;padding-left:4px}
 .rule{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.skel{background:linear-gradient(90deg,var(--panel) 25%,var(--panel2) 50%,var(--panel) 75%);background-size:200% 100%;animation:skel 1.3s linear infinite;border-radius:var(--r)}
+.skel-h{width:200px;height:22px;margin:14px 0 10px}
+.skel-t{height:12px;margin-top:8px;width:80%}
+@keyframes skel{to{background-position:-200% 0}}
 
 /* phones: menu button instead of the side bar, a one-line scrolling library bar, smaller posters, scrolling tables and tabs */
 #navbtn{display:none}
