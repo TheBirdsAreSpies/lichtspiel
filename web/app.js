@@ -49,7 +49,15 @@ const MANAGE_PAGES = ['libraries', 'users', 'plugins', 'reports', 'api'];
 function set(...kids) {
   const list = kids.flat(9).filter(Boolean);
   if (typeof NAV !== 'undefined' && MANAGE_PAGES.includes(NAV.cur) && S.me && S.me.admin) list.unshift(settingsNav(NAV.cur));
+  // The tab bars scroll sideways on a phone: keep where they were, and keep the chosen tab in view.
+  const kept = [...main().querySelectorAll('.tabs')].map(e => e.scrollLeft);
   main().replaceChildren(...list); window.scrollTo(0, 0);
+  main().querySelectorAll('.tabs').forEach((bar, i) => {
+    if (kept[i]) bar.scrollLeft = kept[i];
+    const on = bar.querySelector('a.on'); if (!on || bar.scrollWidth <= bar.clientWidth) return;
+    const b = bar.getBoundingClientRect(), o = on.getBoundingClientRect();
+    if (o.left < b.left || o.right > b.right) bar.scrollLeft += o.left - b.left - (b.width - o.width) / 2;
+  });
 }
 function toast(msg, ms = 2600) { const el = $('#toast'); el.textContent = msg; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => (el.style.display = 'none'), ms); }
 const withTok = p => p + (p.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(S.token);
