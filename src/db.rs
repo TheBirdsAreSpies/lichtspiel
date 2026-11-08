@@ -1116,7 +1116,7 @@ impl Default for Settings {
             scheduled_scans_enabled: false,
             h264_preset: h264_preset(),
             h264_minimum_crf: min_crf(),
-            continue_watching_include_premieres: true,
+            continue_watching_include_premieres: false,
             metadata_enabled: true,
             metadata_language: lang(),
             tmdb_api_key: String::new(),
