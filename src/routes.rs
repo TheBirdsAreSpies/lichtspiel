@@ -791,7 +791,14 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 let db = app.db.lock().unwrap();
                 db.sections.iter().filter(|s| scanning_ids.contains(&s.id) && db.can_see_section(&user, s.id)).map(|s| s.name.clone()).collect()
             };
-            ok(json!({"queued": q, "scanning": scanning, "working_on": if busy == 0 { Value::Null } else { json!(busy) }, "working_title": busy_title, "working_ids": busy_all,
+            // How far each scan is: what it is doing, how many files of how many, and the file it is on.
+            let scan_progress: Vec<Value> = if scanning_ids.is_empty() { vec![] } else {
+                let db = app.db.lock().unwrap();
+                db.sections.iter().filter(|s| scanning_ids.contains(&s.id) && db.can_see_section(&user, s.id))
+                    .filter_map(|s| crate::scanner::progress_of(s.id).map(|p| json!({"name": s.name, "phase": p.phase, "done": p.done, "total": p.total, "current": p.current})))
+                    .collect()
+            };
+            ok(json!({"queued": q, "scanning": scanning, "scan_progress": scan_progress, "working_on": if busy == 0 { Value::Null } else { json!(busy) }, "working_title": busy_title, "working_ids": busy_all,
                 "done": p.done, "failed": p.failed, "last": p.last,
                 "job": job.map(|(label, done, total)| json!({"label": label, "done": done, "total": total})),
                 // For the owner's "playing now" button in the top bar.

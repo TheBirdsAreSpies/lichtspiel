@@ -943,6 +943,34 @@ struct Found {
     mtime: u64,
 }
 
+/// How far a running scan is, per library: shown in the top bar of the web app.
+#[derive(Clone, Default)]
+pub struct ScanStep {
+    /// "listing" (walking the folders), "reading" (file by file) or "finishing".
+    pub phase: &'static str,
+    pub done: usize,
+    pub total: usize,
+    /// The file it is on.
+    pub current: String,
+}
+static PROGRESS: std::sync::Mutex<std::collections::BTreeMap<u64, ScanStep>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+pub fn progress_of(section: u64) -> Option<ScanStep> {
+    PROGRESS.lock().unwrap().get(&section).cloned()
+}
+
+fn step(section: u64, phase: &'static str, done: usize, total: usize, current: &str) {
+    PROGRESS.lock().unwrap().insert(section, ScanStep { phase, done, total, current: current.to_string() });
+}
+
+/// Takes the library out of the progress list when its scan ends (also on an early return).
+struct ProgressGuard(u64);
+impl Drop for ProgressGuard {
+    fn drop(&mut self) {
+        PROGRESS.lock().unwrap().remove(&self.0);
+    }
+}
+
 /// Scans one library. The slow part (walking folders, ffprobe) happens
 /// without holding the library lock; `with_db` is called for short updates.
 /// (The server scans through `scan_section_in`; this whole-library form is what the tests use.)
@@ -960,6 +988,8 @@ pub fn scan_section_in<F>(section: &Section, ffprobe: &str, only: Option<&Path>,
 where
     F: FnMut(&mut dyn FnMut(&mut Db)),
 {
+    let _progress = ProgressGuard(section.id);
+    step(section.id, "listing", 0, 0, "");
     let mut found = vec![];
     for root in &section.paths {
         let root = PathBuf::from(root);
@@ -1045,6 +1075,10 @@ where
         main.retain(|i| !later_parts.contains(&key_of(&found[*i])));
     }
 
+    let total_files = main.len() + extras.len();
+    let mut done_files = 0usize;
+    step(section.id, "reading", 0, total_files, "");
+
     // Shows and seasons of this library by what find_or_make matches on, so
     // a new episode doesn't search the whole library twice.
     let mut containers: Option<HashMap<ContainerKey, u64>> = None;
@@ -1077,6 +1111,8 @@ where
         };
         for (idx, as_extra) in list {
             let f = &found[idx];
+            done_files += 1;
+            step(section.id, "reading", done_files, total_files, &f.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
             let key = key_of(f);
             let parts_here: Vec<&Found> = parts_of.get(&key).map(|v| v.iter().map(|i| &found[*i]).collect()).unwrap_or_default();
             let existing_id = known.get(&key).map(|k| k.0);
@@ -1263,6 +1299,7 @@ where
         }
     }
 
+    step(section.id, "finishing", total_files, total_files, "");
     // Remove what disappeared (or, with "Empty trash automatically" off, keep it
     // as unavailable), then empty seasons and shows. A library folder that cannot
     // be read (a drive or share not mounted) never empties anything.
