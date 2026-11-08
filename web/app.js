@@ -342,7 +342,7 @@ function pickGrid(items, cardOpts) {
       admin ? { label: t('Analyze'), run: async () => { await eachItem(it => `/library/metadata/${it.id}/analyze`, () => t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
       admin && one ? { label: t('Optimize…'), run: () => optimizeDialog(chosen()[0]) } : null,
       '-',
-      { label: t('Select all'), run: () => { items.forEach((_, i) => picked.add(i)); draw(); } },
+      { label: t('Select all'), run: () => { items.forEach((it, i) => { if (it) picked.add(i); }); draw(); } },
     ], null, 'left');
   };
   const bar = h('div', { class: 'pickbar' }, count,
@@ -380,19 +380,33 @@ function pickGrid(items, cardOpts) {
   };
   const clear = () => { picked.clear(); last = -1; draw(); };
   const toggle = (i, e) => {
-    if (e.shiftKey && last >= 0) { for (let k = Math.min(last, i); k <= Math.max(last, i); k++) picked.add(k); }
+    if (e.shiftKey && last >= 0) { for (let k = Math.min(last, i); k <= Math.max(last, i); k++) if (items[k]) picked.add(k); }
     else if (picked.has(i)) picked.delete(i); else picked.add(i);
     last = i; draw();
   };
-  const card = i => posterCard(items[i], { ...cardOpts, onReplace: el => { cards[i] = el; draw(); }, pick: (e, circle) => {
+  const card0 = i => posterCard(items[i], { ...cardOpts, onReplace: el => { el.dataset.i = i; cards[i] = el; draw(); }, pick: (e, circle) => {
     if (!circle && !picked.size && !e.ctrlKey && !e.metaKey && !e.shiftKey) return false;
     e.preventDefault(); toggle(i, e); return true;
   } });
+  const card = i => { const c = card0(i); c.dataset.i = i; return c; };
   const cards = [];
   // More items arrive while scrolling.
   grid._add = list => { for (const it of list) { const i = items.length; items.push(it); cards.push(card(i)); grid.append(cards[i]); } };
   const firstItems = items.splice(0); grid._add(firstItems);
   grid._clear = () => { if (!picked.size) return false; clear(); return true; };
+  // Empty cards for titles that are not loaded yet (items[i] is null until _put fills it).
+  grid._reserve = n => {
+    const music = cards[0] && cards[0].classList.contains('music');
+    for (let k = 0; k < n; k++) {
+      const i = items.length; items.push(null);
+      const ph = h('div', { class: 'card ph' + (music ? ' music' : ''), 'data-i': i }, h('div', { class: 'poster' }), h('div', { class: 't' }, '\u00a0'), h('div', { class: 's' }, '\u00a0'));
+      cards.push(ph); grid.append(ph);
+    }
+  };
+  grid._put = (start, list) => list.forEach((it, k) => {
+    const i = start + k;
+    if (i < items.length && !items[i]) { items[i] = it; const c = card(i); cards[i].replaceWith(c); cards[i] = c; }
+  });
   // The bar sits outside the page, so it goes when the page changes.
   document.querySelectorAll('.pickbar').forEach(b => b.remove());
   document.body.append(bar);
@@ -700,51 +714,66 @@ async function sectionPage(id, qs) {
   const caption = captionFor(sortNow.field);
   const cardOpts = { episodeThumb: st.type === 'episode', caption };
   const holder = h('div');
-  let grid = null, loaded = 0, loading = false;
-  const sentinel = h('div', { class: 'sentinel dim' });
-  const addPage = async (start, firstPage, size) => {
-    if (loading) return; loading = true;
+  let grid = null;
+  const pageOf = i => Math.floor(i / PAGE_SIZE);
+  const have = new Set(), busy = new Set(), visible = new Set();
+  // A page of titles takes the place of its empty cards. The first page also lays out the whole library
+  // as empty cards, so the scroll bar and the letters are right from the start and nothing is loaded
+  // that nobody scrolled to.
+  const loadPage = async (p, firstPage) => {
+    if (have.has(p) || busy.has(p)) return;
+    busy.add(p);
     try {
-      const r = firstPage || (await GET(listUrl(start, size))).MediaContainer;
-      if (!grid) { grid = pickGrid(r.Metadata.slice(), cardOpts); holder.replaceChildren(grid, sentinel); }
-      else grid._add(r.Metadata);
-      loaded = start + r.Metadata.length;
-      sentinel.textContent = loaded < total ? t('Loading…') : '';
-    } catch (e) { sentinel.textContent = e.message; }
-    loading = false;
+      const r = firstPage || (await GET(listUrl(p * PAGE_SIZE))).MediaContainer;
+      if (!grid) {
+        grid = pickGrid(r.Metadata.slice(), cardOpts); holder.replaceChildren(grid);
+        grid._reserve(total - r.Metadata.length);
+        grid.querySelectorAll('.ph').forEach(el => more.observe(el));
+      } else grid._put(p * PAGE_SIZE, r.Metadata);
+      have.add(p);
+    } catch (e) {
+      // Tried again when the page is scrolled to the next time.
+      toast(e.message);
+      if (grid) for (let i = p * PAGE_SIZE; i < Math.min(total, (p + 1) * PAGE_SIZE); i++) { const el = grid.children[i]; if (el && el.classList.contains('ph')) more.observe(el); }
+    } finally { busy.delete(p); }
   };
-  const more = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting) && grid && loaded < total && !loading) addPage(loaded); }, { rootMargin: '900px' });
-  // A letter scrolls to its first poster (the pages up to there are loaded first), like Plex; nothing is filtered.
-  let jumping = false;
-  const jump = async offset => {
-    if (jumping) return; jumping = true;
-    try {
-      while (loaded <= offset && loaded < total) {
-        sentinel.textContent = t('Loading…');
-        while (loading) await new Promise(r => setTimeout(r, 40));
-        // All the pages up to the letter in one request (one filter and sort on the server, not one per page).
-        if (loaded <= offset) await addPage(loaded, null, Math.ceil((offset + 1 - loaded) / PAGE_SIZE) * PAGE_SIZE);
-        if (sentinel.textContent !== t('Loading…') && loaded < total && loaded <= offset) break; // a page failed
-      }
-      const card = grid && grid.children[Math.min(offset, grid.children.length - 1)];
-      if (card) {
-        const head = sticky.getBoundingClientRect().bottom;
-        window.scrollBy({ top: card.getBoundingClientRect().top - head - 12, behavior: 'smooth' });
-      }
-    } finally { jumping = false; }
+  // Empty cards that come near the screen load their page, unless they are only passed (dragging the scroll bar).
+  const more = new IntersectionObserver(es => {
+    for (const e of es) {
+      if (!e.isIntersecting) { visible.delete(e.target); continue; }
+      visible.add(e.target);
+      setTimeout(() => {
+        if (!visible.has(e.target) || !e.target.isConnected) return;
+        more.unobserve(e.target); visible.delete(e.target);
+        loadPage(pageOf(Number(e.target.dataset.i)));
+      }, 150);
+    }
+  }, { rootMargin: '900px' });
+  // A letter scrolls to its first poster at once; its page is fetched on the spot (nothing before it is).
+  const jump = offset => {
+    const card = grid && grid.children[Math.min(offset, grid.children.length - 1)];
+    if (!card) return;
+    const head = sticky.getBoundingClientRect().bottom;
+    window.scrollTo({ top: window.scrollY + card.getBoundingClientRect().top - head - 12, behavior: 'auto' });
+    loadPage(pageOf(Math.min(offset, total - 1)));
   };
   // The letters at the side (only when sorted by title).
   const letters = h('div', { class: 'letters' });
+  const marks = []; // {btn, from, to}: the part of the list a letter stands for
   if (sortNow.field === 'title' && total > PAGE_SIZE / 2) {
     GET(`/library/sections/${id}/firstCharacter?${filterQuery()}`).then(r => {
       const dirs = r.MediaContainer.Directory; let sum = 0;
       letters.replaceChildren(...dirs.map(d => {
         const before = sum; sum += d.size;
         const offset = sortNow.desc ? total - before - d.size : before;
-        return h('button', { title: `${d.key} · ${d.size}`, onclick: () => jump(Math.max(0, offset)) }, d.key);
+        const btn = h('button', { title: `${d.key} · ${d.size}`, onclick: () => jump(Math.max(0, offset)) }, d.key);
+        marks.push({ btn, from: Math.max(0, offset), to: Math.max(0, offset) + d.size });
+        return btn;
       }));
+      showPos();
     }).catch(() => {});
   }
+  const countEl = h('span', { class: 'count', title: t('{n} shown', { n: total }) }, itemCount(total));
   const sticky = h('div', { class: 'libhead' },
     h('h1', {}, sec.title, h('button', { class: 'more', title: t('More'), 'aria-label': t('More'), onclick: e => sectionMenu(sec, e.currentTarget) }, '⋯')),
     tabs,
@@ -755,28 +784,41 @@ async function sectionPage(id, qs) {
       text('from', t('Year from'), 95), text('to', t('Year to'), 85),
       pick('container', [['', t('Any file type')], ...['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'].map(c => [c, c.toUpperCase()])]),
       text('q', t('Filter by title'), 150),
-      h('span', { class: 'count', title: t('{n} shown', { n: total }) }, itemCount(total)),
+      countEl,
       h('span', { class: 'grow' }),
       sizeSlider(),
       S.me.admin ? h('button', { onclick: async () => { await api('POST', `/library/sections/${id}/refresh`); toast(t('Scanning {name}', { name: sec.title })); pollActivity(); } }, t('Scan now')) : null),
     chips);
   set(sticky, total ? holder : h('div', { class: 'empty' }, t('Nothing matches these filters.')), letters);
   if (total) {
-    sentinel.textContent = '';
-    // Back from an item: as many pages as were there, and the scroll position.
+    // Back from an item: the scroll position (the page is as long as before at once).
     const want = LIBPOS[myHash];
-    await addPage(0, first);
-    if (want && want.n > loaded) { while (loaded < Math.min(want.n, total)) { await addPage(loaded); } }
+    await loadPage(0, first);
     if (want) window.scrollTo(0, want.y);
-    more.observe(sentinel);
   }
+  // Where you are: the first poster under the bar gives the number (in the counter) and the letter (lit in the side list).
+  let raf = 0;
+  const showPos = () => {
+    raf = 0;
+    if (location.hash !== myHash || !grid) return;
+    let pos = 0;
+    if (window.scrollY > 40) {
+      const r = grid.getBoundingClientRect(), el = document.elementFromPoint(Math.max(0, r.left) + 24, sticky.getBoundingClientRect().bottom + 24);
+      const c = el && el.closest && el.closest('.card[data-i]');
+      if (c) pos = Number(c.dataset.i);
+    }
+    countEl.textContent = t('{pos} / {total}', { pos: fmtNum(pos + 1), total: fmtNum(total) });
+    for (const m of marks) m.btn.classList.toggle('on', pos >= m.from && pos < m.to);
+  };
+  const onPos = () => { if (!raf) raf = requestAnimationFrame(showPos); };
+  window.addEventListener('scroll', onPos, { passive: true });
   let t0 = 0;
   const onScroll = () => {
     if (location.hash !== myHash) return;
-    const now = Date.now(); if (now - t0 > 200) { t0 = now; LIBPOS[myHash] = { y: window.scrollY, n: loaded }; }
+    const now = Date.now(); if (now - t0 > 200) { t0 = now; LIBPOS[myHash] = { y: window.scrollY, n: total }; }
   };
   window.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('hashchange', () => { more.disconnect(); closePanel(); window.removeEventListener('scroll', onScroll); saveLibPos(); }, { once: true });
+  window.addEventListener('hashchange', () => { more.disconnect(); closePanel(); window.removeEventListener('scroll', onScroll); window.removeEventListener('scroll', onPos); saveLibPos(); }, { once: true });
 }
 
 const itemCount = n => n === 1 ? t('1 item') : t('{n} items', { n });

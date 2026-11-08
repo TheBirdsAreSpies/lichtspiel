@@ -429,12 +429,15 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 .letters,#main>.letters{position:fixed;right:2px;top:50%;transform:translateY(-50%);z-index:3;display:flex;flex-direction:column;justify-content:center;gap:0;height:calc(100vh - 160px);max-height:640px;overflow:hidden;pointer-events:none}
 .letters button{pointer-events:auto;flex:0 1 20px;min-height:0;display:flex;align-items:center;justify-content:center;background:none;border:0;padding:0 5px;font-size:clamp(8px,1.5vh,12px);line-height:1;color:var(--dim);border-radius:3px}
 .letters button:hover{color:var(--accent);background:var(--panel)}
+.letters button.on{color:var(--accent);background:var(--panel);font-weight:700}
 .sentinel{text-align:center;padding:18px;min-height:40px}
 .chips .chip{display:inline-flex;align-items:center;gap:10px;padding:4px 10px 4px 12px}
 .chips .chip span{margin-left:2px;padding-left:4px}
 .rule{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
 .skel{background:linear-gradient(90deg,var(--panel) 25%,var(--panel2) 50%,var(--panel) 75%);background-size:200% 100%;animation:skel 1.3s linear infinite;border-radius:var(--r)}
 .skel-h{width:200px;height:22px;margin:14px 0 10px}
+.card.ph{cursor:default;pointer-events:none}
+.card.ph .poster{background:var(--panel)}
 .skel-t{height:12px;margin-top:8px;width:80%}
 @keyframes skel{to{background-position:-200% 0}}
 
