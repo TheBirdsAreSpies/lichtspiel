@@ -466,7 +466,9 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   .tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-bottom:12px}
   .tabs::-webkit-scrollbar{display:none}
   .tabs>*{flex:0 0 auto;white-space:nowrap}
-  .tabs input{width:170px!important;margin-left:8px!important}
+  /* the settings search gets its own line on top; the few group tabs below it may wrap */
+  .tabs:has(input){flex-wrap:wrap;overflow:visible}
+  .tabs input{order:-1;flex:0 0 100%;width:100%!important;margin:0 0 8px!important}
   .grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))!important;gap:16px 10px}
   #main:has(.letters) .grid{padding-right:16px}
   .letters,#main>.letters{right:0;height:calc(100vh - 230px)}
