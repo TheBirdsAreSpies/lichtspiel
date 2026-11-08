@@ -752,12 +752,20 @@ async function sectionPage(id, qs) {
     }
   }, { rootMargin: '900px' });
   // A letter scrolls to its first poster at once; its page is fetched on the spot (nothing before it is).
-  const jump = offset => {
-    const card = grid && grid.children[Math.min(offset, grid.children.length - 1)];
-    if (!card) return;
-    const head = sticky.getBoundingClientRect().bottom;
-    window.scrollTo({ top: window.scrollY + card.getBoundingClientRect().top - head - 12, behavior: 'auto' });
-    loadPage(pageOf(Math.min(offset, total - 1)));
+  let forced = null, forcedAt = 0; // the letter just clicked stays lit for a moment, whatever is under the bar
+  const jump = async offset => {
+    const at = () => {
+      const card = grid && grid.children[Math.min(offset, grid.children.length - 1)];
+      if (!card) return null;
+      const head = sticky.getBoundingClientRect().bottom;
+      window.scrollTo({ top: window.scrollY + card.getBoundingClientRect().top - head - 12, behavior: 'auto' });
+      return window.scrollY;
+    };
+    forced = offset; forcedAt = Date.now();
+    const y = at();
+    await loadPage(pageOf(Math.min(offset, total - 1)));
+    // The page's real cards may be a little taller than the empty ones: line up again, if nobody scrolled meanwhile.
+    if (y !== null && Math.abs(window.scrollY - y) < 3) at();
   };
   // The letters at the side (only when sorted by title).
   const letters = h('div', { class: 'letters' });
@@ -815,6 +823,7 @@ async function sectionPage(id, qs) {
         if (c) { pos = Number(c.dataset.i); break; }
       }
     }
+    if (forced !== null && Date.now() - forcedAt < 1500) pos = forced; else forced = null;
     lastPos = pos;
     countEl.textContent = t('{pos} / {total}', { pos: fmtNum(pos + 1), total: fmtNum(total) });
     for (const m of marks) m.btn.classList.toggle('on', pos >= m.from && pos < m.to);
