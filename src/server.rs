@@ -2850,8 +2850,19 @@ pub const WEEK_SECONDS: u64 = 604800;
 pub fn on_deck(db: &Db, user: &User) -> Vec<u64> {
     let window = db.settings.continue_watching_weeks * WEEK_SECONDS;
     let mut shows: Vec<(u64, u64)> = vec![];
+    // One pass over all items instead of one per show and season (db.leaves scans everything each time).
+    let mut kids: HashMap<u64, Vec<u64>> = HashMap::new();
+    for i in db.items.values() {
+        if let Some(p) = i.parent_id { kids.entry(p).or_default().push(i.id); }
+    }
+    fn leaves_of(db: &Db, kids: &HashMap<u64, Vec<u64>>, id: u64, out: &mut Vec<u64>) {
+        let Some(item) = db.items.get(&id) else { return };
+        if item.kind.playable() { out.push(id); return; }
+        for c in kids.get(&id).into_iter().flatten() { leaves_of(db, kids, *c, out); }
+    }
     for show in db.items.values().filter(|i| i.kind == ItemKind::Show && db.can_see_item(user, i)) {
-        let mut eps = db.leaves(show.id);
+        let mut eps = vec![];
+        leaves_of(db, &kids, show.id, &mut eps);
         query::sort_items(db, user.id, &mut eps, "episode_order");
         let Some(pos) = eps.iter().rposition(|e| db.view(user.id, *e).view_count > 0) else { continue };
         let when = db.view(user.id, eps[pos]).last_viewed_at;
@@ -2880,13 +2891,16 @@ pub fn on_deck(db: &Db, user: &User) -> Vec<u64> {
 /// newest first, limited by the window in weeks and a count.
 pub fn continue_watching(db: &Db, user: &User) -> Vec<u64> {
     let window = db.settings.continue_watching_weeks * WEEK_SECONDS;
+    // Only this person's watch states ("user:item" keys), not every item in the library.
+    let t_now = now();
     let mut started: Vec<(u64, u64)> = db
-        .items
-        .values()
-        .filter(|i| i.kind.playable() && !i.hidden() && db.can_see_item(user, i))
-        .filter_map(|i| {
-            let v = db.view(user.id, i.id);
-            (v.view_offset_ms > 0 && now().saturating_sub(v.last_viewed_at) <= window).then_some((i.id, v.last_viewed_at))
+        .views
+        .range(format!("{}:", user.id)..format!("{};", user.id))
+        .filter(|(_, v)| v.view_offset_ms > 0 && t_now.saturating_sub(v.last_viewed_at) <= window)
+        .filter_map(|(k, v)| {
+            let id = k.split_once(':')?.1.parse::<u64>().ok()?;
+            let i = db.items.get(&id)?;
+            (i.kind.playable() && !i.hidden() && db.can_see_item(user, i)).then_some((id, v.last_viewed_at))
         })
         .collect();
     for id in on_deck(db, user) {
