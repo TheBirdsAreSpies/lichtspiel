@@ -476,6 +476,17 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   .modal .box{padding:16px;max-height:92vh}
   .filterpanel{left:8px!important;right:8px;top:64px!important;width:auto;height:calc(100vh - 80px);flex-direction:column}
   .fp-left{flex:0 0 auto;max-height:38%;border-right:0;border-bottom:1px solid #353c44}
+  .li>.grow{flex:1 1 140px}
+  /* tables become cards: one block per row, the column name in front of each value, buttons below */
+  #main table.stack{white-space:normal;overflow:visible}
+  #main table.stack tbody{display:block}
+  #main table.stack tr:has(th){display:none}
+  #main table.stack tr{display:block;background:var(--panel);border-radius:var(--r);padding:6px 12px;margin-bottom:10px}
+  #main table.stack td{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 0;border:0;text-align:right;min-width:0;overflow-wrap:anywhere}
+  #main table.stack td::before{content:attr(data-label);color:var(--dim);text-align:left;flex:0 0 38%;font-size:13px}
+  #main table.stack td[data-label=""]{justify-content:flex-start;flex-wrap:wrap}
+  #main table.stack td[data-label=""]::before{display:none}
+  #main table.stack td:empty{display:none}
 }
 </style>
 </head>
@@ -537,6 +548,20 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   document.getElementById('side').addEventListener('click', function (e) { if (e.target.closest('a')) close(); });
   document.addEventListener('click', function (e) { if (e.target === b) close(); });
   window.addEventListener('hashchange', close);
+  // Tables: remember each column's name on its cells, so a phone can show every row as a card (see .stack).
+  var tagTables = function () {
+    document.querySelectorAll('#main table:not(.stack)').forEach(function (tb) {
+      var head = tb.querySelector('tr'); if (!head || !head.querySelector('th')) return;
+      var names = Array.prototype.map.call(head.children, function (c) { return c.textContent.trim(); });
+      tb.querySelectorAll('tr').forEach(function (tr) {
+        if (tr.querySelector('th')) return;
+        Array.prototype.forEach.call(tr.children, function (td, i) { td.setAttribute('data-label', names[i] || ''); });
+      });
+      tb.classList.add('stack');
+    });
+  };
+  var pending = 0, main = document.getElementById('main');
+  new MutationObserver(function () { clearTimeout(pending); pending = setTimeout(tagTables, 60); }).observe(main, { childList: true, subtree: true });
 })();
 </script>
 <script src="/web/i18n.js"></script>
