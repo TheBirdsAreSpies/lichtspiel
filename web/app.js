@@ -797,16 +797,21 @@ async function sectionPage(id, qs) {
     if (want) window.scrollTo(0, want.y);
   }
   // Where you are: the first poster under the bar gives the number (in the counter) and the letter (lit in the side list).
-  let raf = 0;
+  let raf = 0, lastPos = 0;
   const showPos = () => {
     raf = 0;
     if (location.hash !== myHash || !grid) return;
-    let pos = 0;
-    if (window.scrollY > 40) {
-      const r = grid.getBoundingClientRect(), el = document.elementFromPoint(Math.max(0, r.left) + 24, sticky.getBoundingClientRect().bottom + 24);
-      const c = el && el.closest && el.closest('.card[data-i]');
-      if (c) pos = Number(c.dataset.i);
+    let pos = lastPos;
+    if (window.scrollY <= 40) pos = 0;
+    else {
+      // The card under the bar (empty cards count too); nothing found there: keep the last place.
+      const r = grid.getBoundingClientRect(), y = sticky.getBoundingClientRect().bottom + 24;
+      for (const x of [Math.max(0, r.left) + 24, r.left + r.width / 2]) {
+        const el = document.elementFromPoint(x, y), c = el && el.closest && el.closest('.card[data-i]');
+        if (c) { pos = Number(c.dataset.i); break; }
+      }
     }
+    lastPos = pos;
     countEl.textContent = t('{pos} / {total}', { pos: fmtNum(pos + 1), total: fmtNum(total) });
     for (const m of marks) m.btn.classList.toggle('on', pos >= m.from && pos < m.to);
   };
