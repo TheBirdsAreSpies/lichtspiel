@@ -2738,7 +2738,11 @@ pub fn section_json(db: &Db, s: &Section) -> Value {
 }
 
 pub fn playlist_json(db: &Db, user: &User, p: &Playlist) -> (Value, usize, u64) {
-    let items = query::playlist_items(db, user, p);
+    playlist_json_with(db, user, p, query::playlist_items(db, user, p))
+}
+
+/// `playlist_json` for items that were worked out already (a smart playlist runs over the whole library).
+pub fn playlist_json_with(db: &Db, user: &User, p: &Playlist, items: Vec<u64>) -> (Value, usize, u64) {
     let duration: u64 = items.iter().filter_map(|i| db.items.get(i)).map(|i| i.duration_ms).sum();
     let thumb = items.first().map(|i| format!("/library/metadata/{i}/thumb"));
     // Up to four different pictures spread over the list, for the playlist's own picture.

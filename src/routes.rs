@@ -1466,11 +1466,13 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let mut rows: Vec<(Playlist, usize, u64)> = vec![];
             let mut jsons: HashMap<u64, Value> = HashMap::new();
             for p in db.playlists.iter().filter(|p| visible_playlist(p, &user)) {
-                let (v, n, d) = playlist_json(&db, &user, p);
+                // Worked out once: a smart playlist runs over the whole library.
+                let items = query::playlist_items(&db, &user, p);
                 // ?section=<id>: only playlists with something from that library (its Playlists page).
                 let in_section = ctx.param("section").and_then(|s| s.parse::<u64>().ok()).is_none_or(|sid| {
-                    query::playlist_items(&db, &user, p).iter().any(|i| db.items.get(i).is_some_and(|x| x.section_id == sid))
+                    items.iter().any(|i| db.items.get(i).is_some_and(|x| x.section_id == sid))
                 });
+                let (v, n, d) = playlist_json_with(&db, &user, p, items);
                 if in_section && query::playlist_matches(p, &user, &ctx.params, n) {
                     jsons.insert(p.id, v);
                     rows.push((p.clone(), n, d));
