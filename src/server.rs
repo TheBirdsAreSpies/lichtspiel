@@ -2491,7 +2491,15 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let lan_extra = !lan_list.trim().is_empty() && remote.is_some_and(|a| ip_in_list(&lan_list, a));
     let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token, remote, remote_trusted, lan_extra, device };
     let is_local = ctx.is_local();
-    let resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) } else { crate::routes::route(&app, &ctx) };
+    let started = Instant::now();
+    let mut resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) } else { crate::routes::route(&app, &ctx) };
+    // How long the server needed to answer (not to send): in the browser's network tab as Server-Timing,
+    // and in the server log when it was slow (playing and converting go on for long by design).
+    let took = started.elapsed().as_millis();
+    resp.add_header(header("Server-Timing", &format!("app;dur={took}")));
+    if took >= 400 && !["/parts/", "/transcode", "/video/", "/hls", "/stream"].iter().any(|p| ctx.path.contains(p)) {
+        crate::log::add(format!("Slow answer: {} {} took {} ms", method, ctx.path, took));
+    }
     // Count what is sent (bandwidth on the dashboard).
     let (status, headers, len) = (resp.status_code(), resp.headers().to_vec(), resp.data_length());
     let remote = if is_local { None } else { Some(app.stats.bytes_remote.clone()) };
