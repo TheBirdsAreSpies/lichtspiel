@@ -1087,7 +1087,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let only = ctx.num("version");
             let mut db = app.db.lock().unwrap();
             let vs: Vec<u64> = db.items.values().filter(|x| x.version_of() == Some(iid) && only.is_none_or(|o| o == x.id)).map(|x| x.id).collect();
-            for v in &vs { if let Some(o) = db.items.get_mut(v) { o.extra.remove("version_of"); } }
+            // "no_merge": the next scan must not put them back together.
+            for v in &vs { if let Some(o) = db.items.get_mut(v) { o.extra.remove("version_of"); o.extra.insert("no_merge".into(), json!(true)); } }
             drop(db);
             app.save();
             ok(json!({"split": vs.len()}))

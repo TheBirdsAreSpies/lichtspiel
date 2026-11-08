@@ -1331,11 +1331,54 @@ where
                 }
             }
         }
+        auto_merge_versions(db, section.id);
         if let Some(s) = db.sections.iter_mut().find(|s| s.id == section.id) {
             s.scanned_at = now();
         }
     });
     report
+}
+
+/// Several files of one movie (or one episode) become one title with several versions:
+/// the same title and year in a movie library, the same season and episode number in a show. What
+/// was split apart by hand (`no_merge`) stays alone, and files with an `{edition-…}` stay titles of
+/// their own. Returns how many files were put under another.
+fn auto_merge_versions(db: &mut Db, section: u64) -> usize {
+    let mut groups: HashMap<(bool, Option<u64>, String, Option<u32>), Vec<u64>> = HashMap::new();
+    for i in db.items.values() {
+        if i.section_id != section || !matches!(i.kind, ItemKind::Movie | ItemKind::Episode) || i.is_extra() { continue; }
+        let Some(f) = &i.file else { continue };
+        if i.extra.contains_key(MISSING) || i.extra.contains_key("no_merge") { continue; }
+        if i.extra.get("edition").and_then(|v| v.as_str()).is_some_and(|e| !e.is_empty()) || !crate::query::edition_of(&f.path).is_empty() { continue; }
+        let key = if i.kind == ItemKind::Movie {
+            (true, None, i.title.to_lowercase(), i.year)
+        } else {
+            let (Some(p), Some(n)) = (i.parent_id, i.index) else { continue };
+            (false, Some(p), String::new(), Some(n))
+        };
+        groups.entry(key).or_default().push(i.id);
+    }
+    let mut moves: Vec<(u64, u64)> = vec![];
+    for (_, mut ids) in groups {
+        if ids.len() < 2 { continue; }
+        ids.sort();
+        let is_main = |id: &u64| db.items.get(id).is_some_and(|i| i.version_of().is_none());
+        // The title that already has versions stays the main one; else the oldest.
+        let main = ids.iter().copied().find(|m| is_main(m) && ids.iter().any(|o| db.items.get(o).is_some_and(|x| x.version_of() == Some(*m))))
+            .or_else(|| ids.iter().copied().find(is_main));
+        let Some(main) = main else { continue };
+        moves.extend(ids.iter().copied().filter(|id| *id != main && is_main(id)).map(|id| (id, main)));
+    }
+    let mut n = 0;
+    for (id, main) in moves {
+        // What it had as versions moves along.
+        let moved: Vec<u64> = db.items.values().filter(|x| x.version_of() == Some(id)).map(|x| x.id).collect();
+        for i in std::iter::once(id).chain(moved) {
+            if let Some(it) = db.items.get_mut(&i) { it.extra.insert("version_of".into(), Value::from(main)); }
+        }
+        n += 1;
+    }
+    n
 }
 
 /// Marks an item whose file is gone from disk but kept (the library's trash).
@@ -1607,6 +1650,39 @@ title=Two
         std::fs::write(root.join("The Dark Knight (2008)/The Dark Knight (2008) - pt3.mkv"), b"x").unwrap();
         scan(&mut db);
         assert_eq!(db.items.values().find(|i| i.title == "The Dark Knight").unwrap().parts.len(), 2);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn files_of_one_movie_become_versions() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-versions-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for f in ["Exit 8 (2025)/Exit.8.2025.1080p.WebRip.mkv", "Exit 8 (2025)/Exit.8.2025.1080p.BD.mkv", "Heat (1995)/Heat (1995).mkv",
+                  "Dune (2021)/Dune (2021) {edition-Extended}.mkv", "Dune (2021)/Dune (2021).mkv"] {
+            let p = root.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, b"x").unwrap();
+        }
+        let mut db: Db = serde_json::from_value(serde_json::json!({"version": 1, "machine_id": "x", "next_id": 1, "settings": crate::db::Settings::default(),
+            "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": [root.to_string_lossy()], "created_at": 0}],
+            "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let section = db.sections[0].clone();
+        let scan = |db: &mut Db| { scan_section(&section, "no-such-ffprobe", |f| f(db)); };
+        scan(&mut db);
+        let shown = |db: &Db| { let mut v: Vec<String> = db.items.values().filter(|i| !i.hidden()).map(|i| i.title.clone()).collect(); v.sort(); v };
+        // Exit 8 is one title with two versions; Heat is alone; the {edition} file stays a title of its own.
+        assert_eq!(shown(&db), vec!["Dune", "Dune", "Exit 8", "Heat"]);
+        let main = db.items.values().find(|i| i.title == "Exit 8" && !i.hidden()).unwrap().id;
+        assert_eq!(db.items.values().filter(|i| i.version_of() == Some(main)).count(), 1);
+        // A second scan changes nothing; one split by hand stays apart.
+        scan(&mut db);
+        assert_eq!(shown(&db), vec!["Dune", "Dune", "Exit 8", "Heat"]);
+        let v = db.items.values().find(|i| i.version_of() == Some(main)).unwrap().id;
+        let it = db.items.get_mut(&v).unwrap();
+        it.extra.remove("version_of");
+        it.extra.insert("no_merge".into(), serde_json::json!(true));
+        scan(&mut db);
+        assert_eq!(shown(&db), vec!["Dune", "Dune", "Exit 8", "Exit 8", "Heat"]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
