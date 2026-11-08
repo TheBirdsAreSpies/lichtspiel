@@ -1347,9 +1347,9 @@ fn auto_merge_versions(db: &mut Db, section: u64) -> usize {
     let mut groups: HashMap<(bool, Option<u64>, String, Option<u32>), Vec<u64>> = HashMap::new();
     for i in db.items.values() {
         if i.section_id != section || !matches!(i.kind, ItemKind::Movie | ItemKind::Episode) || i.is_extra() { continue; }
-        let Some(f) = &i.file else { continue };
+        if i.file.is_none() { continue; }
         if i.extra.contains_key(MISSING) || i.extra.contains_key("no_merge") { continue; }
-        if i.extra.get("edition").and_then(|v| v.as_str()).is_some_and(|e| !e.is_empty()) || !crate::query::edition_of(&f.path).is_empty() { continue; }
+        if !crate::query::item_edition(i).is_empty() { continue; }
         let key = if i.kind == ItemKind::Movie {
             (true, None, i.title.to_lowercase(), i.year)
         } else {

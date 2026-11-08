@@ -182,6 +182,12 @@ pub fn edition_of(path: &str) -> String {
     rest.split('}').next().unwrap_or("").trim().to_string()
 }
 
+/// The edition of a movie: set by hand, else the {edition-…} in its file name ("" = none).
+pub fn item_edition(item: &Item) -> String {
+    item.extra.get("edition").and_then(|v| v.as_str()).map(String::from)
+        .unwrap_or_else(|| item.file.as_ref().map(|f| edition_of(&f.path)).unwrap_or_default())
+}
+
 fn str_list(v: Option<&Value>) -> Vec<String> {
     match v {
         Some(Value::Array(a)) => a.iter().filter_map(|x| x.as_str().map(String::from).or_else(|| x["name"].as_str().map(String::from))).collect(),
@@ -206,7 +212,8 @@ fn duplicates(db: &Db) -> std::rc::Rc<std::collections::HashSet<u64>> {
         return hit;
     }
     let mut groups: HashMap<(u64, String), Vec<u64>> = HashMap::new();
-    for i in db.items.values().filter(|i| i.file.is_some() && !i.hidden()) {
+    // Editions (Director's Cut, Extended …) are meant to be there next to the normal cut: not duplicates.
+    for i in db.items.values().filter(|i| i.file.is_some() && !i.hidden() && item_edition(i).is_empty()) {
         let k = match i.kind {
             ItemKind::Episode => match (i.parent_id, i.index) {
                 (Some(p), Some(n)) => (p, format!("e{n}")),
@@ -855,6 +862,29 @@ mod tests {
     fn item(id: u64, title: &str, year: u32, extra: Value) -> Item {
         serde_json::from_value(json!({"id": id, "section_id": 1, "kind": "movie", "title": title, "sort_title": title.to_lowercase(),
             "year": year, "added_at": 0, "updated_at": 0, "extra": extra})).unwrap()
+    }
+
+    #[test]
+    fn editions_are_not_duplicates() {
+        let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 9, "settings": crate::db::Settings::default(),
+            "sections": [], "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let file = |p: &str| Some(MediaFile { path: p.into(), ..Default::default() });
+        let mut dune = item(1, "Dune", 2021, json!({}));
+        dune.file = file("/m/Dune (2021).mkv");
+        let mut ext = item(2, "Dune", 2021, json!({}));
+        ext.file = file("/m/Dune (2021) {edition-Extended}.mkv");
+        let (mut a, mut b) = (item(3, "Exit 8", 2025, json!({})), item(4, "Exit 8", 2025, json!({})));
+        a.file = file("/m/Exit.8.WebRip.mkv");
+        b.file = file("/m/Exit.8.BD.mkv");
+        let (mut heat, mut heat_v) = (item(5, "Heat", 1995, json!({})), item(6, "Heat", 1995, json!({"version_of": 5})));
+        heat.file = file("/m/Heat.mkv");
+        heat_v.file = file("/m/Heat.4k.mkv");
+        for i in [dune, ext, a, b, heat, heat_v] { db.items.insert(i.id, i); }
+        let dups = duplicates(&db);
+        let mut ids: Vec<u64> = dups.iter().copied().collect();
+        ids.sort();
+        // The two Exit 8 files and Heat (which has a merged version); Dune and its edition are not duplicates.
+        assert_eq!(ids, vec![3, 4, 5]);
     }
 
     #[test]
