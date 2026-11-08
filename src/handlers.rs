@@ -812,23 +812,34 @@ pub fn cast_photo(app: &Arc<App>, user: &User, iid: &str, n: &str) -> Resp {
     with_cache(serve_file(&p, mime, None, false))
 }
 
-/// A smaller copy of a poster (`width` px wide, never enlarged), made once with ffmpeg and kept in
-/// cache/thumbs, so lists do not download every full-size original. None = use the original.
+/// Copies being made right now (at most two at a time, so a page of fresh posters does not start a
+/// hundred ffmpeg processes at once and slow the whole server down).
+static RESIZING: std::sync::Mutex<std::collections::BTreeSet<PathBuf>> = std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+/// A smaller copy of a poster (`width` px wide, never enlarged) from cache/thumbs. When it is not there
+/// yet, ffmpeg makes it in the background and None is returned, so this request gets the original; the
+/// next one finds the small copy.
 fn scaled_poster(app: &Arc<App>, id: u64, src: &Path, width: u32) -> Option<PathBuf> {
     let out = app.data_dir.join("cache").join("thumbs").join(format!("{id}_w{width}.jpg"));
     let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
     if std::fs::metadata(&out).is_ok_and(|m| m.len() > 0) && modified(&out) >= modified(src) { return Some(out); }
-    let _ = std::fs::create_dir_all(out.parent()?);
-    // Written under a name of its own and then renamed, so two requests never read a half-written picture.
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
-    let tmp = out.with_file_name(format!("{id}_w{width}_{nanos}.tmp.jpg"));
-    let ran = Command::new(app.settings().ffmpeg)
-        .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i"]).arg(src)
-        .args(["-frames:v", "1", "-vf", &format!("scale='min({width},iw)':-2"), "-q:v", "4"]).arg(&tmp)
-        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
-        .status().is_ok_and(|s| s.success());
-    if ran && std::fs::rename(&tmp, &out).is_ok() { return Some(out); }
-    let _ = std::fs::remove_file(&tmp);
+    {
+        let mut busy = RESIZING.lock().unwrap();
+        if busy.len() >= 2 || !busy.insert(out.clone()) { return None; }
+    }
+    let (ffmpeg, src, key) = (app.settings().ffmpeg, src.to_path_buf(), out.clone());
+    std::thread::spawn(move || {
+        let _ = std::fs::create_dir_all(out.parent().unwrap_or(Path::new(".")));
+        // Written under a name of its own and then renamed, so nobody reads a half-written picture.
+        let tmp = out.with_file_name(format!("{id}_w{width}.tmp.jpg"));
+        let ran = Command::new(ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i"]).arg(&src)
+            .args(["-frames:v", "1", "-vf", &format!("scale='min({width},iw)':-2"), "-q:v", "4"]).arg(&tmp)
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
+            .status().is_ok_and(|s| s.success());
+        if !(ran && std::fs::rename(&tmp, &out).is_ok()) { let _ = std::fs::remove_file(&tmp); }
+        RESIZING.lock().unwrap().remove(&key);
+    });
     None
 }
 
