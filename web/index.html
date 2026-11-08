@@ -441,11 +441,15 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   body.nav-open #side{display:block;z-index:20;width:min(280px,80vw);box-shadow:6px 0 24px rgba(0,0,0,.5)}
   body.nav-open::after{content:"";position:fixed;inset:56px 0 0 0;background:rgba(0,0,0,.5);z-index:19}
   #top{gap:6px;padding:0 8px}
-  #top .logo{min-width:0;flex:0 0 auto}
-  #top .logo span{display:none}
-  #search{flex:1 1 0;min-width:0;margin:0}
+  #top{overflow:hidden}
+  #top>*{flex-shrink:0}
+  #top .logo{display:none}
+  #activity{display:none!important}
+  #search{flex:1 1 0;min-width:60px;margin:0;flex-shrink:1}
   #search input{font-size:16px}
-  #who{gap:6px;flex:0 0 auto}
+  #who{gap:2px;flex:0 0 auto;min-width:0}
+  #who .link{max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #npbtn{flex:0 0 auto;padding:0 6px}
   #main{padding:14px 14px 60px}
   h1{font-size:22px;margin-bottom:12px}
   #main button,#main select,#main input:not([type=checkbox]):not([type=radio]):not([type=range]){min-height:38px;font-size:16px}
