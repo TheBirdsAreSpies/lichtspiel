@@ -477,6 +477,12 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   .filterpanel{left:8px!important;right:8px;top:64px!important;width:auto;height:calc(100vh - 80px);flex-direction:column}
   .fp-left{flex:0 0 auto;max-height:38%;border-right:0;border-bottom:1px solid #353c44}
   .li>.grow{flex:1 1 140px}
+  /* settings: nothing may be wider than the screen (long paths, versions, option texts, fixed widths) */
+  #main{overflow-x:clip}
+  #main p,#main .help,#main .ctl,#main label,#main b,#main code,#main .panel{overflow-wrap:anywhere}
+  .field select,.field input:not([type=checkbox]):not([type=radio]):not([type=range]),.field textarea{width:100%!important;max-width:100%!important;box-sizing:border-box;text-overflow:ellipsis}
+  .field>.ctl{flex-wrap:wrap}
+  .panel{padding:12px}
   /* tables become cards: one block per row, the column name in front of each value, buttons below */
   #main table.stack{white-space:normal;overflow:visible}
   #main table.stack tbody{display:block}
