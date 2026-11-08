@@ -431,10 +431,53 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 .chips .chip{display:inline-flex;align-items:center;gap:10px;padding:4px 10px 4px 12px}
 .chips .chip span{margin-left:2px;padding-left:4px}
 .rule{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+
+/* phones: menu button instead of the side bar, a one-line scrolling library bar, smaller posters, scrolling tables and tabs */
+#navbtn{display:none}
+@media (max-width:760px){
+  #navbtn{display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:40px;height:40px;padding:0;background:none;border:0;color:var(--text)}
+  #navbtn svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+  body:has(#side[style*="none"]) #navbtn{display:none}
+  body.nav-open #side{display:block;z-index:20;width:min(280px,80vw);box-shadow:6px 0 24px rgba(0,0,0,.5)}
+  body.nav-open::after{content:"";position:fixed;inset:56px 0 0 0;background:rgba(0,0,0,.5);z-index:19}
+  #top{gap:6px;padding:0 8px}
+  #top .logo{min-width:0;flex:0 0 auto}
+  #top .logo span{display:none}
+  #search{flex:1 1 0;min-width:0;margin:0}
+  #search input{font-size:16px}
+  #who{gap:6px;flex:0 0 auto}
+  #main{padding:14px 14px 60px}
+  h1{font-size:22px;margin-bottom:12px}
+  #main button,#main select,#main input:not([type=checkbox]):not([type=radio]):not([type=range]){min-height:38px;font-size:16px}
+  /* library: the bar that stays on top is one row you can swipe, not a wall of controls */
+  .libhead,#main>.libhead{top:56px;margin:-14px -14px 10px;padding:12px 14px 0}
+  .libhead h1{margin-bottom:8px}
+  .libhead .bar-tools{flex-wrap:nowrap;overflow-x:auto;padding:8px;margin-bottom:8px;gap:8px;scrollbar-width:none}
+  .libhead .bar-tools::-webkit-scrollbar{display:none}
+  .libhead .bar-tools>*{flex:0 0 auto}
+  .libhead .bar-tools>input[type=text],.libhead .bar-tools>input:not([type]){width:130px!important}
+  .libhead .bar-tools .grow,.libhead .bar-tools .size{display:none}
+  .libhead .chips{flex-wrap:nowrap;overflow-x:auto;margin-bottom:8px;scrollbar-width:none}
+  .libhead .chips>*{flex:0 0 auto}
+  .tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-bottom:12px}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs>*{flex:0 0 auto;white-space:nowrap}
+  .tabs input{width:170px!important;margin-left:8px!important}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))!important;gap:16px 10px}
+  #main:has(.letters) .grid{padding-right:16px}
+  .letters,#main>.letters{right:0;height:calc(100vh - 230px)}
+  .letters button{padding:0 4px;font-size:10px}
+  #main table{display:block;max-width:100%;overflow-x:auto;white-space:nowrap}
+  .li{flex-wrap:wrap;gap:10px;padding:10px}
+  .modal .box{padding:16px;max-height:92vh}
+  .filterpanel{left:8px!important;right:8px;top:64px!important;width:auto;height:calc(100vh - 80px);flex-direction:column}
+  .fp-left{flex:0 0 auto;max-height:38%;border-right:0;border-bottom:1px solid #353c44}
+}
 </style>
 </head>
 <body>
 <div id="top">
+  <button id="navbtn" aria-label="Menu" data-t-aria-label="Menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   <a class="logo" href="#/"><svg viewBox="0 0 32 32"><path d="M8 5l20 11-20 11z" fill="#f2a516"/></svg><span id="sname">Lichtspiel</span></a>
   <div id="search"><input id="q" placeholder="Search movies and shows" data-t-placeholder="Search movies and shows" autocomplete="off"></div>
   <div id="activity" title="Background work on the server" data-t-title="Background work on the server"></div>
@@ -482,6 +525,16 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   </div>
 </div>
 <div id="toast"></div>
+<script>
+// Phones: the menu button opens the side bar over the page; a tap on a link, the dimmed page or a page change closes it.
+(function () {
+  var b = document.body, close = function () { b.classList.remove('nav-open'); };
+  document.getElementById('navbtn').addEventListener('click', function () { b.classList.toggle('nav-open'); });
+  document.getElementById('side').addEventListener('click', function (e) { if (e.target.closest('a')) close(); });
+  document.addEventListener('click', function (e) { if (e.target === b) close(); });
+  window.addEventListener('hashchange', close);
+})();
+</script>
 <script src="/web/i18n.js"></script>
 <script src="/web/lang/de.js"></script>
 <script src="/web/app.js"></script>
