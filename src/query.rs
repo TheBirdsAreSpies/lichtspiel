@@ -62,7 +62,7 @@ pub const ITEM_FIELDS: &[(&str, &str, &str)] = &[
     ("unwatched", "bool", "Not seen yet"),
     ("unwatched_leaves", "bool", "Show or season with episodes not seen yet"),
     ("unmatched", "bool", "No online details found yet"),
-    ("duplicate", "bool", "The same movie or episode is in the library more than once"),
+    ("duplicate", "bool", "The same movie or episode is in the library more than once (also as several versions of one title)"),
     ("audience_rating", "number", "Audience rating 0-10"),
     ("critic_rating", "number", "Critics' rating 0-10 (Rotten Tomatoes or Metacritic)"),
     ("release_date", "date", "Release date"),
@@ -216,7 +216,9 @@ fn duplicates(db: &Db) -> std::rc::Rc<std::collections::HashSet<u64>> {
         };
         groups.entry(k).or_default().push(i.id);
     }
-    let set: HashSet<u64> = groups.into_values().filter(|g| g.len() > 1).flatten().collect();
+    let mut set: HashSet<u64> = groups.into_values().filter(|g| g.len() > 1).flatten().collect();
+    // A title that has further versions merged into it (by hand or by the scan) is in the library more than once, too.
+    set.extend(db.items.values().filter_map(|i| i.version_of()).filter(|p| db.items.contains_key(p)));
     let set = Rc::new(set);
     CACHE.with(|c| *c.borrow_mut() = Some((key, set.clone())));
     set
