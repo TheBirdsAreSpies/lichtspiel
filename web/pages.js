@@ -745,11 +745,8 @@ function settingsNav(cur) {
   const to = ([k, , href]) => href || '#/settings/' + k;
   const mine = SETTINGS_TABS.map(([grp, items]) => [grp, items.filter(([k]) => S.me.admin || USER_TABS.includes(k))]).filter(([, items]) => items.length);
   const here = mine.find(([, items]) => items.some(([k]) => k === cur)) || mine[0];
-  const search = S.me.admin ? h('input', { type: 'search', placeholder: t('Search the settings…'), style: 'margin-left:auto;width:220px',
-    value: cur === 'search' ? (new URLSearchParams((location.hash.split('?')[1]) || '').get('q') || '') : '',
-    onchange: e => { const v = e.target.value.trim(); location.hash = v ? '#/settings/search?q=' + encodeURIComponent(v) : '#/settings'; } }) : null;
   return h('div', {},
-    h('div', { class: 'tabs', style: 'align-items:center' }, mine.map(([grp, items]) => h('a', { href: to(items[0]), class: grp === here[0] ? 'on' : '' }, t(grp))), search),
+    h('div', { class: 'tabs', style: 'align-items:center' }, mine.map(([grp, items]) => h('a', { href: to(items[0]), class: grp === here[0] ? 'on' : '' }, t(grp)))),
     here[1].length > 1 ? h('div', { class: 'tabs', style: 'font-size:.92em;opacity:.9' }, here[1].map(it => h('a', { href: to(it), class: it[0] === cur ? 'on' : '' }, t(it[1])))) : null);
 }
 async function settingsPage(tab, qs) {

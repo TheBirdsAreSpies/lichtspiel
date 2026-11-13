@@ -223,9 +223,23 @@ function drawChrome() {
   drawNav();
   drawDlChip();
 }
-function markNav(key) { NAV.cur = key; document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', a.dataset.nav === key)); $('#npbtn').classList.toggle('on', key === 'dashboard'); }
+// In the settings the one search bar at the top searches the settings; everywhere else it searches the library.
+const searchesSettings = () => NAV.cur === 'settings' && S.me && S.me.admin;
+function markNav(key) {
+  NAV.cur = key; document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', a.dataset.nav === key)); $('#npbtn').classList.toggle('on', key === 'dashboard');
+  const q = $('#q'), inSettings = searchesSettings();
+  q.placeholder = inSettings ? t('Search the settings…') : t('Search movies and shows');
+  if (inSettings) {
+    const m = /^#\/settings\/search\?q=(.*)$/.exec(location.hash);
+    q.value = m ? decodeURIComponent(m[1]) : '';
+  }
+}
 let searchTimer;
-$('#q').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { const v = e.target.value.trim(); location.hash = v ? '#/search/' + encodeURIComponent(v) : '#/'; }, 300); });
+$('#q').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => {
+  const v = e.target.value.trim();
+  if (searchesSettings()) location.hash = v ? '#/settings/search?q=' + encodeURIComponent(v) : '#/settings';
+  else location.hash = v ? '#/search/' + encodeURIComponent(v) : '#/';
+}, 300); });
 
 // ---------- cards
 function posterCard(it, opts = {}) {
