@@ -37,6 +37,7 @@ mod server;
 mod stats;
 mod subsync;
 mod totp;
+mod trakt;
 mod transcode;
 #[cfg(feature = "console")]
 mod console;

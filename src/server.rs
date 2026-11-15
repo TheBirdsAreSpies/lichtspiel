@@ -440,6 +440,7 @@ impl App {
 
     /// Tells plugins about something, in the background.
     pub fn fire(self: &Arc<Self>, event: &str, data: Value) {
+        crate::trakt::on_event(self, event, &data);
         let listeners = self.listeners(event);
         if listeners.is_empty() {
             return;
@@ -2251,6 +2252,7 @@ pub fn start_background(app: &Arc<App>) {
     crate::downloads::start(app);
     // Watched state with a Plex server, both ways (when switched on).
     crate::plexsync::start(app);
+    crate::trakt::start(app);
     // Movies not found before the matcher learned more (MATCH_VERSION) get one more try.
     let retry: Vec<u64> = {
         let db = app.db.lock().unwrap();

@@ -678,7 +678,84 @@ function accountPasswordPanel(dataDir) {
     dataDir ? h('p', { class: 'dim' }, t('Data folder on the server: '), h('code', {}, dataDir)) : null);
 }
 
-// Plugins that give each person a panel of their own (e.g. Trakt: connect your account).
+// Trakt: connect your account, what is sent, and (for admins) the Trakt app and the sync settings.
+function traktPanel() {
+  const slot = h('div', { class: 'panel' }, h('p', { class: 'dim' }, t('Loading…')));
+  let timer = null;
+  const when = ts => ts ? new Date(ts * 1000).toLocaleString() : t('never');
+  const draw = async () => {
+    clearTimeout(timer);
+    let p;
+    try { p = await GET('/api/trakt'); } catch (e) { return slot.replaceChildren(h('p', { class: 'err' }, e.message)); }
+    const kids = [h('h2', { style: 'margin-top:0' }, 'Trakt', p.connected ? h('span', { class: 'ok', style: 'font-size:14px;margin-left:10px' }, t('connected')) : null)];
+    const check = (key, label, hint) => {
+      const c = h('input', { type: 'checkbox' });
+      c.checked = !!p[key];
+      c.onchange = async () => { try { await api('PUT', '/api/trakt', { [key]: c.checked }); } catch (e) { toast(e.message, 5000); } draw(); };
+      return h('label', { style: 'display:block;margin:6px 0' }, c, ' ', label, hint ? h('div', { class: 'dim', style: 'font-size:12px;margin-left:24px' }, hint) : null);
+    };
+    if (!p.configured) {
+      kids.push(h('p', {}, t('Trakt is not set up yet') + '. ' + (S.me.admin
+        ? t('Create a Trakt app at {url} (redirect URI {redirect}) and enter its Client ID and Client Secret below.', { url: p.app_url, redirect: p.redirect_uri })
+        : t('An admin needs to create a Trakt app first.'))));
+    } else if (!p.connected) {
+      kids.push(h('p', {}, t('Not connected. Connect your Trakt account and what you watch here shows up on Trakt.')),
+        h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: connect }, t('Connect Trakt'))));
+    } else {
+      const r = p.report;
+      const sum = r && r.error ? h('span', { class: 'err' }, ' · ' + r.error)
+        : r && r.at ? ' · ' + t('from Trakt: {w} watched, {r} ratings, {l} on the watchlist; to Trakt: {w2} watched, {r2} ratings, {l2} on the watchlist',
+          { w: r.pulled_watched, r: r.pulled_ratings, l: r.pulled_watchlist, w2: r.pushed_watched, r2: r.pushed_ratings, l2: r.pushed_watchlist }) : '';
+      kids.push(h('p', {}, t('Connected as {name}.', { name: p.name || '?' })),
+        p.last_sent ? h('p', { class: 'dim' }, t('Last sent: {what}', { what: p.last_sent })) : null,
+        p.sync_enabled || p.last_sync ? h('p', { class: 'dim' }, t('Last sync: {when}', { when: when(p.last_sync) }), sum) : null,
+        h('div', { class: 'actions' },
+          h('button', { class: 'primary', disabled: p.syncing, onclick: async () => { try { await api('POST', '/api/trakt/sync'); toast(t('Syncing with Trakt…')); timer = setTimeout(draw, 3000); } catch (e) { toast(e.message, 5000); } } }, p.syncing ? t('Syncing…') : t('Sync now')),
+          h('button', { class: 'danger', onclick: async () => { if (!(await sure(t('Disconnect your Trakt account?'), { ok: t('Disconnect'), danger: true }))) return; await api('POST', '/api/trakt/disconnect'); draw(); } }, t('Disconnect'))));
+      if (p.syncing) timer = setTimeout(draw, 3000);
+    }
+    if (S.me.admin) {
+      const id = h('input', { type: 'text', value: p.client_id || '', autocomplete: 'off', style: 'width:100%' });
+      const secret = h('input', { type: 'password', placeholder: p.client_secret_hint ? t('kept ({hint})', { hint: p.client_secret_hint }) : '', autocomplete: 'new-password', style: 'width:100%' });
+      const every = h('input', { type: 'number', min: 10, max: 1440, value: p.interval_minutes, style: 'width:90px' });
+      const save = body => async () => { try { await api('PUT', '/api/trakt', body()); toast(t('Saved')); } catch (e) { toast(e.message, 5000); } draw(); };
+      kids.push(h('h3', {}, t('For admins')),
+        formRow(t('Client ID'), id, ''), formRow(t('Client Secret'), secret, ''),
+        h('div', { class: 'actions' }, h('button', { onclick: save(() => ({ client_id: id.value, client_secret: secret.value })) }, t('Save'))),
+        check('scrobble', t('Show "watching now" and add finished titles to the history')),
+        check('send_marked_watched', t('Send titles marked as watched by hand')),
+        check('sync_enabled', t('Sync automatically'), t('Everyone who is connected is brought in step with Trakt regularly. Nothing is removed on either side.')),
+        check('sync_watched', t('Sync watched titles')), check('sync_ratings', t('Sync ratings')), check('sync_watchlist', t('Sync the watchlist')),
+        formRow(t('Sync every (minutes)'), every, ''),
+        h('div', { class: 'actions' }, h('button', { onclick: save(() => ({ interval_minutes: Number(every.value) })) }, t('Save'))));
+    }
+    slot.replaceChildren(...kids);
+  };
+  // The device login: a code to type in at trakt.tv/activate; asks again until it was entered.
+  const connect = async () => {
+    let r;
+    try { r = await api('POST', '/api/trakt/connect'); } catch (e) { return toast(e.message, 6000); }
+    let stopped = false, tm = null;
+    const box = modal(t('Connect Trakt'), [h('p', {}, t('Open {url} and enter this code:', { url: r.url })),
+      h('div', { style: 'font-size:32px;font-weight:700;letter-spacing:4px;margin:12px 0;user-select:all' }, r.code),
+      h('p', {}, h('a', { href: r.url, target: '_blank', rel: 'noopener', class: 'primary' }, r.url)), h('p', { class: 'dim' }, t('Waiting until the code is entered…')),
+      h('div', { class: 'actions' }, h('button', { onclick: () => box.remove() }, t('Cancel')))], () => { stopped = true; clearTimeout(tm); draw(); });
+    const ask = async () => {
+      if (stopped) return;
+      try {
+        const s = (await api('POST', '/api/trakt/poll')).status;
+        if (s === 'waiting') { tm = setTimeout(ask, Math.max(2, r.interval) * 1000); return; }
+        box.remove();
+        toast(s === 'connected' ? t('Connected to Trakt.') : s === 'denied' ? t('Trakt was told no.') : t('The code has expired. Try again.'), 5000);
+      } catch (e) { box.remove(); toast(e.message, 6000); }
+    };
+    tm = setTimeout(ask, Math.max(2, r.interval) * 1000);
+  };
+  draw();
+  return slot;
+}
+
+// Plugins that give each person a panel of their own.
 // The plugin draws it: api.call "panel" answers {title, text, link, buttons: [{label, action, primary, confirm}]}.
 // A button's answer may carry {message, code, link, poll: {action, seconds}} (shown in a box that asks
 // again until the answer says done), {error}, and matched/marked counts after a history import.
@@ -756,7 +833,7 @@ async function settingsPage(tab, qs) {
   markNav('settings');
   const nav = settingsNav;
   if (!tab || (!S.me.admin && !USER_TABS.includes(tab))) tab = 'account';
-  if (tab === 'account') return set(h('h1', {}, t('Settings')), nav(tab), accountPanel(), pluginPanels());
+  if (tab === 'account') return set(h('h1', {}, t('Settings')), nav(tab), accountPanel(), traktPanel(), pluginPanels());
   if (tab === 'devices') {
     const box = h('div');
     const draw = async () => {
