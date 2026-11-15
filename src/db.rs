@@ -630,7 +630,7 @@ fn is_zero(n: &u64) -> bool {
 
 /// One viewing in the play history: counted when the played threshold is
 /// passed, or marked watched by hand (`manual`).
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct PlayEvent {
     pub user_id: u64,
     pub item_id: u64,

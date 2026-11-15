@@ -550,6 +550,10 @@ pub fn decision_fail(status: u16, code: u32) -> Resp {
     js(status, json!({"error": transcode::decision_text(code), "status": status, "decisionCode": code}))
 }
 
+/// Held from the limit check until the new stream is counted, so streams started at the same moment
+/// can't all pass the check before any of them is running.
+static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn check_transcode_allowed(app: &Arc<App>, user: &User, method: &Method) -> Option<Resp> {
     if *method != Method::Transcode {
         return None;
@@ -581,6 +585,7 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     }
     if let Some(r) = stop_refusal(app, user, it.id) { return r; }
     if let Some(r) = remote_refusal(app, ctx, user, it.id) { return r; }
+    let _turn = STARTING.lock().unwrap();
     if let Some(r) = check_transcode_allowed(app, user, &d.method) {
         return r;
     }
@@ -604,6 +609,9 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     Response::new(StatusCode(200), h, Box::new(stream) as Box<dyn Read + Send>, None, None)
 }
 
+/// HLS streams one person can have running at once (on all their devices).
+pub const HLS_PER_USER: usize = 4;
+
 pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let (it, f) = match playable_file(app, user, iid, part_of(ctx)) { Ok(x) => x, Err(r) => return r };
     let req = { let st = app.settings(); transcode_request(st.remote_max_mbps, st.boost_dialogue, ctx) };
@@ -613,8 +621,21 @@ pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     }
     if let Some(r) = stop_refusal(app, user, it.id) { return r; }
     if let Some(r) = remote_refusal(app, ctx, user, it.id) { return r; }
+    let _turn = STARTING.lock().unwrap();
     if let Some(r) = check_transcode_allowed(app, user, &d.method) {
         return r;
+    }
+    // A player that retries, or quick switching between episodes, leaves streams running for 90 s:
+    // one person keeps at most a few, and the one used longest ago makes room.
+    let oldest = {
+        let mut map = app.hls.lock().unwrap();
+        let mine: Vec<(Instant, String)> = map.values().filter(|s| s.user_id == user.id).map(|s| (s.last_access, s.id.clone())).collect();
+        if mine.len() >= HLS_PER_USER { mine.into_iter().min().and_then(|(_, k)| map.remove(&k)) } else { None }
+    };
+    if let Some(mut s) = oldest {
+        let _ = s.child.kill();
+        let _ = s.child.wait();
+        let _ = std::fs::remove_dir_all(&s.dir);
     }
     let settings = app.settings();
     let sid = db::random_hex(16);
@@ -777,6 +798,7 @@ pub fn art(app: &Arc<App>, user: &User, iid: &str) -> Resp {
         (online, video, top_id)
     };
     let (online, video, top_id) = path;
+    let video = video.filter(|(p, _)| app.may_send(Path::new(p), false));
     // (Only real photos: a drawing saved by an older version is skipped.)
     if let Some((p, mime)) = online.filter(|p| app.may_send(Path::new(p), true)).and_then(|p| crate::metadata::file_image_type(Path::new(&p)).map(|m| (p, m))) {
         return with_cache(serve_file(Path::new(&p), mime, None, false));
@@ -786,14 +808,7 @@ pub fn art(app: &Arc<App>, user: &User, iid: &str) -> Resp {
         let Some((src, dur)) = video else { return fail(404, "No background picture") };
         let _ = std::fs::create_dir_all(cache.parent().unwrap_or(Path::new(".")));
         let at = if dur > 0 { dur as f64 / 1000.0 / 3.0 } else { 60.0 };
-        let ran = Command::new(app.settings().ffmpeg)
-            .args(transcode::art_args(&src, at, &cache.to_string_lossy()))
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success());
-        if !ran || !cache.exists() {
+        if !make_picture(&app.settings().ffmpeg, &cache, |tmp| transcode::art_args(&src, at, tmp)) {
             return fail(404, "No background picture");
         }
     }
@@ -885,25 +900,41 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str, width: Option<u32>) -> Resp
         }
         _ => None,
     };
-    if let Some((src, dur)) = source {
+    if let Some((src, dur)) = source.filter(|(p, _)| app.may_send(Path::new(p), false)) {
         let at = if dur > 0 { (dur as f64 / 1000.0 * 0.1).min(300.0) } else { 5.0 };
         let ffmpeg = app.settings().ffmpeg;
         // Music: the cover art inside the file; a still of the "picture" would be nothing.
         let music = matches!(kind, ItemKind::Artist | ItemKind::Album | ItemKind::Track);
-        let args = if music { transcode::cover_args(&src, &cache.to_string_lossy()) } else { transcode::thumb_args(&src, at, &cache.to_string_lossy()) };
-        let ran = Command::new(&ffmpeg)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if ran && cache.exists() {
+        let ran = make_picture(&ffmpeg, &cache, |tmp| if music { transcode::cover_args(&src, tmp) } else { transcode::thumb_args(&src, at, tmp) });
+        if ran {
             return with_cache(serve_file(&cache, "image/jpeg", None, false));
         }
     }
     bytes(200, "image/svg+xml", placeholder_svg(&title, kind.as_str(), id).into_bytes())
+}
+
+/// Posters, backgrounds and seek-bar pictures made with ffmpeg at the same time: a page of new titles
+/// waits its turn instead of starting a hundred ffmpeg processes at once.
+pub const PICTURES_AT_ONCE: usize = 3;
+static PICTURES: (std::sync::Mutex<usize>, std::sync::Condvar) = (std::sync::Mutex::new(0), std::sync::Condvar::new());
+
+/// Runs ffmpeg with `args(tmp)` to make the picture `out`. It is written under a name of its own and
+/// renamed when done, so nobody reads a half-written file. False when ffmpeg failed or no turn came within 20 s.
+pub fn make_picture(ffmpeg: &str, out: &Path, args: impl FnOnce(&str) -> Vec<String>) -> bool {
+    let (count, freed) = &PICTURES;
+    {
+        let n = count.lock().unwrap();
+        let (mut n, waited) = freed.wait_timeout_while(n, Duration::from_secs(20), |n| *n >= PICTURES_AT_ONCE).unwrap();
+        if waited.timed_out() { return false; }
+        *n += 1;
+    }
+    let tmp = out.with_extension(format!("{}.tmp.jpg", db::random_hex(4)));
+    let ran = Command::new(ffmpeg).args(args(&tmp.to_string_lossy())).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success());
+    *count.lock().unwrap() -= 1;
+    freed.notify_one();
+    let done = ran && std::fs::metadata(&tmp).is_ok_and(|m| m.len() > 0) && std::fs::rename(&tmp, out).is_ok();
+    if !done { let _ = std::fs::remove_file(&tmp); }
+    done
 }
 
 /// A small still at a moment of a movie or episode, for the player's seek bar
@@ -912,13 +943,11 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str, width: Option<u32>) -> Resp
 /// Takes one small picture at `at` seconds into `src` and saves it as `out` (already there = done).
 pub fn make_frame(ffmpeg: &str, src: &str, at: f64, out: &std::path::Path) -> bool {
     if std::fs::metadata(out).map(|m| m.len() > 0).unwrap_or(false) { return true; }
-    let args: Vec<String> = vec![
+    make_picture(ffmpeg, out, |tmp| vec![
         "-hide_banner".into(), "-loglevel".into(), "error".into(), "-nostdin".into(), "-y".into(),
         "-ss".into(), format!("{at:.2}"), "-i".into(), src.to_string(), "-frames:v".into(), "1".into(),
-        "-vf".into(), "scale=240:-2".into(), "-q:v".into(), "6".into(), out.to_string_lossy().to_string(),
-    ];
-    let ran = Command::new(ffmpeg).args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
-    ran && out.exists()
+        "-vf".into(), "scale=240:-2".into(), "-q:v".into(), "6".into(), tmp.to_string(),
+    ])
 }
 
 /// The second whose picture stands for a chapter: a little after its start (chapters often begin black).
@@ -1414,5 +1443,137 @@ mod theme_tests {
     fn theme_file_names() {
         for n in ["theme", "Theme", "theme1", "theme-2"] { assert!(is_theme_name(n), "{n}"); }
         for n in ["themes", "theme12", "theme-song", "my theme"] { assert!(!is_theme_name(n), "{n}"); }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod picture_tests {
+    use super::*;
+
+    /// A stand-in "ffmpeg" (a shell script) in a fresh folder; `$out` is its last argument (the picture).
+    fn fake_ffmpeg(name: &str, script: &str) -> (PathBuf, String) {
+        let root = std::env::temp_dir().join(format!("lichtspiel-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let ff = root.join("ffmpeg.sh");
+        std::fs::write(&ff, format!("#!/bin/sh\nfor out; do :; done\n{script}\n")).unwrap();
+        std::fs::set_permissions(&ff, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        (root, ff.to_string_lossy().to_string())
+    }
+
+    #[test]
+    fn a_picture_is_never_seen_half_written() {
+        let (root, ff) = fake_ffmpeg("half-picture", "printf half > \"$out\"; sleep 0.5; printf rest >> \"$out\"");
+        let out = root.join("1-0.jpg");
+        let (ff2, out2) = (ff.clone(), out.clone());
+        let maker = std::thread::spawn(move || make_frame(&ff2, "x.mkv", 1.0, &out2));
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_millis(400) {
+            if let Ok(b) = std::fs::read(&out) {
+                assert_ne!(b, b"half", "another request could read the picture while ffmpeg was still writing it");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(maker.join().unwrap());
+        assert_eq!(std::fs::read(&out).unwrap(), b"halfrest");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn pictures_are_made_a_few_at_a_time() {
+        let (root, ff) = fake_ffmpeg("many-pictures", "d=$(dirname \"$0\")/running; mkdir -p \"$d\"; touch \"$d/$$\"; ls \"$d\" | wc -l >> \"$d.log\"; sleep 0.3; rm \"$d/$$\"; printf x > \"$out\"");
+        let makers: Vec<_> = (0..9).map(|n| {
+            let (ff, out) = (ff.clone(), root.join(format!("1-{n}.jpg")));
+            std::thread::spawn(move || make_frame(&ff, "x.mkv", n as f64, &out))
+        }).collect();
+        for m in makers { assert!(m.join().unwrap()); }
+        let most = std::fs::read_to_string(root.join("running.log")).unwrap().lines().filter_map(|l| l.trim().parse::<usize>().ok()).max().unwrap();
+        assert!(most <= PICTURES_AT_ONCE, "{most} ffmpeg processes ran at once");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn no_picture_is_taken_from_a_video_outside_the_libraries() {
+        let (root, ff) = fake_ffmpeg("outside-picture", "touch \"$(dirname \"$0\")/ran\"; printf x > \"$out\"");
+        let app = App::open(&root.join("data"));
+        let user: User = serde_json::from_value(json!({"id": 1, "username": "o", "admin": true, "password_hash": "", "salt": "", "created_at": 0})).unwrap();
+        {
+            let mut db = app.db.lock().unwrap();
+            db.settings.ffmpeg = ff;
+            // The movie's library folder is elsewhere (its file is not in any library).
+            db.sections.push(serde_json::from_value(json!({"id": 1, "name": "Filme", "kind": "movie", "paths": [root.join("movies").to_string_lossy()], "created_at": 0})).unwrap());
+            let mut i: Item = serde_json::from_value(json!({"id": 1, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+            i.file = Some(db::MediaFile { path: "/etc/hosts".into(), duration_ms: 1000, ..Default::default() });
+            db.items.insert(1, i);
+        }
+        assert_eq!(art(&app, &user, "1").status_code().0, 404);
+        assert!(!root.join("ran").exists(), "ffmpeg read a file outside the libraries for a background");
+        let _ = thumb(&app, &user, "1", None);
+        assert!(!root.join("ran").exists(), "ffmpeg read a file outside the libraries for a poster");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod session_tests {
+    use super::*;
+
+    /// An app with one movie in a library, a stand-in "ffmpeg" that just keeps running, and these settings.
+    fn app(name: &str, max_transcodes: usize) -> (Arc<App>, PathBuf, User) {
+        let root = std::env::temp_dir().join(format!("lichtspiel-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("movies")).unwrap();
+        std::fs::write(root.join("movies/x.mp4"), b"x").unwrap();
+        let ff = root.join("ffmpeg.sh");
+        // Hardware checks (a lavfi test picture) just fail; a stream keeps going.
+        std::fs::write(&ff, "#!/bin/sh\ncase \"$*\" in *lavfi*) exit 1;; esac\nsleep 30\n").unwrap();
+        std::fs::set_permissions(&ff, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        let app = App::open(&root.join("data"));
+        {
+            let mut db = app.db.lock().unwrap();
+            db.settings.ffmpeg = ff.to_string_lossy().to_string();
+            db.settings.max_transcodes = max_transcodes;
+            db.sections.push(serde_json::from_value(json!({"id": 1, "name": "Filme", "kind": "movie", "paths": [root.join("movies").to_string_lossy()], "created_at": 0})).unwrap());
+            let mut i: Item = serde_json::from_value(json!({"id": 1, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+            i.file = Some(db::MediaFile { path: root.join("movies/x.mp4").to_string_lossy().to_string(), container: "mp4".into(), duration_ms: 1000, ..Default::default() });
+            db.items.insert(1, i);
+        }
+        let user: User = serde_json::from_value(json!({"id": 1, "username": "o", "admin": true, "password_hash": "", "salt": "", "created_at": 0})).unwrap();
+        (app, root, user)
+    }
+
+    fn ctx(params: &[(&str, &str)]) -> Ctx {
+        Ctx { method: "GET".into(), path: "/video/start.m3u8".into(), params: params.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(), body: Value::Null,
+            user: None, host: String::new(), range: None, token: None, remote: Some([127, 0, 0, 1].into()), remote_trusted: true, lan_extra: false, device: "test".into() }
+    }
+
+    fn end_all(app: &App, root: &Path) {
+        for (_, mut s) in std::mem::take(&mut *app.hls.lock().unwrap()) { let _ = s.child.kill(); let _ = s.child.wait(); }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn starts_at_the_same_moment_keep_to_the_transcode_limit() {
+        let (app, root, user) = app("transcode-race", 1);
+        let go = Arc::new(std::sync::Barrier::new(8));
+        let starts: Vec<_> = (0..8).map(|_| {
+            let (app, user, go) = (app.clone(), user.clone(), go.clone());
+            std::thread::spawn(move || { go.wait(); hls_start(&app, &ctx(&[("transcode", "1"), ("redirect", "0")]), &user, "1").status_code().0 })
+        }).collect();
+        let codes: Vec<u16> = starts.into_iter().map(|s| s.join().unwrap()).collect();
+        let running = app.active_transcodes();
+        end_all(&app, &root);
+        assert_eq!(running, 1, "{running} conversions run with a limit of one (answers {codes:?})");
+    }
+
+    #[test]
+    fn one_person_cannot_pile_up_remux_streams() {
+        let (app, root, user) = app("remux-pile", 0);
+        for _ in 0..6 {
+            assert_eq!(hls_start(&app, &ctx(&[("redirect", "0")]), &user, "1").status_code().0, 200);
+        }
+        let mine = app.hls.lock().unwrap().values().filter(|s| s.user_id == user.id).count();
+        end_all(&app, &root);
+        assert!(mine <= HLS_PER_USER, "{mine} streams kept running for one person");
     }
 }

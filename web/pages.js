@@ -75,17 +75,37 @@ async function playlistPage(id, qs) {
   if (st.type) q.set('kind', st.type);
   if (st.watched) q.set('watched', st.watched === 'watched' ? 'true' : 'false');
   if (st.q) q.set('q', st.q);
-  const res = (await GET(`/playlists/${id}/items?${q}`)).MediaContainer;
+  // A page at a time: a smart playlist can hold tens of thousands of episodes.
+  const listUrl = start => { const n = new URLSearchParams(q); n.set('start', start); n.set('size', PAGE_SIZE); return `/playlists/${id}/items?${n}`; };
+  const res = (await GET(listUrl(0))).MediaContainer;
   const manual = pl.kind === 'manual';
   const reorder = manual && !st.sort && !st.type && !st.watched && !st.q && pl.editable;
   const sel = (key, opts) => h('select', { onchange: e => { st[key] = e.target.value; go(); } }, opts.map(([v, l]) => h('option', { value: v, selected: st[key] === v }, l)));
-  const items = res.Metadata;
+  const items = res.Metadata.slice(); // the ones loaded so far
   const reload = () => playlistPage(id, qs);
   const move = async (idx, dir) => {
     const target = idx + dir; if (target < 0 || target >= items.length) return;
     const after = dir < 0 ? (target === 0 ? 0 : items[target - 1].id) : items[target].id;
     await api('PUT', `/playlists/${id}/items/${items[idx].id}/move?after=${after}`); reload();
   };
+  const ctx = { items, reorder, manual, pl, id, move, reload };
+  const list = h('div', { class: 'list' }, items.map((it, i) => playlistRow(it, i, ctx)));
+  // More rows when the end of the list comes near, like the library pages.
+  const end = h('div');
+  let loading = false;
+  const more = new IntersectionObserver(async es => {
+    if (loading || !es.some(e => e.isIntersecting)) return;
+    loading = true;
+    try {
+      const r = (await GET(listUrl(items.length))).MediaContainer;
+      const from = items.length;
+      items.push(...r.Metadata);
+      list.append(...r.Metadata.map((it, k) => playlistRow(it, from + k, ctx)));
+      more.unobserve(end);
+      // Watched again, so a list end that is still in view loads the next page too.
+      if (r.Metadata.length && items.length < r.totalSize) more.observe(end);
+    } catch (e) { if (e.name !== 'AbortError') toast(e.message); } finally { loading = false; }
+  }, { rootMargin: '900px' });
   set(h('div', { class: 'dim' }, h('a', { href: '#/playlists' }, t('Playlists')), ' ›'),
     h('h1', {}, plTitle(pl), ' ', h('span', { class: 'tag ' + pl.kind }, kindName(pl.kind))),
     pl.summary ? h('p', { class: 'dim' }, pl.default ? t(pl.summary) : pl.summary) : null,
@@ -104,14 +124,20 @@ async function playlistPage(id, qs) {
       sel('watched', [['', t('Watched or not')], ['unwatched', t('Unwatched')], ['watched', t('Watched')]]),
       h('input', { placeholder: t('Filter by title'), value: st.q, onchange: e => { st.q = e.target.value.trim(); go(); } }),
       h('span', { class: 'grow' }), h('span', { class: 'dim' }, t('{shown} of {all} items · {length}', { shown: res.totalSize, all: pl.leafCount, length: fmtDur(pl.duration) }))),
-    items.length ? h('div', { class: 'list' }, items.map((it, i) => h('div', { class: 'li' },
-      h('img', { src: smallTok(it.squareThumb || (it.type === 'episode' && it.grandparentThumb ? it.grandparentThumb : it.thumb), 120), loading: 'lazy', style: it.squareThumb || it.type === 'track' ? 'object-fit:cover' : '' }),
-      h('div', { class: 'grow' }, h('a', { href: '#/item/' + it.id }, h('b', {}, it.type === 'episode' ? `${it.grandparentTitle} · ${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} ${it.title}` : it.type === 'track' ? `${it.grandparentTitle || ''} · ${it.title}` : it.title)),
-        h('div', { class: 'dim' }, [it.type === 'track' ? it.parentTitle : null, it.year, fmtDur(it.duration), it.viewCount ? t('✓ watched') : '', it.viewOffset ? t('stopped at {time}', { time: fmtTime(it.viewOffset / 1000) }) : ''].filter(Boolean).join(' · '))),
-      reorder ? [h('button', { class: 'small', title: t('Move up'), onclick: () => move(i, -1) }, '↑'), h('button', { class: 'small', title: t('Move down'), onclick: () => move(i, 1) }, '↓')] : null,
-      manual && pl.editable ? h('button', { class: 'small danger', onclick: async () => { if (!(await sure(t('Remove “{title}” from this playlist?', { title: it.title }), { ok: t('Remove'), danger: true }))) return; await api('DELETE', `/playlists/${id}/items/${it.id}`); reload(); } }, t('Remove')) : null,
-      h('button', { class: 'primary small', onclick: () => play(it, it.viewOffset ? it.viewOffset / 1000 : 0, items.slice(i + 1)) }, '▶')))) :
+    items.length ? [list, end] :
       h('div', { class: 'empty' }, manual ? t('Empty. Open a movie or episode and use "Add to playlist".') : t('Nothing matches these rules right now.')));
+  if (items.length < res.totalSize) more.observe(end);
+}
+
+function playlistRow(it, i, { items, reorder, manual, pl, id, move, reload }) {
+  return h('div', { class: 'li' },
+    h('img', { src: smallTok(it.squareThumb || (it.type === 'episode' && it.grandparentThumb ? it.grandparentThumb : it.thumb), 120), loading: 'lazy', style: it.squareThumb || it.type === 'track' ? 'object-fit:cover' : '' }),
+    h('div', { class: 'grow' }, h('a', { href: '#/item/' + it.id }, h('b', {}, it.type === 'episode' ? `${it.grandparentTitle} · ${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} ${it.title}` : it.type === 'track' ? `${it.grandparentTitle || ''} · ${it.title}` : it.title)),
+      h('div', { class: 'dim' }, [it.type === 'track' ? it.parentTitle : null, it.year, fmtDur(it.duration), it.viewCount ? t('✓ watched') : '', it.viewOffset ? t('stopped at {time}', { time: fmtTime(it.viewOffset / 1000) }) : ''].filter(Boolean).join(' · '))),
+    reorder ? [h('button', { class: 'small', title: t('Move up'), onclick: () => move(i, -1) }, '↑'), h('button', { class: 'small', title: t('Move down'), onclick: () => move(i, 1) }, '↓')] : null,
+    manual && pl.editable ? h('button', { class: 'small danger', onclick: async () => { if (!(await sure(t('Remove “{title}” from this playlist?', { title: it.title }), { ok: t('Remove'), danger: true }))) return; await api('DELETE', `/playlists/${id}/items/${it.id}`); reload(); } }, t('Remove')) : null,
+    // shortcut: the queue after ▶ holds only the rows loaded so far; "Play all" still fetches everything.
+    h('button', { class: 'primary small', onclick: () => play(it, it.viewOffset ? it.viewOffset / 1000 : 0, items.slice(i + 1)) }, '▶'));
 }
 
 function smartEditor(pl) {

@@ -14,7 +14,7 @@
 //! Each row keeps the record as JSON (`data`); a few columns are copied out
 //! next to it so the file can be looked at with any SQLite tool.
 
-use crate::db::{Db, Item, ViewState};
+use crate::db::{Db, Item, PlayEvent, PlaySession, ViewState};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::btree_map::{Entry, ValuesMut};
@@ -169,6 +169,10 @@ fn view_key(k: &str) -> Option<(u64, u64)> {
 /// the writing itself can happen after the lock is let go.
 pub struct Changes {
     parts: Vec<(&'static str, String)>,
+    // The play history and statistics are big (up to 70k entries): copied as they are (fast) and
+    // turned into JSON only when they differ from the last save, after the library is unlocked.
+    history: Vec<PlayEvent>,
+    sessions: Vec<PlaySession>,
     items_all: bool,
     items: Vec<(u64, Option<ItemRow>)>,
     views_all: bool,
@@ -191,8 +195,6 @@ impl Changes {
             ("tokens", js(&db.tokens)),
             ("playlists", js(&db.playlists)),
             ("plugins", js(&db.plugins)),
-            ("history", js(&db.history)),
-            ("sessions", js(&db.sessions)),
             ("reports", js(&db.reports)),
             ("downloads", js(&db.downloads)),
         ];
@@ -211,7 +213,7 @@ impl Changes {
                 Some((u, i, db.views.get(&k).map(js)))
             })
             .collect();
-        Changes { parts, items_all, items, views_all, views }
+        Changes { parts, history: db.history.clone(), sessions: db.sessions.clone(), items_all, items, views_all, views }
     }
 }
 
@@ -222,6 +224,8 @@ pub struct Store {
     path: PathBuf,
     /// The small parts as they were last written (unchanged ones are skipped).
     written: HashMap<&'static str, String>,
+    written_history: Option<Vec<PlayEvent>>,
+    written_sessions: Option<Vec<PlaySession>>,
     /// Rows `load` could not read ("id" and "user:item"): a full write keeps them.
     unreadable_items: Vec<String>,
     unreadable_views: Vec<String>,
@@ -267,7 +271,7 @@ impl Store {
         )
         .map_err(fail)?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION).map_err(fail)?;
-        Ok(Store { conn, path: path.to_path_buf(), written: HashMap::new(), unreadable_items: vec![], unreadable_views: vec![] })
+        Ok(Store { conn, path: path.to_path_buf(), written: HashMap::new(), written_history: None, written_sessions: None, unreadable_items: vec![], unreadable_views: vec![] })
     }
 
     /// The stored library, or None when the file is new (nothing saved yet).
@@ -351,6 +355,8 @@ impl Store {
         let mut db = db;
         let top = db.items.keys().next_back().copied().unwrap_or(0);
         db.next_id = db.next_id.max(top + 1);
+        self.written_history = parts.contains_key("history").then(|| db.history.clone());
+        self.written_sessions = parts.contains_key("sessions").then(|| db.sessions.clone());
         self.written = parts
             .into_iter()
             .filter_map(|(k, v)| PART_NAMES.iter().find(|p| **p == k).map(|p| (*p, v)))
@@ -380,6 +386,12 @@ impl Store {
                 if self.written.get(k) != Some(v) {
                     put.execute(params![k, v])?;
                 }
+            }
+            if self.written_history.as_ref() != Some(&ch.history) {
+                put.execute(params!["history", serde_json::to_string(&ch.history).unwrap_or_default()])?;
+            }
+            if self.written_sessions.as_ref() != Some(&ch.sessions) {
+                put.execute(params!["sessions", serde_json::to_string(&ch.sessions).unwrap_or_default()])?;
             }
         }
         if ch.items_all {
@@ -414,12 +426,15 @@ impl Store {
         for (k, v) in &ch.parts {
             self.written.insert(k, v.clone());
         }
+        if self.written_history.as_ref() != Some(&ch.history) { self.written_history = Some(ch.history.clone()); }
+        if self.written_sessions.as_ref() != Some(&ch.sessions) { self.written_sessions = Some(ch.sessions.clone()); }
         Ok(())
     }
 
     /// After a failed write: the next one writes everything again.
     pub fn forget_written(&mut self) {
         self.written.clear();
+        (self.written_history, self.written_sessions) = (None, None);
     }
 }
 
@@ -479,6 +494,7 @@ mod tests {
         db.items.get_mut(&1).unwrap().title = "Renamed".into();
         db.items.remove(&3);
         db.settings.server_name = "Test".into();
+        db.record_play_at(7, 2, false, 1000);
         let ch = Changes::take(&mut db);
         assert_eq!(ch.items.len(), 2);
         st.write(&ch).unwrap();
@@ -489,8 +505,48 @@ mod tests {
         assert_eq!(back.items[&1].title, "Renamed");
         assert_eq!(back.view(7, 2).view_offset_ms, 5000);
         assert_eq!(back.settings.server_name, "Test");
+        assert_eq!(back.history.len(), 1, "the new viewing was not saved");
         assert_eq!(back.machine_id, db.machine_id);
         assert!(back.next_id >= db.next_id);
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+    }
+
+    /// The time a save takes on a big, long-running server (50k items, full play history and statistics),
+    /// for a player's progress report: how long the library stays locked, and the whole save.
+    /// `cargo test --release --no-default-features -- --ignored --nocapture save_cost`
+    #[test]
+    #[ignore]
+    fn save_cost() {
+        let path = std::env::temp_dir().join(format!("lichtspiel-store-bench-{}.db", std::process::id()));
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+        let mut db = Db::default();
+        for id in 1..=50_000 {
+            db.items.insert(id, item(id, &format!("Film {id}")));
+        }
+        for n in 0..crate::db::HISTORY_MAX as u64 {
+            db.history.push(crate::db::PlayEvent { user_id: n % 10, item_id: n % 50_000 + 1, at: 1_700_000_000 + n * 60, manual: false });
+        }
+        for n in 0..crate::db::SESSIONS_MAX as u64 {
+            db.sessions.push(crate::db::PlaySession { user_id: n % 10, item_id: n % 50_000 + 1, at: 1_700_000_000 + n * 60, watched_ms: 3_600_000 });
+        }
+        let mut st = Store::open(&path).unwrap();
+        st.write(&Changes::take(&mut db)).unwrap();
+        let (mut locked, mut total) = (vec![], vec![]);
+        for run in 0..15u64 {
+            db.view_mut(3, run + 1).view_offset_ms = 10_000 * (run + 1);
+            let t0 = std::time::Instant::now();
+            let ch = Changes::take(&mut db);
+            let t1 = t0.elapsed();
+            st.write(&ch).unwrap();
+            locked.push(t1);
+            total.push(t0.elapsed());
+        }
+        let median = |v: &mut Vec<std::time::Duration>| { v.sort(); v[v.len() / 2] };
+        println!("save_cost: library locked {:?} (median of 15), whole save {:?}", median(&mut locked), median(&mut total));
         for ext in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
         }

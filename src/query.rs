@@ -2,6 +2,7 @@
 //! playlist contents and the playlist list itself.
 
 use crate::db::{now, Db, Item, ItemKind, Playlist, Rule, SmartQuery, User};
+use crate::server::Index;
 use serde_json::Value;
 use std::cmp::Ordering;
 
@@ -289,7 +290,22 @@ pub fn date_to_unix(s: &str) -> Option<f64> {
 }
 
 pub fn field(db: &Db, user_id: u64, item: &Item, name: &str) -> FieldValue {
+    field_ix(db, None, user_id, item, name)
+}
+
+/// The fields that look at every episode below a show or season.
+const LEAF_FIELDS: [&str; 4] = ["watched", "in_progress", "unwatched", "unwatched_leaves"];
+
+/// An index of the library's children when one of the rules looks below shows and seasons: built once,
+/// so filtering a TV library doesn't search the whole library again for every show.
+pub fn index_for(db: &Db, rules: &[Rule]) -> Option<Index> {
+    rules.iter().any(|r| LEAF_FIELDS.contains(&r.field.as_str())).then(|| Index::build(db))
+}
+
+/// Like [`field`]; with an index the episodes below a show are looked up, not searched for.
+pub fn field_ix(db: &Db, ix: Option<&Index>, user_id: u64, item: &Item, name: &str) -> FieldValue {
     use FieldValue::*;
+    let leaves_of = |id: u64| ix.map_or_else(|| db.leaves(id), |x| x.leaves(db, id));
     let view = db.view(user_id, item.id);
     let file = item.file.as_ref();
     let show = || -> Option<&Item> {
@@ -314,7 +330,7 @@ pub fn field(db: &Db, user_id: u64, item: &Item, name: &str) -> FieldValue {
     };
     let watched_container = |db: &Db| -> (bool, bool) {
         // A show/season counts as watched when every episode is.
-        let leaves = db.leaves(item.id);
+        let leaves = leaves_of(item.id);
         if leaves.is_empty() {
             return (false, false);
         }
@@ -374,7 +390,7 @@ pub fn field(db: &Db, user_id: u64, item: &Item, name: &str) -> FieldValue {
         "unwatched_leaves" => Bool(if item.kind.playable() {
             view.view_count == 0
         } else {
-            db.leaves(item.id).iter().any(|l| db.view(user_id, *l).view_count == 0)
+            leaves_of(item.id).iter().any(|l| db.view(user_id, *l).view_count == 0)
         }),
         "decade" => Num(item.year.or(top().year).map(|y| (y / 10 * 10) as f64)),
         "collection" => Text(inherited("collections")),
@@ -457,8 +473,8 @@ fn as_text(v: &Value) -> String {
     }
 }
 
-pub fn rule_matches(db: &Db, user_id: u64, item: &Item, rule: &Rule) -> bool {
-    let fv = field(db, user_id, item, &rule.field);
+pub fn rule_matches(db: &Db, ix: Option<&Index>, user_id: u64, item: &Item, rule: &Rule) -> bool {
+    let fv = field_ix(db, ix, user_id, item, &rule.field);
     let op = rule.op.as_str();
     let days = |d: &Value| as_num(d).unwrap_or(0.0) * 86400.0;
     match fv {
@@ -533,14 +549,15 @@ pub fn rule_matches(db: &Db, user_id: u64, item: &Item, rule: &Rule) -> bool {
     }
 }
 
-pub fn matches_all(db: &Db, user_id: u64, item: &Item, rules: &[Rule], match_all: bool) -> bool {
+/// `ix`: from [`index_for`] when many items are checked against the same rules.
+pub fn matches_all(db: &Db, ix: Option<&Index>, user_id: u64, item: &Item, rules: &[Rule], match_all: bool) -> bool {
     if rules.is_empty() {
         return true;
     }
     if match_all {
-        rules.iter().all(|r| rule_matches(db, user_id, item, r))
+        rules.iter().all(|r| rule_matches(db, ix, user_id, item, r))
     } else {
-        rules.iter().any(|r| rule_matches(db, user_id, item, r))
+        rules.iter().any(|r| rule_matches(db, ix, user_id, item, r))
     }
 }
 
@@ -635,7 +652,8 @@ pub fn sort_items(db: &Db, user_id: u64, ids: &mut Vec<u64>, sort: &str) {
             }
             other => {
                 let mut m = HashMap::new();
-                per_item(&mut |i: &Item| { m.insert(i.id, field(db, user_id, i, other)); Some(()) });
+                let ix = LEAF_FIELDS.contains(&other).then(|| Index::build(db));
+                per_item(&mut |i: &Item| { m.insert(i.id, field_ix(db, ix.as_ref(), user_id, i, other)); Some(()) });
                 Key::Field(m)
             }
         })
@@ -684,13 +702,14 @@ pub fn run_smart(db: &Db, user: &User, q: &SmartQuery) -> Vec<u64> {
         (r.field == "kind" || r.field == "type")
             && matches!(as_text(&r.value).as_str(), "show" | "season")
     });
+    let ix = index_for(db, &q.rules);
     let mut ids: Vec<u64> = db
         .items
         .values()
         .filter(|i| db.can_see_item(user, i))
         .filter(|i| q.sections.is_empty() || q.sections.contains(&i.section_id))
         .filter(|i| (i.kind.playable() || asks_container) && !i.hidden())
-        .filter(|i| matches_all(db, user.id, i, &q.rules, q.match_all))
+        .filter(|i| matches_all(db, ix.as_ref(), user.id, i, &q.rules, q.match_all))
         .map(|i| i.id)
         .collect();
     sort_items(db, user.id, &mut ids, if q.sort.is_empty() { "title" } else { &q.sort });
@@ -893,6 +912,76 @@ mod tests {
             "year": year, "added_at": 0, "updated_at": 0, "extra": extra})).unwrap()
     }
 
+    /// A TV library of `n` shows × 2 seasons × 10 episodes next to some movies.
+    fn tv_library(n: usize, movies: usize) -> (Db, Vec<u64>) {
+        let mut db = Db::default();
+        let mut id = 0;
+        let mut next = |db: &mut Db, kind: &str, section: u64, parent: Option<u64>, index: u64| {
+            id += 1;
+            let it: Item = serde_json::from_value(json!({"id": id, "section_id": section, "kind": kind, "title": format!("{kind} {id}"),
+                "sort_title": format!("{kind} {id}"), "parent_id": parent, "index": index, "added_at": 0, "updated_at": 0})).unwrap();
+            db.items.insert(id, it);
+            id
+        };
+        let mut shows = vec![];
+        for s in 0..n {
+            let show = next(&mut db, "show", 2, None, 0);
+            shows.push(show);
+            for n in 1..=2 {
+                let season = next(&mut db, "season", 2, Some(show), n);
+                for e in 1..=10 {
+                    let ep = next(&mut db, "episode", 2, Some(season), e);
+                    // Every other show is watched to the end.
+                    if s % 2 == 0 { db.view_mut(1, ep).view_count = 1; }
+                }
+            }
+        }
+        for _ in 0..movies { next(&mut db, "movie", 1, None, 0); }
+        (db, shows)
+    }
+
+    #[test]
+    fn show_filters_agree_with_and_without_the_index() {
+        let (mut db, shows) = tv_library(4, 3);
+        // Show 3: one episode watched (in progress, not watched, has unwatched episodes).
+        let ep = db.leaves(shows[1])[0];
+        db.view_mut(1, ep).view_count = 1;
+        for field in LEAF_FIELDS {
+            for v in ["1", "0"] {
+                let rules = rules_from_params(&[(field.to_string(), v.to_string())]);
+                let ix = index_for(&db, &rules);
+                assert!(ix.is_some());
+                let with: Vec<bool> = shows.iter().map(|s| matches_all(&db, ix.as_ref(), 1, &db.items[s], &rules, true)).collect();
+                let without: Vec<bool> = shows.iter().map(|s| matches_all(&db, None, 1, &db.items[s], &rules, true)).collect();
+                assert_eq!(with, without, "{field}={v}");
+            }
+        }
+    }
+
+    /// `cargo test --release --no-default-features -- --ignored --nocapture unwatched_filter_cost`
+    #[test]
+    #[ignore]
+    fn unwatched_filter_cost() {
+        // 500 shows next to 38,500 movies: 50k items.
+        let (db, shows) = tv_library(500, 38_500);
+        for field in ["unwatched_leaves", "unwatched"] {
+            let rules = rules_from_params(&[(field.to_string(), "1".to_string())]);
+            let mut times = vec![];
+            let mut kept = 0;
+            for _ in 0..5 {
+                let t0 = std::time::Instant::now();
+                let mut ids = shows.clone();
+                let ix = index_for(&db, &rules);
+                ids.retain(|i| db.items.get(i).is_some_and(|it| matches_all(&db, ix.as_ref(), 1, it, &rules, true)));
+                times.push(t0.elapsed());
+                kept = ids.len();
+            }
+            times.sort();
+            println!("unwatched_filter_cost {field}: {:?} (median of 5), {kept} of {} shows kept", times[2], shows.len());
+            assert_eq!(kept, 250);
+        }
+    }
+
     #[test]
     fn editions_are_not_duplicates() {
         let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 9, "settings": crate::db::Settings::default(),
@@ -942,7 +1031,7 @@ mod tests {
         let hits = |params: &[(&str, &str)]| -> Vec<u64> {
             let p: Vec<(String, String)> = params.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
             let rules = rules_from_params(&p);
-            let mut ids: Vec<u64> = db.items.values().filter(|i| matches_all(&db, 1, i, &rules, true)).map(|i| i.id).collect();
+            let mut ids: Vec<u64> = db.items.values().filter(|i| matches_all(&db, None, 1, i, &rules, true)).map(|i| i.id).collect();
             ids.sort();
             ids
         };

@@ -1520,7 +1520,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let rules = query::rules_from_params(&ctx.params);
             let any = ctx.param("match") == Some("any");
             let text = ctx.param("q").or(ctx.param("query")).map(|s| s.to_lowercase());
-            ids.retain(|i| db.items.get(i).is_some_and(|it| query::matches_all(&db, user.id, it, &rules, !any) && text.as_ref().is_none_or(|t| it.title.to_lowercase().contains(t))));
+            let ix = query::index_for(&db, &rules);
+            ids.retain(|i| db.items.get(i).is_some_and(|it| query::matches_all(&db, ix.as_ref(), user.id, it, &rules, !any) && text.as_ref().is_none_or(|t| it.title.to_lowercase().contains(t))));
             if let Some(s) = ctx.param("sort").filter(|s| *s != "playlist" && !s.is_empty()) {
                 query::sort_items(&db, user.id, &mut ids, s);
             }
@@ -1948,9 +1949,10 @@ fn narrow(db: &db::Db, user: &db::User, ids: Vec<u64>, ctx: &Ctx) -> Vec<u64> {
     let advanced: Vec<db::Rule> = ctx.param("rules").and_then(|r| serde_json::from_str::<Vec<db::Rule>>(r).ok()).unwrap_or_default();
     let adv_any = ctx.param("rmatch") == Some("any");
     let text = ctx.param("q").or(ctx.param("query")).map(|s| s.to_lowercase());
+    let ix = query::index_for(db, &rules).or_else(|| query::index_for(db, &advanced));
     ids.into_iter()
-        .filter(|id| db.items.get(id).is_some_and(|i| query::matches_all(db, user.id, i, &rules, !any)
-            && query::matches_all(db, user.id, i, &advanced, !adv_any)
+        .filter(|id| db.items.get(id).is_some_and(|i| query::matches_all(db, ix.as_ref(), user.id, i, &rules, !any)
+            && query::matches_all(db, ix.as_ref(), user.id, i, &advanced, !adv_any)
             && text.as_ref().is_none_or(|t| i.title.to_lowercase().contains(t))))
         .collect()
 }

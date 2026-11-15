@@ -1120,24 +1120,25 @@ where
             main.iter().map(|i| (*i, None)).collect()
         } else {
             let mut v = vec![];
+            // The library's movies by folder (id, file name without the part), in id order: one pass, not one per extra.
+            let mut by_dir: HashMap<PathBuf, Vec<(u64, String)>> = HashMap::new();
             with_db(&mut |db: &mut Db| {
-                for (i, x) in &extras {
-                    let movies: Vec<&Item> = db
-                        .items
-                        .values()
-                        .filter(|m| m.section_id == section.id && m.kind == ItemKind::Movie)
-                        .filter(|m| m.file.as_ref().is_some_and(|f| Path::new(&f.path).parent() == Some(x.movie_dir.as_path())))
-                        .collect();
-                    let stem_of = |m: &Item| {
-                        m.file.as_ref().and_then(|f| Path::new(&f.path).file_stem().map(|s| split_part(&s.to_string_lossy()).0.to_lowercase())).unwrap_or_default()
-                    };
-                    let parent = match &x.prefix {
-                        Some(pre) => movies.iter().find(|m| stem_of(m) == pre.to_lowercase()).or(if movies.len() == 1 { movies.first() } else { None }),
-                        None => movies.iter().min_by_key(|m| m.id),
-                    };
-                    v.push((*i, parent.map(|m| (x.kind, m.id, x.title.clone()))));
+                for m in db.items.values().filter(|m| m.section_id == section.id && m.kind == ItemKind::Movie) {
+                    let Some(f) = &m.file else { continue };
+                    let p = Path::new(&f.path);
+                    let Some(dir) = p.parent() else { continue };
+                    let stem = p.file_stem().map(|s| split_part(&s.to_string_lossy()).0.to_lowercase()).unwrap_or_default();
+                    by_dir.entry(dir.to_path_buf()).or_default().push((m.id, stem));
                 }
             });
+            for (i, x) in &extras {
+                let movies = by_dir.get(&x.movie_dir).map(Vec::as_slice).unwrap_or_default();
+                let parent = match &x.prefix {
+                    Some(pre) => movies.iter().find(|m| m.1 == pre.to_lowercase()).or(if movies.len() == 1 { movies.first() } else { None }),
+                    None => movies.first(),
+                };
+                v.push((*i, parent.map(|m| (x.kind, m.0, x.title.clone()))));
+            }
             v
         };
         for (idx, as_extra) in list {
@@ -1881,6 +1882,46 @@ title=Two
         assert_eq!(db.items.len(), 2);
         // The full scan sees it.
         assert_eq!(scan_section(&section, "no-such-ffprobe", |f| f(&mut db)).removed.len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A rescan with nothing changed of 5,000 movie folders, 3,000 of them with a trailer: the time the
+    /// library is locked (all of it, and the longest single stretch).
+    /// `cargo test --release --no-default-features -- --ignored --nocapture rescan_lock_cost`
+    #[test]
+    #[ignore]
+    fn rescan_lock_cost() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-rescan-bench-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for n in 0..5000 {
+            let dir = root.join(format!("Film {n} ({})", 1950 + n % 70));
+            std::fs::create_dir_all(dir.join("Trailers")).unwrap();
+            std::fs::write(dir.join(format!("Film {n} ({}).mkv", 1950 + n % 70)), b"x").unwrap();
+            if n % 5 < 3 { std::fs::write(dir.join("Trailers").join("Trailer.mkv"), b"x").unwrap(); }
+        }
+        let mut db: Db = serde_json::from_value(serde_json::json!({"version": 1, "machine_id": "x", "next_id": 1, "settings": crate::db::Settings::default(),
+            "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": [root.to_string_lossy()], "created_at": 0}],
+            "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let section = db.sections[0].clone();
+        scan_section(&section, "no-such-ffprobe", |f| f(&mut db));
+        assert_eq!(db.items.values().filter(|i| i.is_extra()).count(), 3000);
+        let (mut sums, mut longest) = (vec![], vec![]);
+        for _ in 0..5 {
+            let (mut sum, mut top) = (std::time::Duration::ZERO, std::time::Duration::ZERO);
+            scan_section(&section, "no-such-ffprobe", |f| {
+                let t0 = std::time::Instant::now();
+                f(&mut db);
+                let d = t0.elapsed();
+                sum += d;
+                top = top.max(d);
+            });
+            sums.push(sum);
+            longest.push(top);
+        }
+        sums.sort();
+        longest.sort();
+        println!("rescan_lock_cost: library locked {:?} in all, longest stretch {:?} (medians of 5)", sums[2], longest[2]);
+        assert_eq!(db.items.values().filter(|i| i.is_extra()).count(), 3000);
         let _ = std::fs::remove_dir_all(&root);
     }
 
