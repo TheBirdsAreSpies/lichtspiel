@@ -459,6 +459,27 @@ pub fn run(out: &Path) -> bool {
         );
     }
 
+    // ---- sign-in by code: the TV shows it, a signed-in browser enters it
+    {
+        let start = anon.post("/api/link", json!({"device": "Fire TV"}));
+        let sj = start.json();
+        let (lid, lcode) = (sj["id"].as_str().unwrap_or("").to_string(), sj["code"].as_str().unwrap_or("").to_string());
+        let pending = anon.get(&format!("/api/link/{lid}")).json()["status"].as_str().unwrap_or("").to_string();
+        let anon_confirm = anon.post("/api/link/confirm", json!({"code": lcode})).status;
+        let wrong = friend.post("/api/link/confirm", json!({"code": "ZZZZ"})).status;
+        let confirmed = friend.post("/api/link/confirm", json!({"code": lcode.to_lowercase()})).status;
+        let got = anon.get(&format!("/api/link/{lid}")).json();
+        let tv = Client { port, token: got["token"].as_str().map(String::from) };
+        let who = tv.get("/api/status").json()["signed_in"].as_str().unwrap_or("").to_string();
+        let again = anon.get(&format!("/api/link/{lid}")).status;
+        let reuse = friend.post("/api/link/confirm", json!({"code": lcode})).status;
+        steps.add(
+            "code sign-in",
+            start.status == 200 && lcode.len() == 4 && pending == "pending" && anon_confirm == 401 && wrong == 404 && confirmed == 200 && who == "friend" && again == 410 && reuse == 404,
+            format!("device got code {} and waited ({pending}); needs a sign-in to confirm (HTTP {anon_confirm}), wrong code refused (HTTP {wrong}), confirmed (HTTP {confirmed}); the device signed in as {who:?}, the code works once (HTTP {again}, {reuse})", "····"),
+        );
+    }
+
     // ---- users: home profiles picked on the sign-in screen, with and without a PIN
     {
         let open = c.post("/api/users", json!({"username": "guest", "home": true}));

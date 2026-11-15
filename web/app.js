@@ -174,6 +174,21 @@ function setupPage() {
     [['server_name', t('Server name'), 'text', 'Lichtspiel'], ['username', t('Your user name'), 'text', '', 'username'], ['password', t('Password (at least 6 characters)'), 'password', '', 'new-password']], t('Create account'),
     async v => { const r = await api('POST', '/api/setup', v); await signedIn(r.token); });
 }
+// Sign in a TV or app: it shows a short code, you type it here.
+function linkPanel(prefill) {
+  const code = h('input', { type: 'text', maxlength: 9, value: prefill || '', placeholder: 'ABCD', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', style: 'font-size:28px;letter-spacing:6px;text-transform:uppercase;text-align:center;width:9ch' });
+  const msg = h('div', { class: 'dim', style: 'margin-top:10px' });
+  const go = async () => {
+    msg.className = 'dim'; msg.textContent = '';
+    try { const r = await api('POST', '/api/link/confirm', { code: code.value }); code.value = ''; msg.className = 'ok'; msg.textContent = t('{device} is signed in as {name}.', { device: r.device || t('The device'), name: S.me.username }); }
+    catch (e) { msg.className = 'err'; msg.textContent = e.message; }
+  };
+  code.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+  return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Sign in a device')),
+    h('p', { class: 'dim' }, t('Open the app on your TV or phone and choose "Sign in with a code". Type the code it shows here.')),
+    code, h('div', { style: 'margin-top:14px' }, h('button', { class: 'primary', onclick: go }, t('Sign in device'))), msg);
+}
+function linkPage(prefill) { set(h('div', { class: 'center' }, h('h1', {}, t('Sign in a device')), linkPanel(prefill))); }
 async function invitePage(code) {
   let info;
   try { info = await api('GET', '/api/invites/' + code); } catch (e) { return set(h('div', { class: 'center' }, h('h1', {}, t('Invite')), h('p', { class: 'err' }, e.message), h('a', { href: '#/login' }, t('Sign in instead')))); }
@@ -214,6 +229,7 @@ function drawChrome() {
   const name = h('button', { class: 'link', 'aria-haspopup': 'menu', title: t('Switch user or sign out'), style: 'background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:4px 6px' }, S.me.username + ' ▾');
   name.onclick = () => openMenu(name, [
     { label: t('Switch user'), run: switchUser },
+    { label: t('Sign in a device'), run: () => { location.hash = '#/link'; } },
     { label: t('Sign out'), run: logout },
   ]);
   who.append(name, gear);

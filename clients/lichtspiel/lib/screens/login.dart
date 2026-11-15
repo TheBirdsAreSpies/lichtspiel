@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
+import 'link_login.dart';
 
 class LoginScreen extends StatefulWidget {
   final void Function(Api) onSignedIn;
@@ -81,6 +82,27 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> signInWithCode() async {
+    if (server.text.trim().isEmpty) {
+      setState(() => error = 'Bitte zuerst die Server-Adresse eintragen.');
+      return;
+    }
+    setState(() { busy = true; error = null; });
+    try {
+      final api = Api(Api.normalize(server.text));
+      await api.status(); // reachable?
+      if (!mounted) return;
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => LinkLoginScreen(api: api, onSignedIn: (a) {
+        Navigator.of(context).popUntil((r) => r.isFirst);
+        widget.onSignedIn(a);
+      })));
+    } catch (_) {
+      setState(() => error = 'Server nicht erreichbar. Adresse prüfen (z. B. 192.168.1.20:8484).');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<void> submit() async {
     setState(() { busy = true; error = null; });
     try {
@@ -130,6 +152,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: busy ? null : submit,
                 child: busy ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Anmelden'),
               ),
+              const SizedBox(height: 10),
+              OutlinedButton(onPressed: busy ? null : signInWithCode, child: const Text('Mit Code anmelden')),
             ]),
           ),
         ),

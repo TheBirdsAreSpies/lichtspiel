@@ -669,6 +669,7 @@ function accountPanel(dataDir) {
       formRow(t('Full name'), name, ''),
       h('div', { class: 'actions' }, h('button', { onclick: async () => { await api('POST', '/api/me/profile', { full_name: name.value }); S.me.full_name = name.value.trim(); toast(t('Saved')); } }, t('Save')))),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Two-step sign-in')), box),
+    linkPanel(),
     accountPasswordPanel(dataDir)];
 }
 function accountPasswordPanel(dataDir) {
@@ -1791,6 +1792,7 @@ async function render() {
       case 'playlists': return await playlistsPage(qs);
       case 'playlist': return await playlistPage(parts[1], qs);
       case 'libraries': return await librariesPage();
+      case 'link': return linkPage(parts[1] || '');
       case 'users': return await usersPage();
       case 'plugins': return await pluginsPage();
       case 'settings': return await settingsPage(parts[1], qs);
