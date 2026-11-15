@@ -20,8 +20,8 @@
 #                       That user must own the config folder; coming from an older version (which ran as
 #                       root), run once on the NAS: sudo chown -R 1026:100 /volume1/docker/lichtspiel.
 #                       The deploy stops before touching the running server if it can't write there.
-#                       For the graphics chip add `--group-add <gid of /dev/dri/renderD128>` (ls -n
-#                       /dev/dri) to LICHTSPIEL_DOCKER_ARGS.
+#                       For the graphics chip the deploy adds the group of /dev/dri/renderD128 itself
+#                       (`--group-add`) when LICHTSPIEL_DOCKER_ARGS passes /dev/dri and has no --group-add.
 #
 # docker-compose.yml describes the same container for a manual install; keep mounts and devices in both
 # alike. This workflow replaces a container of that name, also one that Container Manager created.
@@ -95,6 +95,14 @@ jobs:
             echo "Run once on the NAS: sudo chown -R ${RUN_AS:-1026:100} ${CONFIG_DIR}"
             exit 1
           fi
+          # The server's user may open the graphics chip only as a member of its group, so look the group up
+          # through the new image (that also works when the runner runs in a container).
+          case "${DOCKER_ARGS}" in
+            *--group-add*) ;;
+            */dev/dri*)
+              gid=$(docker run --rm --device /dev/dri:/dev/dri --entrypoint stat ${NAME}:latest -c %g /dev/dri/renderD128 2>/dev/null || true)
+              if [ -n "$gid" ]; then DOCKER_ARGS="${DOCKER_ARGS} --group-add $gid"; else echo "No /dev/dri/renderD128 found: the server will convert videos on the processor."; fi ;;
+          esac
           # Starting is part of the check: a failed `docker run` (bash -e) must also lead to the rollback.
           if start ${NAME}:latest && healthy; then
             echo "Lichtspiel ${GITHUB_SHA::8} is running."
@@ -104,7 +112,8 @@ jobs:
             docker logs --tail 60 ${NAME} || true
             echo "--- server.log (the app writes its messages there, not to the container log):"; tail -n 40 "${CONFIG_DIR}/server.log" || true
             if docker image inspect ${NAME}:previous >/dev/null 2>&1; then
-              echo "Starting the previous version again."
+              echo "Starting the previous version again. Everyone may have to sign in again on every device: once the"
+              echo "new version has started, it stores sign-ins only as fingerprints, which the previous version can't read."
               start ${NAME}:previous
             fi
             exit 1

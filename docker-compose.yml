@@ -33,6 +33,7 @@ services:
     devices:
       - /dev/dri:/dev/dri
     # The user also needs the group of the graphics chip: put the number from `ls -n /dev/dri` (the
-    # group of renderD128) here and uncomment. Without it ffmpeg converts on the processor.
+    # group of renderD128) here and uncomment. Without it ffmpeg converts on the processor. (The Gitea
+    # deploy looks this number up and adds it by itself.)
     # group_add:
     #   - "937"
