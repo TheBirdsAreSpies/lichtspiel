@@ -1085,7 +1085,7 @@ I18N.add('de', 'Deutsch', {
     'Video played threshold': 'Schwelle für „gesehen“',
     'Set the progress percentage for video playback at which point the video will be marked as played.': 'Ab welchem Wiedergabefortschritt (in Prozent) ein Video als gesehen markiert wird.',
     'Scan my library automatically': 'Bibliothek automatisch durchsuchen',
-    'Your library will be updated automatically when files are added to, changed in or removed from library folders (checked every 15 seconds; a file is added once copying has finished).': 'Deine Bibliothek wird automatisch aktualisiert, wenn Dateien in den Bibliotheksordnern hinzukommen, sich ändern oder entfernt werden (Prüfung alle 15 Sekunden; eine Datei kommt dazu, sobald das Kopieren fertig ist).',
+    'Your library will be updated automatically when files are added to, changed in or removed from library folders (checked every 60 seconds; a file is added once copying has finished).': 'Deine Bibliothek wird automatisch aktualisiert, wenn Dateien in den Bibliotheksordnern hinzukommen, sich ändern oder entfernt werden (Prüfung alle 60 Sekunden; eine Datei kommt dazu, sobald das Kopieren fertig ist).',
     'Generate credits video markers': 'Abspann-Markierungen erzeugen',
     'as a scheduled task': 'als geplante Aufgabe',
     'as a scheduled task and when media is added': 'als geplante Aufgabe und beim Hinzufügen von Medien',
