@@ -103,6 +103,8 @@ Future<void> _download(BuildContext context, Api api, String url) async {
       await sink.close();
     }
     if (cancelled) throw 'Abgebrochen';
+    // A connection that ends early can close the stream without an error.
+    if (total > 0 && got < total) throw 'Verbindung abgebrochen (${fmtSize(got)} von ${fmtSize(total)})';
     await out.rename(f.path);
     out = null;
     messenger.showSnackBar(SnackBar(content: Text(Platform.isIOS ? 'Gespeichert: „${f.path.split('/').last}“ (Dateien-App › Auf meinem iPhone › Lichtspiel)' : 'Gespeichert in „Downloads“: ${f.path.split('/').last}')));

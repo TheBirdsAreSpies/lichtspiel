@@ -43,7 +43,9 @@ class _UsersScreenState extends State<UsersScreen> {
     }
   }
 
-  void say(String s) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
+  void say(String s) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
+  }
 
   Future<void> patch(Map<String, dynamic> u, Map<String, dynamic> body, {bool reload = false}) async {
     try {
@@ -350,7 +352,11 @@ class _UsersScreenState extends State<UsersScreen> {
                             icon: const Icon(Icons.delete_outline),
                             onPressed: () async {
                               if (!await sure(i['status'] == 'open' ? 'Diese Einladung zurückziehen?' : 'Diese Einladung löschen?')) return;
-                              await api.delete('/api/invites/${i['code']}');
+                              try {
+                                await api.delete('/api/invites/${i['code']}');
+                              } catch (e) {
+                                say('$e');
+                              }
                               load();
                             },
                           ),

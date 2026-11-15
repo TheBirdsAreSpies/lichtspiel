@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api.dart';
@@ -230,7 +231,8 @@ class _ImagePickerState extends State<_ImagePicker> {
       final f = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 3000, maxHeight: 3000, imageQuality: 92, requestFullMetadata: false);
       if (f == null) return;
       final bytes = await f.readAsBytes();
-      if (bytes.length > 3 * 1024 * 1024) return say('Das Bild ist zu groß (höchstens 3 MB)');
+      // On a computer the picker can't shrink the picture (image_picker ignores maxWidth/imageQuality there).
+      if (bytes.length > 3 * 1024 * 1024) return say(Platform.isIOS || Platform.isAndroid ? 'Das Bild ist zu groß (höchstens 3 MB)' : 'Das Bild ist zu groß (höchstens 3 MB) – bitte vorher verkleinern');
       final ext = f.name.toLowerCase().split('.').last;
       final mime = f.mimeType ?? {'png': 'image/png', 'webp': 'image/webp', 'gif': 'image/gif'}[ext] ?? 'image/jpeg';
       await send({'data': 'data:$mime;base64,${base64Encode(bytes)}'});

@@ -235,7 +235,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
           TextButton(onPressed: () => doChosen((ids) => widget.api.setWatchedAll(ids, true), 'Als gesehen markiert'), child: const Text('Gesehen')),
           TextButton(onPressed: () => doChosen((ids) => widget.api.setWatchedAll(ids, false), 'Als ungesehen markiert'), child: const Text('Ungesehen')),
           TextButton(onPressed: () => addToPlaylistDialog(context, widget.api, picked.first, ids: picked.toList()), child: const Text('Zur Playlist')),
-          if (admin && one) TextButton(onPressed: () async { await editDetailsDialog(context, widget.api, await widget.api.item(picked.first)); await doChosen((_) async {}, 'Gespeichert', keep: true); }, child: const Text('Bearbeiten')),
+          if (admin && one) TextButton(onPressed: () async {
+            final Map<String, dynamic> it;
+            try {
+              it = await widget.api.item(picked.first);
+            } catch (e) {
+              return say('$e');
+            }
+            if (!mounted) return;
+            await editDetailsDialog(context, widget.api, it);
+            await doChosen((_) async {}, 'Gespeichert', keep: true);
+          }, child: const Text('Bearbeiten')),
           PopupMenuButton<String>(
             tooltip: 'Mehr',
             onSelected: (v) {

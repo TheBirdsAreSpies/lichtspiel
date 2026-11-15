@@ -11,8 +11,9 @@ void main() {
     expect(s.id, 'abc123');
   });
 
-  test('the hello on start counts too, other packets do not', () {
-    expect(parseGdmReply('HELLO * HTTP/1.0\r\nContent-Type: plex/media-server\r\nName: NAS\r\nPort: 9000\r\n', '10.0.0.5')?.address, 'http://10.0.0.5:9000');
+  test('only answers to the search count, other packets do not', () {
+    // The server's HELLO goes to the multicast group on 32413, which this socket never joins.
+    expect(parseGdmReply('HELLO * HTTP/1.0\r\nContent-Type: plex/media-server\r\nName: NAS\r\nPort: 9000\r\n', '10.0.0.5'), isNull);
     expect(parseGdmReply('M-SEARCH * HTTP/1.1\r\n\r\n', '10.0.0.5'), isNull);
     expect(parseGdmReply('HTTP/1.0 200 OK\r\nContent-Type: plex/media-player\r\nPort: 32500\r\n', '10.0.0.5'), isNull);
     expect(parseGdmReply('HTTP/1.0 200 OK\r\nContent-Type: plex/media-server\r\nName: x\r\n', '10.0.0.5'), isNull);

@@ -13,12 +13,12 @@ class FoundServer {
 const _searchPort = 32414;
 final _group = InternetAddress('239.0.0.250');
 
-/// Reads a "G'Day Mate" answer ("HTTP/1.0 200 OK" or "HELLO * HTTP/1.0" plus "Name: …" lines).
+/// Reads a "G'Day Mate" answer ("HTTP/1.0 200 OK" plus "Name: …" lines).
 /// Returns null when the packet is not a media server's answer.
 FoundServer? parseGdmReply(String packet, String ip) {
   final lines = packet.split(RegExp(r'\r?\n'));
   final first = lines.first;
-  if (!((first.startsWith('HTTP/1.') && first.contains(' 200')) || first.startsWith('HELLO'))) return null;
+  if (!first.startsWith('HTTP/1.') || !first.contains(' 200')) return null;
   final h = <String, String>{};
   for (final l in lines.skip(1)) {
     final i = l.indexOf(':');

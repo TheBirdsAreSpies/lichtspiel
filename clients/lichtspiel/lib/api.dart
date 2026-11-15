@@ -18,6 +18,9 @@ class Api {
   String? token;
   Api(this.base, [this.token]);
 
+  /// Called when the server no longer accepts the token (signed out elsewhere, device removed, backup restored).
+  static void Function(Api)? onUnauthorized;
+
   /// The token lives in the system's keychain (Keychain on Apple devices, Keystore on Android,
   /// Credential Manager on Windows); the server address stays in the plain settings.
   /// On the Mac the classic login keychain is used: the newer one needs the Keychain Sharing
@@ -95,6 +98,7 @@ class Api {
       body = r.body.isEmpty ? null : jsonDecode(utf8.decode(r.bodyBytes));
     } catch (_) {}
     if (r.statusCode >= 400) {
+      if (r.statusCode == 401 && token != null) onUnauthorized?.call(this);
       final msg = body is Map && body['error'] != null ? '${body['error']}' : 'Fehler ${r.statusCode}';
       throw ApiError(r.statusCode, msg, needsCode: body is Map && body['needs_code'] == true);
     }

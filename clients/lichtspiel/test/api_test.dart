@@ -1,5 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:lichtspiel/api.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -45,5 +47,25 @@ void main() {
     final p = await SharedPreferences.getInstance();
     expect(p.getString('token'), isNull);
     expect(await const FlutterSecureStorage().read(key: 'token'), 'newer');
+  });
+
+  test('when the keychain refuses, the token stays in the plain settings', () async {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues(const {}); // a const map: every keychain write throws
+    await Api('http://nas:8484', 'fresh').save();
+    final p = await SharedPreferences.getInstance();
+    expect(p.getString('token'), 'fresh');
+    expect((await Api.restore())?.token, 'fresh');
+  });
+
+  test('a 401 for a signed-in request reports that the sign-in is gone, a wrong password does not', () async {
+    var gone = 0;
+    Api.onUnauthorized = (_) => gone++;
+    addTearDown(() => Api.onUnauthorized = null);
+    await http.runWithClient(() async {
+      await expectLater(Api('http://nas:8484', 't').get('/hubs'), throwsA(isA<ApiError>()));
+      await expectLater(Api('http://nas:8484').post('/api/login', {}), throwsA(isA<ApiError>()));
+    }, () => MockClient((_) async => http.Response('{"error":"Please sign in"}', 401)));
+    expect(gone, 1);
   });
 }

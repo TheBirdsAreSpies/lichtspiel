@@ -25,11 +25,20 @@ class _LichtspielAppState extends State<LichtspielApp> {
   @override
   void initState() {
     super.initState();
+    // A token that stops working while the app runs also leads back to the sign-in.
+    // (A late answer for an older sign-in is ignored.)
+    Api.onUnauthorized = (a) {
+      if (a != api) return;
+      a.forget();
+      navKey.currentState?.popUntil((r) => r.isFirst);
+      if (mounted) setState(() => api = null);
+    };
     Api.restore().then((a) async {
       // A saved token the server no longer knows sends us back to the sign-in.
       if (a != null) {
         try {
-          await a.get('/api/me');
+          // Away from home a LAN address may get no answer at all: don't wait for the system to give up.
+          await a.get('/api/me').timeout(const Duration(seconds: 8));
         } on ApiError catch (e) {
           if (e.status == 401) a = null;
         } catch (_) {}

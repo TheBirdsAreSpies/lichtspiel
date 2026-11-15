@@ -141,7 +141,13 @@ class _DetailScreenState extends State<DetailScreen> {
 
   /// All songs of an artist or album, one after the other; shuffled, the same artist does not come twice in a row while others are left.
   Future<void> playMusic(bool shuffle) async {
-    var songs = await api.allLeaves(widget.id);
+    List<Map<String, dynamic>> songs;
+    try {
+      songs = await api.allLeaves(widget.id);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      return;
+    }
     if (songs.isEmpty) return;
     if (shuffle) {
       songs.shuffle();
@@ -159,7 +165,13 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<void> playNextEpisode() async {
-    final leaves = await api.allLeaves(widget.id);
+    final List<Map<String, dynamic>> leaves;
+    try {
+      leaves = await api.allLeaves(widget.id);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      return;
+    }
     if (leaves.isEmpty) return;
     final e = leaves.firstWhere((x) => ((x['viewCount'] ?? 0) as int) == 0, orElse: () => leaves.first);
     play(e);

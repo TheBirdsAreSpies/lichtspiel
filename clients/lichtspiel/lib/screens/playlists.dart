@@ -20,7 +20,13 @@ String plTitle(Map<String, dynamic> p) => '${p['title']}';
 /// With [item] (a movie or show) the owner can also put it into a collection of its library.
 Future<void> addToPlaylistDialog(BuildContext context, Api api, String itemId, {List<String>? ids, Map<String, dynamic>? item}) async {
   final msg = ScaffoldMessenger.of(context);
-  final pls = await api.playlists(kind: 'manual', owner: 'me', sort: 'title');
+  final List<Map<String, dynamic>> pls;
+  try {
+    pls = await api.playlists(kind: 'manual', owner: 'me', sort: 'title');
+  } catch (e) {
+    msg.showSnackBar(SnackBar(content: Text('$e')));
+    return;
+  }
   var mine = <String>[];
   var cols = <String>[];
   final collectable = Poster.admin && item != null && ids == null && (item['type'] == 'movie' || item['type'] == 'show') && item['librarySectionID'] != null;
@@ -96,7 +102,13 @@ Future<bool> _sure(BuildContext context, String text) async =>
 
 /// Plays a playlist from the start; [shuffle] avoids the same show twice in a row while others are left.
 Future<void> playPlaylist(BuildContext context, Api api, String id, {bool shuffle = false}) async {
-  var items = await api.playlistItems(id);
+  List<Map<String, dynamic>> items;
+  try {
+    items = await api.playlistItems(id);
+  } catch (e) {
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    return;
+  }
   if (!context.mounted) return;
   if (items.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Diese Playlist ist leer')));
@@ -175,7 +187,13 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
         BarAction(Icons.add, 'Neue Playlist', () async {
           final name = await askText(context, 'Name der neuen Playlist');
           if (name == null || name.isEmpty) return;
-          final p = await widget.api.createPlaylist(name);
+          final Map<String, dynamic> p;
+          try {
+            p = await widget.api.createPlaylist(name);
+          } catch (e) {
+            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+            return;
+          }
           if (!mounted) return;
           await Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: widget.api, id: '${p['id']}')));
           reload();
@@ -273,7 +291,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     final t = i + dir;
     if (t < 0 || t >= items.length) return;
     final after = dir < 0 ? (t == 0 ? 0 : entryOf(items[t - 1])) : entryOf(items[t]);
-    await api.moveInPlaylist(widget.id, '${entryOf(items[i])}', after);
+    try {
+      await api.moveInPlaylist(widget.id, '${entryOf(items[i])}', after);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
     reload();
   }
 
@@ -301,28 +323,32 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       appBar: AppBar(title: Text(plTitle(p)), actions: [
         PopupMenuButton<String>(
           onSelected: (v) async {
-            switch (v) {
-              case 'rename':
-                final n = await askText(context, 'Neuer Name', value: plTitle(p));
-                if (n != null && n.isNotEmpty) await api.updatePlaylist(widget.id, {'title': n});
-              case 'pin':
-                await api.updatePlaylist(widget.id, {'pinned': p['pinned'] != true});
-              case 'share':
-                await api.updatePlaylist(widget.id, {'shared': p['shared'] != true});
-              case 'rules':
-                await smartEditor(context, api, playlist: p);
-              case 'copy':
-                final r = await api.post('/playlists/${widget.id}/copy', {});
-                if (mounted && r is Map) {
-                  await Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: api, id: '${r['id']}')));
-                  return;
-                }
-              case 'delete':
-                if (await _sure(context, 'Die Playlist „${plTitle(p)}“ löschen?')) {
-                  await api.deletePlaylist(widget.id);
-                  if (mounted) Navigator.pop(context);
-                  return;
-                }
+            try {
+              switch (v) {
+                case 'rename':
+                  final n = await askText(context, 'Neuer Name', value: plTitle(p));
+                  if (n != null && n.isNotEmpty) await api.updatePlaylist(widget.id, {'title': n});
+                case 'pin':
+                  await api.updatePlaylist(widget.id, {'pinned': p['pinned'] != true});
+                case 'share':
+                  await api.updatePlaylist(widget.id, {'shared': p['shared'] != true});
+                case 'rules':
+                  await smartEditor(context, api, playlist: p);
+                case 'copy':
+                  final r = await api.post('/playlists/${widget.id}/copy', {});
+                  if (mounted && r is Map) {
+                    await Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: api, id: '${r['id']}')));
+                    return;
+                  }
+                case 'delete':
+                  if (await _sure(context, 'Die Playlist „${plTitle(p)}“ löschen?')) {
+                    await api.deletePlaylist(widget.id);
+                    if (mounted) Navigator.pop(context);
+                    return;
+                  }
+              }
+            } catch (e) {
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
             }
             reload();
           },
@@ -378,7 +404,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             icon: const Icon(Icons.close, size: 18),
                             onPressed: () async {
                               if (!await _sure(context, '„${it['title']}“ aus dieser Playlist entfernen?')) return;
-                              await api.removeFromPlaylist(widget.id, '${entryOf(it)}');
+                              try {
+                                await api.removeFromPlaylist(widget.id, '${entryOf(it)}');
+                              } catch (e) {
+                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+                              }
                               reload();
                             },
                           ),

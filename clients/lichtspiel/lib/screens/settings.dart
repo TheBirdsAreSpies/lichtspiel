@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import 'libraries.dart';
 import 'maintenance.dart';
+import 'player.dart' show playerQualities, playerSubSizes, qualityKey;
 import 'plugins.dart';
 import 'server_settings.dart';
 import 'users.dart';
@@ -248,14 +249,6 @@ class _PlaybackTab extends StatefulWidget {
 }
 
 class _PlaybackTabState extends State<_PlaybackTab> {
-  static const qualities = {
-    'original': 'Original',
-    '2160': '4K (2160p)',
-    '1080': '1080p',
-    '720': '720p',
-    '480': '480p',
-    '360': '360p',
-  };
   static const langs = {
     '': 'Nicht festgelegt',
     'en': 'Englisch',
@@ -276,8 +269,6 @@ class _PlaybackTabState extends State<_PlaybackTab> {
     'ko': 'Koreanisch',
     'zh': 'Chinesisch',
   };
-  static const sizes = [75, 100, 125, 150, 200];
-
   SharedPreferences? p;
 
   @override
@@ -294,6 +285,12 @@ class _PlaybackTabState extends State<_PlaybackTab> {
           }
           if (prefs['subSize'] != null) await v.setInt('subSize', int.tryParse('${prefs['subSize']}') ?? 100);
           if (prefs['autoNext'] != null) await v.setBool('autoNext', '${prefs['autoNext']}' == '1');
+        }
+        // Older versions saved names the server does not know (1080, 720, ...): put the server's name in their place.
+        final q = v.getString('quality');
+        if (q != null && q != qualityKey(q)) {
+          await v.setString('quality', qualityKey(q));
+          await widget.api.post('/api/me/prefs', {'quality': qualityKey(q)});
         }
       } catch (_) {}
       if (mounted) setState(() => p = v);
@@ -339,7 +336,7 @@ class _PlaybackTabState extends State<_PlaybackTab> {
     final s = p!;
     return ListView(padding: const EdgeInsets.all(16), children: [
       _panel(context, 'Qualität', [
-        row('Videoqualität', drop('quality', 'original', qualities), 'Die Qualität, mit der ein Video startet. Im Player änderbar.'),
+        row('Videoqualität', drop('quality', 'original', playerQualities), 'Die Qualität, mit der ein Video startet. Im Player änderbar.'),
         row('Nächste Folge automatisch', Switch(value: s.getBool('autoNext') ?? true, onChanged: (v) => save('autoNext', v)), 'Nach einer Folge nach 10 Sekunden die nächste starten.'),
       ]),
       _panel(context, 'Ton und Untertitel', [
@@ -348,8 +345,8 @@ class _PlaybackTabState extends State<_PlaybackTab> {
         row(
           'Untertitelgröße',
           DropdownButton<int>(
-            value: sizes.contains(s.getInt('subSize')) ? s.getInt('subSize') : 100,
-            items: [for (final z in sizes) DropdownMenuItem(value: z, child: Text('$z %'))],
+            value: playerSubSizes.containsKey(s.getInt('subSize')) ? s.getInt('subSize') : 100,
+            items: [for (final e in playerSubSizes.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
             onChanged: (v) => save('subSize', v ?? 100),
           ),
         ),
@@ -444,7 +441,11 @@ class _DevicesTabState extends State<_DevicesTab> {
                         ),
                       );
                       if (ok != true) return;
-                      await widget.api.delete('/api/tokens/${k['id']}');
+                      try {
+                        await widget.api.delete('/api/tokens/${k['id']}');
+                      } catch (e) {
+                        if (context.mounted) _say(context, '$e');
+                      }
                       load();
                     },
                     child: const Text('Abmelden'),
@@ -474,8 +475,12 @@ class _FeedTabState extends State<_FeedTab> {
   }
 
   Future<void> change(Map<String, dynamic> body) async {
-    final r = await widget.api.post('/api/rss', body);
-    if (mounted && r is Map) setState(() => feed = Map<String, dynamic>.from(r));
+    try {
+      final r = await widget.api.post('/api/rss', body);
+      if (mounted && r is Map) setState(() => feed = Map<String, dynamic>.from(r));
+    } catch (e) {
+      if (mounted) _say(context, '$e');
+    }
   }
 
   @override

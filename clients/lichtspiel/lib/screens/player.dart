@@ -9,7 +9,8 @@ import '../api.dart';
 import '../widgets/poster.dart';
 
 const _speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-const _qualities = {
+/// The server's names (QUALITIES in src/transcode.rs); also offered in Settings.
+const playerQualities = {
   'original': 'Originalqualität',
   '1080p-20': '1080p 20 Mbit/s',
   '1080p-12': '1080p 12 Mbit/s',
@@ -20,11 +21,29 @@ const _qualities = {
   '480p-1.5': '480p 1,5 Mbit/s',
   '320p-0.7': '320p 0,7 Mbit/s',
 };
-const _subSizes = {75: 'Klein', 100: 'Normal', 130: 'Groß', 170: 'Sehr groß'};
+const playerSubSizes = {75: 'Klein', 100: 'Normal', 130: 'Groß', 170: 'Sehr groß'};
+
+/// Older versions saved 2160/1080/720/480/360, which the server does not know (it then converts at full size).
+String qualityKey(String? q) =>
+    playerQualities.containsKey(q) ? q! : const {'1080': '1080p-20', '720': '720p-4', '480': '480p-1.5', '360': '320p-0.7'}[q] ?? 'original';
+
 const _stillWatchingAfter = 3;
 
 /// mpv reads a negative seek as "counted from the end", so going back stops at the start.
 Duration back10(Duration p) => p < const Duration(seconds: 10) ? Duration.zero : p - const Duration(seconds: 10);
+
+/// Keeps a player choice on this device and in the account.
+Future<void> savePlayerPref(Api api, String k, Object v) async {
+  final p = await SharedPreferences.getInstance();
+  if (v is String) await p.setString(k, v);
+  if (v is double) await p.setDouble(k, v);
+  if (v is int) await p.setInt(k, v);
+  if (v is bool) await p.setBool(k, v);
+  // The account keeps it too (like the web player); Settings copies the account's values over this device's.
+  try {
+    await api.post('/api/me/prefs', {k: v is bool ? (v ? '1' : '0') : '$v'});
+  } catch (_) {}
+}
 
 String _clock(int ms) {
   final s = ms ~/ 1000;
@@ -317,6 +336,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   dynamic tgMe;
   String tgNames = '';
   bool tgSwitching = false; // moving to another video of the room: do not leave it
+  int tgFails = 0; // polls in a row that failed (a short Wi-Fi drop must not end the room)
   int tgLastPos = 0;
   DateTime tgLastAt = DateTime.now();
 
@@ -371,7 +391,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     dynamic st;
     try {
       st = await widget.api.get('/api/together/$code');
+      tgFails = 0;
     } catch (e) {
+      if (++tgFails < 3) return;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
         Navigator.maybePop(context);
@@ -408,7 +430,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> loadPrefs() async {
     final p = await SharedPreferences.getInstance();
-    quality = p.getString('quality') ?? 'original';
+    quality = qualityKey(p.getString('quality'));
     speed = p.getDouble('speed') ?? 1;
     subSize = p.getInt('subSize') ?? 100;
     autoNext = p.getBool('autoNext') ?? true;
@@ -416,13 +438,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     audioLang = p.getString('audioLang') ?? '';
   }
 
-  Future<void> savePref(String k, Object v) async {
-    final p = await SharedPreferences.getInstance();
-    if (v is String) await p.setString(k, v);
-    if (v is double) await p.setDouble(k, v);
-    if (v is int) await p.setInt(k, v);
-    if (v is bool) await p.setBool(k, v);
-  }
+  Future<void> savePref(String k, Object v) => savePlayerPref(widget.api, k, v);
 
   Future<void> start() async {
     try {
@@ -444,7 +460,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await load(((it['viewOffset'] ?? 0) as num).toInt());
       subs.add(player.stream.error.listen((e) async {
         if (e.isEmpty) return;
-        if (triedHls || quality != 'original') return setState(() => error = e);
+        if (triedHls || quality != 'original') {
+          await player.pause(); // the error screen replaces the picture; the sound must not go on behind it
+          if (mounted) setState(() => error = e);
+          return;
+        }
         triedHls = true;
         await load(player.state.position.inMilliseconds, forceHls: true);
       }));
@@ -955,7 +975,7 @@ class _SettingsMenuState extends State<_SettingsMenu> {
                 ListTile(dense: true, title: const Text('Zeit zurücksetzen'), onTap: () { Navigator.pop(context); s.nudgeSub(x, null); }),
               ],
           head('Untertitelgröße'),
-          for (final e in _subSizes.entries)
+          for (final e in playerSubSizes.entries)
             choice(e.value, s.subSize == e.key, () {
               s.setSubSize(e.key);
               setState(() {});
@@ -964,7 +984,7 @@ class _SettingsMenuState extends State<_SettingsMenu> {
       case 'quality':
         children.addAll([
           back('Qualität'),
-          for (final e in _qualities.entries)
+          for (final e in playerQualities.entries)
             choice(e.value, s.quality == e.key, () {
               Navigator.pop(context);
               s.setQuality(e.key);
@@ -1017,7 +1037,7 @@ class _SettingsMenuState extends State<_SettingsMenu> {
         ]);
       default:
         children.addAll([
-          entry('Qualität', _qualities[s.quality] ?? s.quality, 'quality'),
+          entry('Qualität', playerQualities[s.quality] ?? s.quality, 'quality'),
           entry('Wiedergabegeschwindigkeit', s.speed == 1 ? 'Normal' : '${s.speed.toString().replaceAll('.', ',')}×', 'speed'),
           if (serverPick || audios.length > 1) entry('Tonspur', serverPick ? 'wählen' : audios.where((t) => t.id == curAudio.id).map(s.trackName).firstOrNull ?? 'Standard', 'audio'),
           entry('Untertitel', curSub.id == 'no' ? 'Aus' : s.trackName(curSub), 'subs'),

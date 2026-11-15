@@ -58,8 +58,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> doSearch(String q) async {
     if (q.trim().isEmpty) return setState(() => results = null);
-    final r = await widget.api.search(q.trim());
-    if (mounted) setState(() => results = r);
+    try {
+      final r = await widget.api.search(q.trim());
+      if (mounted) setState(() => results = r);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
   }
 
   @override
