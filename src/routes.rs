@@ -25,6 +25,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/tokens", "Make an extra token for a script {device} → token (shown once)"),
     ("POST", "/api/tokens/rotate", "Swap the token you are using for a new one; the old one stops working. {all: true} also signs out every other device"),
     ("DELETE", "/api/tokens/{id}", "Revoke one of your tokens"),
+    ("GET", "/api/ticket", "A short-lived ticket for addresses, used as ?ticket= instead of the token: ?item={id} for its video, subtitles, stills and theme (5-6 hours), ?path= for one file to save (a download, the log, the report, the library file), or none for pictures and pre-roll videos (1-1.5 hours) → {ticket, expires}"),
     ("GET", "/api/me", "Who is signed in"),
     ("POST", "/api/me/password", "Change your password {old, new}"),
     ("GET", "/api/docs", "This list"),
@@ -1146,7 +1147,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let req = transcode_request(db.settings.remote_max_mbps, db.settings.boost_dialogue, ctx);
             let d = transcode::decide(f, &req);
             let allowed = user.allow_transcode.unwrap_or(true) && db.settings.transcoding_enabled;
-            let tok = ctx.token.as_ref().map(|t| format!("&token={t}")).unwrap_or_default();
+            // The addresses carry a ticket for this item, never the sign-in token.
+            let tok = format!("&ticket={}", auth::ticket(&db.ticket_key, user.id, &iid.to_string(), ctx.token.as_deref(), now()).0);
             let tok = if part > 0 { format!("&part={part}{tok}") } else { tok };
             let q = ctx.param("quality").unwrap_or("original");
             // A chosen audio track travels with the stream addresses.
@@ -1612,6 +1614,16 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
 
         // ---------------- tokens
+        ("GET", ["api", "ticket"]) => {
+            let db = app.db.lock().unwrap();
+            let scope = match (ctx.num("item"), ctx.param("path")) {
+                (Some(i), _) => { if !db.items.get(&i).is_some_and(|it| db.can_see_item(&user, it)) { return fail(404, "Not found"); } i.to_string() }
+                (None, Some(p)) => match auth::ticket_scope(p) { Some(s) if s == p => s, _ => return fail(400, "No ticket is made for this address") },
+                (None, None) => "p".into(),
+            };
+            let (t, expires) = auth::ticket(&db.ticket_key, user.id, &scope, ctx.token.as_deref(), now());
+            ok(json!({"ticket": t, "expires": expires}))
+        }
         ("GET", ["api", "tokens"]) => {
             let db = app.db.lock().unwrap();
             let list: Vec<Value> = db.tokens.iter().filter(|t| t.user_id == user.id).map(|t| json!({

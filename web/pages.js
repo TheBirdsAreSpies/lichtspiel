@@ -875,7 +875,7 @@ async function settingsPage(tab, qs) {
       t('The check mark and dimming on posters of personal media. Saved with your account.'))));
   if (tab === 'manage') {
     const size = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
-    const link = (path, name) => h('a', { href: `${path}?token=${encodeURIComponent(S.token)}`, download: name }, h('button', {}, name === 'report' ? t('Download report') : t('Download library file')));
+    const link = (path, name) => h('button', { onclick: () => saveFile(path) }, name === 'report' ? t('Download report') : t('Download library file'));
     return set(h('h1', {}, t('Settings')), nav(tab),
       await backupPanel(size),
       await optimizedPanel(size),
@@ -1070,7 +1070,7 @@ async function apiPage() {
   const rotate = async all => {
     if (!await sure(all ? t('Make a new token and sign out every other device and script?') : t('Make a new token? Scripts using the old one stop working.'))) return;
     const r = await api('POST', '/api/tokens/rotate', { all });
-    S.token = r.token; saveToken(r.token); shown.textContent = '••••••••';
+    S.token = r.token; saveToken(r.token); shown.textContent = '••••••••'; TK = {}; ticket().catch(() => {});
     toast(all ? t('New token made; {n} other sign-in(s) ended', { n: r.revoked - 1 }) : t('New token made; the old one no longer works'));
     loadTokens();
   };
@@ -1784,10 +1784,14 @@ function stopTheme() {
   const a = THEME.audio; THEME.audio = null;
   if (a) fadeTheme(a);
 }
-function startTheme(id) {
+async function startTheme(id) {
   if (store.get('themeMusic', '1') !== '1' || player.style.display === 'flex') return;
   if (THEME.id === id) return;
-  const a = new Audio(withTok(`/library/metadata/${id}/theme`));
+  THEME.id = id;
+  const tk = await ticket('item=' + id).catch(() => null);
+  // (Left the page, or the player opened, while the ticket was on its way.)
+  if (!tk || THEME.id !== id || player.style.display === 'flex') return;
+  const a = new Audio(withTicket(`/library/metadata/${id}/theme`, tk));
   a.volume = THEME_VOLUME;
   a.addEventListener('timeupdate', () => { if (a.duration - a.currentTime <= THEME_FADE_MS / 1000) fadeTheme(a); });
   THEME.audio = a; THEME.id = id;
@@ -1869,7 +1873,7 @@ function logPanel() {
     } catch (e) { pre.textContent = e.message; }
   };
   load();
-  const save = gz => { const a = h('a', { href: withTok('/api/log/download' + (gz ? '?gz=1' : '')), download: '', style: 'display:none' }); document.body.append(a); a.click(); a.remove(); };
+  const save = gz => saveFile('/api/log/download' + (gz ? '?gz=1' : ''));
   return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Server log')), pre,
     h('button', { onclick: load }, t('Refresh')), ' ', h('button', { onclick: () => save(false) }, t('Export as text')), ' ', h('button', { onclick: () => save(true) }, t('Export compressed (.gz)')));
 }

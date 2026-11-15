@@ -198,6 +198,7 @@ impl App {
         }
         install_bundled_plugins(&data_dir.join("plugins"));
         let (store, mut db, from_json) = open_library(data_dir);
+        if db.ticket_key.is_empty() { db.ticket_key = crate::db::random_hex(32); }
         // Age ratings and genres in one spelling each.
         let ids: Vec<u64> = db.items.values().filter(|it| {
             let mut c = (*it).clone();
@@ -2563,6 +2564,16 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         let uid = tk.user_id;
         db.user(uid).cloned()
     });
+    // A ticket (?ticket=, from /api/ticket) opens only the addresses it was made for, while its sign-in lasts.
+    let user = match params.iter().find(|(k, _)| k == "ticket") {
+        Some((_, t)) if user.is_none() && matches!(method.as_str(), "GET" | "HEAD") => {
+            let db = app.db.lock().unwrap();
+            crate::auth::read_ticket(&db.ticket_key, t, now())
+                .filter(|(uid, tid, scope)| crate::auth::ticket_scope(&path).as_ref() == Some(scope) && db.tokens.iter().any(|x| x.user_id == *uid && crate::auth::token_id(&x.token) == *tid))
+                .and_then(|(uid, ..)| db.user(uid).cloned())
+        }
+        _ => user,
+    };
     let (trusted, no_auth, lan_list) = { let db = app.db.lock().unwrap(); (db.settings.trusted_proxies.clone(), db.settings.no_auth_networks.clone(), db.settings.lan_networks.clone()) };
     let (remote, remote_trusted) = match relayed {
         // The relay does not prove who it is, so a relayed caller never counts as local or as a no-sign-in network.
@@ -3386,6 +3397,65 @@ pub(crate) mod tests {
                 assert!(got.starts_with(&format!("HTTP/1.1 {want}")), "{m} {path} as {who}: {}", got.lines().next().unwrap_or(""));
             }
         }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Video, subtitle and picture addresses carry a short-lived ticket instead of the sign-in token.
+    #[test]
+    fn a_ticket_opens_only_its_own_item_while_the_sign_in_lasts() {
+        let (app, root) = test_app("ticket");
+        let media = root.join("media");
+        std::fs::create_dir_all(media.join("Film")).unwrap();
+        std::fs::write(media.join("Film/A.mkv"), "video-a").unwrap();
+        std::fs::write(media.join("Film/B.mkv"), "video-b").unwrap();
+        let (tok, kid) = {
+            let mut db = app.db.lock().unwrap();
+            db.sections.push(serde_json::from_value(json!({"id": 1, "name": "Filme", "kind": "movie", "paths": [media.to_string_lossy()], "created_at": 0})).unwrap());
+            for (id, f) in [(1u64, "Film/A.mkv"), (2, "Film/B.mkv")] {
+                let mut i: Item = serde_json::from_value(json!({"id": id, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+                i.file = Some(MediaFile { path: media.join(f).to_string_lossy().to_string(), container: "matroska".into(), ..Default::default() });
+                db.items.insert(id, i);
+            }
+            (crate::handlers::new_token(&mut db, 1, "test"), crate::handlers::new_token(&mut db, 2, "test"))
+        };
+        let get = |path: &str, extra: &str| ask(&app, &format!("GET {path} HTTP/1.1\r\nHost: x\r\n{extra}Connection: close\r\n\r\n"));
+        let status = |r: &str| r.lines().next().unwrap_or("").to_string();
+        let ticket_of = |r: &str| { let body = r.split("\r\n\r\n").nth(1).unwrap_or(""); serde_json::from_str::<Value>(body).ok().and_then(|v| v["ticket"].as_str().map(String::from)).unwrap_or_default() };
+        let t1 = ticket_of(&get("/api/ticket?item=1", &format!("X-Token: {tok}\r\n")));
+        assert!(!t1.is_empty() && !t1.contains(&tok), "no ticket for item 1: {t1}");
+        // The ticket plays item 1, also in pieces (seeking)...
+        assert!(get(&format!("/library/parts/1/file?ticket={t1}"), "").ends_with("video-a"));
+        assert!(status(&get(&format!("/library/parts/1/file?ticket={t1}"), "Range: bytes=0-1\r\n")).contains("206"));
+        // ...but nothing else.
+        for p in ["/library/parts/2/file", "/video/transcode/2/stream.mp4", "/api/me", "/api/tokens"] {
+            assert!(status(&get(&format!("{p}?ticket={t1}"), "")).contains("401"), "{p} opened with item 1's ticket");
+        }
+        // A changed ticket, an expired one and one for another item with item 1's signature are refused.
+        let key = app.db.lock().unwrap().ticket_key.clone();
+        let tampered = format!("{}{}", &t1[..t1.len() - 1], if t1.ends_with('0') { '1' } else { '0' });
+        let (old, _) = crate::auth::ticket(&key, 1, "1", Some(&tok), now() - 7 * 3600);
+        let swapped = t1.replacen(".1.", ".2.", 1);
+        for t in [tampered, old, swapped.clone(), "1.2.3".into(), String::new()] {
+            assert!(status(&get(&format!("/library/parts/1/file?ticket={t}"), "")).contains("401"), "ticket {t} was let in");
+            assert!(status(&get(&format!("/library/parts/2/file?ticket={t}"), "")).contains("401"), "ticket {t} was let in");
+        }
+        // A profile that may not see the movie gets no ticket, and a made-up one does not show it either.
+        app.db.lock().unwrap().users[1].allowed_sections = Some(vec![]);
+        assert!(status(&get("/api/ticket?item=1", &format!("X-Token: {kid}\r\n"))).contains("404"));
+        let (kt, _) = crate::auth::ticket(&key, 2, "1", Some(&kid), now());
+        assert!(!get(&format!("/library/parts/1/file?ticket={kt}"), "").ends_with("video-a"), "a hidden movie was sent");
+        // The picture ticket opens pictures, not videos; a ticket for any other address is not given.
+        let tp = ticket_of(&get("/api/ticket", &format!("X-Token: {tok}\r\n")));
+        assert!(!status(&get(&format!("/library/metadata/1/thumb?ticket={tp}"), "")).contains("401"));
+        assert!(status(&get(&format!("/library/parts/1/file?ticket={tp}"), "")).contains("401"));
+        assert!(status(&get("/api/ticket?path=/api/tokens", &format!("X-Token: {tok}\r\n"))).contains("400"));
+        // The play decision hands out ticket addresses, not the sign-in token.
+        let d = get("/library/metadata/1/decision", &format!("X-Token: {tok}\r\n"));
+        assert!(d.contains("ticket=") && !d.contains(&tok), "{d}");
+        // The token in the address still works (older apps), and signing out ends the tickets too.
+        assert!(get(&format!("/library/parts/1/file?token={tok}"), "").ends_with("video-a"));
+        let _ = ask(&app, &format!("POST /api/logout HTTP/1.1\r\nHost: x\r\nX-Token: {tok}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
+        assert!(status(&get(&format!("/library/parts/1/file?ticket={t1}"), "")).contains("401"), "a ticket outlived its sign-in");
         let _ = std::fs::remove_dir_all(&root);
     }
 

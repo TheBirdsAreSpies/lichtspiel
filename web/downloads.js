@@ -10,9 +10,10 @@ const dlQualityName = q => (QUALITIES.find(x => x[0] === q) || [q, q])[1];
 // About how big a converted copy gets: picture plus 160 kbit/s stereo sound.
 const dlEstimate = (q, ms) => { const m = /^(\d+)p-([\d.]+)$/.exec(q); return m && ms ? (Number(m[2]) * 1000 + 160) * 125 * ms / 1000 : 0; };
 
-function saveFile(url) {
-  // A hidden link: the browser saves the file and the page stays.
-  const a = h('a', { href: withTok(url), download: '', style: 'display:none' });
+async function saveFile(url) {
+  // A hidden link: the browser saves the file and the page stays. Its ticket opens only this file.
+  const tk = await ticket('path=' + encodeURIComponent(url.split('?')[0]));
+  const a = h('a', { href: withTicket(url, tk), download: '', style: 'display:none' });
   document.body.append(a); a.click(); a.remove();
 }
 

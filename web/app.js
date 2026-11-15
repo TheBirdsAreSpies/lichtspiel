@@ -62,7 +62,24 @@ function set(...kids) {
 function toast(msg, ms = 2600) { const el = $('#toast'); el.textContent = msg; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => (el.style.display = 'none'), ms); }
 // A button whose request failed says why, instead of doing nothing (cancelled page reads stay quiet).
 window.addEventListener('unhandledrejection', e => { if (e.reason && e.reason.name !== 'AbortError') toast(t('Something went wrong: {msg}', { msg: e.reason.message || String(e.reason) }), 6000); });
-const withTok = p => p + (p.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(S.token);
+// Picture, video and download addresses carry a short-lived ticket (GET /api/ticket) instead of the sign-in
+// token, which would otherwise end up in proxy logs, the browser history and the download list.
+// q: '' for pictures, 'item=<id>' for one item's video, subtitles, stills and theme, 'path=<path>' for one file to save.
+let TK = {};
+async function ticket(q = '') {
+  const c = TK[q];
+  if (c && c.expires - Date.now() / 1000 > 600) return c.ticket;
+  // (Not through api(): a page change must not cancel it.)
+  const r = await fetch('/api/ticket' + (q ? '?' + q : ''), { headers: { 'X-Token': S.token, Accept: 'application/json' } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  TK[q] = await r.json();
+  return TK[q].ticket;
+}
+const withTicket = (p, tk) => p + (p.includes('?') ? '&' : '?') + 'ticket=' + encodeURIComponent(tk || '');
+// A picture address: the picture ticket is fetched at start and renewed in the background.
+const withTok = p => withTicket(p, TK[''] && TK[''].ticket);
+setInterval(() => { if (S.me) ticket().catch(() => {}); }, 5 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.me) ticket().catch(() => {}); });
 // A poster scaled down on the server to about w px wide (small pictures instead of the originals).
 const smallTok = (p, w) => withTok(p + (p.includes('?') ? '&' : '?') + 'w=' + w);
 const fmtNum = (n, digits) => Number(n).toLocaleString(I18N.lang, digits === undefined ? undefined : { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -98,7 +115,7 @@ const GET = p => api('GET', p);
 const meta = j => (j && j.MediaContainer && j.MediaContainer.Metadata) || [];
 
 // ---------- sign in, first setup, invites
-function logout() { S.token = ''; S.me = null; try { localStorage.removeItem('token'); sessionStorage.removeItem('token'); } catch (e) { /* none */ } location.hash = '#/login'; drawChrome(); render(); }
+function logout() { S.token = ''; S.me = null; TK = {}; try { localStorage.removeItem('token'); sessionStorage.removeItem('token'); } catch (e) { /* none */ } location.hash = '#/login'; drawChrome(); render(); }
 
 function authPage(title, intro, fields, button, submit) {
   const err = h('div', { class: 'err' });
@@ -190,7 +207,7 @@ async function invitePage(code) {
 async function boot() {
   I18N.applyStatic();
   // The four start-up questions go out together instead of one after the other.
-  const [status, me, secs, filters] = await Promise.all([GET('/api/status'), GET('/api/me'), GET('/library/sections'), GET('/api/filters')].map(p => p.catch(() => null)));
+  const [status, me, secs, filters] = await Promise.all([GET('/api/status'), GET('/api/me'), GET('/library/sections'), GET('/api/filters'), ticket()].map(p => p.catch(() => null)));
   S.status = status;
   if (S.status) { $('#ver').textContent = `Lichtspiel ${S.status.version}${S.status.build ? ' · ' + S.status.build : ''}`; $('#ver').title = S.status.built_at ? t('Built {when}', { when: fmtDateTime(S.status.built_at) }) : ''; $('#sname').textContent = S.status.name; document.title = S.status.name === 'Lichtspiel' ? 'Lichtspiel' : `${S.status.name} · Lichtspiel`; }
   S.me = null;
@@ -1778,6 +1795,7 @@ async function load(at) {
   at = Math.max(0, at - P.base);
   const extra = (CLIENT_CODECS ? `&videoCodecs=${CLIENT_CODECS}` : '') + (P.audio ? `&audio=${P.audio}` : '') + (P.part ? `&part=${P.part}` : '') + (P.burn !== null && P.burn !== undefined ? `&subtitle=${P.burn}` : '');
   const d = await GET(`/library/metadata/${it.id}/decision?quality=${q}${extra}`);
+  P.tk = await ticket('item=' + it.id);
   if (P.it !== it) return;
   P.method = P.audio && d.method === 'direct' ? 'remux' : d.method;
   if (!d.allowed) toast(t('Converting is switched off for your account, so this file may not play here.'), 5000);
@@ -1787,11 +1805,11 @@ async function load(at) {
   if (noDirect) P.method = 'transcode';
   if (P.method === 'direct') {
     P.offset = 0;
-    video.src = withTok(`/library/parts/${it.id}/file${P.part ? '?part=' + P.part : ''}`);
+    video.src = withTicket(`/library/parts/${it.id}/file${P.part ? '?part=' + P.part : ''}`, P.tk);
     video.addEventListener('loadedmetadata', () => { video.currentTime = at; }, { once: true });
   } else {
     P.offset = at;
-    video.src = withTok(`/video/transcode/${it.id}/stream.mp4?quality=${q}&offset=${at.toFixed(1)}${extra}${noDirect ? '&transcode=1' : ''}`);
+    video.src = withTicket(`/video/transcode/${it.id}/stream.mp4?quality=${q}&offset=${at.toFixed(1)}${extra}${noDirect ? '&transcode=1' : ''}`, P.tk);
   }
   addSubtitles();
   $('#pmethod').textContent = { direct: ' · ' + t('direct play'), remux: ' · ' + t('repackaged'), transcode: ' · ' + t('converting') }[P.method] || '';
@@ -1806,7 +1824,7 @@ async function load(at) {
 // Subtitles belong to the first file (a later part would show them at the wrong time). A converted
 // stream starts at the seek point, so its times are moved by that much.
 function subTrack(s, i, shift, fresh) {
-  const el = h('track', { kind: 'subtitles', src: withTok(s.key + (fresh ? '?r=' + Date.now() : '')), label: subName(s, i), srclang: (s.language || 'und').slice(0, 2) });
+  const el = h('track', { kind: 'subtitles', src: withTicket(s.key + (fresh ? '?r=' + Date.now() : ''), P.tk), label: subName(s, i), srclang: (s.language || 'und').slice(0, 2) });
   el.addEventListener('load', () => {
     if (shift > 0 && el.track.cues) for (const c of Array.from(el.track.cues)) { c.startTime = Math.max(0, c.startTime - shift); c.endTime = Math.max(0, c.endTime - shift); }
   }, { once: true });
@@ -1997,6 +2015,9 @@ video.addEventListener('seeking', () => spin(true));
 player.addEventListener('pointerup', e => { const b = e.target.closest('.pbtn'); if (b && e.pointerType === 'mouse') setTimeout(() => b.blur(), 0); });
 video.addEventListener('error', () => {
   if (!P.it || !video.getAttribute('src')) return;
+  // The address's ticket has (nearly) run out, after hours of playing or a long pause: go on from here with a new one.
+  const tk = TK['item=' + P.it.id];
+  if (tk && tk.expires - Date.now() / 1000 < 600) { load(position()); return; }
   // Stopped by the owner? Then the report says so (and shows why).
   report('playing').then(r => { if (!(r && r.stopped)) toast(t('This video could not be played. Try a lower quality in ⚙.'), 6000); });
 });
@@ -2084,9 +2105,9 @@ function hoverTip(e) {
   if (frameWant === step) return;
   frameWant = step;
   clearTimeout(frameTimer);
-  frameTimer = setTimeout(() => {
+  frameTimer = setTimeout(async () => {
     if (!P.it || !P.it.Media) return;
-    const src = withTok(`/library/parts/${P.it.id}/frame?t=${step}`);
+    const src = withTicket(`/library/parts/${P.it.id}/frame?t=${step}`, await ticket('item=' + P.it.id));
     const pre = new Image();
     pre.onload = () => { if (frameWant === step) { img.src = src; img.style.display = 'block'; } };
     pre.onerror = () => { if (frameWant === step) img.style.display = 'none'; };

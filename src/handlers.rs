@@ -1282,7 +1282,7 @@ fn preroll_files(app: &Arc<App>) -> Vec<String> {
 pub fn preroll(app: &Arc<App>, ctx: &Ctx) -> Resp {
     let files = preroll_files(app);
     if files.is_empty() { return ok(json!({"url": null, "urls": []})); }
-    let tok = ctx.token.as_ref().map(|t| format!("?token={t}")).unwrap_or_default();
+    let tok = match &ctx.user { Some(u) => format!("?ticket={}", crate::auth::ticket(&app.db.lock().unwrap().ticket_key, u.id, "p", ctx.token.as_deref(), now()).0), None => String::new() };
     let url = |n: usize| format!("/api/preroll/{n}/file{tok}");
     let picked: Vec<usize> = match app.settings().preroll_mode.as_str() {
         "all" => (0..files.len()).collect(),

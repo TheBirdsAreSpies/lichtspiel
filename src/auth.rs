@@ -62,6 +62,43 @@ pub fn token_id(token: &str) -> String {
     Sha256::digest(token.as_bytes()).iter().take(6).map(|b| format!("{b:02x}")).collect()
 }
 
+/// A short-lived ticket for media addresses, so the sign-in token never goes into a URL (proxy logs,
+/// browser history, the download list). `scope` is an item id (its video, subtitles, stills and theme),
+/// "p" (pictures and pre-roll videos) or the path of one file to save; see `ticket_scope`. It holds the
+/// short id of the sign-in it was made with, so signing out ends it too. The end time is rounded
+/// (pictures: 1 to 1.5 hours, the rest 5 to 6 hours), so addresses stay the same and pictures stay cached.
+/// → (ticket, end time in unix seconds)
+pub fn ticket(key: &str, user: u64, scope: &str, token: Option<&str>, now: u64) -> (String, u64) {
+    let (step, life) = if scope == "p" { (1800, 5400) } else { (3600, 6 * 3600) };
+    let expires = now / step * step + life;
+    let msg = format!("{user}.{expires}.{}.{scope}", token.map(token_id).unwrap_or_default());
+    let sig: String = hmac_sha256(key.as_bytes(), msg.as_bytes())[..16].iter().map(|b| format!("{b:02x}")).collect();
+    (format!("{msg}.{sig}"), expires)
+}
+
+/// (user, token id, scope) of a ticket made with `key` that has not ended.
+pub fn read_ticket(key: &str, t: &str, now: u64) -> Option<(u64, String, String)> {
+    let (msg, sig) = t.rsplit_once('.')?;
+    let want: String = hmac_sha256(key.as_bytes(), msg.as_bytes())[..16].iter().map(|b| format!("{b:02x}")).collect();
+    // constant-time compare (the end time is not secret, so a plain comparison is fine for it)
+    if key.is_empty() || want.len() != sig.len() || want.bytes().zip(sig.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) != 0 { return None; }
+    let mut p = msg.splitn(4, '.');
+    let (user, expires, tid, scope) = (p.next()?.parse().ok()?, p.next()?.parse::<u64>().ok()?, p.next()?, p.next()?);
+    (expires > now).then(|| (user, tid.to_string(), scope.to_string()))
+}
+
+/// The ticket scope that opens `path` (GET only), or None when no ticket opens it.
+pub fn ticket_scope(path: &str) -> Option<String> {
+    let s: Vec<&str> = path.split('/').filter(|x| !x.is_empty()).collect();
+    match s.as_slice() {
+        ["library", "parts", id, ..] | ["video", "transcode", id, "stream.mp4" | "start.m3u8"] | ["library", "metadata", id, "theme"] => Some(id.to_string()),
+        ["library", "metadata", _, "thumb" | "art" | "cast" | "logo" | "square", ..] | ["library", "people", _, "thumb"] | ["api", "preroll", _, "file"] => Some("p".into()),
+        ["api", "downloads", id, "file", ..] => Some(format!("/api/downloads/{id}/file")),
+        ["api", "log", "download"] | ["api", "maintenance", "report" | "database"] => Some(format!("/{}", s.join("/"))),
+        _ => None,
+    }
+}
+
 pub fn valid_username(name: &str) -> bool {
     let n = name.trim();
     (2..=40).contains(&n.chars().count())

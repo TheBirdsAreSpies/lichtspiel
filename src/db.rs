@@ -1212,6 +1212,9 @@ pub struct Db {
     pub reports: Vec<ProblemReport>,
     #[serde(default)]
     pub downloads: Vec<Download>,
+    /// Signs the short-lived media tickets (auth::ticket); made on first start.
+    #[serde(default)]
+    pub ticket_key: String,
 }
 
 impl Default for Db {
@@ -1233,6 +1236,7 @@ impl Default for Db {
             sessions: vec![],
             reports: vec![],
             downloads: vec![],
+            ticket_key: random_hex(32),
         };
         db.ensure_default_playlists();
         db
