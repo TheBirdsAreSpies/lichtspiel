@@ -440,6 +440,7 @@ async function importPanel() {
   const waitDone = async () => {
     for (let i = 0; i < 2400; i++) {
       await new Promise(r => setTimeout(r, 1500));
+      if (!lastBox.isConnected) return; // the page was left or drawn again (that one has its own loop)
       const s = await GET('/api/import/old-server').catch(() => null);
       if (s && !s.running) { showLast(s.last); toast(t('Import finished')); S.sections = (await GET('/library/sections')).MediaContainer.Directory; drawChrome(); return; }
     }
@@ -1529,7 +1530,7 @@ function tgDraw(members) {
 async function tgPoll() {
   if (!TG.code || !P.it) return tgLeave();
   let st;
-  try { st = await GET('/api/together/' + TG.code); } catch (e) { toast(e.message, 5000); return tgLeave(); }
+  try { st = await GET('/api/together/' + TG.code); } catch (e) { if (e.name === 'AbortError') return; toast(e.message, 5000); return tgLeave(); }
   const before = TG.members.map(m => m.name).join();
   tgDraw(st.members);
   const now = TG.members.map(m => m.name).join();
@@ -1752,8 +1753,9 @@ function fadeTheme(a) {
   };
   step();
 }
+// THEME.id stays: the theme has had its turn on this page (a redraw or closing the player does not start it again).
 function stopTheme() {
-  const a = THEME.audio; THEME.audio = null; THEME.id = null;
+  const a = THEME.audio; THEME.audio = null;
   if (a) fadeTheme(a);
 }
 function startTheme(id) {
@@ -1766,11 +1768,13 @@ function startTheme(id) {
   a.addEventListener('error', () => { if (THEME.audio === a) { THEME.audio = null; THEME.id = null; } });
   a.play().catch(() => { /* the browser wants a click first, or there is no theme */ });
 }
-window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#/item/')) stopTheme(); });
+window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#/item/')) { stopTheme(); THEME.id = null; } });
 async function render() {
   const hash = location.hash.slice(1) || '/';
   const [path, qs] = hash.split('?');
   const parts = path.split('/').filter(Boolean);
+  if (S.nav) S.nav.abort();
+  S.nav = new AbortController();
   if (!S.status) { try { S.status = await GET('/api/status'); } catch (e) { return set(h('div', { class: 'empty' }, t('The server cannot be reached.'))); } }
   try {
     if (parts[0] === 'invite' && parts[1]) return await invitePage(parts[1]);
@@ -1779,7 +1783,12 @@ async function render() {
     switch (parts[0]) {
       case undefined: return await homePage();
       case 'section': return await sectionPage(parts[1], qs);
-      case 'item': { stopTheme(); const r = await itemPage(parts[1]); startTheme(parts[1]); return r; }
+      case 'item': {
+        if (THEME.id !== parts[1]) { stopTheme(); THEME.id = null; }
+        const r = await itemPage(parts[1]);
+        if (location.hash.slice(1).split('?')[0] === path) startTheme(parts[1]); // still on this page
+        return r;
+      }
       // A link that starts playing (?t= seconds in); closing the player leaves the title's page.
       case 'play': {
         history.replaceState(null, '', '#/item/' + parts[1]);
@@ -1803,7 +1812,7 @@ async function render() {
       case 'login': location.hash = '#/'; return;
       default: return set(h('div', { class: 'empty' }, t('Page not found.')));
     }
-  } catch (e) { set(h('div', { class: 'empty' }, t('Something went wrong: {msg}', { msg: e.message }))); }
+  } catch (e) { if (e.name !== 'AbortError') set(h('div', { class: 'empty' }, t('Something went wrong: {msg}', { msg: e.message }))); }
 }
 window.addEventListener('hashchange', () => { if (!P.it && !S.signingIn) render(); });
 boot();

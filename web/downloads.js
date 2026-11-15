@@ -129,7 +129,13 @@ async function downloadsPage() {
       const r = await api('DELETE', '/api/downloads?state=finished' + (DL.all ? '&all=1' : '')); toast(t('{n} removed', { n: r.removed })); refresh();
     } }, t('Clear finished')) : '');
     listBox.replaceChildren(list.downloads.length ? h('div', { class: 'list' }, list.downloads.map(row)) : h('div', { class: 'empty' }, t('Nothing downloaded yet.')));
-    if (busy) DL.timer = setTimeout(() => { if (listBox.isConnected && !document.querySelector('.modal')) refresh().catch(() => {}); }, 2000);
+    if (busy) DL.timer = setTimeout(tick, 2000);
+  };
+  // While a dialog is open, or after a failed answer, it just waits for the next turn.
+  const tick = () => {
+    if (!listBox.isConnected) return;
+    if (document.querySelector('.modal')) DL.timer = setTimeout(tick, 2000);
+    else refresh().catch(() => { DL.timer = setTimeout(tick, 2000); });
   };
   set(h('h1', {}, t('Downloads')), intro,
     h('div', { class: 'bar-tools' }, summary, h('span', { class: 'grow' }),

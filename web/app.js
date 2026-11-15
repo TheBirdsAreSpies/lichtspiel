@@ -60,6 +60,8 @@ function set(...kids) {
   });
 }
 function toast(msg, ms = 2600) { const el = $('#toast'); el.textContent = msg; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => (el.style.display = 'none'), ms); }
+// A button whose request failed says why, instead of doing nothing (cancelled page reads stay quiet).
+window.addEventListener('unhandledrejection', e => { if (e.reason && e.reason.name !== 'AbortError') toast(t('Something went wrong: {msg}', { msg: e.reason.message || String(e.reason) }), 6000); });
 const withTok = p => p + (p.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(S.token);
 // A poster scaled down on the server to about w px wide (small pictures instead of the originals).
 const smallTok = (p, w) => withTok(p + (p.includes('?') ? '&' : '?') + 'w=' + w);
@@ -83,9 +85,11 @@ const friendlyChannels = n => ({ 1: 'Mono', 2: t('Stereo'), 3: '2.1', 6: '5.1', 
 async function api(method, path, body) {
   const opt = { method, headers: { 'X-Token': S.token, Accept: 'application/json' } };
   if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  // A newer page cancels the reads of the one before (render() in pages.js), so a slow answer cannot draw over it.
+  if (method === 'GET' && S.nav) opt.signal = S.nav.signal;
   const r = await fetch(path, opt);
   let j = null;
-  try { j = await r.json(); } catch (e) { /* not JSON */ }
+  try { j = await r.json(); } catch (e) { if (e.name === 'AbortError') throw e; /* not JSON */ }
   if (r.status === 401 && S.token && !path.startsWith('/api/login')) { logout(); throw new Error(t('Please sign in again')); }
   if (!r.ok) { const e = new Error((j && j.error) ? t(j.error) : 'HTTP ' + r.status); e.data = j; throw e; }
   return j;
@@ -214,7 +218,7 @@ function drawChrome() {
   const name = h('button', { class: 'link', 'aria-haspopup': 'menu', title: t('Switch user or sign out'), style: 'background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:4px 6px' }, S.me.username + ' ▾');
   name.onclick = () => openMenu(name, [
     { label: t('Switch user'), run: switchUser },
-    { label: t('Sign out'), run: logout },
+    { label: t('Sign out'), run: switchUser },
   ]);
   who.append(name, gear);
   document.querySelectorAll('#side .admin').forEach(e => (e.style.display = S.me.admin ? '' : 'none'));
@@ -656,6 +660,9 @@ function filterUI({ st, go, advRules, lastKey, loadFilters }) {
   return { filterBtn, chips, closePanel };
 }
 
+// Takes down the library page drawn last (its scroll handlers and grid), also when the same page is drawn again.
+let LIBCLEAN = null;
+window.addEventListener('hashchange', () => { if (LIBCLEAN) LIBCLEAN(); });
 async function sectionPage(id, qs) {
   markNav('section/' + id);
   const myHash = location.hash;
@@ -734,6 +741,7 @@ async function sectionPage(id, qs) {
       } else grid._put(p * PAGE_SIZE, r.Metadata);
       have.add(p);
     } catch (e) {
+      if (e.name === 'AbortError') return; // another page was opened
       // Tried again when the page is scrolled to the next time.
       toast(e.message);
       if (grid) for (let i = p * PAGE_SIZE; i < Math.min(total, (p + 1) * PAGE_SIZE); i++) { const el = grid.children[i]; if (el && el.classList.contains('ph')) more.observe(el); }
@@ -843,7 +851,8 @@ async function sectionPage(id, qs) {
     const now = Date.now(); if (now - t0 > 200) { t0 = now; LIBPOS[myHash] = { y: window.scrollY, n: total }; }
   };
   window.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('hashchange', () => { more.disconnect(); closePanel(); window.removeEventListener('scroll', onScroll); window.removeEventListener('scroll', onPos); saveLibPos(); }, { once: true });
+  if (LIBCLEAN) LIBCLEAN();
+  LIBCLEAN = () => { LIBCLEAN = null; more.disconnect(); closePanel(); window.removeEventListener('scroll', onScroll); window.removeEventListener('scroll', onPos); saveLibPos(); };
 }
 
 const itemCount = n => n === 1 ? t('1 item') : t('{n} items', { n });
@@ -1057,8 +1066,8 @@ function scoreBadges(r) {
     const mark = h('span', { class: 'mark' });
     const num = parseFloat(String(s.score)) || 0;
     mark.innerHTML = SCORE_MARKS[k](k === 'rotten_tomatoes_audience' ? (String(s.score).includes('/5') ? num * 20 : String(s.score).includes('/10') ? num * 10 : num) : num);
-    const kids = [mark, h('span', { class: 'num' }, h('b', {}, s.score), h('span', {}, many || n))];
-    const title = `${n}: ${s.score}${many ? ' · ' + many : ''}${s.note ? ' — ' + s.note : ''}`;
+    const kids = [mark, h('span', { class: 'num' }, h('b', {}, s.score), h('span', {}, many || t(n)))];
+    const title = `${t(n)}: ${s.score}${many ? ' · ' + many : ''}${s.note ? ' — ' + s.note : ''}`;
     return s.url ? h('a', { class: 'score', href: s.url, target: '_blank', rel: 'noopener', title, 'aria-label': title }, kids)
       : h('div', { class: 'score', title, 'aria-label': title }, kids);
   }));
@@ -1534,6 +1543,9 @@ $('#ppip').hidden = !document.pictureInPictureEnabled;
 
 const duration = () => (P.it && P.it.duration ? P.it.duration / 1000 : 0) || (P.method === 'direct' && !split() && isFinite(video.duration) ? video.duration : 0);
 const position = () => (P.base || 0) + P.offset + (video.currentTime || 0);
+// A converted stream also "ends" when the server stops sending (ffmpeg failed, the conversion was stopped):
+// only within a minute of the title's length (from the server, dur) is that the real end.
+const reallyEnded = (pos, dur) => !dur || dur - pos <= 60;
 // What the bar shows: a seek waiting to happen, else where the video is.
 const shown = () => P.pending !== null ? P.pending : position();
 
@@ -1991,6 +2003,10 @@ video.addEventListener('error', () => {
 video.addEventListener('ended', () => {
   // The next part of a split movie.
   if (split() && P.part < P.parts.length - 1) { load(partStart(P.part + 1)); return; }
+  if (!reallyEnded(position(), P.it && P.it.duration / 1000)) {
+    report('paused').then(r => { if (!(r && r.stopped)) toast(t('The video stopped before its end. Your place was saved.'), 6000); });
+    return;
+  }
   report('stopped', Math.floor(duration() * 1000));
   upNext();
 });
