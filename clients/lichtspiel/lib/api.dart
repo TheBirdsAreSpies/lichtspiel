@@ -34,6 +34,7 @@ class Api {
 
   /// Older versions kept the token in the plain settings: move it to the keychain once.
   /// If the keychain can't be used (e.g. an unsigned Mac build), the plain setting keeps working.
+  /// A token in the plain settings is always the newer one (save() only writes it there when the keychain refused).
   static Future<String?> _readToken(SharedPreferences p) async {
     String? t;
     try {
@@ -41,7 +42,7 @@ class Api {
     } catch (_) {}
     final old = p.getString('token');
     if (old == null) return t;
-    if (t == null) {
+    if (t != old) {
       try {
         await _secure.write(key: 'token', value: old);
         t = old;

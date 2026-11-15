@@ -227,7 +227,7 @@ class _ImagePickerState extends State<_ImagePicker> {
   /// Picks a picture with the system's picker (photo library on iPhone/iPad, a file dialog elsewhere).
   Future<void> fromFile() async {
     try {
-      final f = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 3000, maxHeight: 3000, imageQuality: 92);
+      final f = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 3000, maxHeight: 3000, imageQuality: 92, requestFullMetadata: false);
       if (f == null) return;
       final bytes = await f.readAsBytes();
       if (bytes.length > 3 * 1024 * 1024) return say('Das Bild ist zu groß (höchstens 3 MB)');

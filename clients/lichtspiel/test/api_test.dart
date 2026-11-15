@@ -36,4 +36,14 @@ void main() {
     expect(p.getString('token'), isNull);
     expect((await Api.restore())?.token, 'fresh');
   });
+
+  test('a token in the settings wins over the keychain: it is the newer one', () async {
+    // save() only writes the settings when the keychain refused, so that token came later.
+    SharedPreferences.setMockInitialValues({'server': 'http://nas:8484', 'token': 'newer'});
+    FlutterSecureStorage.setMockInitialValues({'token': 'older'});
+    expect((await Api.restore())?.token, 'newer');
+    final p = await SharedPreferences.getInstance();
+    expect(p.getString('token'), isNull);
+    expect(await const FlutterSecureStorage().read(key: 'token'), 'newer');
+  });
 }

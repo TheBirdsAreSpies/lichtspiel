@@ -88,10 +88,11 @@ Future<void> _download(BuildContext context, Api api, String url) async {
     for (var n = 2; await f.exists(); n++) {
       f = File('${dir.path}/${dot > 0 ? '${name.substring(0, dot)} ($n)${name.substring(dot)}' : '$name ($n)'}');
     }
-    out = f;
+    // Written under "….part" and renamed at the end, so a cut-off download never looks finished.
+    out = File('${f.path}.part');
     final total = r.contentLength ?? 0;
     var got = 0;
-    final sink = f.openWrite();
+    final sink = out.openWrite();
     try {
       await for (final chunk in r.stream) {
         sink.add(chunk);
@@ -101,9 +102,10 @@ Future<void> _download(BuildContext context, Api api, String url) async {
     } finally {
       await sink.close();
     }
-    if (!cancelled) {
-      messenger.showSnackBar(SnackBar(content: Text(Platform.isIOS ? 'Gespeichert: „${f.path.split('/').last}“ (Dateien-App › Auf meinem iPhone › Lichtspiel)' : 'Gespeichert in „Downloads“: ${f.path.split('/').last}')));
-    }
+    if (cancelled) throw 'Abgebrochen';
+    await out.rename(f.path);
+    out = null;
+    messenger.showSnackBar(SnackBar(content: Text(Platform.isIOS ? 'Gespeichert: „${f.path.split('/').last}“ (Dateien-App › Auf meinem iPhone › Lichtspiel)' : 'Gespeichert in „Downloads“: ${f.path.split('/').last}')));
   } catch (e) {
     if (out != null && await out.exists()) {
       try {

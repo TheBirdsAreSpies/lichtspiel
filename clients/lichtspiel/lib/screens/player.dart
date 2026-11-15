@@ -23,6 +23,9 @@ const _qualities = {
 const _subSizes = {75: 'Klein', 100: 'Normal', 130: 'Groß', 170: 'Sehr groß'};
 const _stillWatchingAfter = 3;
 
+/// mpv reads a negative seek as "counted from the end", so going back stops at the start.
+Duration back10(Duration p) => p < const Duration(seconds: 10) ? Duration.zero : p - const Duration(seconds: 10);
+
 String _clock(int ms) {
   final s = ms ~/ 1000;
   final h = s ~/ 3600, m = (s % 3600) ~/ 60, sec = s % 60;
@@ -799,7 +802,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ],
       keyboardShortcuts: {
         const SingleActivator(LogicalKeyboardKey.space): () => player.playOrPause(),
-        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => player.seek(player.state.position - const Duration(seconds: 10)),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => player.seek(back10(player.state.position)),
         const SingleActivator(LogicalKeyboardKey.arrowRight): () => player.seek(player.state.position + const Duration(seconds: 30)),
         const SingleActivator(LogicalKeyboardKey.arrowUp): () => player.setVolume((player.state.volume + 5).clamp(0, 100)),
         const SingleActivator(LogicalKeyboardKey.arrowDown): () => player.setVolume((player.state.volume - 5).clamp(0, 100)),
@@ -819,7 +822,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       topButtonBar: [MaterialCustomButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.maybePop(context)), ...top.skip(1)],
       primaryButtonBar: [
         const Spacer(flex: 2),
-        MaterialCustomButton(icon: const Icon(Icons.replay_10), iconSize: 36, onPressed: () => player.seek(player.state.position - const Duration(seconds: 10))),
+        MaterialCustomButton(icon: const Icon(Icons.replay_10), iconSize: 36, onPressed: () => player.seek(back10(player.state.position))),
         const Spacer(),
         const MaterialPlayOrPauseButton(iconSize: 48),
         const Spacer(),
