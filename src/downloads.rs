@@ -225,6 +225,7 @@ pub fn file(app: &Arc<App>, ctx: &Ctx, user: &User, id: u64) -> Resp {
         if it.all_files().len() > 1 { name = name.replacen(&format!(".{ext}"), &format!(" - part{}.{ext}", n + 1), 1); }
         let (path, ctype) = (PathBuf::from(&f.path), transcode::content_type(&f.container));
         drop(db);
+        if !app.may_send(&path, false) { return fail(403, "This file is outside the library folders"); }
         return serve_file_as(&path, ctype, ctx.range.as_deref(), Some(&name));
     }
     let name = file_name(&db, it, &d.quality, "mp4");

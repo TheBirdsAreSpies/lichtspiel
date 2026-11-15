@@ -393,6 +393,14 @@ impl App {
         self.db.lock().unwrap().settings.clone()
     }
 
+    /// A file from the library may be sent: it really lies in a library folder (or, with `data`, in
+    /// the data folder, where downloaded pictures are). Takes the library lock for a moment.
+    pub fn may_send(&self, p: &Path, data: bool) -> bool {
+        let mut folders: Vec<PathBuf> = self.db.lock().unwrap().sections.iter().flat_map(|s| s.paths.iter().map(PathBuf::from)).collect();
+        if data { folders.push(self.data_dir.clone()); }
+        inside_folders(&folders, p)
+    }
+
     pub fn server_info(&self) -> Value {
         let port = *self.port.lock().unwrap();
         json!({"url": format!("{}://127.0.0.1:{port}", scheme()), "version": VERSION, "data_dir": self.data_dir.to_string_lossy()})
@@ -1640,16 +1648,6 @@ impl App {
 /// On first start, copies the plugins shipped with the server (switched off)
 /// into the data folder, so they appear on the Plugins page.
 fn install_bundled_plugins(dest: &Path) {
-    // The marker lists the bundled plugins copied so far (one per line), so a
-    // plugin bundled by a newer version arrives once and one deleted by hand
-    // stays deleted. Older versions wrote one sentence instead: they had copied
-    // the first two.
-    let marker = dest.join(".bundled-installed");
-    let mut done: Vec<String> = match std::fs::read_to_string(&marker) {
-        Ok(t) if t.starts_with("bundled example plugins") => vec!["nfo-reader".into(), "webhook-notify".into()],
-        Ok(t) => t.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect(),
-        Err(_) => vec![],
-    };
     let mut sources: Vec<PathBuf> = vec![];
     if let Some(p) = crate::env("BUNDLED_PLUGINS") {
         sources.push(PathBuf::from(p));
@@ -1661,7 +1659,34 @@ fn install_bundled_plugins(dest: &Path) {
     sources.push(PathBuf::from("/opt/lichtspiel/plugins"));
     sources.push(PathBuf::from("/opt/mediaserver/plugins"));
     let Some(src) = sources.into_iter().find(|s| s.is_dir() && s.canonicalize().ok() != dest.canonicalize().ok()) else { return };
-    let Ok(rd) = std::fs::read_dir(&src) else { return };
+    copy_bundled_plugins(&src, dest);
+}
+
+/// `a` is a higher dotted version number than `b` ("1.10" > "1.9").
+fn newer_version(a: &str, b: &str) -> bool {
+    let nums = |v: &str| v.trim().split('.').map(|n| n.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
+    let (a, b) = (nums(a), nums(b));
+    (0..a.len().max(b.len())).map(|i| (a.get(i).copied().unwrap_or(0), b.get(i).copied().unwrap_or(0))).find(|(x, y)| x != y).is_some_and(|(x, y)| x > y)
+}
+
+/// The "version" in a plugin folder's plugin.json ("" when there is none).
+fn plugin_version(dir: &Path) -> String {
+    std::fs::read(dir.join("plugin.json")).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        .and_then(|v| v["version"].as_str().map(String::from)).unwrap_or_default()
+}
+
+fn copy_bundled_plugins(src: &Path, dest: &Path) {
+    // The marker lists the bundled plugins copied so far (one per line), so a
+    // plugin bundled by a newer version arrives once and one deleted by hand
+    // stays deleted. Older versions wrote one sentence instead: they had copied
+    // the first two.
+    let marker = dest.join(".bundled-installed");
+    let mut done: Vec<String> = match std::fs::read_to_string(&marker) {
+        Ok(t) if t.starts_with("bundled example plugins") => vec!["nfo-reader".into(), "webhook-notify".into()],
+        Ok(t) => t.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect(),
+        Err(_) => vec![],
+    };
+    let Ok(rd) = std::fs::read_dir(src) else { return };
     for e in rd.flatten() {
         let from = e.path();
         if !from.join("plugin.json").exists() {
@@ -1670,7 +1695,19 @@ fn install_bundled_plugins(dest: &Path) {
         let name = e.file_name().to_string_lossy().to_string();
         let to = dest.join(e.file_name());
         let seen = done.contains(&name);
-        if !seen { done.push(name); }
+        if !seen { done.push(name.clone()); }
+        // A newer bundled version replaces the plugin's own program files and plugin.json, never its
+        // other files (its tokens and settings) or its tests; a plugin deleted by hand stays deleted.
+        if to.join("plugin.json").is_file() && newer_version(&plugin_version(&from), &plugin_version(&to)) {
+            for f in std::fs::read_dir(&from).into_iter().flatten().flatten() {
+                let n = f.file_name().to_string_lossy().to_string();
+                if n == "plugin.json" || (n.ends_with(".py") && !n.starts_with("test_")) {
+                    let _ = std::fs::copy(f.path(), to.join(&n));
+                }
+            }
+            crate::log::add(format!("Plugin {name} updated to version {}", plugin_version(&to)));
+            continue;
+        }
         if seen || to.exists() {
             continue;
         }
@@ -1801,12 +1838,38 @@ pub fn header(k: &str, v: &str) -> Header {
 
 pub fn base_headers() -> Vec<Header> {
     vec![
-        header("Access-Control-Allow-Origin", "*"),
-        header("Access-Control-Allow-Headers", "Content-Type, X-Token, Authorization, Range"),
-        header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS"),
-        header("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length, X-Transcode-Method, X-Session"),
+        // No Access-Control-Allow-Origin: pages of other websites must not read the answers
+        // (the web app is on this server itself, the apps are no browsers).
         header("X-Server", &format!("{APP_NAME}/{VERSION}")),
+        header("X-Content-Type-Options", "nosniff"),
+        header("X-Frame-Options", "DENY"),
+        // Links to other websites don't take the address along (it can hold ?token=).
+        header("Referrer-Policy", "no-referrer"),
     ]
+}
+
+/// What the web app's page may load: its own scripts (the one inline script by its hash), pictures
+/// from anywhere, YouTube trailers in a frame; no other website may show the page in a frame.
+pub fn web_csp() -> &'static str {
+    static CSP: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CSP.get_or_init(|| {
+        use sha2::Digest;
+        let hashes: Vec<String> = WEB_APP.split("<script>").skip(1).filter_map(|s| s.split("</script>").next())
+            .map(|s| format!("'sha256-{}'", b64(&sha2::Sha256::digest(s.as_bytes())))).collect();
+        format!("default-src 'self'; script-src 'self' {}; style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src 'self' blob: data:; \
+            frame-src https://www.youtube-nocookie.com; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'", hashes.join(" "))
+    })
+}
+
+/// Standard base64 (with padding).
+pub fn b64(data: &[u8]) -> String {
+    const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for c in data.chunks(3) {
+        let n = (c[0] as u32) << 16 | (*c.get(1).unwrap_or(&0) as u32) << 8 | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 { out.push(if i <= c.len() { ABC[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' }); }
+    }
+    out
 }
 
 pub fn bytes(status: u16, ctype: &str, body: Vec<u8>) -> Resp {
@@ -1983,6 +2046,28 @@ pub fn client_address(peer: Option<IpAddr>, xff: &[String], real_ip: Option<&str
         }
     }
     (peer, false)
+}
+
+/// The file really lies inside one of these folders, also after following links.
+pub fn inside_folders<S: AsRef<Path>>(folders: &[S], p: &Path) -> bool {
+    let Ok(real) = p.canonicalize() else { return false };
+    folders.iter().any(|f| f.as_ref().canonicalize().is_ok_and(|f| real.starts_with(f)))
+}
+
+/// Looks up a host for a download a user asked for (a picture's address) and refuses this computer,
+/// the home network, link-local (cloud metadata) and other special addresses. ureq asks this again
+/// for every redirect, so a redirect can't lead there either.
+pub fn public_only(netloc: &str) -> std::io::Result<Vec<std::net::SocketAddr>> {
+    let all: Vec<std::net::SocketAddr> = std::net::ToSocketAddrs::to_socket_addrs(netloc)?.collect();
+    let special = |ip: IpAddr| {
+        let ip = match ip { IpAddr::V6(a) => a.to_ipv4_mapped().map_or(ip, IpAddr::V4), _ => ip };
+        ip_is_local(ip) || ip.is_unspecified() || ip.is_multicast()
+            || matches!(ip, IpAddr::V4(a) if a.is_broadcast() || a.octets()[0] == 0 || (a.octets()[0] == 100 && a.octets()[1] & 0xc0 == 64))
+    };
+    if all.is_empty() || all.iter().any(|a| special(a.ip())) {
+        return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "addresses on this computer or the home network can't be used"));
+    }
+    Ok(all)
 }
 
 pub fn ip_is_local(ip: IpAddr) -> bool {
@@ -2425,6 +2510,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let mut agent = String::new();
     let (mut product, mut device_name) = (String::new(), String::new());
     let (mut xff, mut real_ip, mut forwarded) = (Vec::new(), None, Vec::new());
+    let mut fetch_site = String::new();
     for h in req.headers() {
         let f = h.field.as_str().as_str().to_ascii_lowercase();
         match f.as_str() {
@@ -2442,6 +2528,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
             "x-forwarded-for" => xff.push(h.value.as_str().to_string()),
             "x-real-ip" => real_ip = Some(h.value.as_str().to_string()),
             "forwarded" => forwarded.push(h.value.as_str().to_string()),
+            "sec-fetch-site" => fetch_site = h.value.as_str().to_ascii_lowercase(),
             _ => {}
         }
     }
@@ -2482,8 +2569,11 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         Some(ip) => (Some(ip), false),
         None => client_address(req.remote_addr().map(|a| a.ip()), &xff, real_ip.as_deref(), &forwarded, &trusted),
     };
-    // Networks that need no sign-in act as the first admin (only with an address that is believed).
-    let user = if user.is_none() && remote_trusted && !no_auth.trim().is_empty() && remote.is_some_and(|a| ip_in_list(&no_auth, a)) {
+    // The browser says the request comes from a page of another website (a link, form or script there).
+    let other_site = matches!(fetch_site.as_str(), "cross-site" | "same-site");
+    // Networks that need no sign-in act as the first admin (only with an address that is believed,
+    // and never for another website's page).
+    let user = if user.is_none() && !other_site && remote_trusted && !no_auth.trim().is_empty() && remote.is_some_and(|a| ip_in_list(&no_auth, a)) {
         app.db.lock().unwrap().users.iter().filter(|u| u.admin).min_by_key(|u| u.id).cloned()
     } else { user };
     let uid = user.as_ref().map(|u| u.id);
@@ -2494,7 +2584,9 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let ctx = Ctx { method: method.clone(), path, params, body, user, host, range, token, remote, remote_trusted, lan_extra, device };
     let is_local = ctx.is_local();
     let started = Instant::now();
-    let mut resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) } else { crate::routes::route(&app, &ctx) };
+    let mut resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) }
+        else if other_site && (!matches!(method.as_str(), "GET" | "HEAD") || ctx.path.starts_with("/api/home")) { fail(403, "Requests from other websites are not allowed") }
+        else { crate::routes::route(&app, &ctx) };
     // How long the server needed to answer (not to send): in the browser's network tab as Server-Timing,
     // and in the server log when it was slow (playing and converting go on for long by design).
     let took = started.elapsed().as_millis();
@@ -3022,7 +3114,7 @@ fn scanner_same_dir(a: &Path, b: &Path) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::db::MediaFile;
 
@@ -3125,6 +3217,229 @@ mod tests {
         let _ = c.read_to_string(&mut got);
         crate::relay::RELAYED.lock().unwrap().as_mut().unwrap().remove(&c.local_addr().unwrap());
         assert!(got.starts_with("HTTP/1.1 401"), "a relayed caller got in without signing in: {}", got.lines().next().unwrap_or(""));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Sends one raw request through `handle` and returns the whole answer.
+    pub(crate) fn ask(app: &Arc<App>, raw: &str) -> String {
+        use std::io::Write;
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let mut c = std::net::TcpStream::connect(server.server_addr().to_ip().unwrap()).unwrap();
+        c.write_all(raw.as_bytes()).unwrap();
+        handle(app.clone(), server.recv().unwrap());
+        let mut got = String::new();
+        let _ = c.read_to_string(&mut got);
+        got
+    }
+
+    /// A data folder with a first admin (id 1) and a profile without PIN (id 2) on the sign-in screen.
+    pub(crate) fn test_app(name: &str) -> (Arc<App>, PathBuf) {
+        let root = std::env::temp_dir().join(format!("lichtspiel-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = App::open(&root);
+        {
+            let mut db = app.db.lock().unwrap();
+            db.settings.home_profiles = true;
+            db.users.push(serde_json::from_value(json!({"id": 1, "username": "admin", "password_hash": "x", "salt": "x", "admin": true, "created_at": 0})).unwrap());
+            db.users.push(serde_json::from_value(json!({"id": 2, "username": "kid", "password_hash": "x", "salt": "x", "admin": false, "home": true, "created_at": 0})).unwrap());
+        }
+        (app, root)
+    }
+
+    #[test]
+    fn base64() {
+        assert_eq!([b64(b""), b64(b"f"), b64(b"fo"), b64(b"foo"), b64(b"foob")], ["", "Zg==", "Zm8=", "Zm9v", "Zm9vYg=="]);
+    }
+
+    #[test]
+    fn the_web_app_page_cannot_be_framed_and_runs_only_its_own_scripts() {
+        let (app, root) = test_app("headers");
+        let got = ask(&app, "GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+        let head = got.split("\r\n\r\n").next().unwrap().to_ascii_lowercase();
+        for want in ["x-frame-options: deny", "x-content-type-options: nosniff", "referrer-policy: no-referrer", "frame-ancestors 'none'", "object-src 'none'"] {
+            assert!(head.contains(want), "missing {want}: {head}");
+        }
+        let csp = head.lines().find(|l| l.starts_with("content-security-policy:")).unwrap();
+        let script = csp.split(';').find(|d| d.trim().starts_with("script-src")).unwrap();
+        assert!(!script.contains("unsafe-inline"), "any inline script may run: {script}");
+        // The page's own inline script is allowed by its hash.
+        let inline = WEB_APP.split("<script>").nth(1).unwrap().split("</script>").next().unwrap();
+        let hash = { use sha2::Digest; b64(&sha2::Sha256::digest(inline.as_bytes())) };
+        assert!(script.contains(&format!("'sha256-{}'", hash.to_ascii_lowercase())), "{script}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn files_outside_the_library_folders_are_never_sent() {
+        let (app, root) = test_app("outside");
+        let media = root.join("media");
+        std::fs::create_dir_all(media.join("Film")).unwrap();
+        std::fs::write(root.join("secret.txt"), "WEBVTT\n\ntop secret").unwrap();
+        std::fs::write(media.join("Film/Film.mkv"), "video").unwrap();
+        std::fs::write(media.join("Film/Film.de.vtt"), "WEBVTT\n\nhallo").unwrap();
+        std::os::unix::fs::symlink(root.join("secret.txt"), media.join("Film/Film.en.vtt")).unwrap();
+        std::os::unix::fs::symlink(root.join("secret.txt"), media.join("Film/Leak.mkv")).unwrap();
+        let tok = {
+            let mut db = app.db.lock().unwrap();
+            db.sections.push(serde_json::from_value(json!({"id": 1, "name": "Filme", "kind": "movie", "paths": [media.to_string_lossy()], "created_at": 0})).unwrap());
+            for (id, f) in [(1u64, "Film/Film.mkv"), (2, "Film/Leak.mkv")] {
+                let mut i: Item = serde_json::from_value(json!({"id": id, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+                let subs = vec![media.join("Film/Film.de.vtt").to_string_lossy().to_string(), media.join("Film/Film.en.vtt").to_string_lossy().to_string()];
+                i.file = Some(MediaFile { path: media.join(f).to_string_lossy().to_string(), container: "matroska".into(), external_subtitles: subs, ..Default::default() });
+                db.items.insert(id, i);
+            }
+            crate::handlers::new_token(&mut db, 2, "test")
+        };
+        let get = |path: &str| ask(&app, &format!("GET {path} HTTP/1.1\r\nHost: x\r\nX-Token: {tok}\r\nConnection: close\r\n\r\n"));
+        assert!(get("/library/parts/1/subtitles/x0").contains("hallo"), "a subtitle in the library is not sent");
+        assert!(get("/library/parts/1/file").ends_with("video"), "a video in the library is not sent");
+        assert!(!get("/library/parts/1/subtitles/x1").contains("top secret"), "a subtitle linked to a file outside the library was sent");
+        assert!(!get("/library/parts/2/file").contains("top secret"), "a video linked to a file outside the library was sent");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A tiny web server on this computer that counts its callers and answers with `answer`.
+    pub(crate) fn local_web(answer: &'static [u8]) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::Write;
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap().to_string();
+        let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let h = hits.clone();
+        std::thread::spawn(move || for mut s in l.incoming().flatten() {
+            h.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let mut buf = [0u8; 2048];
+            let _ = s.read(&mut buf);
+            let _ = s.write_all(answer);
+        });
+        (addr, hits)
+    }
+
+    #[test]
+    fn a_picture_address_may_not_reach_this_computer_or_the_home_network() {
+        let (app, root) = test_app("ssrf");
+        let (addr, hits) = local_web(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\n\x89PNGxxxx");
+        {
+            let mut db = app.db.lock().unwrap();
+            let i: Item = serde_json::from_value(json!({"id": 1, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+            db.items.insert(1, i);
+        }
+        let r = crate::handlers::set_image(&app, "1", "poster", &json!({"url": format!("http://{addr}/p.png")}));
+        assert_ne!(r.status_code().0, 200);
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0, "the server fetched a picture from this computer");
+        for blocked in ["127.0.0.1:80", "10.1.2.3:80", "192.168.1.1:80", "172.16.0.1:80", "169.254.169.254:80", "100.64.0.1:80", "0.0.0.0:80", "[::1]:80", "[fe80::1]:80", "[fd00::1]:80", "[::ffff:192.168.1.1]:80"] {
+            assert!(public_only(blocked).is_err(), "{blocked} is allowed");
+        }
+        assert!(public_only("8.8.8.8:443").is_ok());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// test_app plus one movie (id 1) in library 1, which the profile "kid" may not see; tokens for admin and kid.
+    fn app_with_hidden_movie(name: &str) -> (Arc<App>, PathBuf, String, String) {
+        let (app, root) = test_app(name);
+        let mut db = app.db.lock().unwrap();
+        db.sections.push(serde_json::from_value(json!({"id": 1, "name": "Filme", "kind": "movie", "paths": [root.join("media").to_string_lossy()], "created_at": 0})).unwrap());
+        let i: Item = serde_json::from_value(json!({"id": 1, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+        db.items.insert(1, i);
+        db.users[1].allowed_sections = Some(vec![]);
+        let (a, k) = (crate::handlers::new_token(&mut db, 1, "test"), crate::handlers::new_token(&mut db, 2, "test"));
+        drop(db);
+        (app, root, a, k)
+    }
+
+    #[test]
+    fn a_profile_cannot_mark_rate_or_favourite_what_it_may_not_see() {
+        let (app, root, _, kid) = app_with_hidden_movie("can-see");
+        for (m, path) in [("PUT", "/:/scrobble?key=1"), ("PUT", "/:/unscrobble?key=1"), ("PUT", "/:/rate?key=1&rating=8"), ("PUT", "/api/items/1/favorite"),
+            ("POST", "/api/continue/remove?x=1")] {
+            let body = if path.starts_with("/api/continue") { r#"{"ids":[1]}"# } else { "" };
+            let got = ask(&app, &format!("{m} {path} HTTP/1.1\r\nHost: x\r\nX-Token: {kid}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()));
+            assert!(got.starts_with("HTTP/1.1 404"), "{m} {path}: {}", got.lines().next().unwrap_or(""));
+        }
+        let db = app.db.lock().unwrap();
+        assert!(db.views.get("2:1").is_none(), "the profile wrote watch state for a hidden movie");
+        drop(db);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The routes touched by the security fixes need sign-in or admin: anonymous, a profile and the admin.
+    #[test]
+    fn routes_need_sign_in_or_admin() {
+        let (app, root, admin, kid) = app_with_hidden_movie("access");
+        app.db.lock().unwrap().users[1].allowed_sections = None;
+        // (method, path, anonymous, profile, admin): the status each one gets.
+        let table: &[(&str, &str, u16, u16, u16)] = &[
+            ("GET", "/api/home", 200, 200, 200),
+            ("PUT", "/:/scrobble?key=1", 401, 200, 200),
+            ("PUT", "/:/unscrobble?key=1", 401, 200, 200),
+            ("PUT", "/:/rate?key=1&rating=8", 401, 200, 200),
+            ("PUT", "/api/items/1/favorite", 401, 200, 200),
+            ("GET", "/library/parts/1/subtitles/x0", 401, 400, 400),
+            ("GET", "/library/parts/1/file", 401, 400, 400),
+            ("PUT", "/library/metadata/1/image/poster", 401, 403, 400),
+            ("GET", "/api/settings", 401, 403, 200),
+            ("GET", "/api/plex-sync", 401, 403, 200),
+        ];
+        for &(m, path, want_anon, want_kid, want_admin) in table {
+            for (who, tok, want) in [("anonymous", "", want_anon), ("profile", kid.as_str(), want_kid), ("admin", admin.as_str(), want_admin)] {
+                let got = ask(&app, &format!("{m} {path} HTTP/1.1\r\nHost: x\r\nX-Token: {tok}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
+                assert!(got.starts_with(&format!("HTTP/1.1 {want}")), "{m} {path} as {who}: {}", got.lines().next().unwrap_or(""));
+            }
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_newer_bundled_plugin_replaces_only_its_own_files() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-bundled-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (src, dest) = (root.join("bundled"), root.join("plugins"));
+        let plugin = |dir: &Path, version: &str, code: &str| {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join("plugin.json"), format!(r#"{{"id": "x", "version": "{version}"}}"#)).unwrap();
+            std::fs::write(dir.join("main.py"), code).unwrap();
+            std::fs::write(dir.join("test_main.py"), code).unwrap();
+        };
+        plugin(&src.join("trakt"), "1.10", "new");
+        plugin(&src.join("gone"), "2.0", "new");
+        plugin(&dest.join("trakt"), "1.9", "old");
+        std::fs::write(dest.join("trakt/tokens.json"), "mine").unwrap();
+        std::fs::write(dest.join(".bundled-installed"), "trakt\ngone\n").unwrap();
+        copy_bundled_plugins(&src, &dest);
+        let read = |p: &str| std::fs::read_to_string(dest.join(p)).unwrap_or_default();
+        assert_eq!(read("trakt/main.py"), "new", "the newer bundled version was not installed");
+        assert!(read("trakt/plugin.json").contains("1.10"));
+        assert_eq!(read("trakt/tokens.json"), "mine", "the plugin's own data was touched");
+        assert_eq!(read("trakt/test_main.py"), "old", "a test file was copied over");
+        assert!(!dest.join("gone").exists(), "a plugin deleted by hand came back");
+        // The same or an older bundled version changes nothing.
+        std::fs::write(dest.join("trakt/main.py"), "edited").unwrap();
+        copy_bundled_plugins(&src, &dest);
+        assert_eq!(read("trakt/main.py"), "edited");
+        assert!(newer_version("1.10", "1.9") && newer_version("1.1", "1") && !newer_version("1.1", "1.1") && !newer_version("1.0", "1.1") && !newer_version("", "1.0"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn other_websites_cannot_read_the_answers() {
+        let (app, root) = test_app("cors");
+        let got = ask(&app, "GET /api/home HTTP/1.1\r\nHost: x\r\nOrigin: https://evil.example\r\nConnection: close\r\n\r\n");
+        assert!(got.starts_with("HTTP/1.1 200"), "{got}");
+        assert!(!got.to_ascii_lowercase().contains("access-control-allow-origin"), "another website may read the answer: {got}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn other_websites_cannot_pick_a_profile_or_use_the_no_sign_in_network() {
+        let (app, root) = test_app("csrf");
+        app.db.lock().unwrap().settings.no_auth_networks = "127.0.0.1".into();
+        let login = |site: &str| ask(&app, &format!("POST /api/home/2/login HTTP/1.1\r\nHost: x\r\nSec-Fetch-Site: {site}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
+        assert!(login("cross-site").starts_with("HTTP/1.1 403"), "a page of another website got a profile's token");
+        assert!(login("same-origin").starts_with("HTTP/1.1 200"), "the web app itself can't pick a profile");
+        // A no-sign-in network makes the web app an admin, but not a link or picture on another website.
+        let settings = |site: &str| ask(&app, &format!("GET /api/settings HTTP/1.1\r\nHost: x\r\nSec-Fetch-Site: {site}\r\nConnection: close\r\n\r\n"));
+        assert!(settings("same-origin").starts_with("HTTP/1.1 200"));
+        assert!(settings("cross-site").starts_with("HTTP/1.1 401"), "another website acted as the admin");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

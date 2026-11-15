@@ -263,7 +263,9 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let page = WEB_APP
                 .replacen("<title>Lichtspiel</title>", &format!("<title>{tab}</title>"), 1)
                 .replacen("<span id=\"sname\">Lichtspiel</span>", &format!("<span id=\"sname\">{esc}</span>"), 1);
-            return bytes(200, "text/html; charset=utf-8", page.into_bytes());
+            let mut r = bytes(200, "text/html; charset=utf-8", page.into_bytes());
+            r.add_header(crate::server::header("Content-Security-Policy", crate::server::web_csp()));
+            return r;
         }
         ("GET", ["identity"]) => {
             let db = app.db.lock().unwrap();
@@ -1221,7 +1223,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let mut db = app.db.lock().unwrap();
             // A merged version counts for the item it was merged into.
             for i in ids.iter_mut() { if let Some(p) = db.items.get(i).and_then(|x| x.version_of()) { *i = p; } }
-            if ids.iter().any(|i| !db.items.contains_key(i)) { return fail(404, "Not found"); }
+            if ids.iter().any(|i| !db.items.get(i).is_some_and(|it| db.can_see_item(&user, it))) { return fail(404, "Not found"); }
             for leaf in ids.iter().flat_map(|i| db.leaves(*i)).collect::<Vec<_>>() {
                 let v = db.view_mut(user.id, leaf);
                 let was = v.view_count;
@@ -1245,7 +1247,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let Some(iid) = ctx.body_or_param("key").and_then(|k| k.parse::<u64>().ok()) else { return fail(400, "key is needed") };
             let rating = ctx.body_or_param("rating").and_then(|r| r.parse::<f32>().ok()).filter(|r| *r >= 0.0);
             let mut db = app.db.lock().unwrap();
-            if !db.items.contains_key(&iid) { return fail(404, "Not found"); }
+            if !db.items.get(&iid).is_some_and(|it| db.can_see_item(&user, it)) { return fail(404, "Not found"); }
             db.view_mut(user.id, iid).rating = rating.map(|r| r.min(10.0));
             drop(db);
             app.save();
@@ -1255,7 +1257,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let Some(iid) = id(iid) else { return fail(404, "Not found") };
             let fav = ctx.body.get("favorite").and_then(|v| v.as_bool()).or(ctx.param("favorite").map(|v| v == "1" || v == "true")).unwrap_or(true);
             let mut db = app.db.lock().unwrap();
-            if !db.items.contains_key(&iid) { return fail(404, "Not found"); }
+            if !db.items.get(&iid).is_some_and(|it| db.can_see_item(&user, it)) { return fail(404, "Not found"); }
             db.view_mut(user.id, iid).favorite = fav;
             drop(db);
             app.save();
@@ -1275,7 +1277,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let ids: Vec<u64> = ctx.body.get("ids").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_u64().or(x.as_str().and_then(|s| s.parse().ok()))).collect()).unwrap_or_default();
             if ids.is_empty() { return fail(400, "ids are needed") }
             let mut db = app.db.lock().unwrap();
-            if ids.iter().any(|i| !db.items.contains_key(i)) { return fail(404, "Not found"); }
+            if ids.iter().any(|i| !db.items.get(i).is_some_and(|it| db.can_see_item(&user, it))) { return fail(404, "Not found"); }
             for leaf in ids.iter().flat_map(|i| db.leaves(*i)).collect::<Vec<_>>() {
                 db.view_mut(user.id, leaf).cw_hidden_at = now();
             }

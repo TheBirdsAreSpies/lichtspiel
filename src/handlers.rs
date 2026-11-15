@@ -420,7 +420,10 @@ fn playable_file(app: &Arc<App>, user: &User, iid: &str, part: usize) -> Result<
     if !db.can_see_item(user, it) { return Err(fail(403, "You don't have access to this library")); }
     if it.file.is_none() { return Err(fail(400, "This entry has no video file")); }
     let f = it.part(part).cloned().ok_or_else(|| fail(404, "No such part"))?;
-    Ok((it.clone(), f))
+    let it = it.clone();
+    drop(db);
+    if !app.may_send(Path::new(&f.path), false) { return Err(fail(403, "This file is outside the library folders")); }
+    Ok((it, f))
 }
 
 fn part_of(ctx: &Ctx) -> usize {
@@ -673,6 +676,7 @@ pub fn hls_file(app: &Arc<App>, sid: &str, file: &str) -> Resp {
 fn subtitle_vtt(app: &Arc<App>, f: &db::MediaFile, n: &str) -> Result<Vec<u8>, Resp> {
     let (source, embedded) = if let Some(x) = n.strip_prefix('x') {
         let Some(p) = x.parse::<usize>().ok().and_then(|i| f.external_subtitles.get(i)) else { return Err(fail(404, "No such subtitle")) };
+        if !app.may_send(Path::new(p), false) { return Err(fail(403, "This file is outside the library folders")); }
         if p.to_lowercase().ends_with(".vtt") {
             return std::fs::read(p).map_err(|_| fail(404, "No such subtitle"));
         }
@@ -774,7 +778,7 @@ pub fn art(app: &Arc<App>, user: &User, iid: &str) -> Resp {
     };
     let (online, video, top_id) = path;
     // (Only real photos: a drawing saved by an older version is skipped.)
-    if let Some((p, mime)) = online.and_then(|p| crate::metadata::file_image_type(Path::new(&p)).map(|m| (p, m))) {
+    if let Some((p, mime)) = online.filter(|p| app.may_send(Path::new(p), true)).and_then(|p| crate::metadata::file_image_type(Path::new(&p)).map(|m| (p, m))) {
         return with_cache(serve_file(Path::new(&p), mime, None, false));
     }
     let cache = app.data_dir.join("cache").join("art").join(format!("{top_id}.jpg"));
@@ -863,7 +867,7 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str, width: Option<u32>) -> Resp
     };
     // The type is read from the file itself (a .jpg may really be a PNG);
     // something that is not a photo at all is skipped.
-    if let Some((p, mime)) = poster.and_then(|p| crate::metadata::file_image_type(Path::new(&p)).map(|m| (p, m))) {
+    if let Some((p, mime)) = poster.filter(|p| app.may_send(Path::new(p), true)).and_then(|p| crate::metadata::file_image_type(Path::new(&p)).map(|m| (p, m))) {
         if let Some(small) = width.filter(|w| *w >= 64).and_then(|w| scaled_poster(app, id, Path::new(&p), w)) {
             return with_cache(serve_file(&small, "image/jpeg", None, false));
         }
@@ -1165,7 +1169,7 @@ pub fn set_image(app: &Arc<App>, iid: &str, slot: &str, body: &Value) -> Resp {
             None => return fail(400, "The picture data is not valid"),
         }
     } else if let Some(u) = body["url"].as_str().filter(|u| u.starts_with("http://") || u.starts_with("https://")) {
-        let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).build();
+        let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).resolver(crate::server::public_only).build();
         let mut buf = Vec::new();
         match agent.get(u).call() {
             Ok(r) => { let _ = r.into_reader().take(8 * 1024 * 1024).read_to_end(&mut buf); }
@@ -1231,7 +1235,7 @@ pub fn custom_image(app: &Arc<App>, user: &User, iid: &str, slot: &str) -> Resp 
         }
         it.extra.get(slot).and_then(|v| v.as_str()).map(String::from)
     };
-    let Some(p) = path else { return fail(404, "No picture") };
+    let Some(p) = path.filter(|p| app.may_send(Path::new(p), true)) else { return fail(404, "No picture") };
     let Some(mime) = crate::metadata::file_image_type(Path::new(&p)) else { return fail(404, "No picture") };
     with_cache(serve_file(Path::new(&p), mime, None, false))
 }
@@ -1348,7 +1352,7 @@ pub fn theme(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
         (theme_path(&db, it), tvdb.filter(|_| it.kind == ItemKind::Show && db.settings.theme_music_online))
     };
     // Downloaded outside the lock: the rest of the server keeps running meanwhile.
-    let Some(path) = local.or_else(|| tvdb.and_then(|t| online_theme(app, t))) else { return fail(404, "No theme music") };
+    let Some(path) = local.filter(|p| app.may_send(p, false)).or_else(|| tvdb.and_then(|t| online_theme(app, t))) else { return fail(404, "No theme music") };
     let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let ctype = match ext.as_str() { "mp3" => "audio/mpeg", "m4a" | "aac" => "audio/mp4", "flac" => "audio/flac", "ogg" => "audio/ogg", _ => "audio/wav" };
     serve_file_as(&path, ctype, ctx.range.as_deref(), None)

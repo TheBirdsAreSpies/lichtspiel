@@ -8,7 +8,8 @@
 //!    connections open and, when a caller arrives, hands the connection to its own web server.
 //!
 //! The shared secret is never sent: the relay sends a random number and the home server answers
-//! with a hash of the number and the secret.
+//! with a hash of the number and the secret. The home server sends a random number of its own along,
+//! and the relay answers it the same way, so the home server knows it reached the real relay.
 
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -36,8 +37,22 @@ pub fn real_client(peer: SocketAddr) -> Option<IpAddr> {
 }
 
 fn proof(secret: &str, nonce: &str) -> String {
+    proof_as(b"lichtspiel-relay\0", secret, nonce)
+}
+
+/// The relay's answer to the home server's number (another prefix, so one can't be replayed as the other).
+fn relay_proof(secret: &str, nonce: &str) -> String {
+    proof_as(b"lichtspiel-relay-answer\0", secret, nonce)
+}
+
+/// Compared without stopping at the first difference.
+fn same(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+fn proof_as(tag: &[u8], secret: &str, nonce: &str) -> String {
     let mut h = Sha256::new();
-    h.update(b"lichtspiel-relay\0");
+    h.update(tag);
     h.update(secret.as_bytes());
     h.update(b"\0");
     h.update(nonce.as_bytes());
@@ -109,12 +124,12 @@ fn accept_home(mut s: TcpStream, secret: &str, idle: &Mutex<Vec<TcpStream>>) {
     let nonce = crate::db::random_hex(16);
     if writeln!(s, "NONCE {nonce}").is_err() { return; }
     let Some(line) = read_line(&mut s) else { return };
-    let want = proof(secret, &nonce);
-    let got = line.strip_prefix("AUTH ").unwrap_or("");
-    // Compared without stopping at the first difference.
-    let same = got.len() == want.len() && got.bytes().zip(want.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0;
-    if !same { let _ = writeln!(s, "NO"); return; }
-    if writeln!(s, "OK").is_err() { return; }
+    // "AUTH <proof> <the home server's number>" (older home servers send no number).
+    let rest = line.strip_prefix("AUTH ").unwrap_or("");
+    let (got, theirs) = rest.split_once(' ').unwrap_or((rest, ""));
+    if !same(got, &proof(secret, &nonce)) { let _ = writeln!(s, "NO"); return; }
+    let answer = if theirs.is_empty() { "OK".to_string() } else { format!("OK {}", relay_proof(secret, theirs)) };
+    if writeln!(s, "{answer}").is_err() { return; }
     let mut idle = idle.lock().unwrap();
     if idle.len() < 32 { idle.push(s); }
 }
@@ -182,8 +197,14 @@ fn wait_for_caller(server: &str, secret: &str) -> Result<Option<(TcpStream, IpAd
     let _ = s.set_read_timeout(Some(Duration::from_secs(10)));
     let _ = s.set_write_timeout(Some(Duration::from_secs(10)));
     let nonce = read_line(&mut s).and_then(|l| l.strip_prefix("NONCE ").map(str::to_string)).ok_or("no answer from the relay")?;
-    writeln!(s, "AUTH {}", proof(secret, &nonce)).map_err(|e| e.to_string())?;
-    if read_line(&mut s).as_deref() != Some("OK") { return Err("the relay did not accept the secret".into()); }
+    let mine = crate::db::random_hex(16);
+    writeln!(s, "AUTH {} {mine}", proof(secret, &nonce)).map_err(|e| e.to_string())?;
+    match read_line(&mut s).as_deref().and_then(|l| l.strip_prefix("OK")) {
+        None => return Err("the relay did not accept the secret (a relay older than this server doesn't either: update Lichtspiel on the relay computer)".into()),
+        Some("") => return Err("the relay is an older version that can't prove it knows the secret; update Lichtspiel on the relay computer".into()),
+        Some(p) if !same(p.trim(), &relay_proof(secret, &mine)) => return Err("the relay does not know the secret; check the relay address".into()),
+        Some(_) => {}
+    }
     let _ = s.set_read_timeout(Some(IDLE_LIFE));
     match read_line(&mut s) {
         Some(l) => {
@@ -222,6 +243,40 @@ mod tests {
         assert_ne!(proof("abc", "1"), proof("abd", "1"));
         assert_ne!(proof("abc", "1"), proof("abc", "2"));
         assert_eq!(proof("abc", "1").len(), 64);
+    }
+
+    /// A relay that does not know the secret and says OK to anything.
+    fn fake_relay() -> String {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap().to_string();
+        std::thread::spawn(move || {
+            for mut s in l.incoming().flatten() {
+                let _ = writeln!(s, "NONCE 1234");
+                let _ = read_line(&mut s);
+                let _ = writeln!(s, "OK");
+                let _ = writeln!(s, "PROXY 192.168.1.10");
+            }
+        });
+        addr
+    }
+
+    #[test]
+    fn the_home_server_only_talks_to_a_relay_that_knows_the_secret() {
+        let err = wait_for_caller(&fake_relay(), "geheimes-passwort").expect_err("a relay without the secret was believed");
+        assert!(err.contains("update"), "the message does not say what to do: {err}");
+    }
+
+    #[test]
+    fn a_new_relay_still_lets_an_older_home_server_in() {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        let idle = Arc::new(Mutex::new(Vec::new()));
+        let i2 = idle.clone();
+        std::thread::spawn(move || { let s = l.accept().unwrap().0; accept_home(s, "geheimes-passwort", &i2); });
+        let mut s = TcpStream::connect(addr).unwrap();
+        let nonce = read_line(&mut s).unwrap().strip_prefix("NONCE ").unwrap().to_string();
+        writeln!(s, "AUTH {}", proof("geheimes-passwort", &nonce)).unwrap();
+        assert_eq!(read_line(&mut s).as_deref(), Some("OK"));
     }
 
     #[test]

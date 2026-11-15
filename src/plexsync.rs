@@ -223,7 +223,8 @@ pub fn update(app: &App, body: &Value) -> Result<Value, String> {
 // ------------------------------------------------------------------ Plex API
 
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new().timeout(Duration::from_secs(60)).build()
+    // Only the Plex address set by the admin (or plex.tv) is asked: a redirect could take the Plex token elsewhere.
+    ureq::AgentBuilder::new().timeout(Duration::from_secs(60)).redirects(0).build()
 }
 
 fn plex_err(url: &str, e: ureq::Error) -> String {
@@ -729,6 +730,16 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plex_is_asked_but_its_redirects_are_not_followed() {
+        let (other, hits) = crate::server::tests::local_web(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}");
+        let redirect: &'static [u8] = Box::leak(format!("HTTP/1.1 302 Found\r\nLocation: http://{other}/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").into_bytes().into_boxed_slice());
+        let (plex, plex_hits) = crate::server::tests::local_web(redirect);
+        let _ = request("GET", &format!("http://{plex}/library/sections"), "client", "token");
+        assert_eq!(plex_hits.load(std::sync::atomic::Ordering::SeqCst), 1, "the Plex server on the home network was not asked");
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0, "a redirect from Plex sent the Plex token elsewhere");
+    }
 
     #[test]
     fn one_way_follows_the_master() {

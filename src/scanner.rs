@@ -89,6 +89,8 @@ struct Listed {
     path: PathBuf,
     size: u64,
     mtime: u64,
+    /// A link to a file somewhere else.
+    link: bool,
 }
 
 fn mtime_of(m: &std::fs::Metadata) -> u64 {
@@ -131,13 +133,13 @@ fn walk_in(dir: &Path, out: &mut Vec<Listed>, depth: usize, rules: &mut Vec<Igno
         }
         match e.file_type() {
             Ok(t) if t.is_dir() => walk_in(&p, out, depth + 1, rules, ignore_files, audio, live),
-            Ok(_) if audio => {
+            Ok(t) if audio => {
                 if crate::music::is_audio(&p) {
                     let m = e.metadata().ok();
-                    out.push(Listed { size: m.as_ref().map(|m| m.len()).unwrap_or(0), mtime: m.as_ref().map(mtime_of).unwrap_or(0), path: p })
+                    out.push(Listed { size: m.as_ref().map(|m| m.len()).unwrap_or(0), mtime: m.as_ref().map(mtime_of).unwrap_or(0), path: p, link: t.is_symlink() })
                 }
             }
-            Ok(_) if is_video(&p) => {
+            Ok(t) if is_video(&p) => {
                 // Skip release "sample" clips (name is "sample", ends in "-sample"/".sample",
                 // or lies in a "Sample" folder), but not films that merely have the word.
                 let stem = p.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
@@ -148,7 +150,7 @@ fn walk_in(dir: &Path, out: &mut Vec<Listed>, depth: usize, rules: &mut Vec<Igno
                 if is_sample && size < 300 * 1024 * 1024 {
                     continue;
                 }
-                out.push(Listed { size, mtime: m.as_ref().map(mtime_of).unwrap_or(0), path: p })
+                out.push(Listed { size, mtime: m.as_ref().map(mtime_of).unwrap_or(0), path: p, link: t.is_symlink() })
             }
             _ => {}
         }
@@ -1024,7 +1026,8 @@ where
         if only.is_some_and(|o| !o.starts_with(&root)) { continue; }
         let mut files = vec![];
         walk(only.unwrap_or(&root), &mut files, 0, section.kind == SectionKind::Music, Some((section.id, found.len())));
-        for f in files {
+        // A link to a file outside the library's folders would let anyone who can see the library read that file.
+        for f in files.into_iter().filter(|f| !f.link || crate::server::inside_folders(&section.paths, &f.path)) {
             found.push(Found { size: f.size, mtime: f.mtime, path: f.path, root: root.clone() });
         }
     }
@@ -1748,6 +1751,30 @@ title=Two
         it.extra.insert("no_merge".into(), serde_json::json!(true));
         scan(&mut db);
         assert_eq!(shown(&db), vec!["Dune", "Dune", "Exit 8", "Exit 8", "Heat"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_to_files_outside_the_library_are_skipped() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-links-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let lib = root.join("lib");
+        for f in ["Heat (1995)/Heat (1995).mkv", "Inside (2002)/x", "Leak (2001)/x"] {
+            std::fs::create_dir_all(lib.join(f).parent().unwrap()).unwrap();
+        }
+        std::fs::write(lib.join("Heat (1995)/Heat (1995).mkv"), b"x").unwrap();
+        std::fs::write(root.join("secret.mkv"), b"x").unwrap();
+        std::os::unix::fs::symlink(root.join("secret.mkv"), lib.join("Leak (2001)/Leak (2001).mkv")).unwrap();
+        std::os::unix::fs::symlink(lib.join("Heat (1995)/Heat (1995).mkv"), lib.join("Inside (2002)/Inside (2002).mkv")).unwrap();
+        let mut db: Db = serde_json::from_value(serde_json::json!({"version": 1, "machine_id": "x", "next_id": 1, "settings": crate::db::Settings::default(),
+            "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": [lib.to_string_lossy()], "created_at": 0}],
+            "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        let section = db.sections[0].clone();
+        scan_section(&section, "no-such-ffprobe", |f| f(&mut db));
+        let mut titles: Vec<String> = db.items.values().map(|i| i.title.clone()).collect();
+        titles.sort();
+        assert_eq!(titles, vec!["Heat", "Inside"]);
         let _ = std::fs::remove_dir_all(&root);
     }
 

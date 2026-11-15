@@ -1255,6 +1255,8 @@ I18N.add('de', 'Deutsch', {
     'Only smart playlists have rules': 'Nur intelligente Wiedergabelisten haben Regeln',
     'Only movies and episodes have credits': 'Nur Filme und Episoden haben einen Abspann',
     'Only an admin can do this': 'Das darf nur ein Admin',
+    'This file is outside the library folders': 'Diese Datei liegt außerhalb der Bibliotheksordner',
+    'Requests from other websites are not allowed': 'Anfragen von anderen Websites sind nicht erlaubt',
     'Give the playlist a title': 'Gib der Wiedergabeliste einen Titel',
     'Give at least one folder in paths': 'Gib mindestens einen Ordner an',
     'Details are looked up for movies and shows': 'Details werden nur für Filme und Serien gesucht',
