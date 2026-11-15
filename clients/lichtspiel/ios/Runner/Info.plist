@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>lichtspiel</string>
+	<string>Lichtspiel</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -25,6 +25,26 @@
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<!-- Finding servers on the home network (Plex-style discovery on UDP 32414) and talking to them. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Lichtspiel sucht deinen Server im Heimnetz und spielt Videos von ihm ab.</string>
+	<!-- Plain http:// to servers on the home network (IP addresses, names without a dot, *.local).
+	     The app's own requests and playback don't go through Apple's URL loading, so ATS mostly doesn't
+	     apply to them; this covers the rest (e.g. links opened by the system). NSAllowsArbitraryLoads is
+	     not needed: a server on the internet should use https://. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!-- Picking a new poster from the photo library (Details bearbeiten › Aus Datei). -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Damit du ein Bild als Poster hochladen kannst.</string>
+	<!-- Downloads land in the app's folder, which the Files app shows. -->
+	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

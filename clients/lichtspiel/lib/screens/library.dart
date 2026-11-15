@@ -6,6 +6,7 @@ import 'downloads.dart';
 import 'player.dart';
 import 'home.dart';
 import 'playlists.dart';
+import '../widgets/bar.dart';
 
 const _sortFields = {
   'title': 'Titel',
@@ -559,25 +560,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ]),
           );
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.section['title']}'), actions: [
+      appBar: AppBar(title: Text('${widget.section['title']}'), actions: barActions(context, labels: true, [
         if (sectionType == 'movie' || sectionType == 'show') ...[
-          TextButton.icon(
-            icon: const Icon(Icons.collections_bookmark_outlined),
-            label: const Text('Sammlungen'),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'collections'))),
-          ),
-          TextButton.icon(
-            icon: const Icon(Icons.category_outlined),
-            label: const Text('Kategorien'),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'categories'))),
-          ),
+          BarAction(Icons.collections_bookmark_outlined, 'Sammlungen', () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'collections')))),
+          BarAction(Icons.category_outlined, 'Kategorien', () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'categories')))),
         ],
-        TextButton.icon(
-          icon: const Icon(Icons.playlist_play),
-          label: const Text('Playlists'),
-          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: widget.api, section: '${widget.section['key']}'))),
-        ),
-      ]),
+        BarAction(Icons.playlist_play, 'Playlists', () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: widget.api, section: '${widget.section['key']}')))),
+      ])),
       bottomNavigationBar: selectionBar(),
       body: Column(children: [
         bar,

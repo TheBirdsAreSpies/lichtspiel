@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../api.dart';
+import '../widgets/bar.dart';
 
 /// Admin: people, their rights, local users and invite links (the web app's "Users & invites").
 class UsersScreen extends StatefulWidget {
@@ -310,10 +311,10 @@ class _UsersScreenState extends State<UsersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Nutzer & Einladungen'), actions: [
-        TextButton.icon(onPressed: addLocal, icon: const Icon(Icons.person_add_alt), label: const Text('Lokaler Nutzer')),
-        TextButton.icon(onPressed: newInvite, icon: const Icon(Icons.mail_outline), label: const Text('Einladen')),
-      ]),
+      appBar: AppBar(title: const Text('Nutzer & Einladungen'), actions: barActions(context, labels: true, keep: 2, [
+        BarAction(Icons.person_add_alt, 'Lokaler Nutzer', addLocal),
+        BarAction(Icons.mail_outline, 'Einladen', newInvite),
+      ])),
       body: error != null
           ? Center(child: Text(error!))
           : !loaded

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/activity.dart';
+import '../widgets/bar.dart';
 import '../widgets/poster.dart';
 import '../widgets/queue.dart';
 import '../widgets/together.dart';
@@ -29,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final search = TextEditingController();
   List<Map<String, dynamic>>? results;
   bool admin = false;
+  bool searchOpen = false; // phones: the search field is shown in the title
 
   @override
   void initState() {
@@ -63,27 +65,44 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final api = widget.api;
+    final narrow = isNarrow(context);
+    final field = TextField(
+      controller: search,
+      autofocus: narrow,
+      textInputAction: TextInputAction.search,
+      onSubmitted: doSearch,
+      decoration: const InputDecoration(hintText: 'Suchen…', prefixIcon: Icon(Icons.search), border: InputBorder.none),
+    );
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Lichtspiel'),
+        // On a phone the search takes the title's place.
+        title: narrow && searchOpen ? field : const Text('Lichtspiel'),
         actions: [
-          SizedBox(
-            width: 260,
-            child: TextField(
-              controller: search,
-              onSubmitted: doSearch,
-              decoration: const InputDecoration(hintText: 'Suchen…', prefixIcon: Icon(Icons.search), border: InputBorder.none),
-            ),
-          ),
-          IconButton(tooltip: 'Warteschlange', icon: const Icon(Icons.queue_music), onPressed: () => showQueueDialog(context, api)),
-          IconButton(tooltip: 'Zusammen schauen: Raum beitreten', icon: const Icon(Icons.groups_outlined), onPressed: () => joinTogetherDialog(context, api)),
-          if (DownloadRights.allowed) IconButton(tooltip: 'Downloads', icon: const Icon(Icons.download_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DownloadsScreen(api: api)))),
-          IconButton(tooltip: 'Merkliste', icon: const Icon(Icons.bookmark_border), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => WatchlistScreen(api: api)))),
-          IconButton(tooltip: 'Playlists', icon: const Icon(Icons.playlist_play), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: api)))),
-          if (admin) IconButton(tooltip: 'Dashboard', icon: const Icon(Icons.monitor_heart_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DashboardScreen(api: api)))),
-          IconButton(tooltip: 'Einstellungen', icon: const Icon(Icons.settings_outlined), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen(api: api, admin: admin)))),
-          IconButton(tooltip: 'Aktualisieren', icon: const Icon(Icons.refresh), onPressed: reload),
-          IconButton(tooltip: 'Abmelden', icon: const Icon(Icons.logout), onPressed: widget.onSignOut),
+          if (narrow)
+            IconButton(
+              tooltip: searchOpen ? 'Suche schließen' : 'Suchen',
+              icon: Icon(searchOpen ? Icons.close : Icons.search),
+              onPressed: () => setState(() {
+                searchOpen = !searchOpen;
+                if (!searchOpen) {
+                  search.clear();
+                  results = null;
+                }
+              }),
+            )
+          else
+            SizedBox(width: 260, child: field),
+          ...barActions(context, [
+            BarAction(Icons.queue_music, 'Warteschlange', () => showQueueDialog(context, api)),
+            BarAction(Icons.groups_outlined, 'Zusammen schauen: Raum beitreten', () => joinTogetherDialog(context, api)),
+            if (DownloadRights.allowed) BarAction(Icons.download_outlined, 'Downloads', () => Navigator.push(context, MaterialPageRoute(builder: (_) => DownloadsScreen(api: api)))),
+            BarAction(Icons.bookmark_border, 'Merkliste', () => Navigator.push(context, MaterialPageRoute(builder: (_) => WatchlistScreen(api: api)))),
+            BarAction(Icons.playlist_play, 'Playlists', () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: api)))),
+            if (admin) BarAction(Icons.monitor_heart_outlined, 'Dashboard', () => Navigator.push(context, MaterialPageRoute(builder: (_) => DashboardScreen(api: api)))),
+            BarAction(Icons.settings_outlined, 'Einstellungen', () => Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen(api: api, admin: admin)))),
+            BarAction(Icons.refresh, 'Aktualisieren', reload),
+            BarAction(Icons.logout, 'Abmelden', widget.onSignOut),
+          ]),
         ],
       ),
       body: results != null

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
+import '../discovery.dart';
 
 class LoginScreen extends StatefulWidget {
   final void Function(Api) onSignedIn;
@@ -18,6 +19,8 @@ class _LoginScreenState extends State<LoginScreen> {
   String? error;
   List<Map<String, dynamic>> profiles = []; // home profiles (offered in the local network only)
   final serverFocus = FocusNode();
+  List<FoundServer> found = []; // servers that answered on the home network
+  bool searching = false;
 
   @override
   void initState() {
@@ -26,6 +29,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) setState(() => server.text = p.getString('server') ?? '');
       loadProfiles();
     });
+    search();
     serverFocus.addListener(() {
       if (!serverFocus.hasFocus) loadProfiles();
     });
@@ -35,6 +39,21 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     serverFocus.dispose();
     super.dispose();
+  }
+
+  /// Looks for servers on the home network; quietly finds nothing when the network doesn't allow it.
+  Future<void> search() async {
+    setState(() => searching = true);
+    final list = await discoverServers();
+    if (!mounted) return;
+    setState(() { found = list; searching = false; });
+    // Only one server and nothing typed yet: take it.
+    if (list.length == 1 && server.text.trim().isEmpty) pick(list.first);
+  }
+
+  void pick(FoundServer s) {
+    setState(() => server.text = s.address);
+    loadProfiles();
   }
 
   Future<void> loadProfiles() async {
@@ -100,14 +119,39 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
+      body: SafeArea(child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 380),
           child: AutofillGroup(
             child: ListView(shrinkWrap: true, padding: const EdgeInsets.all(24), children: [
               const Text('Lichtspiel', textAlign: TextAlign.center, style: TextStyle(fontSize: 34, fontWeight: FontWeight.w600)),
               const SizedBox(height: 28),
-              TextField(controller: server, focusNode: serverFocus, onSubmitted: (_) => loadProfiles(), decoration: const InputDecoration(labelText: 'Server', hintText: '192.168.1.20:8484')),
+              if (found.isNotEmpty) ...[
+                const Text('Im Netzwerk gefunden', style: TextStyle(color: Colors.white54)),
+                for (final s in found)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.dns_outlined),
+                    title: Text(s.name),
+                    subtitle: Text(s.address.replaceFirst(RegExp(r'^https?://'), '')),
+                    trailing: Api.normalize(server.text) == s.address ? const Icon(Icons.check) : null,
+                    onTap: busy ? null : () => pick(s),
+                  ),
+              ],
+              TextField(
+                controller: server,
+                focusNode: serverFocus,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                onSubmitted: (_) => loadProfiles(),
+                decoration: InputDecoration(
+                  labelText: found.isEmpty ? 'Server' : 'Oder Adresse eingeben',
+                  hintText: '192.168.1.20:8484',
+                  suffixIcon: searching
+                      ? const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                      : IconButton(tooltip: 'Im Netzwerk suchen', icon: const Icon(Icons.wifi_find), onPressed: search),
+                ),
+              ),
               if (profiles.isNotEmpty) ...[
                 Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: [
                   for (final p in profiles)
@@ -133,7 +177,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ]),
           ),
         ),
-      ),
+      )),
     );
   }
 }

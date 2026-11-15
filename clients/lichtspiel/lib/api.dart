@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,22 +18,58 @@ class Api {
   String? token;
   Api(this.base, [this.token]);
 
+  /// The token lives in the system's keychain (Keychain on Apple devices, Keystore on Android,
+  /// Credential Manager on Windows); the server address stays in the plain settings.
+  /// On the Mac the classic login keychain is used: the newer one needs the Keychain Sharing
+  /// entitlement and a provisioning profile, so a self-signed build would only run on the Mac that built it.
+  static const _secure = FlutterSecureStorage(mOptions: MacOsOptions(usesDataProtectionKeychain: false));
+
   static Future<Api?> restore() async {
     final p = await SharedPreferences.getInstance();
     final b = p.getString('server');
-    final t = p.getString('token');
+    final t = await _readToken(p);
     if (b == null || t == null) return null;
     return Api(b, t);
+  }
+
+  /// Older versions kept the token in the plain settings: move it to the keychain once.
+  /// If the keychain can't be used (e.g. an unsigned Mac build), the plain setting keeps working.
+  static Future<String?> _readToken(SharedPreferences p) async {
+    String? t;
+    try {
+      t = await _secure.read(key: 'token');
+    } catch (_) {}
+    final old = p.getString('token');
+    if (old == null) return t;
+    if (t == null) {
+      try {
+        await _secure.write(key: 'token', value: old);
+        t = old;
+      } catch (_) {
+        return old;
+      }
+    }
+    await p.remove('token');
+    return t;
   }
 
   Future<void> save() async {
     final p = await SharedPreferences.getInstance();
     await p.setString('server', base);
-    if (token != null) await p.setString('token', token!);
+    if (token == null) return;
+    try {
+      await _secure.write(key: 'token', value: token!);
+      await p.remove('token');
+    } catch (_) {
+      await p.setString('token', token!);
+    }
   }
 
   Future<void> forget() async {
     final p = await SharedPreferences.getInstance();
+    try {
+      await _secure.delete(key: 'token');
+    } catch (_) {}
     await p.remove('token');
     token = null;
   }

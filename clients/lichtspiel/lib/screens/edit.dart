@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../api.dart';
 
 String _list(dynamic v) => ((v as List?) ?? const []).join(', ');
@@ -188,7 +188,7 @@ class _EditDialogState extends State<_EditDialog> {
   }
 }
 
-/// One picture of an item: shown, replaced from an address or a file (path on this computer), or removed.
+/// One picture of an item: shown, replaced from an address or a picked file, or removed.
 class _ImagePicker extends StatefulWidget {
   final Api api;
   final Map<String, dynamic> it;
@@ -224,23 +224,15 @@ class _ImagePickerState extends State<_ImagePicker> {
     }
   }
 
+  /// Picks a picture with the system's picker (photo library on iPhone/iPad, a file dialog elsewhere).
   Future<void> fromFile() async {
-    final p = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (d) => AlertDialog(
-        title: const Text('Bild aus Datei'),
-        content: TextField(controller: p, autofocus: true, decoration: const InputDecoration(labelText: 'Pfad zur Bilddatei', hintText: r'C:\Bilder\poster.jpg')),
-        actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Hochladen'))],
-      ),
-    );
-    if (ok != true) return;
     try {
-      final f = File(p.text.trim().replaceAll('"', ''));
+      final f = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 3000, maxHeight: 3000, imageQuality: 92);
+      if (f == null) return;
       final bytes = await f.readAsBytes();
       if (bytes.length > 3 * 1024 * 1024) return say('Das Bild ist zu groß (höchstens 3 MB)');
-      final ext = f.path.toLowerCase().split('.').last;
-      final mime = {'png': 'image/png', 'webp': 'image/webp', 'gif': 'image/gif'}[ext] ?? 'image/jpeg';
+      final ext = f.name.toLowerCase().split('.').last;
+      final mime = f.mimeType ?? {'png': 'image/png', 'webp': 'image/webp', 'gif': 'image/gif'}[ext] ?? 'image/jpeg';
       await send({'data': 'data:$mime;base64,${base64Encode(bytes)}'});
     } catch (e) {
       say('$e');
@@ -265,7 +257,7 @@ class _ImagePickerState extends State<_ImagePicker> {
         const SizedBox(height: 6),
         Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
           OutlinedButton(onPressed: fromFile, child: const Text('Aus Datei')),
-          SizedBox(width: 260, child: TextField(controller: addr, decoration: const InputDecoration(isDense: true, hintText: 'https://…', border: OutlineInputBorder()))),
+          ConstrainedBox(constraints: const BoxConstraints(maxWidth: 260), child: TextField(controller: addr, decoration: const InputDecoration(isDense: true, hintText: 'https://…', border: OutlineInputBorder()))),
           OutlinedButton(onPressed: () => addr.text.trim().isEmpty ? null : send({'url': addr.text.trim()}), child: const Text('Adresse nutzen')),
           TextButton(
             onPressed: () async {

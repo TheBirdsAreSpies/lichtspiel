@@ -8,6 +8,7 @@ import 'maintenance.dart';
 import 'plugins.dart';
 import 'server_settings.dart';
 import 'users.dart';
+import '../widgets/bar.dart';
 
 String fmtDateTime(dynamic secs) {
   if (secs is! num || secs <= 0) return '–';
@@ -35,37 +36,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           title: const Text('Einstellungen'),
           actions: [
             if (widget.admin)
-              TextButton.icon(
-                icon: const Icon(Icons.video_library_outlined),
-                label: const Text('Bibliotheken'),
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LibrariesScreen(api: widget.api))),
-              ),
-            if (widget.admin)
-              TextButton.icon(
-                icon: const Icon(Icons.dns_outlined),
-                label: const Text('Server'),
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ServerSettingsScreen(api: widget.api))),
-              ),
-            if (widget.admin)
-              TextButton.icon(
-                icon: const Icon(Icons.extension_outlined),
-                label: const Text('Plugins'),
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PluginsScreen(api: widget.api))),
-              ),
-            if (widget.admin)
-              TextButton.icon(
-                icon: const Icon(Icons.build_outlined),
-                label: const Text('Wartung'),
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MaintenanceScreen(api: widget.api))),
-              ),
-            if (widget.admin)
-              TextButton.icon(
-                icon: const Icon(Icons.group_outlined),
-                label: const Text('Nutzer & Einladungen'),
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => UsersScreen(api: widget.api))),
-              ),
+              ...barActions(context, labels: true, [
+                BarAction(Icons.video_library_outlined, 'Bibliotheken', () => Navigator.push(context, MaterialPageRoute(builder: (_) => LibrariesScreen(api: widget.api)))),
+                BarAction(Icons.dns_outlined, 'Server', () => Navigator.push(context, MaterialPageRoute(builder: (_) => ServerSettingsScreen(api: widget.api)))),
+                BarAction(Icons.extension_outlined, 'Plugins', () => Navigator.push(context, MaterialPageRoute(builder: (_) => PluginsScreen(api: widget.api)))),
+                BarAction(Icons.build_outlined, 'Wartung', () => Navigator.push(context, MaterialPageRoute(builder: (_) => MaintenanceScreen(api: widget.api)))),
+                BarAction(Icons.group_outlined, 'Nutzer & Einladungen', () => Navigator.push(context, MaterialPageRoute(builder: (_) => UsersScreen(api: widget.api)))),
+              ]),
           ],
-          bottom: const TabBar(tabs: [Tab(text: 'Konto'), Tab(text: 'Wiedergabe'), Tab(text: 'Geräte'), Tab(text: 'Merkliste-Feed')]),
+          bottom: TabBar(isScrollable: isNarrow(context), tabs: const [Tab(text: 'Konto'), Tab(text: 'Wiedergabe'), Tab(text: 'Geräte'), Tab(text: 'Merkliste-Feed')]),
         ),
         body: TabBarView(children: [
           _AccountTab(api: widget.api),

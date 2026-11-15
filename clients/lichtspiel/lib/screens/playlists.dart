@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../widgets/bar.dart';
 import '../widgets/poster.dart';
 import 'detail.dart';
 import 'library.dart';
@@ -170,30 +171,22 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
   Widget build(BuildContext context) {
     final l = list;
     return Scaffold(
-      appBar: AppBar(title: const Text('Playlists'), actions: [
-        TextButton.icon(
-          icon: const Icon(Icons.add),
-          label: const Text('Neue Playlist'),
-          onPressed: () async {
-            final name = await askText(context, 'Name der neuen Playlist');
-            if (name == null || name.isEmpty) return;
-            final p = await widget.api.createPlaylist(name);
-            if (!mounted) return;
-            await Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: widget.api, id: '${p['id']}')));
-            reload();
-          },
-        ),
-        TextButton.icon(
-          icon: const Icon(Icons.auto_awesome_outlined),
-          label: const Text('Neue intelligente Playlist'),
-          onPressed: () async {
-            final id = await smartEditor(context, widget.api);
-            if (id == null || !mounted) return;
-            await Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: widget.api, id: id)));
-            reload();
-          },
-        ),
-      ]),
+      appBar: AppBar(title: const Text('Playlists'), actions: barActions(context, labels: true, keep: 2, [
+        BarAction(Icons.add, 'Neue Playlist', () async {
+          final name = await askText(context, 'Name der neuen Playlist');
+          if (name == null || name.isEmpty) return;
+          final p = await widget.api.createPlaylist(name);
+          if (!mounted) return;
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: widget.api, id: '${p['id']}')));
+          reload();
+        }),
+        BarAction(Icons.auto_awesome_outlined, 'Neue intelligente Playlist', () async {
+          final id = await smartEditor(context, widget.api);
+          if (id == null || !mounted) return;
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: widget.api, id: id)));
+          reload();
+        }),
+      ])),
       body: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),

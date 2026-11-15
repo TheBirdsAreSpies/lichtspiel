@@ -3,6 +3,7 @@ import '../api.dart';
 import 'detail.dart' show fmtSize;
 import 'downloads.dart' show saveFile;
 import 'settings.dart' show fmtDateTime;
+import '../widgets/bar.dart';
 
 /// Admin: backups, compacting and cleaning up, optimized versions, the server log and reported problems.
 class MaintenanceScreen extends StatelessWidget {
@@ -16,7 +17,7 @@ class MaintenanceScreen extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Wartung'),
-          bottom: const TabBar(tabs: [Tab(text: 'Sicherungen'), Tab(text: 'Werkzeuge'), Tab(text: 'Server-Log'), Tab(text: 'Gemeldete Probleme')]),
+          bottom: TabBar(isScrollable: isNarrow(context), tabs: const [Tab(text: 'Sicherungen'), Tab(text: 'Werkzeuge'), Tab(text: 'Server-Log'), Tab(text: 'Gemeldete Probleme')]),
         ),
         body: TabBarView(children: [
           _BackupsTab(api: api),

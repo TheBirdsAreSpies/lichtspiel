@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import '../widgets/poster.dart';
@@ -21,10 +24,98 @@ class DownloadRights {
   static bool convert = true;
 }
 
-/// Saving a file: the system browser downloads it (the link carries the token).
+/// Saving a file. On iPhone, iPad and Mac the app loads it itself (iPhone/iPad: into the app's folder,
+/// which the Files app shows under "Auf meinem iPhone › Lichtspiel"; Mac: into the Downloads folder).
+/// Elsewhere the system browser downloads it (the link carries the token).
 Future<void> saveFile(BuildContext context, Api api, String url) async {
+  if (Platform.isIOS || Platform.isMacOS) return _download(context, api, url);
   if (!await launchUrl(Uri.parse(api.abs(url)), mode: LaunchMode.externalApplication) && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Die Datei ließ sich nicht öffnen')));
+  }
+}
+
+/// The file name from the server's Content-Disposition header (filename*=UTF-8''… first).
+String? fileNameFrom(String? disposition) {
+  if (disposition == null) return null;
+  final star = RegExp(r"filename\*=UTF-8''([^;]+)", caseSensitive: false).firstMatch(disposition);
+  if (star != null) {
+    try {
+      return Uri.decodeComponent(star[1]!.trim());
+    } catch (_) {}
+  }
+  return RegExp(r'filename="([^"]+)"', caseSensitive: false).firstMatch(disposition)?[1];
+}
+
+Future<void> _download(BuildContext context, Api api, String url) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final progress = ValueNotifier<double?>(null);
+  final client = http.Client();
+  var cancelled = false;
+  final dialog = showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (d) => AlertDialog(
+      title: const Text('Wird geladen…'),
+      content: ValueListenableBuilder<double?>(
+        valueListenable: progress,
+        builder: (_, v, _) => Column(mainAxisSize: MainAxisSize.min, children: [
+          LinearProgressIndicator(value: v),
+          if (v != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text('${(v * 100).toStringAsFixed(0)} %')),
+          const Padding(padding: EdgeInsets.only(top: 8), child: Text('Lass die App dabei geöffnet.', style: TextStyle(color: Colors.white54))),
+        ]),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            cancelled = true;
+            client.close();
+            Navigator.pop(d);
+          },
+          child: const Text('Abbrechen'),
+        ),
+      ],
+    ),
+  );
+  File? out;
+  try {
+    final dir = Platform.isIOS ? await getApplicationDocumentsDirectory() : (await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory());
+    final r = await client.send(http.Request('GET', Uri.parse(api.abs(url))));
+    if (r.statusCode >= 400) throw 'Fehler ${r.statusCode}';
+    final name = (fileNameFrom(r.headers['content-disposition']) ?? 'lichtspiel-download').replaceAll(RegExp(r'[/\\:]'), '_');
+    // Don't overwrite a file of the same name: "Film (2).mkv".
+    var f = File('${dir.path}/$name');
+    final dot = name.lastIndexOf('.');
+    for (var n = 2; await f.exists(); n++) {
+      f = File('${dir.path}/${dot > 0 ? '${name.substring(0, dot)} ($n)${name.substring(dot)}' : '$name ($n)'}');
+    }
+    out = f;
+    final total = r.contentLength ?? 0;
+    var got = 0;
+    final sink = f.openWrite();
+    try {
+      await for (final chunk in r.stream) {
+        sink.add(chunk);
+        got += chunk.length;
+        if (total > 0) progress.value = got / total;
+      }
+    } finally {
+      await sink.close();
+    }
+    if (!cancelled) {
+      messenger.showSnackBar(SnackBar(content: Text(Platform.isIOS ? 'Gespeichert: „${f.path.split('/').last}“ (Dateien-App › Auf meinem iPhone › Lichtspiel)' : 'Gespeichert in „Downloads“: ${f.path.split('/').last}')));
+    }
+  } catch (e) {
+    if (out != null && await out.exists()) {
+      try {
+        await out.delete();
+      } catch (_) {}
+    }
+    if (!cancelled) messenger.showSnackBar(SnackBar(content: Text('Download fehlgeschlagen: $e')));
+  } finally {
+    client.close();
+    if (!cancelled && context.mounted) Navigator.of(context, rootNavigator: true).pop();
+    await dialog;
+    progress.dispose();
   }
 }
 

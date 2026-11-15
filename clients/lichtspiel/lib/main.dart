@@ -51,12 +51,20 @@ class _LichtspielAppState extends State<LichtspielApp> {
     return MaterialApp(
       navigatorKey: navKey,
       // The mouse's "back" button (button 4) goes one screen back, like in a browser.
-      builder: (context, child) => Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (e) {
-          if (e.kind == PointerDeviceKind.mouse && (e.buttons & kBackMouseButton) != 0) navKey.currentState?.maybePop();
-        },
-        child: child ?? const SizedBox.shrink(),
+      // On a phone held sideways nothing goes under the notch (the strips stay dark).
+      builder: (context, child) => ColoredBox(
+        color: const Color(0xFF121212),
+        child: SafeArea(
+          top: false,
+          bottom: false,
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (e) {
+              if (e.kind == PointerDeviceKind.mouse && (e.buttons & kBackMouseButton) != 0) navKey.currentState?.maybePop();
+            },
+            child: child ?? const SizedBox.shrink(),
+          ),
+        ),
       ),
       title: 'Lichtspiel',
       debugShowCheckedModeBanner: false,

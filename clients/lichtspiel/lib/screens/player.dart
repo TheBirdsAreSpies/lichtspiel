@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -809,6 +810,33 @@ class _PlayerScreenState extends State<PlayerScreen> {
         const SingleActivator(LogicalKeyboardKey.escape): () => isFullscreen(context) ? exitFullscreen(context) : Navigator.maybePop(context),
       },
     );
+    // Phones and tablets: the desktop controls only appear for a mouse, so touch gets media_kit's
+    // touch controls (tap shows them, double tap on the sides skips) with the same buttons.
+    final touch = defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.android;
+    final mobile = MaterialVideoControlsThemeData(
+      seekOnDoubleTap: true,
+      seekOnDoubleTapForwardDuration: const Duration(seconds: 30),
+      topButtonBar: [MaterialCustomButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.maybePop(context)), ...top.skip(1)],
+      primaryButtonBar: [
+        const Spacer(flex: 2),
+        MaterialCustomButton(icon: const Icon(Icons.replay_10), iconSize: 36, onPressed: () => player.seek(player.state.position - const Duration(seconds: 10))),
+        const Spacer(),
+        const MaterialPlayOrPauseButton(iconSize: 48),
+        const Spacer(),
+        MaterialCustomButton(icon: const Icon(Icons.forward_30), iconSize: 36, onPressed: () => player.seek(player.state.position + const Duration(seconds: 30))),
+        const Spacer(flex: 2),
+      ],
+      bottomButtonBar: [
+        const MaterialPositionIndicator(),
+        const Spacer(),
+        if (next != null) MaterialCustomButton(icon: const Icon(Icons.skip_next), onPressed: () => playNext()),
+        if (chapters.isNotEmpty) MaterialCustomButton(icon: const Icon(Icons.list), onPressed: () => openMenu('chapters')),
+        if (lyrics.isNotEmpty) MaterialCustomButton(icon: Icon(lyricsOn ? Icons.lyrics : Icons.lyrics_outlined), onPressed: () => setState(() => lyricsOn = !lyricsOn)),
+        MaterialCustomButton(icon: const Icon(Icons.closed_caption_outlined), onPressed: () => openMenu('subs')),
+        MaterialCustomButton(icon: const Icon(Icons.settings), onPressed: () => openMenu()),
+        const MaterialFullscreenButton(),
+      ],
+    );
     return Scaffold(
       backgroundColor: Colors.black,
       body: error != null
@@ -819,15 +847,32 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Zurück')),
               ]),
             )
-          : MaterialDesktopVideoControlsTheme(
-              normal: theme,
-              fullscreen: theme,
-              child: Video(
-                controller: controller,
-                subtitleViewConfiguration: SubtitleViewConfiguration(
-                  style: TextStyle(fontSize: 32 * subSize / 100, color: Colors.white, backgroundColor: const Color(0x99000000), height: 1.3),
+          : MaterialVideoControlsTheme(
+              normal: mobile,
+              fullscreen: mobile,
+              child: MaterialDesktopVideoControlsTheme(
+                normal: theme,
+                fullscreen: theme,
+                child: Video(
+                  controller: controller,
+                  subtitleViewConfiguration: SubtitleViewConfiguration(
+                    style: TextStyle(fontSize: 32 * subSize / 100, color: Colors.white, backgroundColor: const Color(0x99000000), height: 1.3),
+                  ),
+                  controls: (state) => Listener(
+                    onPointerHover: (e) { mouseMoved(); hoverPos.value = e.localPosition; },
+                    onPointerDown: (_) => mouseMoved(),
+                    // Nothing under the notch, the status bar or the home indicator.
+                    child: SafeArea(
+                      child: Stack(children: [
+                        // The chapter marks and the still over the seek bar are placed for the desktop bar.
+                        if (touch) MaterialVideoControls(state) else ...[MaterialDesktopVideoControls(state), chapterTicks(), seekTip()],
+                        lyricsPanel(),
+                        prerollButtons(),
+                        overlay(),
+                      ]),
+                    ),
+                  ),
                 ),
-                controls: (state) => Listener(onPointerHover: (e) { mouseMoved(); hoverPos.value = e.localPosition; }, onPointerDown: (_) => mouseMoved(), child: Stack(children: [MaterialDesktopVideoControls(state), chapterTicks(), seekTip(), lyricsPanel(), prerollButtons(), overlay()])),
               ),
             ),
     );

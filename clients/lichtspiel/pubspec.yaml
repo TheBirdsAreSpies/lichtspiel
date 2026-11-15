@@ -40,6 +40,9 @@ dependencies:
   media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.7
   url_launcher: ^6.3.3
+  flutter_secure_storage: ^11.2.0
+  path_provider: ^2.1.6
+  image_picker: ^1.2.4
 
 dev_dependencies:
   flutter_test:
