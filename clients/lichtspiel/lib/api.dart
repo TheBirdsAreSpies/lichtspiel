@@ -1,13 +1,18 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiError implements Exception {
   final int status;
   final String message;
   final bool needsCode;
-  ApiError(this.status, this.message, {this.needsCode = false});
+  final Object? cause; // for status 0: the network error behind it
+  ApiError(this.status, this.message, {this.needsCode = false, this.cause});
   @override
   String toString() => message;
 }
@@ -78,13 +83,105 @@ class Api {
     token = null;
   }
 
-  /// "nas" -> "http://nas:8484"; keeps an explicit scheme and port.
+  /// "nas" -> "http://nas:8484"; keeps an explicit scheme and port ("[fd00::5]" for IPv6).
   static String normalize(String s) {
     s = s.trim().replaceAll(RegExp(r'/+$'), '');
     if (!s.startsWith('http://') && !s.startsWith('https://')) s = 'http://$s';
-    final host = s.replaceFirst(RegExp(r'^https?://'), '');
-    if (!host.contains(':')) s = '$s:8484';
+    final u = Uri.tryParse(s);
+    if (u != null && u.host.isNotEmpty && !u.hasPort) s = u.replace(port: 8484).toString();
     return s;
+  }
+
+  /// How long connecting (including the TLS handshake) and a normal request may take.
+  static Duration timeout = const Duration(seconds: 10);
+
+  /// Changes can make the server work for a while (online matching, backups, plugins, uploaded pictures).
+  static const slowTimeout = Duration(minutes: 2);
+
+  /// What went wrong on the way to the server, in words for the user. [https]: the address used https.
+  static String describe(Object e, {bool https = false}) {
+    final s = '$e';
+    if (e is HandshakeException && RegExp('CERTIFICATE|certificate').hasMatch(s)) return 'Das Zertifikat des Servers ist ungültig oder nicht vertrauenswürdig';
+    final timedOut = e is TimeoutException || e is http.RequestAbortedException || s.contains('timed out');
+    if (https && (timedOut || e is HandshakeException || e is TlsException)) return 'Server spricht kein HTTPS – http:// verwenden';
+    if (timedOut) return 'Server antwortet nicht (Zeitüberschreitung)';
+    if (s.contains('Failed host lookup')) return 'Adresse nicht gefunden';
+    final code = e is SocketException ? e.osError?.errorCode : null;
+    if (s.contains('Connection refused') || const {61, 111, 10061}.contains(code)) return 'Verbindung abgelehnt – läuft der Server?';
+    return 'Server nicht erreichbar';
+  }
+
+  /// The server's known error texts in German; others are shown as they come.
+  static String german(String msg) {
+    const known = {
+      'User name or password is wrong': 'Benutzername oder Passwort falsch',
+      'Wrong PIN': 'Falsche PIN',
+      'A PIN is 4 to 8 digits': 'Eine PIN hat 4 bis 8 Ziffern',
+      'Too many wrong PINs; try again in a few minutes': 'Zu viele falsche PINs – versuch es in ein paar Minuten noch einmal',
+      'Enter the code from your authenticator app': 'Gib den Code aus deiner Authenticator-App ein',
+      'That code is wrong': 'Dieser Code ist falsch',
+      'That code was already used; wait for the next one': 'Dieser Code wurde schon verwendet; warte auf den nächsten',
+      'The password is wrong': 'Das Passwort ist falsch',
+      'The old password is wrong': 'Das alte Passwort ist falsch',
+      'No such profile': 'Dieses Profil gibt es nicht',
+      'Profiles on the sign-in screen are switched off': 'Profile auf dem Anmeldebildschirm sind ausgeschaltet',
+      'Profiles can only be picked in the local network; sign in with your password': 'Profile lassen sich nur im lokalen Netz auswählen – melde dich mit deinem Passwort an',
+      'Only an admin can do this': 'Das darf nur ein Admin',
+      "You don't have access to this library": 'Du hast keinen Zugriff auf diese Bibliothek',
+    };
+    final locked = RegExp(r'^Too many wrong attempts; try again in (\d+) minute\(s\)$').firstMatch(msg);
+    if (locked != null) return 'Zu viele falsche Versuche – versuch es in ${locked[1]} Minute(n) noch einmal';
+    return known[msg] ?? msg;
+  }
+
+  /// Checks that [address] answers. An https address whose server only speaks plain http
+  /// is tried once with http (as the network search does); http is never switched to https.
+  static Future<Api> reach(String address) async {
+    final api = Api(normalize(address));
+    try {
+      await api.status();
+      return api;
+    } on ApiError catch (e) {
+      if (e.status != 0 || e.message != 'Server spricht kein HTTPS – http:// verwenden') rethrow;
+      final plain = Api(api.base.replaceFirst('https://', 'http://'));
+      try {
+        await plain.status();
+      } catch (_) {
+        throw e;
+      }
+      return plain;
+    }
+  }
+
+  /// A client whose connecting gives up after [timeout]; a test's client (http.runWithClient) is used as it is.
+  /// shortcut: a TLS handshake that never finishes is given up but its socket stays open (dart:io only cancels the
+  /// TCP connect); harmless while it is one socket per failed try, revisit if dart:io gains a handshake timeout.
+  static http.Client _client() {
+    final c = http.Client();
+    if (c is! IOClient) return c;
+    c.close();
+    return IOClient(HttpClient()..connectionTimeout = timeout);
+  }
+
+  /// Sends one request; when it takes too long it is aborted, which closes its connection.
+  /// Network failures become an [ApiError] with status 0 and a German message.
+  Future<dynamic> _send(String method, String path, Object? body) async {
+    final url = Uri.parse('$base$path');
+    final stop = Completer<void>();
+    final timer = Timer(method == 'GET' ? timeout : slowTimeout, stop.complete);
+    final client = _client();
+    final req = http.AbortableRequest(method, url, abortTrigger: stop.future)..headers.addAll(_headers);
+    if (body != null) req.body = jsonEncode(body);
+    final http.Response r;
+    try {
+      r = await http.Response.fromStream(await client.send(req));
+    } catch (e) {
+      throw ApiError(0, describe(e, https: url.isScheme('https')), cause: e);
+    } finally {
+      timer.cancel();
+      client.close();
+    }
+    return _decode(r);
   }
 
   Map<String, String> get _headers => {
@@ -99,26 +196,20 @@ class Api {
     } catch (_) {}
     if (r.statusCode >= 400) {
       if (r.statusCode == 401 && token != null) onUnauthorized?.call(this);
-      final msg = body is Map && body['error'] != null ? '${body['error']}' : 'Fehler ${r.statusCode}';
+      final msg = body is Map && body['error'] != null ? german('${body['error']}') : 'Fehler ${r.statusCode}';
       throw ApiError(r.statusCode, msg, needsCode: body is Map && body['needs_code'] == true);
     }
     return body;
   }
 
-  Future<dynamic> get(String path) async => _decode(await http.get(Uri.parse('$base$path'), headers: _headers));
+  Future<dynamic> get(String path) => _send('GET', path, null);
 
-  Future<dynamic> post(String path, [Object? body]) async =>
-      _decode(await http.post(Uri.parse('$base$path'), headers: _headers, body: body == null ? null : jsonEncode(body)));
+  Future<dynamic> post(String path, [Object? body]) => _send('POST', path, body);
 
-  Future<dynamic> put(String path, [Object? body]) async =>
-      _decode(await http.put(Uri.parse('$base$path'), headers: _headers, body: body == null ? null : jsonEncode(body)));
+  Future<dynamic> put(String path, [Object? body]) => _send('PUT', path, body);
 
   /// Any other method (PATCH, ...) with a JSON body.
-  Future<dynamic> request(String method, String path, [Object? body]) async {
-    final req = http.Request(method, Uri.parse('$base$path'))..headers.addAll(_headers);
-    if (body != null) req.body = jsonEncode(body);
-    return _decode(await http.Response.fromStream(await req.send()));
-  }
+  Future<dynamic> request(String method, String path, [Object? body]) => _send(method, path, body);
 
   Future<Map<String, dynamic>> status() async => Map<String, dynamic>.from(await get('/api/status'));
 
@@ -191,7 +282,8 @@ class Api {
       return ((await get('/library/metadata/$id/chapters'))['MediaContainer']?['Chapter'] as List? ?? const [])
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Loading chapters from $base failed: $e');
       return const [];
     }
   }
@@ -202,7 +294,8 @@ class Api {
       return ((await get('/library/metadata/$id/related?count=$count'))['MediaContainer']?['Hub'] as List? ?? const [])
           .map((e) => Map<String, dynamic>.from(e))
           .toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Loading related items from $base failed: $e');
       return const [];
     }
   }
@@ -216,7 +309,7 @@ class Api {
   /// Your own rating on the server's 0-10 scale; -1 removes it.
   Future<void> rate(String id, int value) async => post('/:/rate?key=$id&rating=$value');
 
-  Future<dynamic> delete(String path) async => _decode(await http.delete(Uri.parse('$base$path'), headers: _headers));
+  Future<dynamic> delete(String path) => _send('DELETE', path, null);
 
   /// Your watchlist with the library's filters; [q] as in [list].
   /// The filters of the library menu with the values found on the watchlist.
@@ -264,7 +357,8 @@ class Api {
     try {
       final r = await post('/:/timeline?ratingKey=$id&time=$ms&state=$state&client=app');
       return r is Map ? Map<String, dynamic>.from(r) : null;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Reporting the position to $base failed: $e');
       return null;
     }
   }
@@ -272,6 +366,8 @@ class Api {
   Future<void> scrobble(String id) async {
     try {
       await post('/:/scrobble?key=$id');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Marking as watched at $base failed: $e');
+    }
   }
 }

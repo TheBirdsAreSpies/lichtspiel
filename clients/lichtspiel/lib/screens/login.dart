@@ -62,7 +62,8 @@ class _LoginScreenState extends State<LoginScreen> {
       final r = await Api(Api.normalize(server.text)).get('/api/home');
       final list = [for (final x in (r is Map ? r['profiles'] as List? ?? const [] : const [])) Map<String, dynamic>.from(x)];
       if (mounted) setState(() => profiles = list);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Loading profiles from ${Api.normalize(server.text)} failed: $e');
       if (mounted) setState(() => profiles = []);
     }
   }
@@ -92,8 +93,10 @@ class _LoginScreenState extends State<LoginScreen> {
       await api.save();
       widget.onSignedIn(api);
     } on ApiError catch (e) {
+      debugPrint('Profile sign-in to ${Api.normalize(server.text)} failed: ${e.cause ?? e}');
       setState(() => error = e.message);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Profile sign-in to ${Api.normalize(server.text)} failed: $e');
       setState(() => error = 'Server nicht erreichbar.');
     } finally {
       if (mounted) setState(() => busy = false);
@@ -103,13 +106,17 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> submit() async {
     setState(() { busy = true; error = null; });
     try {
-      final api = Api(Api.normalize(server.text));
-      await api.status(); // reachable?
+      final api = await Api.reach(server.text); // reachable? (an https address may end up on http)
       await api.login(user.text, pass.text, code: needsCode ? code.text : null);
+      if (api.base != Api.normalize(server.text) && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Der Server spricht kein HTTPS – die Verbindung läuft unverschlüsselt über http://')));
+      }
       widget.onSignedIn(api);
     } on ApiError catch (e) {
-      setState(() { error = e.message; if (e.needsCode) needsCode = true; });
-    } catch (_) {
+      debugPrint('Sign-in to ${Api.normalize(server.text)} failed: ${e.cause ?? e}');
+      setState(() { error = e.status == 0 ? '${e.message}\nAdresse prüfen (z. B. 192.168.1.20:8484)' : e.message; if (e.needsCode) needsCode = true; });
+    } catch (e) {
+      debugPrint('Sign-in to ${Api.normalize(server.text)} failed: $e');
       setState(() => error = 'Server nicht erreichbar. Adresse prüfen (z. B. 192.168.1.20:8484).');
     } finally {
       if (mounted) setState(() => busy = false);

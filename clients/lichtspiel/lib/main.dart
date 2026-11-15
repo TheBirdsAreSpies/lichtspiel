@@ -40,8 +40,11 @@ class _LichtspielAppState extends State<LichtspielApp> {
           // Away from home a LAN address may get no answer at all: don't wait for the system to give up.
           await a.get('/api/me').timeout(const Duration(seconds: 8));
         } on ApiError catch (e) {
+          debugPrint('Checking the saved sign-in at ${a.base} failed: ${e.cause ?? e}');
           if (e.status == 401) a = null;
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('Checking the saved sign-in at ${a.base} failed: $e');
+        }
       }
       if (mounted) setState(() { api = a; loading = false; });
     });
