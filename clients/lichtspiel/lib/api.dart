@@ -103,8 +103,8 @@ class Api {
     final s = '$e';
     if (e is HandshakeException && RegExp('CERTIFICATE|certificate').hasMatch(s)) return 'Das Zertifikat des Servers ist ungültig oder nicht vertrauenswürdig';
     final timedOut = e is TimeoutException || e is http.RequestAbortedException || s.contains('timed out');
-    if (https && (timedOut || e is HandshakeException || e is TlsException)) return 'Server spricht kein HTTPS – http:// verwenden';
     if (timedOut) return 'Server antwortet nicht (Zeitüberschreitung)';
+    if (https && e is TlsException) return 'Server spricht kein HTTPS – http:// verwenden'; // HandshakeException is one too
     if (s.contains('Failed host lookup')) return 'Adresse nicht gefunden';
     final code = e is SocketException ? e.osError?.errorCode : null;
     if (s.contains('Connection refused') || const {61, 111, 10061}.contains(code)) return 'Verbindung abgelehnt – läuft der Server?';
@@ -134,15 +134,26 @@ class Api {
     return known[msg] ?? msg;
   }
 
-  /// Checks that [address] answers. An https address whose server only speaks plain http
-  /// is tried once with http (as the network search does); http is never switched to https.
+  /// Whether [host] is in the home network: private or link-local IPv4, loopback, IPv6 ULA or link-local,
+  /// a name without a dot, or *.local (the same rule as the iOS ATS exception).
+  static bool homeNetwork(String host) {
+    final ip = InternetAddress.tryParse(host);
+    if (ip == null) return !host.contains('.') || host.endsWith('.local');
+    if (ip.isLoopback || ip.isLinkLocal) return true;
+    final b = ip.rawAddress;
+    return ip.type == InternetAddressType.IPv4 ? b[0] == 10 || (b[0] == 172 && b[1] & 0xf0 == 16) || (b[0] == 192 && b[1] == 168) : b[0] & 0xfe == 0xfc;
+  }
+
+  /// Checks that [address] answers. An https address in the home network whose server only speaks plain http
+  /// is tried once with http (as the network search does). Elsewhere that could be an attacker dropping the
+  /// handshake to read the password, so the user has to type http:// themselves; http is never switched to https.
   static Future<Api> reach(String address) async {
     final api = Api(normalize(address));
     try {
       await api.status();
       return api;
     } on ApiError catch (e) {
-      if (e.status != 0 || e.message != 'Server spricht kein HTTPS – http:// verwenden') rethrow;
+      if (e.status != 0 || e.message != 'Server spricht kein HTTPS – http:// verwenden' || !homeNetwork(Uri.parse(api.base).host)) rethrow;
       final plain = Api(api.base.replaceFirst('https://', 'http://'));
       try {
         await plain.status();
@@ -153,33 +164,40 @@ class Api {
     }
   }
 
-  /// A client whose connecting gives up after [timeout]; a test's client (http.runWithClient) is used as it is.
+  static final _io = HttpClient(); // created on first use
+  static final _shared = IOClient(_io);
+
+  /// One client for the whole app, so connections are kept open and reused (no new TLS handshake per call).
+  /// Its connecting gives up after [timeout]; a test's client (http.runWithClient) is used as it is.
   /// shortcut: a TLS handshake that never finishes is given up but its socket stays open (dart:io only cancels the
   /// TCP connect); harmless while it is one socket per failed try, revisit if dart:io gains a handshake timeout.
   static http.Client _client() {
     final c = http.Client();
     if (c is! IOClient) return c;
     c.close();
-    return IOClient(HttpClient()..connectionTimeout = timeout);
+    _io.connectionTimeout = timeout;
+    return _shared;
   }
 
-  /// Sends one request; when it takes too long it is aborted, which closes its connection.
+  /// Sends one request; when the answer does not start in time it is aborted, which closes its connection.
+  /// The body is then read without a limit: a big list over a slow line may take longer than [timeout].
+  /// [slow]: a GET that waits for the server's online lookups gets [slowTimeout] like a change.
   /// Network failures become an [ApiError] with status 0 and a German message.
-  Future<dynamic> _send(String method, String path, Object? body) async {
+  Future<dynamic> _send(String method, String path, Object? body, {bool slow = false}) async {
     final url = Uri.parse('$base$path');
     final stop = Completer<void>();
-    final timer = Timer(method == 'GET' ? timeout : slowTimeout, stop.complete);
-    final client = _client();
+    final timer = Timer(method == 'GET' && !slow ? timeout : slowTimeout, stop.complete);
     final req = http.AbortableRequest(method, url, abortTrigger: stop.future)..headers.addAll(_headers);
     if (body != null) req.body = jsonEncode(body);
     final http.Response r;
     try {
-      r = await http.Response.fromStream(await client.send(req));
+      final s = await _client().send(req);
+      timer.cancel();
+      r = await http.Response.fromStream(s);
     } catch (e) {
       throw ApiError(0, describe(e, https: url.isScheme('https')), cause: e);
     } finally {
       timer.cancel();
-      client.close();
     }
     return _decode(r);
   }
@@ -202,7 +220,7 @@ class Api {
     return body;
   }
 
-  Future<dynamic> get(String path) => _send('GET', path, null);
+  Future<dynamic> get(String path, {bool slow = false}) => _send('GET', path, null, slow: slow);
 
   Future<dynamic> post(String path, [Object? body]) => _send('POST', path, body);
 
@@ -269,7 +287,7 @@ class Api {
 
   /// From TMDB: biography, birth, more photos and the filmography (each with `item` when it is in a library).
   Future<Map<String, dynamic>> personDetails(String key, String name, {bool refresh = false}) async {
-    final r = await get('/library/people/${Uri.encodeComponent(key)}/details?name=${Uri.encodeQueryComponent(name)}${refresh ? '&refresh=1' : ''}');
+    final r = await get('/library/people/${Uri.encodeComponent(key)}/details?name=${Uri.encodeQueryComponent(name)}${refresh ? '&refresh=1' : ''}', slow: true);
     return Map<String, dynamic>.from(r?['MediaContainer'] ?? r);
   }
 

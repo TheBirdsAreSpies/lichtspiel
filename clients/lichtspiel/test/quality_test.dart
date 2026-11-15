@@ -29,4 +29,12 @@ void main() {
   test('subtitle sizes are the web player ones (SUB_SIZES in web/app.js)', () {
     expect(playerSubSizes.keys.toList(), [75, 100, 130, 170]);
   });
+
+  test('a subtitle size saved by an older version becomes the nearest one offered', () {
+    expect(subSizeKey(125), 130);
+    expect(subSizeKey(150), 130);
+    expect(subSizeKey(200), 170);
+    expect(subSizeKey(75), 75);
+    expect(subSizeKey(null), 100);
+  });
 }

@@ -51,10 +51,12 @@ class _LichtspielAppState extends State<LichtspielApp> {
   }
 
   Future<void> signOut() async {
+    final a = api; // a 401 here signs out already (onUnauthorized) and sets api to null
+    if (a == null) return;
     try {
-      await api!.post('/api/logout');
+      await a.post('/api/logout');
     } catch (_) {}
-    await api!.forget();
+    await a.forget();
     if (mounted) setState(() => api = null);
   }
 

@@ -313,7 +313,7 @@ class _MatchDialogState extends State<_MatchDialog> {
       matches = null;
     });
     try {
-      final r = await widget.api.get('/library/metadata/${widget.it['ratingKey']}/matches?title=${Uri.encodeQueryComponent(title.text)}&year=${Uri.encodeQueryComponent(year.text)}');
+      final r = await widget.api.get('/library/metadata/${widget.it['ratingKey']}/matches?title=${Uri.encodeQueryComponent(title.text)}&year=${Uri.encodeQueryComponent(year.text)}', slow: true);
       final l = ((r?['matches'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e)).toList();
       if (mounted) {
         setState(() {

@@ -119,11 +119,11 @@ void main() {
       await s.closed.timeout(const Duration(seconds: 2));
     });
 
-    test('an https address on a server that never finishes the handshake gives up and says to use http', () async {
+    test('an https address on a server that never finishes the handshake gives up with a timeout', () async {
       final s = await silent();
       addTearDown(s.server.close);
       final watch = Stopwatch()..start();
-      expect(await failure(Api('https://127.0.0.1:${s.port}').get('/api/status')), 'Server spricht kein HTTPS – http:// verwenden');
+      expect(await failure(Api('https://127.0.0.1:${s.port}').get('/api/status')), 'Server antwortet nicht (Zeitüberschreitung)');
       expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
       // dart:io can't close a socket in the middle of a TLS handshake, so that one connection stays open (see Api._client).
     });
@@ -137,7 +137,6 @@ void main() {
 
     test('errors get plain German words', () {
       expect(Api.describe(TimeoutException('x')), 'Server antwortet nicht (Zeitüberschreitung)');
-      expect(Api.describe(TimeoutException('x'), https: true), 'Server spricht kein HTTPS – http:// verwenden');
       expect(Api.describe(const SocketException('Failed host lookup: \'nas.invalid\'', osError: OSError('nodename nor servname provided, or not known', 8))), 'Adresse nicht gefunden');
       expect(Api.describe(const SocketException('Connection refused', osError: OSError('Connection refused', 61))), 'Verbindung abgelehnt – läuft der Server?');
       expect(Api.describe(const HandshakeException('WRONG_VERSION_NUMBER'), https: true), 'Server spricht kein HTTPS – http:// verwenden');
@@ -155,6 +154,87 @@ void main() {
       });
       final api = await Api.reach('https://127.0.0.1:${server.port}');
       expect(api.base, 'http://127.0.0.1:${server.port}');
+    });
+
+    test('a timeout on https says the server does not answer, not that it lacks https', () {
+      expect(Api.describe(TimeoutException('x'), https: true), 'Server antwortet nicht (Zeitüberschreitung)');
+      expect(Api.describe(http.RequestAbortedException(), https: true), 'Server antwortet nicht (Zeitüberschreitung)');
+    });
+
+    test('only home-network addresses fall back from https to http', () async {
+      // Every https try fails the handshake, every http try answers.
+      final tried = <String>[];
+      await http.runWithClient(() async {
+        for (final host in ['192.168.1.20', '10.0.0.5', '172.20.1.1', '169.254.3.4', '[fd00::5]', '[fe80::1]', 'nas', 'nas.local']) {
+          expect((await Api.reach('https://$host:8484')).base, 'http://$host:8484', reason: host);
+        }
+        for (final host in ['nas.example.com', '8.8.8.8', '172.32.0.1', '[2001:db8::1]']) {
+          await expectLater(Api.reach('https://$host:8484'), throwsA(predicate((e) => e is ApiError && e.message == 'Server spricht kein HTTPS – http:// verwenden')), reason: host);
+        }
+      }, () => MockClient((r) async {
+            tried.add('${r.url}');
+            if (r.url.isScheme('https')) throw const HandshakeException('WRONG_VERSION_NUMBER');
+            return http.Response('{}', 200);
+          }));
+      expect(tried.where((u) => u.contains('example.com')), ['https://nas.example.com:8484/api/status']);
+    });
+
+    test('a slow answer body is read to the end: the timeout only covers the wait for the answer', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((r) async {
+        r.response.headers.contentType = ContentType.json;
+        r.response.write('{"machine_id":');
+        await r.response.flush();
+        await Future<void>.delayed(Api.timeout * 2);
+        r.response.write('"m"}');
+        await r.response.close();
+      });
+      expect((await Api('http://127.0.0.1:${server.port}').status())['machine_id'], 'm');
+    });
+
+    test('actor details wait for the server\'s online lookup longer than a normal request', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((r) async {
+        await Future<void>.delayed(Api.timeout * 2);
+        r.response.headers.contentType = ContentType.json;
+        r.response.write('{"name":"A"}');
+        await r.response.close();
+      });
+      expect((await Api('http://127.0.0.1:${server.port}').personDetails('k', 'A'))['name'], 'A');
+    });
+
+    test('requests to the same server share one connection', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final ports = <int>{};
+      server.listen((r) {
+        ports.add(r.connectionInfo!.remotePort);
+        r.response.write('{}');
+        r.response.close();
+      });
+      final api = Api('http://127.0.0.1:${server.port}');
+      for (var i = 0; i < 3; i++) {
+        await api.get('/api/status');
+      }
+      expect(ports, hasLength(1));
+    });
+
+    test('a request that times out does not stop the next one', () async {
+      final s = await silent();
+      addTearDown(s.server.close);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((r) {
+        r.response.write('{"ok":1}');
+        r.response.close();
+      });
+      final slow = failure(Api('http://127.0.0.1:${s.port}').get('/api/status'));
+      expect((await Api('http://127.0.0.1:${server.port}').get('/x'))['ok'], 1);
+      expect(await slow, 'Server antwortet nicht (Zeitüberschreitung)');
+      await s.closed.timeout(const Duration(seconds: 2));
+      expect((await Api('http://127.0.0.1:${server.port}').get('/x'))['ok'], 1);
     });
 
     test('an http address is never tried with https behind the back', () async {

@@ -27,6 +27,9 @@ const playerSubSizes = {75: 'Klein', 100: 'Normal', 130: 'Groß', 170: 'Sehr gro
 String qualityKey(String? q) =>
     playerQualities.containsKey(q) ? q! : const {'1080': '1080p-20', '720': '720p-4', '480': '480p-1.5', '360': '320p-0.7'}[q] ?? 'original';
 
+/// Older versions offered 125/150/200 %: use the nearest size offered now.
+int subSizeKey(int? v) => v == null ? 100 : playerSubSizes.keys.reduce((a, b) => (b - v).abs() < (a - v).abs() ? b : a);
+
 const _stillWatchingAfter = 3;
 
 /// mpv reads a negative seek as "counted from the end", so going back stops at the start.
@@ -432,7 +435,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final p = await SharedPreferences.getInstance();
     quality = qualityKey(p.getString('quality'));
     speed = p.getDouble('speed') ?? 1;
-    subSize = p.getInt('subSize') ?? 100;
+    subSize = subSizeKey(p.getInt('subSize'));
     autoNext = p.getBool('autoNext') ?? true;
     subLang = p.getString('subLang') ?? '';
     audioLang = p.getString('audioLang') ?? '';

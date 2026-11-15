@@ -25,7 +25,7 @@ class DownloadRights {
 }
 
 /// Saving a file. On iPhone, iPad and Mac the app loads it itself (iPhone/iPad: into the app's folder,
-/// which the Files app shows under "Auf meinem iPhone › Lichtspiel"; Mac: into the Downloads folder).
+/// which the Files app shows under "Auf diesem Gerät › Lichtspiel"; Mac: into the Downloads folder).
 /// Elsewhere the system browser downloads it (the link carries a short-lived ticket, never the token).
 Future<void> saveFile(BuildContext context, Api api, String url) async {
   if (Platform.isIOS || Platform.isMacOS) return _download(context, api, url);
@@ -57,11 +57,14 @@ Future<void> _download(BuildContext context, Api api, String url) async {
   final messenger = ScaffoldMessenger.of(context);
   final progress = ValueNotifier<double?>(null);
   final client = http.Client();
-  var cancelled = false;
+  var cancelled = false, finished = false;
+  BuildContext? dialogContext;
   final dialog = showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (d) => AlertDialog(
+    builder: (d) {
+      dialogContext = d;
+      return AlertDialog(
       title: const Text('Wird geladen…'),
       content: ValueListenableBuilder<double?>(
         valueListenable: progress,
@@ -73,16 +76,20 @@ Future<void> _download(BuildContext context, Api api, String url) async {
       ),
       actions: [
         TextButton(
-          onPressed: () {
-            cancelled = true;
-            client.close();
-            Navigator.pop(d);
-          },
+          onPressed: () => Navigator.pop(d),
           child: const Text('Abbrechen'),
         ),
       ],
-    ),
+    );
+    },
   );
+  // However the dialog goes away (the button, the mouse's back button), the download stops.
+  dialog.whenComplete(() {
+    if (!finished) {
+      cancelled = true;
+      client.close();
+    }
+  });
   File? out;
   try {
     final dir = Platform.isIOS ? await getApplicationDocumentsDirectory() : (await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory());
@@ -114,7 +121,7 @@ Future<void> _download(BuildContext context, Api api, String url) async {
     if (total > 0 && got < total) throw 'Verbindung abgebrochen (${fmtSize(got)} von ${fmtSize(total)})';
     await out.rename(f.path);
     out = null;
-    messenger.showSnackBar(SnackBar(content: Text(Platform.isIOS ? 'Gespeichert: „${f.path.split('/').last}“ (Dateien-App › Auf meinem iPhone › Lichtspiel)' : 'Gespeichert in „Downloads“: ${f.path.split('/').last}')));
+    messenger.showSnackBar(SnackBar(content: Text(Platform.isIOS ? 'Gespeichert: „${f.path.split('/').last}“ (Dateien-App › Auf diesem Gerät › Lichtspiel)' : 'Gespeichert in „Downloads“: ${f.path.split('/').last}')));
   } catch (e) {
     if (out != null && await out.exists()) {
       try {
@@ -123,8 +130,10 @@ Future<void> _download(BuildContext context, Api api, String url) async {
     }
     if (!cancelled) messenger.showSnackBar(SnackBar(content: Text('Download fehlgeschlagen: $e')));
   } finally {
+    finished = true;
     client.close();
-    if (!cancelled && context.mounted) Navigator.of(context, rootNavigator: true).pop();
+    final d = dialogContext;
+    if (!cancelled && d != null && d.mounted) Navigator.pop(d); // only the dialog, never the screen behind it
     await dialog;
     progress.dispose();
   }

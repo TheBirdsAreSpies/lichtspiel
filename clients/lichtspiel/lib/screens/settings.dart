@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import 'libraries.dart';
 import 'maintenance.dart';
-import 'player.dart' show playerQualities, playerSubSizes, qualityKey;
+import 'player.dart' show playerQualities, playerSubSizes, qualityKey, subSizeKey;
 import 'plugins.dart';
 import 'server_settings.dart';
 import 'users.dart';
@@ -291,6 +291,11 @@ class _PlaybackTabState extends State<_PlaybackTab> {
         if (q != null && q != qualityKey(q)) {
           await v.setString('quality', qualityKey(q));
           await widget.api.post('/api/me/prefs', {'quality': qualityKey(q)});
+        }
+        final z = v.getInt('subSize');
+        if (z != null && z != subSizeKey(z)) {
+          await v.setInt('subSize', subSizeKey(z));
+          await widget.api.post('/api/me/prefs', {'subSize': '${subSizeKey(z)}'});
         }
       } catch (_) {}
       if (mounted) setState(() => p = v);
