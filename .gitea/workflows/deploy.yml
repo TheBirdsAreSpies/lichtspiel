@@ -11,7 +11,20 @@
 #                       /oldserver (e.g. /volume1/PlexMediaServer/AppData/Plex Media Server; default none)
 #   LICHTSPIEL_PORT     port on the Synology                    (default 8484)
 #   LICHTSPIEL_DOCKER_ARGS  more `docker run` options           (default --device /dev/dri:/dev/dri;
-#                       set it to a single space on a model without an Intel graphics chip)
+#                       set it to a single space on a model without an Intel graphics chip).
+#                       Apps find the server on the home network (UDP 32414) only with host networking:
+#                       add `--network host` here. Then the port is always 8484 (LICHTSPIEL_PORT is
+#                       ignored), the DSM firewall must allow it, and a Plex still running on the NAS
+#                       keeps UDP 32414 for itself.
+#   LICHTSPIEL_USER     the user the server runs as, uid:gid (default 1026:100, set in the image).
+#                       That user must own the config folder; coming from an older version (which ran as
+#                       root), run once on the NAS: sudo chown -R 1026:100 /volume1/docker/lichtspiel.
+#                       The deploy stops before touching the running server if it can't write there.
+#                       For the graphics chip add `--group-add <gid of /dev/dri/renderD128>` (ls -n
+#                       /dev/dri) to LICHTSPIEL_DOCKER_ARGS.
+#
+# docker-compose.yml describes the same container for a manual install; keep mounts and devices in both
+# alike. This workflow replaces a container of that name, also one that Container Manager created.
 name: Build and deploy
 
 on:
@@ -26,6 +39,7 @@ env:
   PORT: ${{ vars.LICHTSPIEL_PORT || '8484' }}
   DOCKER_ARGS: ${{ vars.LICHTSPIEL_DOCKER_ARGS || '--device /dev/dri:/dev/dri' }}
   OLD_SERVER_DIR: ${{ vars.LICHTSPIEL_OLD_SERVER || '' }}
+  RUN_AS: ${{ vars.LICHTSPIEL_USER || '' }}
 
 jobs:
   deploy:
@@ -49,22 +63,23 @@ jobs:
           # Keep the version that is running now as "previous" for the way back.
           running=$(docker inspect --format '{{.Image}}' ${NAME} 2>/dev/null || true)
           [ -n "$running" ] && docker tag "$running" ${NAME}:previous || true
-          docker build --build-arg GIT_SHA=${GITHUB_SHA::8} -t ${NAME}:latest -t ${NAME}:${GITHUB_SHA::8} .
+          docker build --build-arg GIT_SHA=${GITHUB_SHA::8} -t ${NAME}:latest .
 
       - name: Replace the container
         run: |
           start() {
             docker rm -f ${NAME} >/dev/null 2>&1 || true
             if [ -n "${OLD_SERVER_DIR}" ]; then
-              docker run -d --name ${NAME} --restart unless-stopped -p ${PORT}:8484 \
+              docker run -d --name ${NAME} --restart unless-stopped -p ${PORT}:8484 ${RUN_AS:+--user=$RUN_AS} \
                 -v "${CONFIG_DIR}:/config" -v "${MEDIA_DIR}:/media:ro" -v "${OLD_SERVER_DIR}:/oldserver:ro" ${DOCKER_ARGS} "$1"
             else
-              docker run -d --name ${NAME} --restart unless-stopped -p ${PORT}:8484 \
+              docker run -d --name ${NAME} --restart unless-stopped -p ${PORT}:8484 ${RUN_AS:+--user=$RUN_AS} \
                 -v "${CONFIG_DIR}:/config" -v "${MEDIA_DIR}:/media:ro" ${DOCKER_ARGS} "$1"
             fi
           }
+          # Up to 10 minutes: the first start after an update may first convert the database.
           healthy() {
-            for i in $(seq 1 45); do
+            for i in $(seq 1 150); do
               s=$(docker inspect --format '{{.State.Health.Status}}' ${NAME} 2>/dev/null || echo none)
               [ "$s" = healthy ] && return 0
               [ "$(docker inspect --format '{{.State.Running}}' ${NAME} 2>/dev/null)" = true ] || return 1
@@ -72,8 +87,16 @@ jobs:
             done
             return 1
           }
-          start ${NAME}:latest
-          if healthy; then
+          # The new image doesn't run as root: stop here, with the old server still running, if it couldn't
+          # write the config folder.
+          if docker run --rm ${RUN_AS:+--user=$RUN_AS} -v "${CONFIG_DIR}:/config" --entrypoint sh ${NAME}:latest \
+              -c 'find /config ! -writable -print -quit 2>/dev/null | grep -q .'; then
+            echo "The server's user ($(docker run --rm ${RUN_AS:+--user=$RUN_AS} --entrypoint id ${NAME}:latest)) cannot write everything in ${CONFIG_DIR}."
+            echo "Run once on the NAS: sudo chown -R ${RUN_AS:-1026:100} ${CONFIG_DIR}"
+            exit 1
+          fi
+          # Starting is part of the check: a failed `docker run` (bash -e) must also lead to the rollback.
+          if start ${NAME}:latest && healthy; then
             echo "Lichtspiel ${GITHUB_SHA::8} is running."
           else
             echo "The new version did not become healthy:"
@@ -88,4 +111,9 @@ jobs:
           fi
 
       - name: Tidy up
-        run: docker image prune -f >/dev/null || true
+        run: |
+          # Earlier versions also tagged every build with its commit; those images are removed here.
+          docker images ${NAME} --format '{{.Tag}}' | grep -vx -e latest -e previous -e '<none>' | while read -r tag; do
+            docker rmi "${NAME}:${tag}" >/dev/null || true
+          done || true
+          docker image prune -f >/dev/null || true

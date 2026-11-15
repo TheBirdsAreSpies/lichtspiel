@@ -1,10 +1,20 @@
 # Synology: Container Manager → Project → Create → paste this file.
 # Change the two folders on the left of each ":" to your own shared folders.
+# The automatic deploy (.gitea/workflows/deploy.yml) starts the same container with `docker run`;
+# keep mounts and devices in both alike. It replaces a container made from this file.
 services:
   lichtspiel:
     build: .
     container_name: lichtspiel
     restart: unless-stopped
+    # Runs as uid 1026, gid 100 (the first Synology user and the users group). Other IDs: set
+    # LICHTSPIEL_USER=uid:gid in a .env file next to this one. That user must own the config folder:
+    # sudo chown -R 1026:100 /volume1/docker/lichtspiel (needed once when coming from an older version).
+    user: "${LICHTSPIEL_USER:-1026:100}"
+    # Apps find the server on the home network (UDP 32414) only with host networking: uncomment the
+    # next line and remove "ports". The port is then always 8484, the DSM firewall must allow it, and
+    # a Plex still running on the NAS keeps UDP 32414 for itself.
+    # network_mode: host
     ports:
       - "8484:8484"   # to use another port, change only the left number
     volumes:
@@ -22,3 +32,7 @@ services:
     # "Hardware acceleration" to VAAPI in the web app's Settings.
     devices:
       - /dev/dri:/dev/dri
+    # The user also needs the group of the graphics chip: put the number from `ls -n /dev/dri` (the
+    # group of renderD128) here and uncomment. Without it ffmpeg converts on the processor.
+    # group_add:
+    #   - "937"

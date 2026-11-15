@@ -37,7 +37,34 @@ COPY plugins /opt/lichtspiel/plugins
 ENV LICHTSPIEL_DATA=/config \
     LICHTSPIEL_PORT=8484 \
     LICHTSPIEL_BUNDLED_PLUGINS=/opt/lichtspiel/plugins
+# Not root: the server, its plugins and ffmpeg run as uid 1026, gid 100 ("users"), the IDs of the first
+# user and the users group on a Synology. A config folder from an older (root) version must be handed
+# over once on the NAS: sudo chown -R 1026:100 /volume1/docker/lichtspiel (or choose other IDs with
+# compose `user:` / the LICHTSPIEL_USER variable of the deploy). For hardware transcoding the user also
+# needs the group of /dev/dri/renderD128 (compose `group_add`, docker run `--group-add`).
+RUN useradd --uid 1026 --gid 100 --home-dir /config --no-create-home --shell /usr/sbin/nologin lichtspiel \
+ && mkdir -p /config && chown 1026:100 /config
 VOLUME ["/config"]
 EXPOSE 8484
-HEALTHCHECK --interval=60s --timeout=5s CMD python3 -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8484/identity')" || exit 1
+# The health check: the server may speak HTTPS (Settings) and may listen only on the network card
+# chosen in Settings, so try http and https on 127.0.0.1 and on every address of the container.
+RUN printf '%s\n' \
+  'import os, ssl, subprocess, sys, urllib.request' \
+  'port = os.environ.get("LICHTSPIEL_PORT", "8484")' \
+  'try:' \
+  '    hosts = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=3).stdout.split()' \
+  'except Exception:' \
+  '    hosts = []' \
+  'ctx = ssl._create_unverified_context()' \
+  'for h in ["127.0.0.1"] + hosts:' \
+  '    for scheme in ("http", "https"):' \
+  '        try:' \
+  '            urllib.request.urlopen("%s://%s:%s/identity" % (scheme, "[%s]" % h if ":" in h else h, port), timeout=3, context=ctx)' \
+  '            sys.exit(0)' \
+  '        except Exception:' \
+  '            pass' \
+  'sys.exit(1)' > /usr/local/bin/lichtspiel-health
+# Checked every 15 s (Docker runs the first check one interval after the start).
+HEALTHCHECK --interval=15s --timeout=20s CMD python3 /usr/local/bin/lichtspiel-health
+USER 1026:100
 CMD ["lichtspiel-server"]
