@@ -75,7 +75,7 @@ class _PersonScreenState extends State<PersonScreen> {
                       borderRadius: BorderRadius.circular(4),
                       child: Opacity(
                         opacity: c['item'] != null ? 1 : .55,
-                        child: Image.network(c['item'] != null ? widget.api.img('${c['item']['thumb']}') : '${c['poster'] ?? ''}', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)),
+                        child: Image.network(c['item'] != null ? widget.api.img('${c['item']['thumb']}') : '${c['poster'] ?? ''}', headers: c['item'] != null ? widget.api.auth : null, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)),
                       ),
                     ),
                   ),
@@ -148,7 +148,7 @@ class _PersonScreenState extends State<PersonScreen> {
                   height: 220,
                   child: src.isEmpty
                       ? Container(color: Colors.white10, alignment: Alignment.center, child: Text(initials, style: const TextStyle(fontSize: 42)))
-                      : Image.network(src, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10, alignment: Alignment.center, child: Text(initials, style: const TextStyle(fontSize: 42)))),
+                      : Image.network(src, headers: widget.api.headersFor(src), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10, alignment: Alignment.center, child: Text(initials, style: const TextStyle(fontSize: 42)))),
                 ),
               ),
               const SizedBox(width: 20),

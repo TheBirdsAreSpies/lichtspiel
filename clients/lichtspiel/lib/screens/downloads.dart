@@ -26,10 +26,17 @@ class DownloadRights {
 
 /// Saving a file. On iPhone, iPad and Mac the app loads it itself (iPhone/iPad: into the app's folder,
 /// which the Files app shows under "Auf meinem iPhone › Lichtspiel"; Mac: into the Downloads folder).
-/// Elsewhere the system browser downloads it (the link carries the token).
+/// Elsewhere the system browser downloads it (the link carries a short-lived ticket, never the token).
 Future<void> saveFile(BuildContext context, Api api, String url) async {
   if (Platform.isIOS || Platform.isMacOS) return _download(context, api, url);
-  if (!await launchUrl(Uri.parse(api.abs(url)), mode: LaunchMode.externalApplication) && context.mounted) {
+  String link;
+  try {
+    link = await api.ticketLink(url);
+  } on ApiError catch (e) {
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    return;
+  }
+  if (!await launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication) && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Die Datei ließ sich nicht öffnen')));
   }
 }
@@ -79,7 +86,7 @@ Future<void> _download(BuildContext context, Api api, String url) async {
   File? out;
   try {
     final dir = Platform.isIOS ? await getApplicationDocumentsDirectory() : (await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory());
-    final r = await client.send(http.Request('GET', Uri.parse(api.abs(url))));
+    final r = await client.send(http.Request('GET', Uri.parse(api.abs(url)))..headers.addAll(api.auth ?? {}));
     if (r.statusCode >= 400) throw 'Fehler ${r.statusCode}';
     final name = (fileNameFrom(r.headers['content-disposition']) ?? 'lichtspiel-download').replaceAll(RegExp(r'[/\\:]'), '_');
     // Don't overwrite a file of the same name: "Film (2).mkv".
@@ -299,7 +306,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           if (x['thumb'] != null)
             Padding(
               padding: const EdgeInsets.only(right: 10),
-              child: Image.network(widget.api.img('${x['thumb']}'), width: 40, height: 60, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 60)),
+              child: Image.network(widget.api.img('${x['thumb']}'), headers: widget.api.auth, width: 40, height: 60, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 60)),
             ),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

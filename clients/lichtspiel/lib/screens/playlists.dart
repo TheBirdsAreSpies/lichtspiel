@@ -225,7 +225,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                           for (final p in l)
                             ListTile(
                               leading: p['thumbs'] is List && (p['thumbs'] as List).isNotEmpty
-                                  ? ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(widget.api.img('${(p['thumbs'] as List).first}'), width: 40, height: 60, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.playlist_play)))
+                                  ? ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(widget.api.img('${(p['thumbs'] as List).first}'), headers: widget.api.auth, width: 40, height: 60, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.playlist_play)))
                                   : const Icon(Icons.playlist_play, size: 36),
                               title: Text(plTitle(p)),
                               subtitle: Text([
@@ -389,7 +389,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     final i = items.indexOf(it);
                     final thumb = '${it['squareThumb'] ?? (it['type'] == 'episode' && it['grandparentThumb'] != null ? it['grandparentThumb'] : it['thumb']) ?? ''}';
                     return ListTile(
-                      leading: thumb.isEmpty ? const Icon(Icons.movie_outlined) : ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(api.img(thumb), width: 40, height: 60, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.movie_outlined))),
+                      leading: thumb.isEmpty ? const Icon(Icons.movie_outlined) : ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(api.img(thumb), headers: api.auth, width: 40, height: 60, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.movie_outlined))),
                       title: Text(label(it), maxLines: 1, overflow: TextOverflow.ellipsis),
                       subtitle: Text([if (it['year'] != null) '${it['year']}', _dur(it['duration']), if (((it['viewCount'] ?? 0) as num) > 0) '✓ gesehen'].where((e) => e.isNotEmpty).join(' · ')),
                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(api: api, id: '${it['ratingKey']}'))),
@@ -467,7 +467,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: SizedBox.expand(
-                        child: pic.isEmpty ? const ColoredBox(color: Colors.white10, child: Icon(Icons.collections_bookmark_outlined)) : Image.network(widget.api.img(pic), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.white10)),
+                        child: pic.isEmpty ? const ColoredBox(color: Colors.white10, child: Icon(Icons.collections_bookmark_outlined)) : Image.network(widget.api.img(pic), headers: widget.api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.white10)),
                       ),
                     ),
                   ),

@@ -343,10 +343,25 @@ class Api {
   Future<List<Map<String, dynamic>>> search(String q) async =>
       metadata(await get('/hubs/search?query=${Uri.encodeQueryComponent(q)}'));
 
-  /// Image.network cannot send our header, so pictures carry the token in the URL.
   String img(String? path) => path == null || path.isEmpty ? '' : abs(path);
 
-  String abs(String path) => path.startsWith('http') ? path : '$base$path${path.contains('?') ? '&' : '?'}token=$token';
+  /// The full address of a picture or video. It never holds the sign-in token (it would end up in logs):
+  /// pictures and the player send it as a header ([headersFor]), the play decision's addresses carry a ticket.
+  String abs(String path) => path.startsWith('http') ? path : '$base$path';
+
+  /// The sign-in header for Image.network / Media, only for addresses on this server.
+  /// Compares scheme, host and port, so a lookalike such as nas:8484.evil.com never gets the token.
+  Map<String, String>? headersFor(String url) {
+    final u = Uri.tryParse(url), b = Uri.parse(base);
+    return token != null && u != null && u.scheme == b.scheme && u.host == b.host && u.port == b.port ? {'X-Token': token!} : null;
+  }
+  Map<String, String>? get auth => headersFor(base);
+
+  /// An address another program (the system browser) can open: with a short-lived ticket instead of the token.
+  Future<String> ticketLink(String path) async {
+    final r = await get('/api/ticket?path=${Uri.encodeQueryComponent(path.split('?').first)}');
+    return '${abs(path)}${path.contains('?') ? '&' : '?'}ticket=${Uri.encodeQueryComponent('${r['ticket']}')}';
+  }
 
   /// The server's playback decision: direct file URL, HLS URL, resume position (ms).
   Future<Map<String, dynamic>> decision(String id, {String quality = 'original', int? audio}) async =>

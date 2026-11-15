@@ -152,7 +152,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       if (it['Media'] != null)
                         AspectRatio(
                           aspectRatio: 16 / 9,
-                          child: Image.network(widget.api.abs('/library/parts/$id/frame?t=$step'), fit: BoxFit.cover, gaplessPlayback: true, errorBuilder: (_, __, ___) => const SizedBox()),
+                          child: Image.network(widget.api.abs('/library/parts/$id/frame?t=$step'), headers: widget.api.auth, fit: BoxFit.cover, gaplessPlayback: true, errorBuilder: (_, __, ___) => const SizedBox()),
                         ),
                       const SizedBox(height: 4),
                       Text('${clock(ms)}$name', textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12)),
@@ -233,7 +233,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (e.isNotEmpty && !end.isCompleted) end.complete(false);
       });
       try {
-        await player.open(Media(widget.api.abs('$u')));
+        await player.open(Media(widget.api.abs('$u'), httpHeaders: widget.api.auth));
         if (await end.future) break;
       } catch (_) {
         // a pre-roll that does not play is skipped
@@ -500,7 +500,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final useHls = forceHls || quality != 'original' || audioIdx != null || (d['allowed'] == true && d['method'] == 'transcode');
     converted = useHls;
     final url = useHls ? '${d['hls']}' : '${d['direct'] ?? d['url']}';
-    await player.open(Media(widget.api.abs(url), start: Duration(milliseconds: atMs)));
+    await player.open(Media(widget.api.abs(url), httpHeaders: widget.api.auth, start: Duration(milliseconds: atMs)));
     await player.setRate(speed);
     if (mounted) setState(() {});
   }
@@ -752,7 +752,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: SizedBox(
           width: 340,
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            SizedBox(width: 90, child: AspectRatio(aspectRatio: 16 / 9, child: Image.network(widget.api.img(n['thumb']), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)))),
+            SizedBox(width: 90, child: AspectRatio(aspectRatio: 16 / 9, child: Image.network(widget.api.img(n['thumb']), headers: widget.api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)))),
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

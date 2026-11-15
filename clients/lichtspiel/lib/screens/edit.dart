@@ -252,7 +252,7 @@ class _ImagePickerState extends State<_ImagePicker> {
         if (has && u != null)
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 200),
-            child: Image.network('${widget.api.abs(u)}&t=$stamp', errorBuilder: (_, __, ___) => const Text('Kein Bild', style: TextStyle(color: Colors.white54))),
+            child: Image.network('${widget.api.abs(u)}${u.contains('?') ? '&' : '?'}t=$stamp', headers: widget.api.auth, errorBuilder: (_, __, ___) => const Text('Kein Bild', style: TextStyle(color: Colors.white54))),
           )
         else
           const Text('Kein Bild', style: TextStyle(color: Colors.white54)),

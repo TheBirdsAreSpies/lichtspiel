@@ -190,7 +190,7 @@ class _PosterState extends State<Poster> {
                   borderRadius: BorderRadius.circular(6),
                   child: Stack(fit: StackFit.expand, children: [
                     Container(color: Colors.white10),
-                    Image.network(widget.api.img(thumb), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Center(child: Text('$title', textAlign: TextAlign.center))),
+                    Image.network(widget.api.img(thumb), headers: widget.api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Center(child: Text('$title', textAlign: TextAlign.center))),
                     if (missing) Container(color: Colors.black54),
                     BusyOverlay(item: item),
                     if (missing) const Positioned(top: 4, left: 36, child: Tooltip(message: 'Datei fehlt – im Papierkorb der Mediathek', child: DecoratedBox(decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.all(Radius.circular(4))), child: Padding(padding: EdgeInsets.all(3), child: Icon(Icons.delete_outline, size: 18, color: Colors.redAccent))))),

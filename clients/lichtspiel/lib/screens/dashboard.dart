@@ -263,7 +263,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           InkWell(
             onTap: () => openItem(context, api, {'ratingKey': p['id']}),
-            child: SizedBox(width: 70, child: AspectRatio(aspectRatio: 2 / 3, child: Image.network(api.img(p['thumb']), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)))),
+            child: SizedBox(width: 70, child: AspectRatio(aspectRatio: 2 / 3, child: Image.network(api.img(p['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)))),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -482,7 +482,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: SizedBox(width: 34, child: Image.network(api.img(x['thumb']), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10))),
+                    leading: SizedBox(width: 34, child: Image.network(api.img(x['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10))),
                     title: Text('${x['title'] ?? '(entfernt)'}', maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text([x['year'], if (x['type'] == 'show') 'Serie'].where((e) => e != null).join(' · ')),
                     trailing: Text('${x['plays']}×'),

@@ -263,7 +263,7 @@ class _DetailScreenState extends State<DetailScreen> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: Stack(fit: StackFit.expand, children: [
-                  Image.network(api.img(item['thumb']), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)),
+                  Image.network(api.img(item['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)),
                   BusyOverlay(item: item),
                 ]),
               ),
@@ -347,7 +347,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(c['thumb']), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10))),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(c['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10))),
                       ),
                       Text('${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}'), maxLines: 1, overflow: TextOverflow.ellipsis),
                       Text(fmtClock((c['start'] ?? 0) as int), style: const TextStyle(fontSize: 12, color: Colors.white54)),
@@ -371,7 +371,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10, child: const Icon(Icons.play_circle_outline)))),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10, child: const Icon(Icons.play_circle_outline)))),
                       ),
                       Text('${e['title']}', maxLines: 1, overflow: TextOverflow.ellipsis),
                       Text(fmtMs((e['duration'] ?? 0) as int), style: const TextStyle(fontSize: 12, color: Colors.white54)),
@@ -620,7 +620,7 @@ class _DetailScreenState extends State<DetailScreen> {
         CircleAvatar(
           radius: 38,
           backgroundColor: Colors.white10,
-          foregroundImage: src.isEmpty ? null : NetworkImage(src),
+          foregroundImage: src.isEmpty ? null : NetworkImage(src, headers: api.headersFor(src)),
           onForegroundImageError: src.isEmpty ? null : (_, __) {},
           child: Text(initials),
         ),
@@ -649,7 +649,7 @@ class _DetailScreenState extends State<DetailScreen> {
             width: 140,
             child: AspectRatio(
               aspectRatio: 16 / 9,
-              child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10))),
+              child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10))),
             ),
           ),
           const SizedBox(width: 12),

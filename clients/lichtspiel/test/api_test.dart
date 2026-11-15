@@ -180,4 +180,34 @@ void main() {
         }}),
         401)));
   });
+
+  test('media and picture addresses never carry the sign-in token', () {
+    final api = Api('http://nas:8484', 'secret');
+    expect(api.abs('/library/parts/1/file?x=1&ticket=t1'), 'http://nas:8484/library/parts/1/file?x=1&ticket=t1');
+    expect(api.img('/library/metadata/1/thumb'), 'http://nas:8484/library/metadata/1/thumb');
+    expect(api.abs('/library/parts/1/frame?t=5'), isNot(contains('secret')));
+  });
+
+  test('the token goes along as a header to our server only', () {
+    final api = Api('http://nas:8484', 'secret');
+    expect(api.headersFor(api.img('/library/metadata/1/thumb')), {'X-Token': 'secret'});
+    expect(api.headersFor('https://image.tmdb.org/t/p/w185/x.jpg'), isNull);
+    expect(Api('http://nas:8484').headersFor('http://nas:8484/library/metadata/1/thumb'), isNull);
+    expect(api.headersFor('http://nas:8484.evil.com/x.jpg'), isNull);
+    expect(api.headersFor('http://nas:84840/x.jpg'), isNull);
+    expect(Api('https://myserver', 'secret').headersFor('https://myserver.evil.com/x.jpg'), isNull);
+    expect(Api('https://nas', 'secret').headersFor('https://nas:443/x.jpg'), {'X-Token': 'secret'});
+  });
+
+  test('a file for the browser to save gets a ticket for its address instead of the token', () async {
+    late http.Request asked;
+    final link = await http.runWithClient(() => Api('http://nas:8484', 'secret').ticketLink('/api/log/download?gz=1'), () => MockClient((r) async {
+          asked = r;
+          return http.Response(jsonEncode({'ticket': 'T1', 'expires': 1}), 200);
+        }));
+    expect(asked.url.path, '/api/ticket');
+    expect(asked.url.queryParameters['path'], '/api/log/download');
+    expect(asked.headers['X-Token'], 'secret');
+    expect(link, 'http://nas:8484/api/log/download?gz=1&ticket=T1');
+  });
 }
