@@ -222,6 +222,9 @@ pub struct Store {
     path: PathBuf,
     /// The small parts as they were last written (unchanged ones are skipped).
     written: HashMap<&'static str, String>,
+    /// Rows `load` could not read ("id" and "user:item"): a full write keeps them.
+    unreadable_items: Vec<String>,
+    unreadable_views: Vec<String>,
 }
 
 impl Store {
@@ -264,7 +267,7 @@ impl Store {
         )
         .map_err(fail)?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION).map_err(fail)?;
-        Ok(Store { conn, path: path.to_path_buf(), written: HashMap::new() })
+        Ok(Store { conn, path: path.to_path_buf(), written: HashMap::new(), unreadable_items: vec![], unreadable_views: vec![] })
     }
 
     /// The stored library, or None when the file is new (nothing saved yet).
@@ -289,6 +292,7 @@ impl Store {
                 Some(s) => serde_json::from_str(s).map_err(|e| format!("the stored {key} can't be read: {e}")),
             }
         }
+        let (mut bad_items, mut bad_views) = (vec![], vec![]);
         let mut items = BTreeMap::new();
         {
             let mut st = self.conn.prepare("select id, data from items").map_err(fail)?;
@@ -299,7 +303,10 @@ impl Store {
                     Ok(it) => {
                         items.insert(id as u64, it);
                     }
-                    Err(e) => elog!("library item {id} can't be read ({e}); it is skipped and kept in the file as it is"),
+                    Err(e) => {
+                        elog!("library item {id} can't be read ({e}); it is skipped and kept in the file as it is");
+                        bad_items.push(id.to_string());
+                    }
                 }
             }
         }
@@ -315,7 +322,10 @@ impl Store {
                     Ok(v) => {
                         views.insert(format!("{u}:{i}"), v);
                     }
-                    Err(e) => elog!("watch state {u}:{i} can't be read ({e}); it is skipped"),
+                    Err(e) => {
+                        elog!("watch state {u}:{i} can't be read ({e}); it is skipped and kept in the file as it is");
+                        bad_views.push(format!("'{u}:{i}'"));
+                    }
                 }
             }
         }
@@ -345,6 +355,7 @@ impl Store {
             .into_iter()
             .filter_map(|(k, v)| PART_NAMES.iter().find(|p| **p == k).map(|p| (*p, v)))
             .collect();
+        (self.unreadable_items, self.unreadable_views) = (bad_items, bad_views);
         Ok(Some(db))
     }
 
@@ -372,7 +383,7 @@ impl Store {
             }
         }
         if ch.items_all {
-            tx.execute("delete from items", [])?;
+            tx.execute(&format!("delete from items where id not in ({})", self.unreadable_items.join(",")), [])?;
         }
         {
             let mut put = tx.prepare_cached(
@@ -387,7 +398,7 @@ impl Store {
             }
         }
         if ch.views_all {
-            tx.execute("delete from views", [])?;
+            tx.execute(&format!("delete from views where user_id || ':' || item_id not in ({})", self.unreadable_views.join(",")), [])?;
         }
         {
             let mut put = tx.prepare_cached("insert or replace into views (user_id, item_id, data) values (?1, ?2, ?3)")?;
@@ -480,6 +491,41 @@ mod tests {
         assert_eq!(back.settings.server_name, "Test");
         assert_eq!(back.machine_id, db.machine_id);
         assert!(back.next_id >= db.next_id);
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+    }
+
+    #[test]
+    fn rows_that_cant_be_read_survive_a_full_write() {
+        let path = std::env::temp_dir().join(format!("lichtspiel-store-unreadable-{}.db", std::process::id()));
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+        let mut db = Db::default();
+        for id in 1..=3 {
+            db.items.insert(id, item(id, &format!("Film {id}")));
+        }
+        db.view_mut(7, 1).view_offset_ms = 1000;
+        db.view_mut(7, 2).view_offset_ms = 2000;
+        let mut st = Store::open(&path).unwrap();
+        st.write(&Changes::take(&mut db)).unwrap();
+        // As a newer version might have written them: this one can't read item 2 or the watch state 7:2.
+        st.conn.execute_batch("update items set data = '{\"kind\": \"from-the-future\"}' where id = 2; update views set data = '\"x\"' where item_id = 2").unwrap();
+        drop(st);
+        let mut st = Store::open(&path).unwrap();
+        let mut db = st.load().unwrap().unwrap();
+        assert_eq!(db.items.keys().copied().collect::<Vec<_>>(), vec![1, 3]);
+        // After a failed save everything is written again; item 3 was removed meanwhile.
+        db.items.remove(&3);
+        db.items.mark_all();
+        db.views.mark_all();
+        st.write(&Changes::take(&mut db)).unwrap();
+        let ids: Vec<i64> = st.conn.prepare("select id from items order by id").unwrap().query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+        assert_eq!(ids, vec![1, 2], "the unreadable item was lost, or the removed one kept");
+        let views: Vec<i64> = st.conn.prepare("select item_id from views order by item_id").unwrap().query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+        assert_eq!(views, vec![1, 2], "the unreadable watch state was lost");
+        drop(st);
         for ext in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
         }

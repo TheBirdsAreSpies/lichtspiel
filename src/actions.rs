@@ -274,18 +274,21 @@ pub fn optimize(app: &Arc<App>, iid: u64, preset: &str) -> Result<usize, String>
             let child = Command::new(&settings.ffmpeg).args(&args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn();
             let ok = match child {
                 Ok(mut c) => {
+                    // stderr is read on the side so a chatty ffmpeg never blocks.
+                    let se = c.stderr.take();
+                    let err = std::thread::spawn(move || { let mut s = String::new(); if let Some(mut se) = se { let _ = std::io::Read::read_to_string(&mut se, &mut s); } s });
                     // -progress prints out_time_us=… lines: shown as a percentage of this file.
                     if let Some(so) = c.stdout.take() {
                         for line in BufReader::new(so).lines().map_while(Result::ok) {
+                            if app.job_cancelled() { let _ = c.kill(); }
                             if let Some(us) = line.strip_prefix("out_time_us=").and_then(|v| v.trim().parse::<u64>().ok()) {
                                 let pct = if file.duration_ms > 0 { (us / 1000 * 100 / file.duration_ms).min(99) as usize } else { 0 };
                                 *app.job.lock().unwrap() = Some(("Optimizing".into(), n * 100 + pct, total * 100));
                             }
                         }
                     }
-                    let mut err = String::new();
-                    if let Some(mut se) = c.stderr.take() { let _ = std::io::Read::read_to_string(&mut se, &mut err); }
                     let st = c.wait().map(|s| s.success()).unwrap_or(false);
+                    let err = err.join().unwrap_or_default();
                     if !st { elog!("optimizing item {id} failed: {}", err.trim()); }
                     st
                 }
@@ -515,4 +518,57 @@ pub fn together_leave(user: &User, code: &str) -> Resp {
         if room.members.is_empty() { map.remove(code); }
     }
     ok(json!({"ok": true}))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    /// An app with one movie and a stand-in "ffmpeg" (a shell script) in its settings.
+    fn app_with_fake_ffmpeg(name: &str, script: &str) -> (Arc<App>, PathBuf) {
+        let root = std::env::temp_dir().join(format!("lichtspiel-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let ff = root.join("ffmpeg.sh");
+        // Hardware checks (a lavfi test picture) just fail; everything else runs the script.
+        std::fs::write(&ff, format!("#!/bin/sh\ncase \"$*\" in *lavfi*) exit 1;; esac\n{script}\n")).unwrap();
+        std::fs::set_permissions(&ff, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        let app = App::open(&root.join("data"));
+        {
+            let mut db = app.db.lock().unwrap();
+            db.settings.ffmpeg = ff.to_string_lossy().to_string();
+            let mut i: Item = serde_json::from_value(json!({"id": 1, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+            i.file = Some(db::MediaFile { path: root.join("x.mkv").to_string_lossy().to_string(), duration_ms: 1000, ..Default::default() });
+            db.items.insert(1, i);
+        }
+        (app, root)
+    }
+
+    fn job_ends_within(app: &App, secs: u64) -> bool {
+        let start = Instant::now();
+        while start.elapsed().as_secs() < secs {
+            if app.job.lock().unwrap().is_none() { return true; }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        false
+    }
+
+    #[test]
+    fn optimize_does_not_hang_when_ffmpeg_prints_many_errors() {
+        // More than a pipe holds (about 64 KB) on stderr before anything on stdout.
+        let (app, root) = app_with_fake_ffmpeg("optimize-chatty", "yes 'broken frame' | head -c 300000 >&2\necho out_time_us=1000");
+        optimize(&app, 1, transcode::OPTIMIZE[0].0).unwrap();
+        assert!(job_ends_within(&app, 10), "the optimize job hung");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cancel_stops_a_running_optimize() {
+        let (app, root) = app_with_fake_ffmpeg("optimize-cancel", "while true; do echo out_time_us=1000; sleep 0.1; done");
+        optimize(&app, 1, transcode::OPTIMIZE[0].0).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(app.cancel_job());
+        assert!(job_ends_within(&app, 10), "Cancel did not stop ffmpeg");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

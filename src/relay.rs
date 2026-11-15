@@ -28,7 +28,7 @@ const WAIT_FOR_HOME: Duration = Duration::from_secs(4);
 
 /// Calls that came through the relay: our own end of the connection to the web server -> the caller.
 /// Nobody outside this program can put an entry here, so the address can be believed.
-static RELAYED: Mutex<Option<HashMap<SocketAddr, IpAddr>>> = Mutex::new(None);
+pub(crate) static RELAYED: Mutex<Option<HashMap<SocketAddr, IpAddr>>> = Mutex::new(None);
 
 /// The caller behind a connection that the relay passed on (None = an ordinary connection).
 pub fn real_client(peer: SocketAddr) -> Option<IpAddr> {

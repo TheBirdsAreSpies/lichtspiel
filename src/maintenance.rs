@@ -42,9 +42,13 @@ pub fn cleanup(app: &App) -> Resp {
     let idle = app.hls.lock().unwrap().is_empty() && app.progressive.lock().unwrap().is_empty();
     if idle {
         if let Ok(rd) = std::fs::read_dir(app.transcode_dir()) {
+            // Only the session folders this server makes (32 hex letters): the folder may be shared with other things.
             for e in rd.flatten() {
                 let p = e.path();
-                let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+                let name = e.file_name().to_string_lossy().to_string();
+                if p.is_dir() && name.len() == 32 && name.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    let _ = std::fs::remove_dir_all(&p);
+                }
             }
         }
     }
@@ -306,6 +310,23 @@ pub fn tick(app: &std::sync::Arc<App>) {
 #[cfg(test)]
 mod tests {
     use super::{in_window, parse_loudness};
+    #[test]
+    fn cleanup_only_removes_our_own_conversion_folders() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-cleanup-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let shared = root.join("shared-temp");
+        let ours = shared.join(crate::db::random_hex(16));
+        std::fs::create_dir_all(&ours).unwrap();
+        std::fs::write(ours.join("seg0.ts"), b"x").unwrap();
+        std::fs::create_dir_all(shared.join("photos")).unwrap();
+        std::fs::write(shared.join("notes.txt"), b"keep me").unwrap();
+        let app = crate::server::App::open(&root.join("data"));
+        app.db.lock().unwrap().settings.transcode_dir = shared.to_string_lossy().to_string();
+        let _ = super::cleanup(&app);
+        assert!(!ours.exists());
+        assert!(shared.join("notes.txt").exists() && shared.join("photos").exists(), "clean-up deleted files it did not make");
+        let _ = std::fs::remove_dir_all(&root);
+    }
     #[test]
     fn loudness_of_a_real_file() {
         let dir = std::env::temp_dir().join("lichtspiel-loudness-test");

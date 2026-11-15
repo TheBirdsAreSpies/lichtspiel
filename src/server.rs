@@ -299,10 +299,11 @@ impl App {
     /// Deletes saved posters, backgrounds, stills and actor photos that aren't
     /// real photos. Returns the movies and shows they belonged to.
     pub fn remove_broken_pictures(&self) -> Vec<u64> {
-        let bad = |p: &str| Path::new(p).is_file() && crate::metadata::file_image_type(Path::new(p)).is_none();
+        // Only our own saved pictures: files in the user's media folders are never touched.
+        let bad = |p: &str| Path::new(p).starts_with(&self.data_dir) && Path::new(p).is_file() && crate::metadata::file_image_type(Path::new(p)).is_none();
         let mut tops = HashSet::new();
         let mut db = self.db.lock().unwrap();
-        let ids: Vec<u64> = db.items.keys().copied().collect();
+        let ids: Vec<u64> = db.items.values().filter(|it| it.poster.as_deref().is_some_and(bad) || it.extra.get("art").and_then(|v| v.as_str()).is_some_and(bad)).map(|it| it.id).collect();
         for id in ids {
             let top = Self::top_level(&db, id).unwrap_or(id);
             let Some(it) = db.items.get_mut(&id) else { continue };
@@ -2477,7 +2478,8 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     });
     let (trusted, no_auth, lan_list) = { let db = app.db.lock().unwrap(); (db.settings.trusted_proxies.clone(), db.settings.no_auth_networks.clone(), db.settings.lan_networks.clone()) };
     let (remote, remote_trusted) = match relayed {
-        Some(ip) => (Some(ip), true),
+        // The relay does not prove who it is, so a relayed caller never counts as local or as a no-sign-in network.
+        Some(ip) => (Some(ip), false),
         None => client_address(req.remote_addr().map(|a| a.ip()), &xff, real_ip.as_deref(), &forwarded, &trusted),
     };
     // Networks that need no sign-in act as the first admin (only with an address that is believed).
@@ -3066,6 +3068,64 @@ mod tests {
         // Only the library folder above: nothing better than the file name.
         assert_eq!(App::folder_title(&db, &db.items[&4]), None);
         assert!(is_disc_folder("CD1") && is_disc_folder("Disc 2") && !is_disc_folder("Cdrama"));
+    }
+
+    #[test]
+    fn broken_pictures_cleanup_leaves_media_folders_and_unchanged_items_alone() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-broken-pictures-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let media = root.join("media");
+        std::fs::create_dir_all(&media).unwrap();
+        let app = App::open(&root.join("data"));
+        std::fs::create_dir_all(app.data_dir.join("metadata/1")).unwrap();
+        let ours = app.data_dir.join("metadata/1/poster.jpg");
+        let theirs = media.join("poster.jpg");
+        std::fs::write(&ours, b"<svg/>").unwrap();
+        std::fs::write(&theirs, b"").unwrap();
+        {
+            let mut db = app.db.lock().unwrap();
+            for (id, p) in [(1u64, Some(&ours)), (2, Some(&theirs)), (3, None)] {
+                let mut i: Item = serde_json::from_value(json!({"id": id, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+                i.poster = p.map(|p| p.to_string_lossy().to_string());
+                db.items.insert(id, i);
+            }
+            let _ = db.items.take_changes();
+        }
+        let broken = app.remove_broken_pictures();
+        assert_eq!(broken, vec![1]);
+        assert!(!ours.exists());
+        assert!(theirs.exists(), "a file in the user's media folder was deleted");
+        assert_eq!(app.db.lock().unwrap().items[&2].poster.as_deref(), Some(&*theirs.to_string_lossy()));
+        // Nothing broken is left: a second run changes no item (no row is rewritten).
+        assert!(app.remove_broken_pictures().is_empty());
+        let mut db = app.db.lock().unwrap();
+        assert!(matches!(db.items.take_changes(), crate::store::Changed::Keys(k) if k.is_empty()));
+        drop(db);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_relayed_caller_claiming_a_home_address_is_not_local() {
+        use std::io::Write;
+        let root = std::env::temp_dir().join(format!("lichtspiel-relayed-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = App::open(&root);
+        {
+            let mut db = app.db.lock().unwrap();
+            db.settings.no_auth_networks = "192.168.0.0/16".into();
+            db.users.push(serde_json::from_value(json!({"id": 1, "username": "admin", "password_hash": "x", "salt": "x", "admin": true, "created_at": 0})).unwrap());
+        }
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let mut c = std::net::TcpStream::connect(server.server_addr().to_ip().unwrap()).unwrap();
+        // The relay (or someone pretending to be it) says this caller is at home.
+        crate::relay::RELAYED.lock().unwrap().get_or_insert_with(HashMap::new).insert(c.local_addr().unwrap(), "192.168.1.10".parse().unwrap());
+        write!(c, "GET /api/settings HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").unwrap();
+        handle(app.clone(), server.recv().unwrap());
+        let mut got = String::new();
+        let _ = c.read_to_string(&mut got);
+        crate::relay::RELAYED.lock().unwrap().as_mut().unwrap().remove(&c.local_addr().unwrap());
+        assert!(got.starts_with("HTTP/1.1 401"), "a relayed caller got in without signing in: {}", got.lines().next().unwrap_or(""));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
 
