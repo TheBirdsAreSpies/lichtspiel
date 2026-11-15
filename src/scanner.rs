@@ -1021,13 +1021,17 @@ where
     let _progress = ProgressGuard(section.id);
     step(section.id, "listing", 0, 0, "");
     let mut found = vec![];
+    // The same folders the server sends files from (all libraries), so links between libraries keep working.
+    let mut folders: Vec<String> = vec![];
+    with_db(&mut |db: &mut Db| folders = db.sections.iter().flat_map(|s| s.paths.clone()).collect());
     for root in &section.paths {
         let root = PathBuf::from(root);
         if only.is_some_and(|o| !o.starts_with(&root)) { continue; }
         let mut files = vec![];
         walk(only.unwrap_or(&root), &mut files, 0, section.kind == SectionKind::Music, Some((section.id, found.len())));
-        // A link to a file outside the library's folders would let anyone who can see the library read that file.
-        for f in files.into_iter().filter(|f| !f.link || crate::server::inside_folders(&section.paths, &f.path)) {
+        // A link to a file outside the libraries would let anyone who can see the library read that file.
+        for f in files {
+            if f.link && !crate::server::inside_folders(&folders, &f.path) { elog!("{} is a link to a file outside the libraries and is skipped", f.path.display()); continue; }
             found.push(Found { size: f.size, mtime: f.mtime, path: f.path, root: root.clone() });
         }
     }
@@ -1768,14 +1772,21 @@ title=Two
         std::fs::write(root.join("secret.mkv"), b"x").unwrap();
         std::os::unix::fs::symlink(root.join("secret.mkv"), lib.join("Leak (2001)/Leak (2001).mkv")).unwrap();
         std::os::unix::fs::symlink(lib.join("Heat (1995)/Heat (1995).mkv"), lib.join("Inside (2002)/Inside (2002).mkv")).unwrap();
+        // A link into another library is fine: that file can be seen there anyway.
+        let other = root.join("other");
+        std::fs::create_dir_all(other.join("Kids (2000)")).unwrap();
+        std::fs::create_dir_all(lib.join("Curated (2003)")).unwrap();
+        std::fs::write(other.join("Kids (2000)/Kids (2000).mkv"), b"x").unwrap();
+        std::os::unix::fs::symlink(other.join("Kids (2000)/Kids (2000).mkv"), lib.join("Curated (2003)/Curated (2003).mkv")).unwrap();
         let mut db: Db = serde_json::from_value(serde_json::json!({"version": 1, "machine_id": "x", "next_id": 1, "settings": crate::db::Settings::default(),
-            "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": [lib.to_string_lossy()], "created_at": 0}],
+            "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": [lib.to_string_lossy()], "created_at": 0},
+                {"id": 2, "name": "Andere", "kind": "movie", "paths": [other.to_string_lossy()], "created_at": 0}],
             "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
         let section = db.sections[0].clone();
         scan_section(&section, "no-such-ffprobe", |f| f(&mut db));
         let mut titles: Vec<String> = db.items.values().map(|i| i.title.clone()).collect();
         titles.sort();
-        assert_eq!(titles, vec!["Heat", "Inside"]);
+        assert_eq!(titles, vec!["Curated", "Heat", "Inside"]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2004,5 +2015,29 @@ mod trailer_tests {
         assert_eq!(extra_of(root, Path::new("/m/Heat (1995)/Trailer_/Teaser.mkv")).map(|x| x.kind), Some("trailer"));
         assert_eq!(extra_of(root, Path::new("/m/Heat (1995)/Heat (1995)-trailer.mkv")).map(|x| x.kind), Some("trailer"));
         assert!(extra_of(root, Path::new("/m/Heat (1995)/Heat (1995).mkv")).is_none());
+    }
+}
+
+#[cfg(test)]
+mod watch_bench {
+    /// How long one look of folder watching takes on 50,000 files (500 folders of 100).
+    /// Run with `cargo test --release folder_signature_on_50k_files -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn folder_signature_on_50k_files() {
+        let root = std::env::temp_dir().join("lichtspiel-watch-bench");
+        if !root.join("done").exists() {
+            for d in 0..500 {
+                let dir = root.join(format!("Show {d}")).join("Season 1");
+                std::fs::create_dir_all(&dir).unwrap();
+                for f in 0..100 { std::fs::write(dir.join(format!("Show {d} S01E{f:03}.mkv")), b"").unwrap(); }
+            }
+            std::fs::write(root.join("done"), b"").unwrap();
+        }
+        let paths = vec![root.to_string_lossy().to_string()];
+        let _ = super::folder_signature(&paths, false);
+        let t = std::time::Instant::now();
+        for _ in 0..5 { let _ = super::folder_signature(&paths, false); }
+        eprintln!("folder_signature over 50,000 files: {:.0} ms per look", t.elapsed().as_secs_f64() * 1000.0 / 5.0);
     }
 }

@@ -292,7 +292,7 @@ intro can also be set by hand with `PUT /library/metadata/{id}/markers` and
 ## New files are found by themselves
 
 With **Settings → Scan my library automatically** on (the default here), the server looks at
-the library folders every 15 seconds. When files are added, renamed or removed it waits until
+the library folders every 60 seconds. When files are added, renamed or removed it waits until
 they stop changing (so a file that is still being copied isn't read half-way) and then scans
 that library; only new or changed files are read. Files added while the server was off are
 found right after it starts.

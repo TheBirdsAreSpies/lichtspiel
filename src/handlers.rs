@@ -633,16 +633,20 @@ pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
         return r;
     }
     // A player that retries, or quick switching between episodes, leaves streams running for 90 s:
-    // one person keeps at most a few, and the one used longest ago makes room.
+    // one person keeps at most a few, and the one used longest ago makes room. A stream fetched in the
+    // last 20 s is still being watched (one account on several devices), so then the start just goes ahead.
     let oldest = {
         let mut map = app.hls.lock().unwrap();
         let mine: Vec<(Instant, String)> = map.values().filter(|s| s.user_id == user.id).map(|s| (s.last_access, s.id.clone())).collect();
-        if mine.len() >= HLS_PER_USER { mine.into_iter().min().and_then(|(_, k)| map.remove(&k)) } else { None }
+        if mine.len() >= HLS_PER_USER { mine.into_iter().filter(|(t, _)| t.elapsed() > Duration::from_secs(20)).min().and_then(|(_, k)| map.remove(&k)) } else { None }
     };
+    // Not while other starts wait: deleting a long stream's folder can take a while on a NAS.
     if let Some(mut s) = oldest {
-        let _ = s.child.kill();
-        let _ = s.child.wait();
-        let _ = std::fs::remove_dir_all(&s.dir);
+        std::thread::spawn(move || {
+            let _ = s.child.kill();
+            let _ = s.child.wait();
+            let _ = std::fs::remove_dir_all(&s.dir);
+        });
     }
     let settings = app.settings();
     let sid = db::random_hex(16);
@@ -976,6 +980,7 @@ pub fn frame(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
         at -= d;
     }
     let Some(src) = src.or_else(|| it.last_file().map(|f| f.path.clone())) else { return fail(404, "No video file") };
+    if !app.may_send(Path::new(&src), false) { return fail(403, "This file is outside the library folders"); }
     let dir = app.data_dir.join("cache").join("frames");
     let _ = std::fs::create_dir_all(&dir);
     let out = dir.join(format!("{}-{step}.jpg", it.id));
@@ -1606,9 +1611,43 @@ mod session_tests {
         let (app, root, user) = app("remux-pile", 0);
         for _ in 0..6 {
             assert_eq!(hls_start(&app, &ctx(&[("redirect", "0")]), &user, "1").status_code().0, 200);
+            // Left behind by a player that moved on half a minute ago.
+            for s in app.hls.lock().unwrap().values_mut() { s.last_access = Instant::now() - Duration::from_secs(30); }
         }
         let mine = app.hls.lock().unwrap().values().filter(|s| s.user_id == user.id).count();
         end_all(&app, &root);
         assert!(mine <= HLS_PER_USER, "{mine} streams kept running for one person");
+    }
+
+    #[test]
+    fn the_seek_bar_picture_of_a_part_outside_the_libraries_is_refused() {
+        let (app, root, user) = app("frame-outside", 0);
+        std::fs::write(root.join("secret.mp4"), b"x").unwrap();
+        // A stand-in "ffmpeg" that writes a picture to the last name it is given.
+        let ff = root.join("picture.sh");
+        std::fs::write(&ff, "#!/bin/sh\nfor a; do last=$a; done\necho x > \"$last\"\n").unwrap();
+        std::fs::set_permissions(&ff, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        {
+            let mut db = app.db.lock().unwrap();
+            db.settings.ffmpeg = ff.to_string_lossy().to_string();
+            let path = root.join("secret.mp4").to_string_lossy().to_string();
+            db.items.get_mut(&1).unwrap().parts.push(db::MediaFile { path, container: "mp4".into(), duration_ms: 1000, ..Default::default() });
+        }
+        let at = |t: &str| frame(&app, &ctx(&[("t", t), ("exact", "1")]), &user, "1").status_code().0;
+        let (inside, outside) = (at("0"), at("1"));
+        end_all(&app, &root);
+        assert_eq!(inside, 200, "the picture of the first part was refused");
+        assert_eq!(outside, 403, "a picture of a file outside the libraries was made");
+    }
+
+    #[test]
+    fn a_stream_that_is_still_watched_is_not_stopped_for_another_device() {
+        let (app, root, user) = app("shared-account", 0);
+        for _ in 0..HLS_PER_USER + 1 {
+            assert_eq!(hls_start(&app, &ctx(&[("redirect", "0")]), &user, "1").status_code().0, 200);
+        }
+        let running = app.hls.lock().unwrap().len();
+        end_all(&app, &root);
+        assert_eq!(running, HLS_PER_USER + 1, "a device that is playing was stopped");
     }
 }

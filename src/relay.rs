@@ -18,6 +18,7 @@ use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAdd
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::auth::same;
 use crate::server::App;
 
 /// Idle connections the home server keeps open to the relay.
@@ -43,11 +44,6 @@ fn proof(secret: &str, nonce: &str) -> String {
 /// The relay's answer to the home server's number (another prefix, so one can't be replayed as the other).
 fn relay_proof(secret: &str, nonce: &str) -> String {
     proof_as(b"lichtspiel-relay-answer\0", secret, nonce)
-}
-
-/// Compared without stopping at the first difference.
-fn same(a: &str, b: &str) -> bool {
-    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 fn proof_as(tag: &[u8], secret: &str, nonce: &str) -> String {

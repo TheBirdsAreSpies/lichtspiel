@@ -10,16 +10,7 @@ use std::path::Path;
 
 /// Today's date (UTC) as YYYY-MM-DD.
 pub fn today() -> String {
-    // Days since 1970 → civil date (H. Hinnant's algorithm).
-    let z = (now() / 86400) as i64 + 719468;
-    let era = z.div_euclid(146097);
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + i64::from(m <= 2);
+    let (y, m, d) = crate::rss::civil((now() / 86400) as i64);
     format!("{y:04}-{m:02}-{d:02}")
 }
 
@@ -1011,6 +1002,12 @@ impl Db {
     /// Older versions kept sign-in tokens as they were given out; keep only their hash (they still work).
     pub fn hash_old_tokens(&mut self) {
         for t in self.tokens.iter_mut().filter(|t| t.token.len() != 64) { t.token = crate::auth::token_hash(&t.token); }
+    }
+
+    /// Brings a library saved by an older version up to date (at start and after a restore).
+    pub fn upgrade(&mut self) {
+        if self.ticket_key.is_empty() { self.ticket_key = random_hex(32); }
+        self.hash_old_tokens();
     }
 
     /// Credits markers of an item: set by hand (extra.credits_ms), else from

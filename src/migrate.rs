@@ -169,12 +169,7 @@ fn date_to_epoch(s: &str) -> Option<i64> {
     let s = s.trim();
     let (y, m, d) = (s.get(0..4)?.parse::<i64>().ok()?, s.get(5..7)?.parse::<i64>().ok()?, s.get(8..10)?.parse::<i64>().ok()?);
     let (hh, mm, ss) = (s.get(11..13).and_then(|x| x.parse::<i64>().ok()).unwrap_or(0), s.get(14..16).and_then(|x| x.parse::<i64>().ok()).unwrap_or(0), s.get(17..19).and_then(|x| x.parse::<i64>().ok()).unwrap_or(0));
-    let y2 = if m <= 2 { y - 1 } else { y };
-    let era = y2.div_euclid(400);
-    let yoe = y2 - era * 400;
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    Some((era * 146097 + doe - 719468) * 86400 + hh * 3600 + mm * 60 + ss)
+    Some(crate::query::days_from_civil(y, u32::try_from(m).ok()?, u32::try_from(d).ok()?) * 86400 + hh * 3600 + mm * 60 + ss)
 }
 
 fn rows(c: &Connection, sql: &str, n: usize, warnings: &mut Vec<String>) -> Vec<Vec<Sql>> {
@@ -197,14 +192,21 @@ fn rows(c: &Connection, sql: &str, n: usize, warnings: &mut Vec<String>) -> Vec<
 fn open_copy(src: &Path, work: &Path) -> Result<Connection, String> {
     std::fs::create_dir_all(work).map_err(|e| e.to_string())?;
     let dst = work.join("library.db");
-    for ext in ["-wal", "-shm"] {
-        let _ = std::fs::remove_file(work.join(format!("library.db{ext}")));
-    }
-    std::fs::copy(src, &dst).map_err(|e| format!("could not copy {}: {e}", src.display()))?;
-    for ext in ["-wal", "-shm"] {
-        let s = PathBuf::from(format!("{}{ext}", src.display()));
-        if s.is_file() {
-            let _ = std::fs::copy(&s, work.join(format!("library.db{ext}")));
+    // The old database rarely changes after the move: a copy newer than it (and its journal) is used as it is.
+    let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let source_time = ["", "-wal"].iter().filter_map(|e| modified(Path::new(&format!("{}{e}", src.display())))).max();
+    if !matches!((modified(&dst), source_time), (Some(d), Some(s)) if d > s) {
+        for ext in ["-wal", "-shm"] {
+            let _ = std::fs::remove_file(work.join(format!("library.db{ext}")));
+        }
+        // Copied under another name first, so a copy cut off half-way is never taken as up to date.
+        let part = work.join("library.db.part");
+        std::fs::copy(src, &part).and_then(|_| std::fs::rename(&part, &dst)).map_err(|e| format!("could not copy {}: {e}", src.display()))?;
+        for ext in ["-wal", "-shm"] {
+            let s = PathBuf::from(format!("{}{ext}", src.display()));
+            if s.is_file() {
+                let _ = std::fs::copy(&s, work.join(format!("library.db{ext}")));
+            }
         }
     }
     let c = Connection::open(&dst).map_err(|e| format!("not a database the import can read: {e}"))?;
@@ -405,15 +407,8 @@ fn db_date(t: i64) -> String {
     if t <= 0 {
         return String::new();
     }
-    let z = t.div_euclid(86400) + 719468;
-    let era = z.div_euclid(146097);
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    format!("{:04}-{m:02}-{d:02}", yoe + era * 400 + i64::from(m <= 2))
+    let (y, m, d) = crate::rss::civil(t.div_euclid(86400));
+    format!("{y:04}-{m:02}-{d:02}")
 }
 
 // ------------------------------------------------------------------ paths
@@ -628,7 +623,12 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
     let matched_files = old.parts.len() - missing.len();
     report["files"] = json!({"in_old_database": old.parts.len(), "found_here": matched_files, "not_found": missing.len(),
         "not_found_examples": missing.iter().take(12).collect::<Vec<_>>()});
-    let by_guid: HashMap<&str, u64> = old.items.values().filter(|i| !i.guid.is_empty()).filter_map(|i| map.get(&i.id).map(|h| (i.guid.as_str(), *h))).collect();
+    // One guid can stand for several items here (the same movie in "Movies" and "Movies 4K").
+    let mut by_guid: HashMap<&str, Vec<u64>> = HashMap::new();
+    for i in old.items.values().filter(|i| !i.guid.is_empty()) {
+        if let Some(h) = map.get(&i.id) { by_guid.entry(i.guid.as_str()).or_default().push(*h); }
+    }
+    let items_of = |guid: &str| by_guid.get(guid).cloned().unwrap_or_default();
 
     let mut db = app.db.lock().unwrap();
     // The day the old server added things (not the day of this import): "Recently added" and the
@@ -653,23 +653,24 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
             if !db.users.iter().any(|u| u.id == user) {
                 continue;
             }
-            let Some(item) = by_guid.get(s.guid.as_str()).copied() else { continue };
-            let leaf = db.items.get(&item).is_some_and(|i| i.kind.playable());
-            let v = db.view_mut(user, item);
-            if leaf && s.views > 0 && (s.views as u32) > v.view_count {
-                v.view_count = s.views as u32;
-                watched += 1;
-            }
-            if leaf && s.offset_ms > 0 && s.last_viewed >= v.last_viewed_at as i64 {
-                v.view_offset_ms = s.offset_ms as u64;
-                resume += 1;
-            }
-            if s.last_viewed as u64 > v.last_viewed_at {
-                v.last_viewed_at = s.last_viewed as u64;
-            }
-            if let Some(r) = s.rating {
-                v.rating = Some((r as f32).clamp(0.0, 10.0));
-                rated += 1;
+            for item in items_of(&s.guid) {
+                let leaf = db.items.get(&item).is_some_and(|i| i.kind.playable());
+                let v = db.view_mut(user, item);
+                if leaf && s.views > 0 && (s.views as u32) > v.view_count {
+                    v.view_count = s.views as u32;
+                    watched += 1;
+                }
+                if leaf && s.offset_ms > 0 && s.last_viewed >= v.last_viewed_at as i64 {
+                    v.view_offset_ms = s.offset_ms as u64;
+                    resume += 1;
+                }
+                if s.last_viewed as u64 > v.last_viewed_at {
+                    v.last_viewed_at = s.last_viewed as u64;
+                }
+                if let Some(r) = s.rating {
+                    v.rating = Some((r as f32).clamp(0.0, 10.0));
+                    rated += 1;
+                }
             }
         }
     }
@@ -677,18 +678,26 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
     let mut history = 0;
     if o.watched {
         let mut logged: HashSet<(u64, u64)> = HashSet::new();
+        // Viewings already in the history (an earlier import) are not added again.
+        let mut had: HashSet<(u64, u64, u64)> = db.history.iter().map(|e| (e.user_id, e.item_id, e.at)).collect();
         for (account, guid, at) in &old.views {
-            let (Some(user), Some(item)) = (o.accounts.get(account).copied(), by_guid.get(guid.as_str()).copied()) else { continue };
-            if !db.users.iter().any(|u| u.id == user) || !db.items.get(&item).is_some_and(|i| i.kind.playable()) { continue; }
-            db.record_play_at(user, item, false, *at as u64);
-            logged.insert((user, item));
-            history += 1;
+            let Some(user) = o.accounts.get(account).copied() else { continue };
+            for item in items_of(guid) {
+                if !db.users.iter().any(|u| u.id == user) || !db.items.get(&item).is_some_and(|i| i.kind.playable()) { continue; }
+                logged.insert((user, item));
+                if !had.insert((user, item, *at as u64)) { continue; }
+                db.record_play_at(user, item, false, *at as u64);
+                history += 1;
+            }
         }
         for s in old.settings.iter().filter(|s| s.views > 0 && s.last_viewed > 0) {
-            let (Some(user), Some(item)) = (o.accounts.get(&s.account).copied(), by_guid.get(s.guid.as_str()).copied()) else { continue };
-            if logged.contains(&(user, item)) || !db.users.iter().any(|u| u.id == user) || !db.items.get(&item).is_some_and(|i| i.kind.playable()) { continue; }
-            db.record_play_at(user, item, false, s.last_viewed as u64);
-            history += 1;
+            let Some(user) = o.accounts.get(&s.account).copied() else { continue };
+            for item in items_of(&s.guid) {
+                if logged.contains(&(user, item)) || !db.users.iter().any(|u| u.id == user) || !db.items.get(&item).is_some_and(|i| i.kind.playable()) { continue; }
+                if !had.insert((user, item, s.last_viewed as u64)) { continue; }
+                db.record_play_at(user, item, false, s.last_viewed as u64);
+                history += 1;
+            }
         }
     }
     report["watched"] = json!({"watched": watched, "history_entries": history, "resume_points": resume, "ratings": rated,
@@ -982,5 +991,85 @@ mod credits_index_tests {
         assert_eq!(idx.get("/data/tv/Daisy Jones/Season 1/S01E01.mkv"), Some(&v));
         assert_eq!(idx.get(r"D:\Daisy Jones\Season 1\S01E01.mkv"), Some(&v));
         assert_eq!(idx.get("/data/tv/Other/Season 1/S01E02.mkv"), None);
+    }
+}
+
+#[cfg(test)]
+mod import_tests {
+    use super::*;
+    use crate::db::{Item, MediaFile};
+
+    /// A tiny old-server database: two old movies with the same guid ("Movies" and "Movies 4K"),
+    /// watched and rated by account 1, with two logged viewings.
+    fn old_db(dir: &Path) -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        let f = dir.join("plex.db");
+        let c = Connection::open(&f).unwrap();
+        c.execute_batch("create table metadata_items (id, parent_id, metadata_type, guid, title, original_title, summary, tagline, studio, content_rating, rating, year, originally_available_at, added_at);
+            create table media_items (id, metadata_item_id); create table media_parts (id, media_item_id, file);
+            create table metadata_item_settings (account_id, guid, rating, view_offset, view_count, last_viewed_at);
+            create table metadata_item_views (account_id, guid, viewed_at); create table accounts (id, name);
+            insert into accounts values (1, 'ste');
+            insert into metadata_items values (100, null, 1, 'plex://movie/x', 'X', '', '', '', '', '', null, 2000, null, 0), (101, null, 1, 'plex://movie/x', 'X', '', '', '', '', '', null, 2000, null, 0);
+            insert into media_items values (1, 100), (2, 101); insert into media_parts values (1, 1, '/m/a.mkv'), (2, 2, '/m4k/a.mkv');
+            insert into metadata_item_settings values (1, 'plex://movie/x', 8, 0, 1, 1000);
+            insert into metadata_item_views values (1, 'plex://movie/x', 500), (1, 'plex://movie/x', 900);").unwrap();
+        f
+    }
+
+    fn app_with_two_copies(name: &str) -> (Arc<App>, PathBuf, Options) {
+        let (app, root) = crate::server::tests::test_app(name);
+        {
+            let mut db = app.db.lock().unwrap();
+            for (id, path) in [(10u64, "/m/a.mkv"), (11, "/m4k/a.mkv")] {
+                let mut i: Item = serde_json::from_value(json!({"id": id, "section_id": 1, "kind": "movie", "title": "X", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+                i.file = Some(MediaFile { path: path.into(), ..Default::default() });
+                db.items.insert(id, i);
+            }
+        }
+        let o = Options { db: old_db(&root.join("old")), path_map: vec![], libraries: false, watched: true, playlists: false, markers: false, details: false, accounts: HashMap::from([(1, 1)]) };
+        (app, root, o)
+    }
+
+    #[test]
+    fn the_same_movie_in_two_old_libraries_is_watched_in_both() {
+        let (app, root, o) = app_with_two_copies("import-guid");
+        run(&app, &o).unwrap();
+        let db = app.db.lock().unwrap();
+        let got: Vec<(u32, Option<f32>, usize)> = [10, 11].iter().map(|i| (db.view(1, *i).view_count, db.view(1, *i).rating, db.history.iter().filter(|h| h.item_id == *i).count())).collect();
+        drop(db);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(got, vec![(1, Some(8.0), 2), (1, Some(8.0), 2)], "(watched, rating, history entries) of each copy");
+    }
+
+    #[test]
+    fn importing_twice_keeps_the_play_history_as_it_was() {
+        let (app, root, o) = app_with_two_copies("import-twice");
+        run(&app, &o).unwrap();
+        let first = app.db.lock().unwrap().history.len();
+        run(&app, &o).unwrap();
+        let second = app.db.lock().unwrap().history.len();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(first > 0);
+        assert_eq!(second, first, "the second import added the viewings again");
+    }
+
+    #[test]
+    fn the_old_database_is_copied_again_only_when_it_changed() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-open-copy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let src = old_db(&root);
+        let work = root.join("work");
+        drop(open_copy(&src, &work).unwrap());
+        // Something only the copy has: a fresh copy would lose it.
+        Connection::open(work.join("library.db")).unwrap().execute_batch("create table only_in_copy (x)").unwrap();
+        let kept = open_copy(&src, &work).unwrap().prepare("select * from only_in_copy").is_ok();
+        // The old server writes to its database: copied again.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        Connection::open(&src).unwrap().execute_batch("insert into accounts values (2, 'kid')").unwrap();
+        let fresh = open_copy(&src, &work).unwrap().prepare("select * from only_in_copy").is_err();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(kept, "the unchanged old database was copied again");
+        assert!(fresh, "a changed old database was not copied again");
     }
 }

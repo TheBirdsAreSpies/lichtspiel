@@ -51,9 +51,17 @@ pub fn hash_password(password: &str) -> (String, String) {
 }
 
 pub fn verify(password: &str, salt: &str, hash: &str) -> bool {
-    let h = pbkdf2(password, salt, PBKDF2_ROUNDS);
-    // constant-time compare
-    h.len() == hash.len() && h.bytes().zip(hash.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0
+    same(&pbkdf2(password, salt, PBKDF2_ROUNDS), hash)
+}
+
+/// Compared without stopping at the first difference (so the time taken tells nothing).
+pub fn same(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// The signature of a ticket.
+fn sig(key: &str, msg: &str) -> String {
+    hmac_sha256(key.as_bytes(), msg.as_bytes())[..16].iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// What the library keeps of a sign-in token: its SHA-256 (64 hex letters), so a copy of the file signs nobody in.
@@ -82,16 +90,13 @@ pub fn ticket(key: &str, user: u64, scope: &str, token: Option<&str>, now: u64) 
     let (step, life) = if scope == "p" { (1800, 5400) } else { (3600, 6 * 3600) };
     let expires = now / step * step + life;
     let msg = format!("{user}.{expires}.{}.{scope}", token.map(token_id).unwrap_or_default());
-    let sig: String = hmac_sha256(key.as_bytes(), msg.as_bytes())[..16].iter().map(|b| format!("{b:02x}")).collect();
-    (format!("{msg}.{sig}"), expires)
+    (format!("{msg}.{}", sig(key, &msg)), expires)
 }
 
 /// (user, token id, scope) of a ticket made with `key` that has not ended.
 pub fn read_ticket(key: &str, t: &str, now: u64) -> Option<(u64, String, String)> {
     let (msg, sig) = t.rsplit_once('.')?;
-    let want: String = hmac_sha256(key.as_bytes(), msg.as_bytes())[..16].iter().map(|b| format!("{b:02x}")).collect();
-    // constant-time compare (the end time is not secret, so a plain comparison is fine for it)
-    if key.is_empty() || want.len() != sig.len() || want.bytes().zip(sig.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) != 0 { return None; }
+    if key.is_empty() || !same(&self::sig(key, msg), sig) { return None; }
     let mut p = msg.splitn(4, '.');
     let (user, expires, tid, scope) = (p.next()?.parse().ok()?, p.next()?.parse::<u64>().ok()?, p.next()?, p.next()?);
     (expires > now).then(|| (user, tid.to_string(), scope.to_string()))
@@ -129,5 +134,21 @@ mod tests {
             super::pbkdf2("password", "salt", 1),
             "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"
         );
+    }
+
+    #[test]
+    fn a_ticket_reads_back_only_unchanged_and_with_its_key() {
+        let (t, _) = super::ticket("k", 3, "p", Some("tok"), 1000);
+        assert_eq!(super::read_ticket("k", &t, 1000), Some((3, super::token_id("tok"), "p".into())));
+        assert_eq!(super::read_ticket("other", &t, 1000), None);
+        assert_eq!(super::read_ticket("", &super::ticket("", 3, "p", None, 1000).0, 1000), None);
+        let mut bad = t.clone();
+        let last = if bad.ends_with('0') { '1' } else { '0' };
+        bad.pop();
+        bad.push(last);
+        assert_eq!(super::read_ticket("k", &bad, 1000), None);
+        let (hash, salt) = super::hash_password("pw");
+        assert!(super::verify("pw", &salt, &hash) && !super::verify("px", &salt, &hash));
+        assert!(super::same("abc", "abc") && !super::same("abc", "abd") && !super::same("abc", "ab"));
     }
 }

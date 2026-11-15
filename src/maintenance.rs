@@ -58,7 +58,8 @@ pub fn cleanup(app: &App) -> Resp {
         for e in rd.flatten() {
             let p = e.path();
             if p.is_dir() {
-                old_files(&p, week);
+                // Preview pictures made ahead of time and intro prints stay while their title does (see below).
+                if !p.ends_with("cache/frames") && !p.ends_with("cache/intro") { old_files(&p, week); }
                 continue;
             }
             let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|a| a > week);
@@ -66,6 +67,21 @@ pub fn cleanup(app: &App) -> Resp {
         }
     }
     old_files(&app.data_dir.join("cache"), week);
+    // Optimized copies, downloaded details and preview pictures of titles no longer in the library
+    // (metadata/people is shared by everyone and never matches a number).
+    let gone = |name: &str| name.parse::<u64>().is_ok_and(|n| !app.db.lock().unwrap().items.contains_key(&n));
+    // An empty library (one that could not be read) never empties these folders.
+    let dirs = if app.db.lock().unwrap().items.is_empty() { vec![] } else { vec!["optimized", "metadata", "cache/frames"] };
+    for dir in dirs {
+        let Ok(rd) = std::fs::read_dir(app.data_dir.join(dir)) else { continue };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            let number = match dir { "optimized" => name.strip_suffix(".mp4"), "cache/frames" => name.split_once('-').map(|p| p.0), _ => Some(name.as_str()) };
+            if !number.is_some_and(gone) { continue; }
+            let p = e.path();
+            let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+        }
+    }
     let after = dir_size(&app.transcode_dir()) + dir_size(&app.data_dir.join("cache"));
     ok(json!({"ok": true, "freed": before.saturating_sub(after), "transcodes_kept": !idle}))
 }
@@ -174,12 +190,23 @@ pub fn restore(app: &App, name: &str) -> Result<(), String> {
     })();
     for ext in ["", "-wal", "-shm"] { let _ = std::fs::remove_file(app.data_dir.join(format!("restore-check.db{ext}"))); }
     let mut loaded = loaded?;
-    loaded.hash_old_tokens();
     backup(app)?;
     loaded.items.mark_all();
     loaded.views.mark_all();
-    *app.db.lock().unwrap() = loaded;
-    app.store.lock().unwrap().forget_written();
+    {
+        let mut st = app.store.lock().unwrap();
+        let mut db = app.db.lock().unwrap();
+        // The live key keeps tickets already handed out working; numbers handed out since the
+        // backup still name files on disk (pictures, seek-bar stills), so they are never reused.
+        loaded.ticket_key = std::mem::take(&mut db.ticket_key);
+        loaded.next_id = loaded.next_id.max(db.next_id);
+        loaded.upgrade();
+        *db = loaded;
+        st.forget_written();
+        st.forget_unreadable();
+    }
+    // Plex sync keys what both sides agreed on by item number; the next sync merges like a first one.
+    let _ = std::fs::remove_file(app.data_dir.join("plex-sync-state.json"));
     app.save();
     elog!("restored the library from {name}");
     Ok(())
@@ -299,6 +326,18 @@ pub fn tick(app: &std::sync::Arc<App>) {
         for id in ids { app.scan_in_background(id); }
         ran.push("refresh");
     }
+    // Credits and intro markers "as a scheduled task": once a day, after the details. One that could not
+    // start (another job is running) is tried again the next minute.
+    // (Not while details are being fetched, nor after the owner stopped an automatic run.)
+    let details_idle = app.meta_queue.lock().unwrap().is_empty() && app.meta_busy.lock().unwrap().is_empty() && !app.auto_paused.load(std::sync::atomic::Ordering::SeqCst);
+    if details_idle && s.credits_markers_behaviour == "scheduled" && due("credits", 1) {
+        let todo = app.credits_pending();
+        if todo.is_empty() || app.detect_credits(todo, false).is_ok() { ran.push("credits"); }
+    }
+    if details_idle && s.intro_markers_behaviour == "scheduled" && due("intros", 1) {
+        let todo = app.intros_pending();
+        if todo.is_empty() || app.detect_intros(todo, false).is_ok() { ran.push("intros"); }
+    }
     if s.analyze_loudness { analyze_loudness(app, 5); }
     if s.deep_analysis { deep_analysis(app, 1); }
     if s.generate_thumbnails { make_thumbnails(app, 2); }
@@ -330,11 +369,52 @@ mod tests {
         let app = crate::server::App::open(&root.join("data"));
         // A backup made by an older version, which kept the token as it was given out.
         app.db.lock().unwrap().tokens.push(crate::db::Token { token: "a".repeat(40), user_id: 1, created_at: 0, device: String::new(), last_used: 0, last_device: String::new(), last_ip: String::new() });
+        // ...and had no key for picture and video tickets.
+        let key = std::mem::take(&mut app.db.lock().unwrap().ticket_key);
         let name = std::path::Path::new(&super::backup(&app).unwrap()).file_name().unwrap().to_string_lossy().to_string();
+        app.db.lock().unwrap().ticket_key = key.clone();
+        let (t, _) = crate::auth::ticket(&key, 1, "p", None, crate::db::now());
         super::restore(&app, &name).unwrap();
-        let token = app.db.lock().unwrap().tokens[0].token.clone();
+        let (token, live_key) = { let db = app.db.lock().unwrap(); (db.tokens[0].token.clone(), db.ticket_key.clone()) };
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(token, crate::auth::token_hash(&"a".repeat(40)));
+        assert!(crate::auth::read_ticket(&live_key, &t, crate::db::now()).is_some(), "a ticket handed out before the restore stopped working");
+    }
+    #[test]
+    fn restore_never_hands_out_an_item_number_again_and_forgets_the_plex_sync_state() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-restore-ids-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = crate::server::App::open(&root.join("data"));
+        let name = std::path::Path::new(&super::backup(&app).unwrap()).file_name().unwrap().to_string_lossy().to_string();
+        let after = { let mut db = app.db.lock().unwrap(); for _ in 0..5 { db.new_id(); } db.next_id };
+        std::fs::write(app.data_dir.join("plex-sync-state.json"), "{}").unwrap();
+        super::restore(&app, &name).unwrap();
+        let next = app.db.lock().unwrap().next_id;
+        let state_left = app.data_dir.join("plex-sync-state.json").exists();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(next >= after, "item numbers {next}..{after} would be handed out twice");
+        assert!(!state_left, "the plex sync state of the newer library was kept");
+    }
+    #[test]
+    fn restore_drops_rows_the_live_file_could_not_read() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-restore-unreadable-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let data = root.join("data");
+        let app = crate::server::App::open(&data);
+        let name = std::path::Path::new(&super::backup(&app).unwrap()).file_name().unwrap().to_string_lossy().to_string();
+        let it: crate::db::Item = serde_json::from_value(serde_json::json!({"id": 77, "section_id": 1, "kind": "movie", "title": "Later", "sort_title": "later", "added_at": 0, "updated_at": 0})).unwrap();
+        app.db.lock().unwrap().items.insert(77, it);
+        app.save();
+        drop(app);
+        // As a newer version might have written it: this one can't read item 77.
+        let file = data.join(crate::store::FILE_NAME);
+        rusqlite::Connection::open(&file).unwrap().execute_batch("update items set data = '{\"kind\": \"from-the-future\"}' where id = 77").unwrap();
+        let app = crate::server::App::open(&data);
+        super::restore(&app, &name).unwrap();
+        let n: i64 = rusqlite::Connection::open(&file).unwrap().query_row("select count(*) from items where id = 77", [], |r| r.get(0)).unwrap();
+        drop(app);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(n, 0, "a row of the replaced library survived the restore");
     }
     #[test]
     fn cleanup_only_removes_our_own_conversion_folders() {
@@ -398,5 +478,78 @@ mod thumb_tests {
     fn chapter_picture_is_taken_after_the_start() {
         assert_eq!(crate::handlers::chapter_picture_at(0, 4000), 2);
         assert_eq!(crate::handlers::chapter_picture_at(60000, 600000), 63);
+    }
+}
+
+#[cfg(test)]
+mod cleanup_tests {
+    use std::path::Path;
+    fn age(p: &Path) { std::fs::File::options().write(true).open(p).unwrap().set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(30 * 86400)).unwrap(); }
+    #[test]
+    fn cleanup_removes_what_titles_no_longer_in_the_library_left_behind() {
+        let (app, root) = crate::server::tests::test_app("cleanup-gone");
+        let it: crate::db::Item = serde_json::from_value(serde_json::json!({"id": 1, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+        app.db.lock().unwrap().items.insert(1, it);
+        let d = &app.data_dir;
+        for f in ["optimized/1.mp4", "optimized/99.mp4", "metadata/1/poster.jpg", "metadata/99/poster.jpg", "metadata/people/ab/photo.jpg"] {
+            std::fs::create_dir_all(d.join(f).parent().unwrap()).unwrap();
+            std::fs::write(d.join(f), b"x").unwrap();
+        }
+        let _ = super::cleanup(&app);
+        let left = |f: &str| d.join(f).exists();
+        let r = (left("optimized/1.mp4"), left("metadata/1/poster.jpg"), left("metadata/people/ab/photo.jpg"), left("optimized/99.mp4"), left("metadata/99"));
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(r, (true, true, true, false, false), "(kept 1.mp4, metadata/1, people; left 99.mp4, metadata/99)");
+    }
+    #[test]
+    fn cleanup_keeps_old_preview_pictures_and_intro_prints_of_titles_still_there() {
+        let (app, root) = crate::server::tests::test_app("cleanup-frames");
+        let it: crate::db::Item = serde_json::from_value(serde_json::json!({"id": 1, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+        app.db.lock().unwrap().items.insert(1, it);
+        let c = app.data_dir.join("cache");
+        for f in ["frames/1-10.jpg", "frames/99-10.jpg", "intro/abc.print", "thumbs/1.jpg"] {
+            std::fs::create_dir_all(c.join(f).parent().unwrap()).unwrap();
+            std::fs::write(c.join(f), b"x").unwrap();
+            age(&c.join(f));
+        }
+        let _ = super::cleanup(&app);
+        let left = |f: &str| c.join(f).exists();
+        let r = (left("frames/1-10.jpg"), left("intro/abc.print"), left("frames/99-10.jpg"), left("thumbs/1.jpg"));
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(r, (true, true, false, false), "(kept frames of 1, intro print; removed frames of 99, old thumb)");
+    }
+}
+
+#[cfg(test)]
+mod schedule_tests {
+    /// An app whose maintenance window is always open, with one movie waiting for credits detection.
+    fn app(name: &str, last_run: Option<u64>) -> (std::sync::Arc<crate::server::App>, std::path::PathBuf) {
+        let (app, root) = crate::server::tests::test_app(name);
+        let mut db = app.db.lock().unwrap();
+        let mut it: crate::db::Item = serde_json::from_value(serde_json::json!({"id": 1, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+        it.file = Some(crate::db::MediaFile { path: root.join("none.mkv").to_string_lossy().to_string(), ..Default::default() });
+        db.items.insert(1, it);
+        let s = &mut db.settings;
+        (s.credits_markers_behaviour, s.maintenance_start_hour, s.maintenance_end_hour) = ("scheduled".into(), 0, 0);
+        (s.backup_enabled, s.optimize_weekly, s.cleanup_weekly, s.refresh_metadata) = (false, false, false, false);
+        if let Some(t) = last_run { s.maintenance_last.insert("credits".into(), t); }
+        drop(db);
+        (app, root)
+    }
+    #[test]
+    fn scheduled_credits_detection_runs_in_the_window_once_a_day_across_restarts() {
+        let (a, root) = app("sched-credits", None);
+        super::tick(&a);
+        let ran = a.settings().maintenance_last.get("credits").copied();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(ran.is_some_and(|t| t + 60 >= crate::db::now()), "the scheduled credits detection did not run in the window");
+        // It ran 2 hours ago, before a restart: not again today.
+        let earlier = crate::db::now() - 7200;
+        let (b, root) = app("sched-credits-restart", Some(earlier));
+        super::tick(&b);
+        let (last, job) = (b.settings().maintenance_last.get("credits").copied(), b.job.lock().unwrap().clone());
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(last, Some(earlier));
+        assert!(job.is_none(), "it ran again after a restart: {job:?}");
     }
 }

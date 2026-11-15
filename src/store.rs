@@ -433,6 +433,11 @@ impl Store {
         Ok(())
     }
 
+    /// After a restore: the rows this file could not read belong to the library that was replaced.
+    pub fn forget_unreadable(&mut self) {
+        (self.unreadable_items, self.unreadable_views) = (vec![], vec![]);
+    }
+
     /// After a failed write: the next one writes everything again.
     pub fn forget_written(&mut self) {
         self.written.clear();

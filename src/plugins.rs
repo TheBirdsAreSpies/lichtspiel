@@ -76,6 +76,27 @@ pub struct Manifest {
     pub user_panel: bool,
 }
 
+/// At most this many plugin programs run at once; the others wait for their turn.
+pub const MAX_RUNNING: usize = 4;
+static RUNNING: (std::sync::Mutex<usize>, std::sync::Condvar) = (std::sync::Mutex::new(0), std::sync::Condvar::new());
+
+/// One of the MAX_RUNNING places, given back when dropped.
+struct Turn;
+impl Turn {
+    fn wait() -> Turn {
+        let mut n = RUNNING.0.lock().unwrap();
+        while *n >= MAX_RUNNING { n = RUNNING.1.wait(n).unwrap(); }
+        *n += 1;
+        Turn
+    }
+}
+impl Drop for Turn {
+    fn drop(&mut self) {
+        *RUNNING.0.lock().unwrap() -= 1;
+        RUNNING.1.notify_one();
+    }
+}
+
 fn default_timeout() -> u64 {
     20
 }
@@ -146,6 +167,7 @@ pub fn invoke(plugin: &Plugin, settings: &serde_json::Map<String, Value>, event:
         merged.insert(k.clone(), v.clone());
     }
     let input = json!({"event": event, "data": data, "settings": merged, "server": server});
+    let _turn = Turn::wait();
     let cmd = &plugin.manifest.command;
     let program = resolve_program(&plugin.dir, &cmd[0]);
     let mut child = Command::new(&program)

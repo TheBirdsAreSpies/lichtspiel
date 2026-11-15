@@ -39,8 +39,9 @@ pub const APP_NAME: &str = "Lichtspiel";
 pub const DEFAULT_PORT: u16 = 8484;
 
 /// How often library folders are looked at for new or changed files (seconds).
-/// (The self-test makes it shorter.)
-pub static WATCH_SECONDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(15);
+/// (The self-test makes it shorter.) Each look reads the size and time of every file
+/// (about 0.3 s for 50,000 files), so not more often: a NAS's disks should get some rest.
+pub static WATCH_SECONDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(60);
 
 pub const WEB_APP: &str = include_str!("../web/index.html");
 pub const WEB_JS: &str = include_str!("../web/app.js");
@@ -198,8 +199,7 @@ impl App {
         }
         install_bundled_plugins(&data_dir.join("plugins"));
         let (store, mut db, from_json) = open_library(data_dir);
-        if db.ticket_key.is_empty() { db.ticket_key = crate::db::random_hex(32); }
-        db.hash_old_tokens();
+        db.upgrade();
         // Age ratings and genres in one spelling each.
         let ids: Vec<u64> = db.items.values().filter(|it| {
             let mut c = (*it).clone();
@@ -451,36 +451,40 @@ impl App {
 
     /// Tells plugins about something, in the background.
     pub fn fire(self: &Arc<Self>, event: &str, data: Value) {
+        if self.listeners(event).is_empty() {
+            return;
+        }
+        let (app, event) = (self.clone(), event.to_string());
+        std::thread::spawn(move || app.fire_now(&event, data));
+    }
+
+    /// Tells plugins about something, on this thread.
+    pub fn fire_now(self: &Arc<Self>, event: &str, mut data: Value) {
         let listeners = self.listeners(event);
         if listeners.is_empty() {
             return;
         }
-        let app = self.clone();
-        let event = event.to_string();
-        let mut data = data;
-        std::thread::spawn(move || {
-            // Playback events carry what the item is, so a plugin can look it up
-            // elsewhere (Trakt, Last.fm …) without asking the server.
-            if event.starts_with("playback.") && data.get("item").is_none() {
-                if let Some(id) = data["id"].as_u64() {
-                    let item = app.item_brief(id);
-                    let dur = item["duration_ms"].as_u64().unwrap_or(0);
-                    if let (Some(t), true) = (data["time"].as_u64(), dur > 0) {
-                        data["progress"] = json!(((t as f64 / dur as f64) * 1000.0).round().min(1000.0) / 10.0);
-                    }
-                    data["item"] = item;
+        // Playback events carry what the item is, so a plugin can look it up
+        // elsewhere (Trakt, Last.fm …) without asking the server.
+        if event.starts_with("playback.") && data.get("item").is_none() {
+            if let Some(id) = data["id"].as_u64() {
+                let item = self.item_brief(id);
+                let dur = item["duration_ms"].as_u64().unwrap_or(0);
+                if let (Some(t), true) = (data["time"].as_u64(), dur > 0) {
+                    data["progress"] = json!(((t as f64 / dur as f64) * 1000.0).round().min(1000.0) / 10.0);
                 }
+                data["item"] = item;
             }
-            let server = app.server_info();
-            for (pl, settings) in listeners {
-                let r = plugins::invoke(&pl, &settings, &event, &data, &server);
-                let mut p = app.plugins.lock().unwrap();
-                match r {
-                    Ok(v) => p.note(&pl.manifest.id, &event, true, short(&v.to_string())),
-                    Err(e) => p.note(&pl.manifest.id, &event, false, e),
-                }
+        }
+        let server = self.server_info();
+        for (pl, settings) in listeners {
+            let r = plugins::invoke(&pl, &settings, event, &data, &server);
+            let mut p = self.plugins.lock().unwrap();
+            match r {
+                Ok(v) => p.note(&pl.manifest.id, event, true, short(&v.to_string())),
+                Err(e) => p.note(&pl.manifest.id, event, false, e),
             }
-        });
+        }
     }
 
     /// Asks metadata plugins about new items and merges their answers.
@@ -543,17 +547,19 @@ impl App {
             self.lookup_metadata(&report.added);
             self.queue_online_details(&report.added, false);
             self.save();
-            for id in &report.added {
-                let title = self.db.lock().unwrap().items.get(id).map(|i| i.title.clone()).unwrap_or_default();
-                self.fire("library.item.added", json!({"id": id, "title": title, "section_id": section_id}));
-            }
-            for id in &report.removed {
-                self.fire("library.item.removed", json!({"id": id, "section_id": section_id}));
-            }
-            self.fire(
-                "library.scan.finished",
-                json!({"section_id": section_id, "added": report.added.len(), "updated": report.updated.len(), "removed": report.removed.len(), "files": report.files_seen}),
-            );
+            // One after the other on one thread: a first scan of 20,000 titles must not start 20,000 plugin programs.
+            let (app, added, removed) = (self.clone(), report.added.clone(), report.removed.clone());
+            let finished = json!({"section_id": section_id, "added": report.added.len(), "updated": report.updated.len(), "removed": report.removed.len(), "files": report.files_seen});
+            std::thread::spawn(move || {
+                for id in &added {
+                    let title = app.db.lock().unwrap().items.get(id).map(|i| i.title.clone()).unwrap_or_default();
+                    app.fire_now("library.item.added", json!({"id": id, "title": title, "section_id": section_id}));
+                }
+                for id in &removed {
+                    app.fire_now("library.item.removed", json!({"id": id, "section_id": section_id}));
+                }
+                app.fire_now("library.scan.finished", finished);
+            });
             report
         });
         self.scanning.lock().unwrap().remove(&section_id);
@@ -787,6 +793,8 @@ impl App {
                         }
                         let d = done.fetch_add(1, AtomicOrdering::SeqCst) + 1;
                         *app.job.lock().unwrap() = Some(("Detecting credits".into(), d, total));
+                        // Kept now and then, so a restart during a long first run loses little.
+                        if d % 50 == 0 { app.save(); }
                     });
                 }
             });
@@ -927,7 +935,7 @@ impl App {
             elog!("intro detection: {} files with intro markers in the old server's database; {total} episodes to check", from_plex.len());
             let mut taken = 0;
             'seasons: for eps in seasons {
-                let (mut known, mut eps): (Vec<_>, Vec<_>) = eps.into_iter().partition(|e| from_plex.get(&e.1).is_some_and(|m| m.len() == 2));
+                let (mut known, mut eps, compare_only) = split_known(eps, |e| from_plex.get(&e.1).is_some_and(|m| m.len() == 2));
                 {
                     let mut db = app.db.lock().unwrap();
                     for (id, path, ..) in &known {
@@ -949,7 +957,7 @@ impl App {
                         }
                     }
                 }
-                done += known.len();
+                done += known.len() - compare_only;
                 known.clear();
                 *app.job.lock().unwrap() = Some(("Detecting intros".into(), done, total));
                 if eps.len() < 2 {
@@ -977,14 +985,14 @@ impl App {
                             };
                             *results[n].lock().unwrap() = Some(print);
                             let d = finished.fetch_add(1, AtomicOrdering::SeqCst) + 1;
-                            *app.job.lock().unwrap() = Some(("Detecting intros".into(), done + d, total));
+                            *app.job.lock().unwrap() = Some(("Detecting intros".into(), (done + d.saturating_sub(compare_only)).min(total), total));
                         });
                     }
                 });
                 if app.job_cancelled() {
                     break 'seasons;
                 }
-                done += eps.len();
+                done += eps.len() - compare_only;
                 let (mut prints, mut errors) = (vec![], vec![]);
                 for r in results {
                     match r.into_inner().unwrap().unwrap_or_else(|| Err("not read".into())) {
@@ -1000,7 +1008,7 @@ impl App {
                 }
                 let intros = intro::detect_season(&prints);
                 let mut db = app.db.lock().unwrap();
-                for (((id, ..), found_intro), error) in eps.iter().zip(intros).zip(errors) {
+                for (((id, ..), found_intro), error) in eps.iter().zip(intros).zip(errors).skip(compare_only) {
                     let Some(f) = db.items.get_mut(id).and_then(|i| i.file.as_mut()) else { continue };
                     match error {
                         None => {
@@ -1017,6 +1025,8 @@ impl App {
                         }
                     }
                 }
+                drop(db);
+                app.save();
             }
             elog!("intro detection ended: {taken} of {total} episodes took the old server's intro markers");
             app.save();
@@ -1078,6 +1088,10 @@ impl App {
     /// IMDb ratings from IMDb's own ratings file, for every movie and show with
     /// an IMDb id. The file is downloaded again when it is a week old.
     pub fn update_imdb_ratings(self: &Arc<Self>, force: bool) -> Result<String, String> {
+        self.imdb_update(force, crate::metadata::download_imdb_ratings)
+    }
+
+    fn imdb_update(self: &Arc<Self>, force: bool, download: fn(&Path) -> Result<(), String>) -> Result<String, String> {
         use crate::metadata;
         let file = self.data_dir.join("cache").join("imdb-ratings.tsv.gz");
         let age = std::fs::metadata(&file).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
@@ -1109,12 +1123,15 @@ impl App {
             }
             *job = Some(("Updating IMDb ratings".into(), 0, wanted.len()));
         }
+        let mut failed = None;
         let result = (|| {
             if stale || force {
-                if let Err(e) = metadata::download_imdb_ratings(&file) {
+                if let Err(e) = download(&file) {
                     if !file.exists() {
                         return Err(e);
                     }
+                    // The old file is used, but the update counts as failed, so it waits before trying again.
+                    failed = Some(e);
                 }
             }
             let ids: std::collections::HashSet<String> = wanted.keys().cloned().collect();
@@ -1134,6 +1151,10 @@ impl App {
             }
             Ok(format!("IMDb ratings updated for {} of {} titles", found.len(), wanted.len()))
         })();
+        let result = match (result, failed) {
+            (Ok(m), Some(e)) => Err(format!("{e} ({m} from the old file)")),
+            (r, _) => r,
+        };
         self.save();
         *self.job.lock().unwrap() = None;
         let mut p = self.meta_progress.lock().unwrap();
@@ -1235,8 +1256,11 @@ impl App {
                 let by_folder = || folder.as_ref().map(|(ft, fy)| metadata::search(&settings, kind, ft, fy.or(year)));
                 let mut found = None;
                 let mut best = None;
+                // A search that got no answer (no internet) is not a miss.
+                let mut folder_failed = false;
+                let mut by_folder_pick = || { let r = by_folder(); folder_failed |= matches!(r, Some(Err(_))); r.as_ref().and_then(pick) };
                 if folder_first {
-                    best = by_folder().as_ref().and_then(pick);
+                    best = by_folder_pick();
                 }
                 if best.is_none() {
                     let r = metadata::search(&settings, kind, &title, year);
@@ -1244,7 +1268,7 @@ impl App {
                     found = Some(r);
                 }
                 if best.is_none() && !folder_first {
-                    best = by_folder().as_ref().and_then(pick);
+                    best = by_folder_pick();
                 }
                 let found = found.unwrap_or_else(|| Ok(vec![]));
                 let tried = match &folder {
@@ -1255,7 +1279,7 @@ impl App {
                     Some(b) => (b.source, b.id),
                     None => {
                         let mut db = self.db.lock().unwrap();
-                        if let Some(it) = db.items.get_mut(&id) {
+                        if let Some(it) = db.items.get_mut(&id).filter(|_| found.is_ok() && !folder_failed) {
                             it.extra.insert("metadata_status".into(), json!("unmatched"));
                             it.extra.insert("metadata_checked_at".into(), json!(now()));
                             it.extra.insert("match_version".into(), json!(MATCH_VERSION));
@@ -1533,7 +1557,17 @@ impl App {
             if !self.settings().metadata_enabled && !force {
                 continue;
             }
-            self.meta_busy.lock().unwrap().push(id);
+            // Another worker is on this title right now (both would write the same poster): it waits its turn.
+            {
+                let mut busy = self.meta_busy.lock().unwrap();
+                if busy.contains(&id) {
+                    drop(busy);
+                    self.meta_queue.lock().unwrap().push_back((id, force));
+                    std::thread::sleep(Duration::from_millis(400));
+                    continue;
+                }
+                busy.push(id);
+            }
             let r = self.match_online(id, None, force);
             self.meta_busy.lock().unwrap().retain(|&b| b != id);
             {
@@ -2253,6 +2287,32 @@ pub fn redirect_to_https(bind: &str, port: u16, https_port: u16) -> Result<(), S
     Ok(())
 }
 
+/// Splits a season into the episodes that take the old server's intro marker (`known`) and those to listen to.
+/// Returns (known, listen, how many of the first in `listen` are known episodes only there to compare with).
+pub fn split_known<E: Clone>(eps: Vec<E>, known: impl Fn(&E) -> bool) -> (Vec<E>, Vec<E>, usize) {
+    let (known, mut listen): (Vec<E>, Vec<E>) = eps.into_iter().partition(|e| known(e));
+    // A single new episode has nothing to be compared with but the known ones (their markers stay).
+    if listen.len() != 1 || known.is_empty() {
+        return (known, listen, 0);
+    }
+    let skip = known.len();
+    listen.splice(0..0, known.iter().cloned());
+    (known, listen, skip)
+}
+
+/// Movies and shows without details go back in line at start: the line is lost on a restart, and a title
+/// missed recently is skipped by match_online until a week has passed (or the matcher learned more, MATCH_VERSION).
+pub fn details_retry_list(db: &Db) -> Vec<u64> {
+    db.items.values()
+        .filter(|i| matches!(i.kind, ItemKind::Movie | ItemKind::Show) && !i.extra.contains_key("metadata_source"))
+        .filter(|i| i.extra.get("unmatched_by_hand").and_then(|v| v.as_bool()) != Some(true))
+        // (The same test as `recent` in match_online: those would only be turned away.)
+        .filter(|i| !(i.extra.get("metadata_status").and_then(|v| v.as_str()) == Some("unmatched")
+            && i.extra.get("match_version").and_then(|v| v.as_u64()) == Some(MATCH_VERSION)
+            && i.extra.get("metadata_checked_at").and_then(|v| v.as_u64()).is_some_and(|t| now().saturating_sub(t) < 7 * 86400)))
+        .map(|i| i.id).collect()
+}
+
 pub fn start_background(app: &Arc<App>) {
     // Dashboard samples: processor, memory, bytes sent, streams.
     let a = app.clone();
@@ -2339,15 +2399,7 @@ pub fn start_background(app: &Arc<App>) {
     crate::downloads::start(app);
     // Watched state with a Plex server, both ways (when switched on).
     crate::plexsync::start(app);
-    // Movies not found before the matcher learned more (MATCH_VERSION) get one more try.
-    let retry: Vec<u64> = {
-        let db = app.db.lock().unwrap();
-        db.items.values()
-            .filter(|i| i.kind == ItemKind::Movie && !i.extra.contains_key("metadata_source"))
-            .filter(|i| i.extra.get("metadata_status").and_then(|v| v.as_str()) == Some("unmatched"))
-            .filter(|i| i.extra.get("match_version").and_then(|v| v.as_u64()) != Some(MATCH_VERSION))
-            .map(|i| i.id).collect()
-    };
+    let retry = details_retry_list(&app.db.lock().unwrap());
     if !retry.is_empty() {
         app.queue_online_details(&retry, false);
     }
@@ -2395,42 +2447,29 @@ pub fn start_background(app: &Arc<App>) {
             }
         }
     });
-    // Credits detection ("as soon as possible": within a minute of new files;
-    // "scheduled": once a day) and IMDb ratings (weekly file).
+    // Credits detection "as soon as possible" (within a minute of new files; "scheduled" runs
+    // in maintenance::tick) and IMDb ratings (weekly file).
     let a = app.clone();
     std::thread::spawn(move || {
-        let mut last_scheduled = Instant::now();
-        let mut last_intro = Instant::now();
         let mut imdb_retry = Instant::now();
         loop {
             std::thread::sleep(Duration::from_secs(60));
-            let behaviour = a.settings().credits_markers_behaviour;
-            let due = match behaviour.as_str() {
-                "asap" => true,
-                "scheduled" => last_scheduled.elapsed() >= Duration::from_secs(86400),
-                _ => false,
-            };
+            let due = a.settings().credits_markers_behaviour == "asap";
             // Credits and intros come last: only when no details are waiting or being fetched.
             let idle = a.meta_queue.lock().unwrap().is_empty() && a.meta_busy.lock().unwrap().is_empty() && a.job.lock().unwrap().is_none();
             let paused = a.auto_paused.load(AtomicOrdering::SeqCst);
             if due && idle && !paused {
                 let pending = a.credits_pending();
                 if !pending.is_empty() {
-                    last_scheduled = Instant::now();
                     let _ = a.detect_credits(pending, false);
                     continue;
                 }
             }
             // Intro detection: the same choices ("Generate intro video markers").
-            let intro_due = match a.settings().intro_markers_behaviour.as_str() {
-                "asap" => true,
-                "scheduled" => last_intro.elapsed() >= Duration::from_secs(86400),
-                _ => false,
-            };
+            let intro_due = a.settings().intro_markers_behaviour == "asap";
             if intro_due && idle && !paused {
                 let pending = a.intros_pending();
                 if !pending.is_empty() {
-                    last_intro = Instant::now();
                     let _ = a.detect_intros(pending, false);
                     continue;
                 }
@@ -2514,7 +2553,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let mut agent = String::new();
     let (mut product, mut device_name) = (String::new(), String::new());
     let (mut xff, mut real_ip, mut forwarded) = (Vec::new(), None, Vec::new());
-    let mut fetch_site = String::new();
+    let (mut fetch_site, mut origin) = (String::new(), None);
     for h in req.headers() {
         let f = h.field.as_str().as_str().to_ascii_lowercase();
         match f.as_str() {
@@ -2533,6 +2572,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
             "x-real-ip" => real_ip = Some(h.value.as_str().to_string()),
             "forwarded" => forwarded.push(h.value.as_str().to_string()),
             "sec-fetch-site" => fetch_site = h.value.as_str().to_ascii_lowercase(),
+            "origin" => origin = Some(h.value.as_str().to_ascii_lowercase()),
             _ => {}
         }
     }
@@ -2585,7 +2625,10 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         None => client_address(req.remote_addr().map(|a| a.ip()), &xff, real_ip.as_deref(), &forwarded, &trusted),
     };
     // The browser says the request comes from a page of another website (a link, form or script there).
-    let other_site = matches!(fetch_site.as_str(), "cross-site" | "same-site");
+    // Over plain http there is no Sec-Fetch-Site, so then an Origin for another address counts too.
+    // shortcut: behind a reverse proxy on plain http that rewrites Host, the web app's own posts are refused; keep Host (or use https) there.
+    let other_site = if fetch_site.is_empty() { origin.is_some_and(|o| o.split_once("://").map(|(_, h)| h) != Some(host.to_ascii_lowercase().as_str())) }
+        else { matches!(fetch_site.as_str(), "cross-site" | "same-site") };
     // Networks that need no sign-in act as the first admin (only with an address that is believed,
     // and never for another website's page).
     let user = if user.is_none() && !other_site && remote_trusted && !no_auth.trim().is_empty() && remote.is_some_and(|a| ip_in_list(&no_auth, a)) {
@@ -3538,7 +3581,7 @@ pub(crate) mod tests {
     #[test]
     fn other_websites_cannot_read_the_answers() {
         let (app, root) = test_app("cors");
-        let got = ask(&app, "GET /api/home HTTP/1.1\r\nHost: x\r\nOrigin: https://evil.example\r\nConnection: close\r\n\r\n");
+        let got = ask(&app, "GET /identity HTTP/1.1\r\nHost: x\r\nOrigin: https://evil.example\r\nConnection: close\r\n\r\n");
         assert!(got.starts_with("HTTP/1.1 200"), "{got}");
         assert!(!got.to_ascii_lowercase().contains("access-control-allow-origin"), "another website may read the answer: {got}");
         let _ = std::fs::remove_dir_all(&root);
@@ -3555,6 +3598,11 @@ pub(crate) mod tests {
         let settings = |site: &str| ask(&app, &format!("GET /api/settings HTTP/1.1\r\nHost: x\r\nSec-Fetch-Site: {site}\r\nConnection: close\r\n\r\n"));
         assert!(settings("same-origin").starts_with("HTTP/1.1 200"));
         assert!(settings("cross-site").starts_with("HTTP/1.1 401"), "another website acted as the admin");
+        // Over plain http browsers send no Sec-Fetch-Site, but they do send Origin with a post.
+        let post = |origin: &str| ask(&app, &format!("POST /api/home/2/login HTTP/1.1\r\nHost: x:8484\r\n{origin}Content-Length: 0\r\nConnection: close\r\n\r\n"));
+        assert!(post("Origin: http://evil.example\r\n").starts_with("HTTP/1.1 403"), "a form on another website was let through over http");
+        assert!(post("Origin: http://X:8484\r\n").starts_with("HTTP/1.1 200"), "the web app itself was refused over http");
+        assert!(post("").starts_with("HTTP/1.1 200"), "an app that sends no Origin was refused");
         let _ = std::fs::remove_dir_all(&root);
     }
 }
@@ -3624,5 +3672,99 @@ AAAA
         assert_eq!(client_address(proxy, &v(&["garbage"]), None, &[], "172.18.0.2").1, false);
         // The proxy forgot the header: not trusted, so never "home network".
         assert_eq!(client_address(proxy, &[], None, &[], "172.16.0.0/12").1, false);
+    }
+}
+
+#[cfg(test)]
+mod background_tests {
+    use super::*;
+    use crate::server::tests::test_app;
+
+    fn item(id: u64, kind: &str, extra: Value) -> Item {
+        serde_json::from_value(json!({"id": id, "section_id": 1, "kind": kind, "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0, "extra": extra})).unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn many_new_titles_do_not_start_a_plugin_for_each_at_once() {
+        let (app, root) = test_app("plugin-storm");
+        let dir = root.join("plugins").join("counter");
+        std::fs::create_dir_all(dir.join("run")).unwrap();
+        // Records how many copies of itself are running.
+        std::fs::write(dir.join("plugin.json"), r#"{"id": "counter", "name": "counter", "hooks": ["library.item.added"], "command": ["sh", "-c", "touch run/$$; ls run | wc -l >> log; sleep 0.01; rm run/$$"]}"#).unwrap();
+        app.plugins.lock().unwrap().reload();
+        app.db.lock().unwrap().plugins.insert("counter".into(), serde_json::from_value(json!({"enabled": true})).unwrap());
+        for id in 0..500 { app.fire("library.item.added", json!({"id": id})); }
+        let log = dir.join("log");
+        let lines = || std::fs::read_to_string(&log).unwrap_or_default().lines().count();
+        for _ in 0..600 { if lines() >= 500 { break; } std::thread::sleep(Duration::from_millis(50)); }
+        let most = std::fs::read_to_string(&log).unwrap_or_default().lines().filter_map(|l| l.trim().parse::<usize>().ok()).max().unwrap_or(0);
+        let n = lines();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(n, 500, "not every event reached the plugin");
+        assert!(most <= crate::plugins::MAX_RUNNING, "{most} plugin programs ran at once");
+    }
+
+    #[test]
+    fn titles_without_details_are_queued_again_at_start() {
+        let mut db = Db::default();
+        let old = MATCH_VERSION - 1;
+        for i in [item(1, "movie", json!({})), item(2, "show", json!({})), item(3, "movie", json!({"metadata_status": "unmatched", "match_version": old})),
+            item(4, "movie", json!({"metadata_source": "tmdb", "metadata_id": "1"})), item(5, "movie", json!({"unmatched_by_hand": true})), item(6, "episode", json!({})),
+            // Missed by this matcher: not again within a week.
+            item(7, "movie", json!({"metadata_status": "unmatched", "match_version": MATCH_VERSION, "metadata_checked_at": now() - 86400})),
+            item(8, "movie", json!({"metadata_status": "unmatched", "match_version": MATCH_VERSION, "metadata_checked_at": now() - 8 * 86400}))] {
+            db.items.insert(i.id, i);
+        }
+        let mut got = details_retry_list(&db);
+        got.sort();
+        assert_eq!(got, vec![1, 2, 3, 8]);
+    }
+
+    #[test]
+    fn a_title_a_worker_is_busy_with_waits_for_it() {
+        let (app, root) = test_app("meta-busy");
+        app.db.lock().unwrap().items.insert(7, item(7, "movie", json!({})));
+        app.meta_busy.lock().unwrap().push(7);
+        app.meta_queue.lock().unwrap().push_back((7, true));
+        let a = app.clone();
+        std::thread::spawn(move || a.metadata_worker());
+        std::thread::sleep(Duration::from_millis(1500));
+        let (queued, done) = (app.meta_queue.lock().unwrap().iter().any(|q| q.0 == 7), app.meta_progress.lock().unwrap().done);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(done, 0, "a second worker looked the title up while another one was on it");
+        assert!(queued, "the title was dropped instead of waiting");
+    }
+
+    #[test]
+    fn a_new_episode_is_compared_with_the_episodes_plex_marked() {
+        // 9 episodes with the old server's marker and 1 new one: the new one is listened to with them.
+        let (known, listen, skip) = split_known((1..=10).collect::<Vec<u32>>(), |e| *e <= 9);
+        assert_eq!((known.len(), listen.len(), skip), (9, 10, 9));
+        // Two new ones are enough by themselves.
+        let (known, listen, skip) = split_known((1..=5).collect::<Vec<u32>>(), |e| *e <= 3);
+        assert_eq!((known.len(), listen, skip), (3, vec![4, 5], 0));
+        // A single episode with nothing to compare with stays alone.
+        let (_, listen, skip) = split_known(vec![1u32], |_| false);
+        assert_eq!((listen, skip), (vec![1], 0));
+    }
+
+    #[test]
+    fn a_failed_imdb_download_with_an_old_file_is_reported_so_it_waits() {
+        let (app, root) = test_app("imdb-stale");
+        let file = app.data_dir.join("cache").join("imdb-ratings.tsv.gz");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        {
+            use std::io::Write;
+            let mut gz = flate2::write::GzEncoder::new(std::fs::File::create(&file).unwrap(), flate2::Compression::default());
+            gz.write_all(b"tconst\taverageRating\tnumVotes\ntt0000001\t7.5\t100\n").unwrap();
+        }
+        std::fs::File::options().write(true).open(&file).unwrap().set_modified(std::time::SystemTime::now() - Duration::from_secs(30 * 86400)).unwrap();
+        app.db.lock().unwrap().items.insert(1, item(1, "movie", json!({"ids": {"imdb": "tt0000001"}})));
+        let r = app.imdb_update(true, |_| Err("offline".into()));
+        let rating = app.db.lock().unwrap().items[&1].extra.get("ratings").cloned();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(r.is_err(), "the scheduler would try again in a minute: {r:?}");
+        assert!(rating.is_some(), "the old file's ratings were not used");
     }
 }
