@@ -64,8 +64,8 @@ DE = {
 LANG = "en"
 
 
-def t(text, **kw):
-    s = DE.get(text, text) if LANG.startswith("de") else text
+def t(msg, **kw):
+    s = DE.get(msg, msg) if LANG.startswith("de") else msg
     return s.format(**kw) if kw else s
 
 
@@ -120,6 +120,7 @@ class TraktError(Exception):
     def __init__(self, code, text):
         super().__init__(t("Trakt answered {code}: {text}", code=code, text=text))
         self.code = code
+        self.text = text
 
 
 def call(settings, method, path, body=None, token=None):
@@ -140,6 +141,8 @@ def call(settings, method, path, body=None, token=None):
     except urllib.error.HTTPError as e:
         text = e.read().decode("utf-8", "replace")[:300]
         raise TraktError(e.code, text or e.reason)
+    except OSError as e:  # no answer at all (URLError, timeout); code 0 never counts as a disconnect
+        raise TraktError(0, str(getattr(e, "reason", e)))
 
 
 def configured(settings):
@@ -151,7 +154,8 @@ def access_token(settings, st, user):
     u = st["users"].get(user)
     if not u:
         return None
-    if u.get("expires_at", 0) - time.time() < 24 * 3600 and u.get("refresh_token"):
+    # Trakt's tokens now live only a day or a week, and each refresh replaces the refresh token, so refresh only at the end.
+    if u.get("expires_at", 0) - time.time() < 600 and u.get("refresh_token"):
         try:
             tok = call(settings, "POST", "/oauth/token", {
                 "refresh_token": u["refresh_token"], "client_id": settings["client_id"],
@@ -159,7 +163,9 @@ def access_token(settings, st, user):
             keep_token(u, tok)
             save(st)
         except TraktError as e:
-            if e.code in (400, 401):  # the login was taken back on Trakt
+            # Only a refresh token Trakt no longer knows means the login is gone; a wrong Client
+            # Secret (invalid_client) or a hiccup must not throw away everyone's login.
+            if e.code in (400, 401) and "invalid_grant" in e.text:
                 st["users"].pop(user, None)
                 save(st)
                 return None
@@ -468,7 +474,10 @@ def main():
     if event == "api.call":
         out = on_call(data, settings)
     elif event.startswith("playback."):
-        out = on_playback(event, data, settings)
+        try:
+            out = on_playback(event, data, settings)
+        except TraktError as e:
+            sys.exit(str(e))  # one line on stderr and exit 1, instead of a traceback
     else:
         out = {"skipped": event}
     print(json.dumps(out))

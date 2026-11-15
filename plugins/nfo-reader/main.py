@@ -20,14 +20,18 @@ def candidates(item):
     names = [stem + ".nfo", "movie.nfo"]
     out = [os.path.join(folder, n) for n in names]
     if item.get("kind") == "episode":
-        # tvshow.nfo lives in the show folder (one or two levels up)
+        # tvshow.nfo lives in the show folder: this one (no season folders) or the one above
+        out.append(os.path.join(folder, "tvshow.nfo"))
         out.append(os.path.join(os.path.dirname(folder), "tvshow.nfo"))
     return out
 
 
 def read_nfo(path):
     try:
-        root = ET.parse(path).getroot()
+        with open(path, "rb") as f:  # bytes, so the file's own encoding declaration still counts
+            s = f.read()
+        # Kodi allows a TMDB/IMDb link after the XML, so cut at the last closing tag.
+        root = ET.fromstring(s[:s.rfind(b">") + 1])
     except Exception:
         return None
     text = lambda tag: (root.findtext(tag) or "").strip()
