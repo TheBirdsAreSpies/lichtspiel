@@ -20,7 +20,7 @@ use tiny_http::{Response, StatusCode};
 
 pub fn new_token(db: &mut Db, user_id: u64, device: &str) -> String {
     let t = db::random_hex(20);
-    db.tokens.push(db::Token { token: t.clone(), user_id, created_at: now(), device: device.into(), last_used: 0, last_device: String::new(), last_ip: String::new() });
+    db.tokens.push(db::Token { token: auth::token_hash(&t), user_id, created_at: now(), device: device.chars().take(100).collect(), last_used: 0, last_device: String::new(), last_ip: String::new() });
     t
 }
 
@@ -49,6 +49,15 @@ pub fn setup(app: &Arc<App>, ctx: &Ctx) -> Resp {
 static LOGIN_FAILS: std::sync::Mutex<Option<std::collections::HashMap<String, (u32, u64)>>> = std::sync::Mutex::new(None);
 /// The last code step accepted per user: a code works once.
 static USED_STEPS: std::sync::Mutex<Option<std::collections::HashMap<u64, u64>>> = std::sync::Mutex::new(None);
+
+/// Takes a code step for a user; false if it (or a later one) was used already.
+fn use_step(user: u64, step: u64) -> bool {
+    let mut g = USED_STEPS.lock().unwrap_or_else(|e| e.into_inner());
+    let last = g.get_or_insert_with(Default::default).entry(user).or_insert(0);
+    if step <= *last { return false; }
+    *last = step;
+    true
+}
 
 fn login_keys(ctx: &Ctx, name: &str) -> [(String, u32); 2] {
     [(format!("user:{}", name.trim().to_lowercase()), 5), (format!("ip:{}", ctx.remote.map(|a| a.to_string()).unwrap_or_default()), 30)]
@@ -92,13 +101,11 @@ pub fn login(app: &Arc<App>, ctx: &Ctx) -> Resp {
                     return js(401, json!({"error": "Enter the code from your authenticator app", "status": 401, "needs_code": true}));
                 }
                 let step = crate::totp::matching_step(&u.totp_secret, &code, now());
-                let fresh = step.is_some_and(|s| USED_STEPS.lock().unwrap().get_or_insert_with(Default::default).get(&u.id).is_none_or(|last| s > *last));
-                if !fresh {
+                if !step.is_some_and(|s| use_step(u.id, s)) {
                     std::thread::sleep(Duration::from_millis(400));
                     login_failed(&keys);
                     return js(401, json!({"error": if step.is_some() { "That code was already used; wait for the next one" } else { "That code is wrong" }, "status": 401, "needs_code": true}));
                 }
-                if let Some(s) = step { USED_STEPS.lock().unwrap().get_or_insert_with(Default::default).insert(u.id, s); }
             }
             if let Some(m) = LOGIN_FAILS.lock().unwrap().as_mut() { m.remove(&keys[0].0); }
             let mut db = app.db.lock().unwrap();
@@ -585,7 +592,7 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     }
     if let Some(r) = stop_refusal(app, user, it.id) { return r; }
     if let Some(r) = remote_refusal(app, ctx, user, it.id) { return r; }
-    let _turn = STARTING.lock().unwrap();
+    let _turn = STARTING.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(r) = check_transcode_allowed(app, user, &d.method) {
         return r;
     }
@@ -621,7 +628,7 @@ pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     }
     if let Some(r) = stop_refusal(app, user, it.id) { return r; }
     if let Some(r) = remote_refusal(app, ctx, user, it.id) { return r; }
-    let _turn = STARTING.lock().unwrap();
+    let _turn = STARTING.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(r) = check_transcode_allowed(app, user, &d.method) {
         return r;
     }
@@ -923,14 +930,14 @@ static PICTURES: (std::sync::Mutex<usize>, std::sync::Condvar) = (std::sync::Mut
 pub fn make_picture(ffmpeg: &str, out: &Path, args: impl FnOnce(&str) -> Vec<String>) -> bool {
     let (count, freed) = &PICTURES;
     {
-        let n = count.lock().unwrap();
-        let (mut n, waited) = freed.wait_timeout_while(n, Duration::from_secs(20), |n| *n >= PICTURES_AT_ONCE).unwrap();
+        let n = count.lock().unwrap_or_else(|e| e.into_inner());
+        let (mut n, waited) = freed.wait_timeout_while(n, Duration::from_secs(20), |n| *n >= PICTURES_AT_ONCE).unwrap_or_else(|e| e.into_inner());
         if waited.timed_out() { return false; }
         *n += 1;
     }
     let tmp = out.with_extension(format!("{}.tmp.jpg", db::random_hex(4)));
     let ran = Command::new(ffmpeg).args(args(&tmp.to_string_lossy())).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success());
-    *count.lock().unwrap() -= 1;
+    *count.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
     freed.notify_one();
     let done = ran && std::fs::metadata(&tmp).is_ok_and(|m| m.len() > 0) && std::fs::rename(&tmp, out).is_ok();
     if !done { let _ = std::fs::remove_file(&tmp); }
@@ -1424,6 +1431,21 @@ pub fn lyrics(app: &Arc<App>, user: &User, iid: &str) -> Resp {
 }
 
 #[cfg(test)]
+mod step_tests {
+    /// Parallel sign-ins with the same code: only one may use it.
+    #[test]
+    fn a_code_step_is_taken_once_even_in_parallel() {
+        for user in 1_000_000..1_000_200u64 {
+            let gate = std::sync::Arc::new(std::sync::Barrier::new(8));
+            let won: usize = (0..8).map(|_| { let g = gate.clone(); std::thread::spawn(move || { g.wait(); super::use_step(user, 7) }) })
+                .collect::<Vec<_>>().into_iter().map(|t| t.join().unwrap() as usize).sum();
+            assert_eq!(won, 1, "user {user}: the same code worked {won} times");
+        }
+        assert!(!super::use_step(1_000_000, 6) && super::use_step(1_000_000, 8));
+    }
+}
+
+#[cfg(test)]
 mod theme_tests {
     use super::is_theme_name;
 
@@ -1564,6 +1586,19 @@ mod session_tests {
         let running = app.active_transcodes();
         end_all(&app, &root);
         assert_eq!(running, 1, "{running} conversions run with a limit of one (answers {codes:?})");
+    }
+
+    #[test]
+    fn a_crash_while_starting_or_making_a_picture_does_not_block_the_next_ones() {
+        let (app, root, user) = app("poisoned-locks", 0);
+        // A thread that panics while it holds the locks.
+        let _ = std::thread::spawn(|| { let _a = STARTING.lock(); let _b = PICTURES.0.lock(); panic!("boom") }).join();
+        assert!(STARTING.is_poisoned() && PICTURES.0.is_poisoned());
+        let code = std::panic::catch_unwind(|| hls_start(&app, &ctx(&[("redirect", "0")]), &user, "1").status_code().0);
+        let pic = std::panic::catch_unwind(|| make_picture("false", &root.join("p.jpg"), |_| vec![]));
+        end_all(&app, &root);
+        assert_eq!(code.ok(), Some(200), "a video could not start after an earlier crash");
+        assert_eq!(pic.ok(), Some(false), "pictures could not be made after an earlier crash");
     }
 
     #[test]

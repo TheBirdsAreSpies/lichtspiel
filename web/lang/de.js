@@ -1401,6 +1401,7 @@ I18N.add('de', 'Deutsch', {
     'There is no optimized version': 'Es gibt keine optimierte Version',
     'Unknown quality': 'Unbekannte Qualität',
     'Unknown kind of problem': 'Unbekannte Art von Problem',
+    'You have many open problem reports; wait until an admin has looked at them': 'Du hast viele offene Problemmeldungen; warte, bis ein Admin sie angesehen hat',
     'No such report': 'Diese Meldung gibt es nicht',
     // ---------- left menu, a library's "⋯" menu, trash, deleting files
     'LIBRARIES': 'MEDIATHEKEN',

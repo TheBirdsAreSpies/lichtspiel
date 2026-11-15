@@ -1008,6 +1008,11 @@ pub fn watched_at_ms(behaviour: u32, threshold_percent: u32, duration: u64, cred
 }
 
 impl Db {
+    /// Older versions kept sign-in tokens as they were given out; keep only their hash (they still work).
+    pub fn hash_old_tokens(&mut self) {
+        for t in self.tokens.iter_mut().filter(|t| t.token.len() != 64) { t.token = crate::auth::token_hash(&t.token); }
+    }
+
     /// Credits markers of an item: set by hand (extra.credits_ms), else from
     /// chapters, but only when credits markers are generated at all (server
     /// setting not "never" and the library's credits detection on).

@@ -158,8 +158,10 @@ pub fn invoke(plugin: &Plugin, settings: &serde_json::Map<String, Value>, event:
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("could not start {}: {e}", program.display()))?;
+    // Write the input on its own thread: a plugin that never reads it would block us before the timeout.
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(input.to_string().as_bytes());
+        let bytes = input.to_string().into_bytes();
+        std::thread::spawn(move || { let _ = stdin.write_all(&bytes); });
     }
     // Read both outputs on their own threads so a chatty plugin can't block.
     let reader = |pipe: Option<Box<dyn std::io::Read + Send>>| {
@@ -259,4 +261,22 @@ pub fn example_plugin_main() {
         _ => json!({"ok": true}),
     };
     println!("{answer}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn timeout_applies_when_plugin_never_reads_input() {
+        let m: Manifest = serde_json::from_value(json!({"id": "deaf", "name": "deaf", "command": ["sh", "-c", "sleep 30"], "timeout_seconds": 1})).unwrap();
+        let p = Plugin { manifest: m, dir: std::env::temp_dir() };
+        // Much bigger than a pipe buffer, so writing it blocks while nobody reads.
+        let data = json!({"body": "x".repeat(400_000)});
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || { let _ = tx.send(invoke(&p, &serde_json::Map::new(), "api.call", &data, &Value::Null)); });
+        let r = rx.recv_timeout(Duration::from_secs(5)).expect("the plugin call did not come back within its timeout");
+        assert!(r.unwrap_err().contains("took longer"));
+    }
 }

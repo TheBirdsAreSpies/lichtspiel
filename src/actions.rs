@@ -50,6 +50,9 @@ pub fn history(app: &Arc<App>, user: &User, iid: u64) -> Resp {
 
 // ---------------------------------------------------------------- problem reports
 
+/// Open reports one person may have at a time; more are refused until an admin deals with them.
+pub const REPORTS_OPEN_MAX: usize = 50;
+
 pub const PROBLEM_KINDS: &[&str] = &["playback", "video", "audio", "subtitles", "metadata", "other"];
 
 pub fn report_problem(app: &Arc<App>, ctx: &Ctx, user: &User, iid: u64) -> Resp {
@@ -59,6 +62,7 @@ pub fn report_problem(app: &Arc<App>, ctx: &Ctx, user: &User, iid: u64) -> Resp 
     let mut db = app.db.lock().unwrap();
     let Some(it) = db.items.get(&iid) else { return fail(404, "Not found") };
     if !db.can_see_item(user, it) { return fail(403, "You don't have access to this library"); }
+    if db.reports.iter().filter(|r| r.user_id == user.id && !r.resolved).count() >= REPORTS_OPEN_MAX { return fail(429, "You have many open problem reports; wait until an admin has looked at them"); }
     let title = it.title.clone();
     let id = db.reports.iter().map(|r| r.id).max().unwrap_or(0) + 1;
     db.reports.push(db::ProblemReport { id, user_id: user.id, item_id: iid, kind: kind.clone(), note: note.clone(), at: now(), resolved: false });
@@ -469,7 +473,7 @@ pub fn together_create(app: &Arc<App>, ctx: &Ctx, user: &User) -> Resp {
     let mut map = rooms().lock().unwrap();
     forget_old_rooms(&mut map);
     let code = loop {
-        let c = db::random_hex(4);
+        let c = db::random_hex(8);
         if !map.contains_key(&c) { break c; }
     };
     let mut members = BTreeMap::new();
@@ -551,6 +555,32 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         false
+    }
+
+    #[test]
+    fn one_person_cannot_file_endless_problem_reports() {
+        let (app, root) = app_with_fake_ffmpeg("report-flood", "exit 0");
+        let user: User = serde_json::from_value(json!({"id": 5, "username": "kid", "admin": false, "password_hash": "", "salt": "", "created_at": 0})).unwrap();
+        let ctx = crate::server::Ctx { method: "POST".into(), path: String::new(), params: vec![], body: json!({"kind": "video", "note": "x".repeat(2000)}),
+            user: None, host: String::new(), range: None, token: None, remote: None, remote_trusted: true, lan_extra: false, device: String::new() };
+        let codes: Vec<u16> = (0..60).map(|_| report_problem(&app, &ctx, &user, 1).status_code().0).collect();
+        let stored = app.db.lock().unwrap().reports.len();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(stored, REPORTS_OPEN_MAX, "answers {codes:?}");
+        assert_eq!(codes.last(), Some(&429));
+    }
+
+    #[test]
+    fn watch_together_codes_are_too_long_to_guess() {
+        let (app, root) = app_with_fake_ffmpeg("together-code", "exit 0");
+        let user: User = serde_json::from_value(json!({"id": 5, "username": "kid", "admin": false, "password_hash": "", "salt": "", "created_at": 0})).unwrap();
+        let ctx = crate::server::Ctx { method: "POST".into(), path: String::new(), params: vec![], body: json!({"item": "1"}),
+            user: None, host: String::new(), range: None, token: None, remote: None, remote_trusted: true, lan_extra: false, device: String::new() };
+        let r = together_create(&app, &ctx, &user);
+        let v: Value = serde_json::from_slice(&{ let mut b = vec![]; std::io::Read::read_to_end(&mut r.into_reader(), &mut b).unwrap(); b }).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        let code = v["code"].as_str().unwrap_or_default();
+        assert!(code.len() >= 16, "the watch-together code {code:?} has less than 64 bits");
     }
 
     #[test]

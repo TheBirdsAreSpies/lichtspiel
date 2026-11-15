@@ -300,7 +300,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("POST", ["api", "logout"]) => {
             let mut db = app.db.lock().unwrap();
             match &ctx.token {
-                Some(t) => db.tokens.retain(|x| &x.token != t),
+                Some(t) => { let h = auth::token_hash(t); db.tokens.retain(|x| x.token != h) }
                 None => db.tokens.retain(|x| x.user_id != user.id),
             }
             drop(db);
@@ -1626,9 +1626,10 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["api", "tokens"]) => {
             let db = app.db.lock().unwrap();
+            let mine = ctx.token.as_deref().map(auth::token_hash);
             let list: Vec<Value> = db.tokens.iter().filter(|t| t.user_id == user.id).map(|t| json!({
-                "id": auth::token_id(&t.token), "device": t.device, "created_at": t.created_at, "last_used": t.last_used, "last_device": t.last_device, "last_ip": t.last_ip,
-                "current": ctx.token.as_deref() == Some(t.token.as_str()),
+                "id": auth::stored_token_id(&t.token), "device": t.device, "created_at": t.created_at, "last_used": t.last_used, "last_device": t.last_device, "last_ip": t.last_ip,
+                "current": mine.as_ref() == Some(&t.token),
             })).collect();
             ok(json!({"tokens": list}))
         }
@@ -1646,9 +1647,10 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             // {all: true} also signs out every other device and script.
             let all = ctx.body.get("all").and_then(Value::as_bool).unwrap_or(false) || ctx.param("all") == Some("1");
             let mut db = app.db.lock().unwrap();
-            let device = db.tokens.iter().find(|t| ctx.token.as_deref() == Some(t.token.as_str())).map(|t| t.device.clone()).unwrap_or_default();
+            let mine = ctx.token.as_deref().map(auth::token_hash);
+            let device = db.tokens.iter().find(|t| mine.as_ref() == Some(&t.token)).map(|t| t.device.clone()).unwrap_or_default();
             let before = db.tokens.len();
-            db.tokens.retain(|t| t.user_id != user.id || (!all && ctx.token.as_deref() != Some(t.token.as_str())));
+            db.tokens.retain(|t| t.user_id != user.id || (!all && mine.as_ref() != Some(&t.token)));
             let revoked = before - db.tokens.len();
             let t = new_token(&mut db, user.id, &device);
             drop(db);
@@ -1658,7 +1660,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("DELETE", ["api", "tokens", tid]) => {
             let mut db = app.db.lock().unwrap();
             let before = db.tokens.len();
-            db.tokens.retain(|t| t.user_id != user.id || auth::token_id(&t.token) != *tid);
+            db.tokens.retain(|t| t.user_id != user.id || auth::stored_token_id(&t.token) != *tid);
             if db.tokens.len() == before { return fail(404, "No such token"); }
             drop(db);
             app.save();

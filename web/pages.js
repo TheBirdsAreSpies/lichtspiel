@@ -1789,6 +1789,8 @@ async function startTheme(id) {
   if (THEME.id === id) return;
   THEME.id = id;
   const tk = await ticket('item=' + id).catch(() => null);
+  // No ticket (offline for a moment): let the next visit or redraw try again.
+  if (!tk && THEME.id === id) THEME.id = null;
   // (Left the page, or the player opened, while the ticket was on its way.)
   if (!tk || THEME.id !== id || player.style.display === 'flex') return;
   const a = new Audio(withTicket(`/library/metadata/${id}/theme`, tk));

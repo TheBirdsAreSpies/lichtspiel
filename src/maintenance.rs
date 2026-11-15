@@ -96,7 +96,7 @@ pub fn report(app: &App) -> Resp {
         for s in &db.sections { line(format!("  library {} \"{}\" ({:?}): {}", s.id, s.name, s.kind, s.paths.join("; "))); }
         let mut st = serde_json::to_value(&db.settings).unwrap_or_default();
         if let Some(o) = st.as_object_mut() {
-            for (k, v) in o.iter_mut() { if k.contains("key") || k.contains("token") || k.contains("password") { if v.as_str().is_some_and(|s| !s.is_empty()) { *v = json!("(set)"); } } }
+            for (k, v) in o.iter_mut() { if ["key", "token", "password", "secret"].iter().any(|w| k.contains(w)) && v.as_str().is_some_and(|s| !s.is_empty()) { *v = json!("(set)"); } }
         }
         line(format!("settings: {}", serde_json::to_string_pretty(&st).unwrap_or_default()));
         line(format!("transcoder: {}", crate::transcode::detect(&db.settings)));
@@ -174,6 +174,7 @@ pub fn restore(app: &App, name: &str) -> Result<(), String> {
     })();
     for ext in ["", "-wal", "-shm"] { let _ = std::fs::remove_file(app.data_dir.join(format!("restore-check.db{ext}"))); }
     let mut loaded = loaded?;
+    loaded.hash_old_tokens();
     backup(app)?;
     loaded.items.mark_all();
     loaded.views.mark_all();
@@ -310,6 +311,31 @@ pub fn tick(app: &std::sync::Arc<App>) {
 #[cfg(test)]
 mod tests {
     use super::{in_window, parse_loudness};
+    #[test]
+    fn the_support_report_hides_secrets() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-report-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = crate::server::App::open(&root.join("data"));
+        { let mut db = app.db.lock().unwrap(); db.settings.relay_secret = "relay-s3cret".into(); db.settings.tmdb_api_key = "tmdb-s3cret".into(); db.settings.omdb_api_key = "omdb-s3cret".into(); }
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut super::report(&app).into_reader(), &mut text).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(text.contains("\"relay_secret\": \"(set)\""), "{text}");
+        assert!(!text.contains("s3cret"), "a secret is in the support report");
+    }
+    #[test]
+    fn an_old_backup_keeps_its_sign_ins_as_hashes() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-restore-token-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = crate::server::App::open(&root.join("data"));
+        // A backup made by an older version, which kept the token as it was given out.
+        app.db.lock().unwrap().tokens.push(crate::db::Token { token: "a".repeat(40), user_id: 1, created_at: 0, device: String::new(), last_used: 0, last_device: String::new(), last_ip: String::new() });
+        let name = std::path::Path::new(&super::backup(&app).unwrap()).file_name().unwrap().to_string_lossy().to_string();
+        super::restore(&app, &name).unwrap();
+        let token = app.db.lock().unwrap().tokens[0].token.clone();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(token, crate::auth::token_hash(&"a".repeat(40)));
+    }
     #[test]
     fn cleanup_only_removes_our_own_conversion_folders() {
         let root = std::env::temp_dir().join(format!("lichtspiel-cleanup-test-{}", std::process::id()));

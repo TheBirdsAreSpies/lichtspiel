@@ -199,6 +199,7 @@ impl App {
         install_bundled_plugins(&data_dir.join("plugins"));
         let (store, mut db, from_json) = open_library(data_dir);
         if db.ticket_key.is_empty() { db.ticket_key = crate::db::random_hex(32); }
+        db.hash_old_tokens();
         // Age ratings and genres in one spelling each.
         let ids: Vec<u64> = db.items.values().filter(|it| {
             let mut c = (*it).clone();
@@ -2491,12 +2492,14 @@ pub fn device_label(product: &str, device: &str, params: &[(String, String)], ag
     let product = if product.trim().is_empty() { param("X-Plex-Product") } else { product.trim().to_string() };
     let mut device = if device.trim().is_empty() { param("X-Plex-Device-Name") } else { device.trim().to_string() };
     if device.is_empty() { device = param("X-Plex-Device"); }
-    match (product.is_empty(), device.is_empty() || device == product) {
+    let label = match (product.is_empty(), device.is_empty() || device == product) {
         (false, false) => format!("{product} — {device}"),
         (false, true) => product,
         (true, false) => device,
         (true, true) => crate::stats::short_agent(agent),
-    }
+    };
+    // The caller picks these headers; keep only what fits in the list of devices.
+    label.chars().take(100).collect()
 }
 
 fn handle(app: Arc<App>, mut req: tiny_http::Request) {
@@ -2558,7 +2561,8 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let user = token.as_ref().and_then(|t| {
         let mut db = app.db.lock().unwrap();
         let at = now();
-        let tk = db.tokens.iter_mut().find(|x| &x.token == t)?;
+        let hash = crate::auth::token_hash(t);
+        let tk = db.tokens.iter_mut().find(|x| x.token == hash)?;
         // The list of devices says when each was used last (written at most once a minute).
         if at.saturating_sub(tk.last_used) > 60 { tk.last_used = at; tk.last_device = device.clone(); tk.last_ip = peer.clone(); }
         let uid = tk.user_id;
@@ -2569,7 +2573,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         Some((_, t)) if user.is_none() && matches!(method.as_str(), "GET" | "HEAD") => {
             let db = app.db.lock().unwrap();
             crate::auth::read_ticket(&db.ticket_key, t, now())
-                .filter(|(uid, tid, scope)| crate::auth::ticket_scope(&path).as_ref() == Some(scope) && db.tokens.iter().any(|x| x.user_id == *uid && crate::auth::token_id(&x.token) == *tid))
+                .filter(|(uid, tid, scope)| crate::auth::ticket_scope(&path).as_ref() == Some(scope) && db.tokens.iter().any(|x| x.user_id == *uid && crate::auth::stored_token_id(&x.token) == tid))
                 .and_then(|(uid, ..)| db.user(uid).cloned())
         }
         _ => user,
@@ -3241,6 +3245,47 @@ pub(crate) mod tests {
         let mut got = String::new();
         let _ = c.read_to_string(&mut got);
         got
+    }
+
+    #[test]
+    fn sign_in_tokens_are_stored_only_as_a_hash() {
+        let (app, root) = test_app("token-hash");
+        let (new, old) = {
+            let mut db = app.db.lock().unwrap();
+            // A token saved by an older version, as it was given out.
+            let old = crate::db::random_hex(20);
+            db.tokens.push(crate::db::Token { token: old.clone(), user_id: 2, created_at: 0, device: String::new(), last_used: 0, last_device: String::new(), last_ip: String::new() });
+            (crate::handlers::new_token(&mut db, 1, "test"), old)
+        };
+        app.save();
+        drop(app);
+        let app = App::open(&root);
+        app.save();
+        let stored = serde_json::to_string(&app.db.lock().unwrap().tokens).unwrap();
+        assert!(!stored.contains(&new) && !stored.contains(&old), "a sign-in token is stored as it is: {stored}");
+        for (t, who) in [(&new, "admin"), (&old, "kid")] {
+            let r = ask(&app, &format!("GET /api/me HTTP/1.1\r\nHost: x\r\nX-Token: {t}\r\nConnection: close\r\n\r\n"));
+            assert!(r.contains(&format!("\"username\":\"{who}\"")), "the {who} token stopped working: {r}");
+        }
+        // The list of devices names the current one, and it can be signed out by its id.
+        let list = ask(&app, &format!("GET /api/tokens HTTP/1.1\r\nHost: x\r\nX-Token: {new}\r\nConnection: close\r\n\r\n"));
+        assert!(list.contains(&format!("\"id\":\"{}\"", crate::auth::token_id(&new))) && list.contains("\"current\":true"), "{list}");
+        let _ = ask(&app, &format!("POST /api/logout HTTP/1.1\r\nHost: x\r\nX-Token: {old}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
+        assert_eq!(app.db.lock().unwrap().tokens.len(), 1, "signing out did not end the old token");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn device_names_are_kept_short() {
+        let long = "x".repeat(5000);
+        assert!(device_label(&long, "", &[], "").chars().count() <= 100);
+        assert!(device_label("", "", &[], &long).chars().count() <= 100);
+        let (app, root) = test_app("device-name");
+        let mut db = app.db.lock().unwrap();
+        crate::handlers::new_token(&mut db, 1, &long);
+        assert!(db.tokens[0].device.chars().count() <= 100, "a sign-in kept a {} letter device name", db.tokens[0].device.len());
+        drop(db);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A data folder with a first admin (id 1) and a profile without PIN (id 2) on the sign-in screen.

@@ -21,6 +21,12 @@ fn is_search(packet: &str) -> bool {
     packet.starts_with("M-SEARCH * HTTP/1.")
 }
 
+/// Is the sender on the home network (a private address or one of the "home network" settings)?
+/// Others are ignored, so a forged sender can't make the server send packets out to the internet.
+fn answers(from: SocketAddr, lan_networks: &str) -> bool {
+    crate::server::ip_is_local(from.ip()) || crate::server::ip_in_list(lan_networks, from.ip())
+}
+
 /// Starts listening (in the background). Quietly gives up when the port is taken, e.g. by another media server.
 pub fn start(app: &Arc<App>) {
     let sock = match UdpSocket::bind(("0.0.0.0", SEARCH_PORT)) {
@@ -37,8 +43,9 @@ pub fn start(app: &Arc<App>) {
         }
         let mut buf = [0u8; 1024];
         while let Ok((n, from)) = sock.recv_from(&mut buf) {
-            if !a.settings().gdm_enabled { continue; }
-            if is_search(&String::from_utf8_lossy(&buf[..n])) {
+            let st = a.settings();
+            if !st.gdm_enabled { continue; }
+            if is_search(&String::from_utf8_lossy(&buf[..n])) && answers(from, &st.lan_networks) {
                 let reply = format!("HTTP/1.0 200 OK\r\n{}", description(&a));
                 let _ = sock.send_to(reply.as_bytes(), from);
             }
@@ -54,5 +61,11 @@ mod tests {
         assert!(is_search("M-SEARCH * HTTP/1.1\r\nHost: 239.0.0.250\r\n\r\n"));
         assert!(!is_search("HELLO * HTTP/1.0\r\n"));
         assert!(!is_search("GET / HTTP/1.1"));
+    }
+    #[test]
+    fn only_the_home_network_is_answered() {
+        let at = |ip: &str| SocketAddr::new(ip.parse().unwrap(), 5000);
+        for ip in ["192.168.1.20", "10.0.0.3", "127.0.0.1", "fe80::1", "100.64.0.7"] { assert!(answers(at(ip), "100.64.0.0/10"), "{ip}"); }
+        for ip in ["8.8.8.8", "2001:db8::1", "100.64.0.7"] { assert!(!answers(at(ip), ""), "{ip}"); }
     }
 }

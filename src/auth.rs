@@ -56,10 +56,20 @@ pub fn verify(password: &str, salt: &str, hash: &str) -> bool {
     h.len() == hash.len() && h.bytes().zip(hash.bytes()).fold(0u8, |a, (x, y)| a | (x ^ y)) == 0
 }
 
+/// What the library keeps of a sign-in token: its SHA-256 (64 hex letters), so a copy of the file signs nobody in.
+pub fn token_hash(token: &str) -> String {
+    Sha256::digest(token.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// A short public name for a token (the API lists and revokes tokens by this,
-/// so the token itself is never shown again).
+/// so the token itself is never shown again): the start of its hash.
 pub fn token_id(token: &str) -> String {
-    Sha256::digest(token.as_bytes()).iter().take(6).map(|b| format!("{b:02x}")).collect()
+    token_hash(token)[..12].to_string()
+}
+
+/// The public name of a stored token (a hash, see `token_hash`).
+pub fn stored_token_id(hash: &str) -> &str {
+    hash.get(..12).unwrap_or(hash)
 }
 
 /// A short-lived ticket for media addresses, so the sign-in token never goes into a URL (proxy logs,
