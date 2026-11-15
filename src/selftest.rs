@@ -118,6 +118,7 @@ fn make_old_db(path: &Path, films: &str, tv: &str) -> bool {
         create table section_locations (id integer primary key, library_section_id integer, root_path text);
         create table accounts (id integer primary key, name text);
         create table metadata_items (id integer primary key, library_section_id integer, parent_id integer, metadata_type integer, guid text, title text, original_title text, summary text, tagline text, studio text, content_rating text, rating real, year integer, "index" integer, originally_available_at integer);
+        create table metadata_item_views (id integer primary key, account_id integer, guid text, viewed_at integer);
         create table media_items (id integer primary key, metadata_item_id integer);
         create table media_parts (id integer primary key, media_item_id integer, file text);
         create table metadata_item_settings (id integer primary key, account_id integer, guid text, rating real, view_offset integer, view_count integer, last_viewed_at integer);
@@ -135,6 +136,7 @@ fn make_old_db(path: &Path, films: &str, tv: &str) -> bool {
             (22, 2, 21, 4, 'old://episode/e1', 'Pilot', '', '', '', '', '', null, null, 1, null),
             (30, null, null, 15, '', 'Old favourites', '', '', '', '', '', null, null, null, null),
             (31, null, null, 15, '', 'Old smart', '', '', '', '', '', null, null, null, null);
+        insert into metadata_item_views values (1, 1, 'old://movie/abc', 1690000000), (2, 1, 'old://movie/abc', 1700000000), (3, 2, 'old://movie/abc', 1700000000);
         insert into media_items values (100, 10), (101, 22), (102, 10);
         insert into media_parts values (1000, 100, '{films}\Imported Film (2001).mp4'), (1001, 101, '{tv}\Test Show\Season 01\Test Show - S01E01 - Pilot.mkv'), (1002, 102, '{films}\gone.mkv');
         insert into metadata_item_settings values (1, 1, 'old://movie/abc', 8.0, 0, 2, 1700000000), (2, 1, 'old://episode/e1', null, 2000, 0, 1700000100), (3, 2, 'old://movie/abc', 6.0, 0, 1, 1700000000);
@@ -144,6 +146,8 @@ fn make_old_db(path: &Path, films: &str, tv: &str) -> bool {
             (7, 10, 7, 0, '', null, null), (8, 10, 8, 0, '', null, null), (9, 10, 9, 0, '', null, null);
         insert into metadata_item_accounts values (1, 1, 30);
         insert into play_queue_generators values (1, 30, 10, null, 1.0), (2, 30, 22, null, 2.0), (3, 31, null, 'library://x/directory/y', 1.0);
+        alter table metadata_items add column added_at integer;
+        update metadata_items set added_at = 1500000000 where id = 10;
     "#);
     c.execute_batch(&sql).is_ok()
 }
