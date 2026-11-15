@@ -80,6 +80,13 @@ const withTicket = (p, tk) => p + (p.includes('?') ? '&' : '?') + 'ticket=' + en
 const withTok = p => withTicket(p, TK[''] && TK[''].ticket);
 setInterval(() => { if (S.me) ticket().catch(() => {}); }, 5 * 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && S.me) ticket().catch(() => {}); });
+// A ticket's end time (unix seconds) is its second field.
+const ticketEnd = tk => Number(String(tk).split('.')[1]);
+// The address with the current ticket in place of an older one; null when it has none or already has this one.
+const freshTicket = (src, tk) => tk && /ticket=/.test(src) && !src.includes('ticket=' + encodeURIComponent(tk)) ? src.replace(/ticket=[^&]*/, 'ticket=' + encodeURIComponent(tk)) : null;
+// A picture drawn earlier (lazy, below the fold) asks with a ticket that ran out meanwhile: retry once with the
+// current one, before the picture's own error handler gives up on it. A second failure has the current ticket, so it stops.
+document.addEventListener('error', e => { const src = e.target.tagName === 'IMG' && freshTicket(e.target.src, TK[''] && TK[''].ticket); if (src) { e.stopPropagation(); e.target.src = src; } }, true);
 // A poster scaled down on the server to about w px wide (small pictures instead of the originals).
 const smallTok = (p, w) => withTok(p + (p.includes('?') ? '&' : '?') + 'w=' + w);
 const fmtNum = (n, digits) => Number(n).toLocaleString(I18N.lang, digits === undefined ? undefined : { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -1677,7 +1684,7 @@ async function playPrerollVideo(it, url, several) {
     const next = several ? h('button', { style: 'position:absolute;right:24px;bottom:134px;z-index:5' }, t('Next video')) : null;
     let finished = false, all = false;
     const end = () => {
-      if (finished) return; finished = true;
+      if (finished) return; finished = true; P.preroll = false;
       video.removeEventListener('ended', end); video.removeEventListener('error', end);
       skip.remove(); if (next) next.remove(); done(!all && P.it === it && player.style.display !== 'none');
     };
@@ -1686,6 +1693,7 @@ async function playPrerollVideo(it, url, several) {
     player.append(skip);
     video.addEventListener('ended', end); video.addEventListener('error', end);
     video.querySelectorAll('track').forEach(tr => tr.remove());
+    P.preroll = true; // the film's own ended / error handlers leave this video alone
     video.src = url;
     video.play().catch(end);
     // The player was closed meanwhile.
@@ -2014,14 +2022,15 @@ video.addEventListener('seeking', () => spin(true));
 // A button clicked with the mouse lets go of the focus, so Space keeps meaning play / pause.
 player.addEventListener('pointerup', e => { const b = e.target.closest('.pbtn'); if (b && e.pointerType === 'mouse') setTimeout(() => b.blur(), 0); });
 video.addEventListener('error', () => {
-  if (!P.it || !video.getAttribute('src')) return;
-  // The address's ticket has (nearly) run out, after hours of playing or a long pause: go on from here with a new one.
-  const tk = TK['item=' + P.it.id];
-  if (tk && tk.expires - Date.now() / 1000 < 600) { load(position()); return; }
+  if (P.preroll || !P.it || !video.getAttribute('src')) return;
+  // The address's own ticket has (nearly) run out, after hours of playing or a long pause: go on from here with a new one.
+  // (Not the cache: hovering the seek bar may have renewed that while the video kept the old one.)
+  if (ticketEnd(P.tk) - Date.now() / 1000 < 600) { load(position()); return; }
   // Stopped by the owner? Then the report says so (and shows why).
   report('playing').then(r => { if (!(r && r.stopped)) toast(t('This video could not be played. Try a lower quality in ⚙.'), 6000); });
 });
 video.addEventListener('ended', () => {
+  if (P.preroll) return;
   // The next part of a split movie.
   if (split() && P.part < P.parts.length - 1) { load(partStart(P.part + 1)); return; }
   if (!reallyEnded(position(), P.it && P.it.duration / 1000)) {

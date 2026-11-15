@@ -100,6 +100,8 @@ async function playlistPage(id, qs) {
       const r = (await GET(listUrl(items.length))).MediaContainer;
       const from = items.length;
       items.push(...r.Metadata);
+      // The row that was last can move down again now (its ↓ is the only switched-off button in a row).
+      const down = list.lastElementChild && list.lastElementChild.querySelector('button[disabled]'); if (down) down.disabled = false;
       list.append(...r.Metadata.map((it, k) => playlistRow(it, from + k, ctx)));
       more.unobserve(end);
       // Watched again, so a list end that is still in view loads the next page too.
@@ -134,7 +136,7 @@ function playlistRow(it, i, { items, reorder, manual, pl, id, move, reload }) {
     h('img', { src: smallTok(it.squareThumb || (it.type === 'episode' && it.grandparentThumb ? it.grandparentThumb : it.thumb), 120), loading: 'lazy', style: it.squareThumb || it.type === 'track' ? 'object-fit:cover' : '' }),
     h('div', { class: 'grow' }, h('a', { href: '#/item/' + it.id }, h('b', {}, it.type === 'episode' ? `${it.grandparentTitle} · ${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} ${it.title}` : it.type === 'track' ? `${it.grandparentTitle || ''} · ${it.title}` : it.title)),
       h('div', { class: 'dim' }, [it.type === 'track' ? it.parentTitle : null, it.year, fmtDur(it.duration), it.viewCount ? t('✓ watched') : '', it.viewOffset ? t('stopped at {time}', { time: fmtTime(it.viewOffset / 1000) }) : ''].filter(Boolean).join(' · '))),
-    reorder ? [h('button', { class: 'small', title: t('Move up'), onclick: () => move(i, -1) }, '↑'), h('button', { class: 'small', title: t('Move down'), onclick: () => move(i, 1) }, '↓')] : null,
+    reorder ? [h('button', { class: 'small', title: t('Move up'), onclick: () => move(i, -1) }, '↑'), h('button', { class: 'small', title: t('Move down'), disabled: i === items.length - 1, onclick: () => move(i, 1) }, '↓')] : null,
     manual && pl.editable ? h('button', { class: 'small danger', onclick: async () => { if (!(await sure(t('Remove “{title}” from this playlist?', { title: it.title }), { ok: t('Remove'), danger: true }))) return; await api('DELETE', `/playlists/${id}/items/${it.id}`); reload(); } }, t('Remove')) : null,
     // shortcut: the queue after ▶ holds only the rows loaded so far; "Play all" still fetches everything.
     h('button', { class: 'primary small', onclick: () => play(it, it.viewOffset ? it.viewOffset / 1000 : 0, items.slice(i + 1)) }, '▶'));
@@ -1010,7 +1012,7 @@ async function settingsPage(tab, qs) {
     const row = el.closest('.field'); if (row) row.style.opacity = '.5';
   }
   const saveSettings = async () => {
-    const body = tab === 'tasks' ? { utc_offset_minutes: -new Date().getTimezoneOffset() } : {};
+    const body = { utc_offset_minutes: -new Date().getTimezoneOffset() }; // on every save, so a change of clocks is picked up
     for (const [k, el] of Object.entries(f)) body[k] = typeof s[k] === 'boolean' ? el.checked : typeof s[k] === 'number' ? Number(el.value) : el.value;
     try {
       const x = await api('PUT', '/api/settings', body);
