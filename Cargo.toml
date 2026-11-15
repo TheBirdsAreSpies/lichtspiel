@@ -31,3 +31,8 @@ qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 [profile.release]
 opt-level = 3
 strip = true
+
+# A copy of tiny_http 0.12.0 with limits on request headers and a quick close for TLS sent to
+# the plain HTTP port (see vendor/tiny_http/README.lichtspiel.md).
+[patch.crates-io]
+tiny_http = { path = "vendor/tiny_http" }

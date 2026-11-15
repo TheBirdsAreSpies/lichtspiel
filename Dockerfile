@@ -7,6 +7,9 @@ FROM rust:1-slim-bookworm AS build
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY Cargo.toml Cargo.lock build.rs ./
+# Our copy of tiny_http (the web server library, with limits on request headers): Cargo.toml
+# points at it, so it has to be here before the first cargo build.
+COPY vendor ./vendor
 # The dependencies first, with an empty program: this layer stays cached while only the source
 # changes, so a build after a small change takes minutes instead of a quarter of an hour.
 # (No BuildKit needed: the Synology's Docker often has no buildx.)

@@ -5,3 +5,4 @@ data
 .gitea
 clients
 .evidence
+**/__pycache__
