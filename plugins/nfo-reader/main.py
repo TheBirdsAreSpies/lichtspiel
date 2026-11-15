@@ -30,8 +30,11 @@ def read_nfo(path):
     try:
         with open(path, "rb") as f:  # bytes, so the file's own encoding declaration still counts
             s = f.read()
-        # Kodi allows a TMDB/IMDb link after the XML, so cut at the last closing tag.
-        root = ET.fromstring(s[:s.rfind(b">") + 1])
+        try:
+            root = ET.fromstring(s)
+        except ET.ParseError:
+            # Kodi allows a TMDB/IMDb link after the XML, so cut at the last closing tag.
+            root = ET.fromstring(s[:s.rfind(b">") + 1])
     except Exception:
         return None
     text = lambda tag: (root.findtext(tag) or "").strip()

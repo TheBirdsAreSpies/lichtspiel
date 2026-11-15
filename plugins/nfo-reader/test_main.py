@@ -38,6 +38,12 @@ class NfoTest(unittest.TestCase):
             f.write("<?xml version='1.0' encoding='ISO-8859-1'?>\n<movie><title>Müller</title></movie>\n".encode("latin-1"))
         self.assertEqual(main.read_nfo(path), {"title": "Müller"})
 
+    def test_utf16_nfo_is_read(self):
+        path = os.path.join(self.dir, "movie.nfo")
+        with open(path, "wb") as f:
+            f.write("<?xml version='1.0' encoding='UTF-16'?>\n<movie><title>Ä Film</title></movie>\n".encode("utf-16"))
+        self.assertEqual(main.read_nfo(path), {"title": "Ä Film"})
+
     def test_only_a_link_gives_nothing(self):
         self.assertIsNone(main.read_nfo(self.write("movie.nfo", "https://www.imdb.com/title/tt0133093/\n")))
 
