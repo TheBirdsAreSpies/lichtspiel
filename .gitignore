@@ -4,3 +4,4 @@ data
 .evidence
 __pycache__/
 /clients/lichtspiel/android/build/
+.DS_Store
