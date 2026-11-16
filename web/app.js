@@ -973,13 +973,12 @@ async function itemPage(id) {
     hero,
     h('div', { class: 'dim', style: 'margin-bottom:10px;position:relative' }, crumbs),
     h('div', { class: 'detail' },
-      // A click anywhere on the poster plays; a deleted item shows the big trash can instead.
-      h('div', { class: 'poster' + (it.missing ? ' missing' : '') + (isPlayable(it) && !it.missing ? ' playable' : ''), 'data-id': id, onclick: () => { if (isPlayable(it) && !it.missing) playV((it.viewOffset || 0) / 1000); } }, h('img', { src: withTok(it.thumb), alt: '' }),
-        it.missing ? h('span', { class: 'gone', title: t('The file is gone from disk; the item is in the library’s trash'), 'aria-label': t('Unavailable') }, icon('trash')) : null,
+      // A click anywhere on the poster plays.
+      h('div', { class: 'poster' + (isPlayable(it) && !it.missing ? ' playable' : ''), 'data-id': id, onclick: () => { if (isPlayable(it) && !it.missing) playV((it.viewOffset || 0) / 1000); } }, h('img', { src: withTok(it.thumb), alt: '' }),
         isPlayable(it) && !it.missing ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: e => { e.stopPropagation(); playV((it.viewOffset || 0) / 1000); } }, icon('play')) : null),
       h('div', { class: 'info' },
         h('h1', { style: 'margin-bottom:4px' }, it.type === 'episode' ? `${it.index}. ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : it.clearLogo ? h('img', { src: withTok(it.clearLogo), alt: it.title, title: it.title, style: 'max-height:96px;max-width:100%;object-fit:contain;display:block', onerror: e => e.target.replaceWith(document.createTextNode(it.title)) }) : it.title,
-          it.missing ? h('span', { class: 'tag', style: 'margin-left:10px;font-size:13px;vertical-align:middle;color:var(--red)', title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null),
+          null),
         h('div', { class: 'dim' }, [it.year, it.editionTitle, it.type === 'episode' ? t('Season {n}', { n: it.parentIndex }) : null, fmtDur(it.duration), it.contentRating, (it.rating && !Object.keys(x.ratings || (it.type === 'season' ? topX.ratings : null) || {}).length) ? `★ ${fmtNum(it.rating)}` : null, it.leafCount ? t('{seen}/{all} watched', { seen: it.viewedLeafCount, all: it.leafCount }) : null].filter(Boolean).join(' · ')),
         scoreBadges(x.ratings || (it.type === 'season' ? topX.ratings : null)),
         it.tagline ? h('p', { style: 'font-style:italic' }, it.tagline) : null,
@@ -993,9 +992,10 @@ async function itemPage(id) {
         links.length ? h('div', { class: 'dim', style: 'margin-top:6px' }, t('More: '), links.map(([n, u], i) => [i ? ' · ' : '', h('a', { href: u, target: '_blank', rel: 'noopener' }, n)])) : null,
         // Play first; the toggles as round icons (their state shows in colour); everything else under "⋯".
         h('div', { class: 'actions item-actions' },
-          m && it.viewOffset ? h('button', { class: 'primary big', onclick: () => playV(it.viewOffset / 1000) }, t('▶ Resume from {time}', { time: fmtTime(it.viewOffset / 1000) })) : null,
-          m && it.viewOffset ? iconBtn('restart', t('▶ Play from start'), () => playV(0)) : null,
-          m && !it.viewOffset ? h('button', { class: 'primary big', onclick: () => playV(0) }, t('▶ Play')) : null,
+          m && it.missing ? h('button', { class: 'big unavailable', disabled: true, title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null,
+          m && !it.missing && it.viewOffset ? h('button', { class: 'primary big', onclick: () => playV(it.viewOffset / 1000) }, t('▶ Resume from {time}', { time: fmtTime(it.viewOffset / 1000) })) : null,
+          m && !it.missing && it.viewOffset ? iconBtn('restart', t('▶ Play from start'), () => playV(0)) : null,
+          m && !it.missing && !it.viewOffset ? h('button', { class: 'primary big', onclick: () => playV(0) }, t('▶ Play')) : null,
           vers ? h('select', { title: t('Version'), 'aria-label': t('Version'), onchange: e => { vi = Number(e.target.value); store.set('version:' + id, vi); } },
             vers.map((v, i) => h('option', { value: i, selected: i === vi }, versionName(v)))) : null,
           // A trailer file next to the movie first, else the first online trailer.
