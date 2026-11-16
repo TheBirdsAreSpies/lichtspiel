@@ -1760,6 +1760,7 @@ I18N.add('de', 'Deutsch', {
     [/^ffmpeg could not be started \((.*)\)\. Install ffmpeg or set its path in the settings\.$/, 'ffmpeg konnte nicht gestartet werden ($1). Installiere ffmpeg oder gib in den Einstellungen den Pfad an.'],
     [/^ffmpeg could not be started: (.*)$/, 'ffmpeg konnte nicht gestartet werden: $1'],
     [/^The plugin failed: (.*)$/, 'Das Plugin ist fehlgeschlagen: $1'],
+    [/^(.+) was not found online \(HTTP 404\)$/, '$1 wurde online nicht gefunden (HTTP 404)'],
     [/^(.+) answered HTTP (\d+)$/, '$1 antwortete mit HTTP $2'],
     [/^could not reach (\S+): (.*)$/, '$1 nicht erreichbar: $2'],
     [/^Nothing found online for "(.*)" or "(.*)"$/, 'Online nichts gefunden für „$1“ oder „$2“'],

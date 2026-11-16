@@ -1246,6 +1246,7 @@ impl App {
             }
             other => other,
         };
+        let (had_choice, had_tag, had_stored) = (choice.is_some(), tagged.is_some(), stored.is_some());
         let (source, mid) = match choice.or(tagged).or(stored) {
             Some(x) => x,
             None => {
@@ -1294,7 +1295,23 @@ impl App {
                 }
             }
         };
-        let mut d = metadata::fetch(&settings, kind, &source, &mid, &seasons)?;
+        let mut d = match metadata::fetch(&settings, kind, &source, &mid, &seasons) {
+            Ok(d) => d,
+            // The online entry is not there (any more, or it is of the other kind).
+            Err(e) if e.ends_with("HTTP 404") => {
+                if !had_choice && !had_tag && had_stored {
+                    // The match kept from before is stale: forget it and look the title up again.
+                    elog!("details for item {id}: {source}-{mid} is gone online; looking the title up again");
+                    if let Some(it) = self.db.lock().unwrap().items.get_mut(&id) {
+                        it.extra.remove("metadata_source");
+                        it.extra.remove("metadata_id");
+                    }
+                    return self.match_online(id, None, force);
+                }
+                return Err(format!("{source}-{mid} was not found online (HTTP 404)"));
+            }
+            Err(e) => return Err(e),
+        };
         // What the settings leave out (Settings → Metadata).
         if !settings.meta_cast {
             for k in ["cast", "directors", "writers", "producers", "creators"] { d.meta["extra"][k] = json!([]); }
