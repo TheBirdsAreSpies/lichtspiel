@@ -2608,12 +2608,12 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         let uid = tk.user_id;
         db.user(uid).cloned()
     });
-    // A ticket (?ticket=, from /api/ticket) opens only the addresses it was made for, while its sign-in lasts.
+    // A ticket (?ticket=, from /api/ticket) opens only the addresses it was made for, while its sign-in lasts (one made without a token, in a network that needs no sign-in, has an empty id and is bound to its user and expiry only).
     let user = match params.iter().find(|(k, _)| k == "ticket") {
         Some((_, t)) if user.is_none() && matches!(method.as_str(), "GET" | "HEAD") => {
             let db = app.db.lock().unwrap();
             crate::auth::read_ticket(&db.ticket_key, t, now())
-                .filter(|(uid, tid, scope)| crate::auth::ticket_scope(&path).as_ref() == Some(scope) && db.tokens.iter().any(|x| x.user_id == *uid && crate::auth::stored_token_id(&x.token) == tid))
+                .filter(|(uid, tid, scope)| crate::auth::ticket_scope(&path).as_ref() == Some(scope) && (tid.is_empty() || db.tokens.iter().any(|x| x.user_id == *uid && crate::auth::stored_token_id(&x.token) == tid)))
                 .and_then(|(uid, ..)| db.user(uid).cloned())
         }
         _ => user,
@@ -3527,6 +3527,9 @@ pub(crate) mod tests {
             assert!(status(&get(&format!("/library/parts/1/file?ticket={t}"), "")).contains("401"), "ticket {t} was let in");
             assert!(status(&get(&format!("/library/parts/2/file?ticket={t}"), "")).contains("401"), "ticket {t} was let in");
         }
+        // A ticket made without a token (a network that needs no sign-in) still opens its item.
+        let (nt, _) = crate::auth::ticket(&key, 1, "1", None, now());
+        assert!(get(&format!("/library/parts/1/file?ticket={nt}"), "").ends_with("video-a"), "a ticket without a sign-in was refused");
         // A profile that may not see the movie gets no ticket, and a made-up one does not show it either.
         app.db.lock().unwrap().users[1].allowed_sections = Some(vec![]);
         assert!(status(&get("/api/ticket?item=1", &format!("X-Token: {kid}\r\n"))).contains("404"));

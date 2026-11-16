@@ -381,6 +381,14 @@ class Api {
     return '${abs(path)}${path.contains('?') ? '&' : '?'}ticket=${Uri.encodeQueryComponent('${r['ticket']}')}';
   }
 
+  /// A short-lived ticket for one item's video, subtitles and stills. libmpv's subtitle tracks take no
+  /// headers, so their addresses carry this instead of the token.
+  Future<String> itemTicket(String id) async => '${(await get('/api/ticket?item=$id'))['ticket']}';
+
+  /// The address of an item's subtitle file with [ticket] (from [itemTicket]); [extra] is added to the query.
+  String subtitleUrl(String key, String ticket, {String extra = ''}) =>
+      '${abs(key)}?${extra.isEmpty ? '' : '$extra&'}ticket=${Uri.encodeQueryComponent(ticket)}';
+
   /// The server's playback decision: direct file URL, HLS URL, resume position (ms).
   Future<Map<String, dynamic>> decision(String id, {String quality = 'original', int? audio}) async =>
       Map<String, dynamic>.from(await get('/library/metadata/$id/decision?native=1&quality=${Uri.encodeQueryComponent(quality)}${audio == null ? '' : '&audio=$audio'}'));

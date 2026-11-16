@@ -102,6 +102,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   int? audioIdx; // the file's audio track asked from the server (when the picture is converted)
   bool converted = false; // the server sends the picture converted: the app sees one audio track only
   bool restoredAudio = false;
+  String subTicket = ''; // lets the subtitle tracks load: libmpv sends no sign-in header for them
   SubtitleTrack? pickedSub; // what was chosen here (the player's own state can lag behind or say "auto")
   // The chapter marks on the seek bar show like the bar itself: after the mouse moved, for three seconds.
   final ticksOn = ValueNotifier<bool>(false);
@@ -450,6 +451,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       it = {...full, if (widget.item['viewOffset'] != null) 'viewOffset': widget.item['viewOffset']};
       final media = (it['Media'] as List?)?.isNotEmpty ?? false ? Map<String, dynamic>.from((it['Media'] as List).first) : <String, dynamic>{};
       externalSubs = ((media['subtitles'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e)).where((s) => s['embedded'] != true && s['key'] != null).toList();
+      if (externalSubs.isNotEmpty) subTicket = await widget.api.itemTicket(id);
       credits = ((it['credits'] as List?) ?? const []).map((e) => (e as num) / 1000).toList();
       final i = it['intro'];
       if (i is Map && (i['end'] ?? 0) > (i['start'] ?? 0)) intro = [(i['start'] as num) / 1000, (i['end'] as num) / 1000];
@@ -686,7 +688,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   /// Fetches a subtitle file again after its timing changed (the address gets a new tail so nothing is reused).
   Future<void> reloadSub(Map x) async {
-    final t = SubtitleTrack.uri(widget.api.abs('${x['key']}${'${x['key']}'.contains('?') ? '&' : '?'}r=${DateTime.now().millisecondsSinceEpoch}'), title: '${x['title'] ?? ''}', language: '${x['language'] ?? ''}');
+    final t = SubtitleTrack.uri(widget.api.subtitleUrl('${x['key']}', subTicket, extra: 'r=${DateTime.now().millisecondsSinceEpoch}'), title: '${x['title'] ?? ''}', language: '${x['language'] ?? ''}');
     pickedSub = t;
     await player.setSubtitleTrack(t);
   }
@@ -964,13 +966,13 @@ class _SettingsMenuState extends State<_SettingsMenu> {
               Navigator.pop(context);
             }),
           for (final x in s.externalSubs)
-            choice('${x['language'] ?? x['file'] ?? 'Datei'}${x['title'] != null ? ' · ${x['title']}' : ''}', curSub.uri && curSub.id == s.widget.api.abs('${x['key']}'), () {
-              s.pickSubtitle(SubtitleTrack.uri(s.widget.api.abs('${x['key']}'), title: '${x['title'] ?? ''}', language: '${x['language'] ?? ''}'), lang: '${x['language'] ?? ''}');
+            choice('${x['language'] ?? x['file'] ?? 'Datei'}${x['title'] != null ? ' · ${x['title']}' : ''}', curSub.uri && curSub.id.startsWith('${s.widget.api.abs('${x['key']}')}?'), () {
+              s.pickSubtitle(SubtitleTrack.uri(s.widget.api.subtitleUrl('${x['key']}', s.subTicket), title: '${x['title'] ?? ''}', language: '${x['language'] ?? ''}'), lang: '${x['language'] ?? ''}');
               Navigator.pop(context);
             }),
           if (Poster.admin)
             for (final x in s.externalSubs)
-              if (curSub.uri && curSub.id.startsWith(s.widget.api.abs('${x['key']}'))) ...[
+              if (curSub.uri && curSub.id.startsWith('${s.widget.api.abs('${x['key']}')}?')) ...[
                 head('Zeit der Untertitel'),
                 ListTile(dense: true, title: const Text('Mit dem Ton abgleichen'), onTap: () { Navigator.pop(context); s.syncSub(x); }),
                 ListTile(dense: true, title: const Text('0,5 s früher'), onTap: () { Navigator.pop(context); s.nudgeSub(x, -500); }),
