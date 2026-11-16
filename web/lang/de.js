@@ -7,6 +7,11 @@ I18N.add('de', 'Deutsch', {
   strings: {
     // ---------- general
     'Language': 'Sprache',
+    'Sign in a device': 'Gerät anmelden',
+    'Sign in device': 'Gerät anmelden',
+    'The device': 'Das Gerät',
+    '{device} is signed in as {name}.': '{device} ist jetzt als {name} angemeldet.',
+    'Open the app on your TV or phone and choose "Sign in with a code". Type the code it shows here.': 'Öffne die App auf dem Fernseher oder Handy und wähle „Mit Code anmelden“. Gib hier den Code ein, den sie anzeigt.',
     'Chapters': 'Kapitel',
     'Chapter {n}': 'Kapitel {n}',
     'Level the volume': 'Lautstärke angleichen',

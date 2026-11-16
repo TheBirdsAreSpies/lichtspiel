@@ -1473,6 +1473,93 @@ mod theme_tests {
     }
 }
 
+// ---------------------------------------------------------------- code sign-in
+
+/// A TV or phone asked for a code; someone signed in elsewhere may confirm it.
+struct LinkRequest {
+    id: String,
+    code: String,
+    device: String,
+    expires: u64,
+    /// Set by the person who entered the code.
+    approved_by: Option<u64>,
+}
+
+static LINKS: std::sync::Mutex<Vec<LinkRequest>> = std::sync::Mutex::new(Vec::new());
+/// Wrong codes entered per signed-in user: (count, window start).
+static LINK_FAILS: std::sync::Mutex<Option<std::collections::HashMap<u64, (u32, u64)>>> = std::sync::Mutex::new(None);
+const LINK_TTL_SECS: u64 = 600;
+const LINK_MAX_PENDING: usize = 200;
+const LINK_TRIES: u32 = 8;
+const LINK_WINDOW_SECS: u64 = 300;
+/// No 0/O or 1/I: the code is read from a TV and typed on another device.
+const LINK_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+fn link_code() -> String {
+    let mut b = [0u8; 4];
+    let _ = getrandom::getrandom(&mut b);
+    b.iter().map(|x| LINK_ALPHABET[*x as usize % LINK_ALPHABET.len()] as char).collect()
+}
+
+fn link_normalize(code: &str) -> String {
+    code.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_uppercase()
+}
+
+/// The device asks for a code to show on the screen (no sign-in needed).
+pub fn link_start(ctx: &Ctx) -> Resp {
+    let mut g = LINKS.lock().unwrap();
+    g.retain(|l| l.expires > now());
+    if g.len() >= LINK_MAX_PENDING { return fail(429, "Too many sign-in codes are waiting; try again in a few minutes"); }
+    let mut code = link_code();
+    while g.iter().any(|l| l.code == code) { code = link_code(); }
+    let id = db::random_hex(16);
+    let device = ctx.body_or_param("device").filter(|d| !d.trim().is_empty()).unwrap_or_else(|| ctx.device.clone());
+    g.push(LinkRequest { id: id.clone(), code: code.clone(), device, expires: now() + LINK_TTL_SECS, approved_by: None });
+    ok(json!({"id": id, "code": code, "expires_in": LINK_TTL_SECS}))
+}
+
+/// The device asks whether its code was entered yet. The token is handed over once.
+pub fn link_poll(app: &Arc<App>, id: &str) -> Resp {
+    let taken = {
+        let mut g = LINKS.lock().unwrap();
+        g.retain(|l| l.expires > now());
+        let Some(pos) = g.iter().position(|l| l.id == id) else { return fail(410, "This code has expired; ask for a new one") };
+        if g[pos].approved_by.is_none() { return ok(json!({"status": "pending"})); }
+        g.remove(pos)
+    };
+    let uid = taken.approved_by.unwrap_or(0);
+    let mut db = app.db.lock().unwrap();
+    let Some(u) = db.user(uid).cloned() else { return fail(410, "That account no longer exists") };
+    let tok = new_token(&mut db, uid, &taken.device);
+    drop(db);
+    app.save();
+    ok(json!({"status": "ok", "token": tok, "user": user_json(&u)}))
+}
+
+/// A signed-in person types the code shown on the device and signs it in as themselves.
+pub fn link_confirm(ctx: &Ctx, user: &User) -> Resp {
+    let code = link_normalize(&ctx.body_or_param("code").unwrap_or_default());
+    {
+        let mut g = LINK_FAILS.lock().unwrap();
+        let e = g.get_or_insert_with(Default::default).entry(user.id).or_insert((0, now()));
+        if e.1 + LINK_WINDOW_SECS <= now() { *e = (0, now()); }
+        if e.0 >= LINK_TRIES { return fail(429, "Too many wrong codes; try again in a few minutes"); }
+    }
+    let mut g = LINKS.lock().unwrap();
+    g.retain(|l| l.expires > now());
+    match g.iter_mut().find(|l| l.code == code && l.approved_by.is_none()) {
+        Some(l) => {
+            l.approved_by = Some(user.id);
+            ok(json!({"ok": true, "device": l.device}))
+        }
+        None => {
+            drop(g);
+            if let Some(e) = LINK_FAILS.lock().unwrap().get_or_insert_with(Default::default).get_mut(&user.id) { e.0 += 1; }
+            fail(404, "That code is wrong or has expired")
+        }
+    }
+}
+
 #[cfg(all(test, unix))]
 mod picture_tests {
     use super::*;

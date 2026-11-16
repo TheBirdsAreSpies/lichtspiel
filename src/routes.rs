@@ -19,6 +19,9 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/setup", "First start only: create the owner account {username, password}"),
     ("POST", "/api/login", "Sign in {username, password} → {token}; send the token as the X-Token header, Authorization: Bearer, or ?token="),
     ("POST", "/api/logout", "Forget this token"),
+    ("POST", "/api/link", "Ask for a sign-in code {device?} → {id, code, expires_in}; show the code on the device, no sign-in needed"),
+    ("GET", "/api/link/{id}", "Poll a sign-in code → {status: pending} or {status: ok, token, user} once somebody confirmed it (410 when it expired)"),
+    ("POST", "/api/link/confirm", "Signed in: confirm the code shown on a device {code} so that device signs in as you (eight wrong codes in five minutes lock you out)"),
     ("GET", "/api/home", "Home profiles to pick on the sign-in screen (only answered in the local network; no sign-in)"),
     ("POST", "/api/home/{id}/login", "Sign in as a home profile {pin} → {token} (local network only; five wrong PINs lock it for five minutes)"),
     ("GET", "/api/tokens", "Your tokens (devices and scripts) by short id; the token itself is never shown again"),
@@ -279,6 +282,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("POST", ["api", "setup"]) => return setup(app, ctx),
         ("POST", ["api", "login"]) => return login(app, ctx),
+        ("POST", ["api", "link"]) => return link_start(ctx),
+        ("GET", ["api", "link", lid]) => return link_poll(app, lid),
         ("GET", ["api", "home"]) => return home_profiles(app, ctx),
         ("POST", ["api", "home", uid, "login"]) => return home_login(app, ctx, uid),
         ("GET", ["api", "invites", code]) => return invite_info(app, code),
@@ -297,6 +302,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
     let id = |s: &str| s.parse::<u64>().ok();
 
     match (m, segs.as_slice()) {
+        ("POST", ["api", "link", "confirm"]) => return link_confirm(ctx, &user),
         ("POST", ["api", "logout"]) => {
             let mut db = app.db.lock().unwrap();
             match &ctx.token {
