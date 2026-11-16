@@ -72,7 +72,7 @@ class _LinkLoginScreenState extends State<LinkLoginScreen> {
           child: ListView(shrinkWrap: true, padding: const EdgeInsets.all(24), children: [
             const Text('Mit Code anmelden', textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
             const SizedBox(height: 20),
-            Text('Öffne auf einem Handy oder Computer, der schon angemeldet ist, im Browser\nhttp://$host/#/link\nund gib diesen Code ein:',
+            Text('Scanne den QR-Code mit einem Handy, das schon angemeldet ist. Oder öffne dort im Browser\nhttp://$host/#/link\nund gib diesen Code ein:',
                 textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, height: 1.5)),
             const SizedBox(height: 24),
             if (error != null)
@@ -81,6 +81,14 @@ class _LinkLoginScreenState extends State<LinkLoginScreen> {
               const Center(child: CircularProgressIndicator())
             else
               Text(code!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 72, fontWeight: FontWeight.w700, letterSpacing: 14)),
+            if (error == null && code != null) ...[
+              const SizedBox(height: 24),
+              Center(child: Container(
+                color: Colors.white,
+                padding: const EdgeInsets.all(10),
+                child: QrImageView(data: link, size: 180, backgroundColor: Colors.white),
+              )),
+            ],
             const SizedBox(height: 28),
             if (error != null) FilledButton(onPressed: start, child: const Text('Erneut versuchen')),
             if (error != null) const SizedBox(height: 10),
