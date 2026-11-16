@@ -333,12 +333,17 @@ fn lang_of(settings: &Settings) -> String {
 
 /// One lookup with exactly this title.
 fn search_one(settings: &Settings, kind: ItemKind, title: &str, year: Option<u32>) -> Result<Vec<Candidate>, String> {
-    if !settings.tmdb_api_key.trim().is_empty() {
-        tmdb_search(settings, kind, title, year)
-    } else if kind == ItemKind::Show {
-        tvmaze_search(title, year)
-    } else {
-        wiki_search(settings, title, year)
+    let free = |settings: &Settings| if kind == ItemKind::Show { tvmaze_search(title, year) } else { wiki_search(settings, title, year) };
+    if settings.tmdb_api_key.trim().is_empty() {
+        return free(settings);
+    }
+    // What TMDB does not know (or cannot answer) is looked for at TVmaze (shows) or Wikidata (films).
+    match tmdb_search(settings, kind, title, year) {
+        Ok(found) if !found.is_empty() => Ok(found),
+        tmdb => match free(settings) {
+            Ok(found) if !found.is_empty() => Ok(found),
+            other => tmdb.and(other),
+        },
     }
 }
 
