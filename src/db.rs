@@ -1370,11 +1370,17 @@ impl Db {
         !user.block_unrated
     }
 
+    /// A further file of another title that is still there (several versions of one episode or movie):
+    /// shown under that title, not as a title or an episode of its own.
+    pub fn is_version(&self, i: &Item) -> bool {
+        i.version_of().is_some_and(|m| self.items.contains_key(&m))
+    }
+
     pub fn children(&self, parent: u64) -> Vec<&Item> {
         let mut v: Vec<&Item> = self
             .items
             .values()
-            .filter(|i| i.parent_id == Some(parent))
+            .filter(|i| i.parent_id == Some(parent) && !self.is_version(i))
             .collect();
         // Songs of a double album: disc by disc.
         let disc = |i: &Item| i.extra.get("disc").and_then(|d| d.as_u64()).unwrap_or(0);

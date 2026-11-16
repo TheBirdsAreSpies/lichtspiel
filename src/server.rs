@@ -2686,7 +2686,7 @@ impl Index {
         let mut kids: HashMap<u64, Vec<u64>> = HashMap::new();
         let mut versions: HashMap<u64, Vec<u64>> = HashMap::new();
         for i in db.items.values() {
-            if let Some(p) = i.parent_id { kids.entry(p).or_default().push(i.id); }
+            if let Some(p) = i.parent_id.filter(|_| !db.is_version(i)) { kids.entry(p).or_default().push(i.id); }
             if let Some(v) = i.version_of() { versions.entry(v).or_default().push(i.id); }
         }
         Index { kids, versions }

@@ -944,6 +944,27 @@ mod tests {
     }
 
     #[test]
+    fn versions_of_an_episode_are_not_listed_or_counted_as_episodes() {
+        let (mut db, shows) = tv_library(1, 0);
+        let season = db.children(shows[0])[0].id;
+        let eps: Vec<u64> = db.children(season).iter().map(|e| e.id).collect();
+        assert_eq!(eps.len(), 10);
+        // Episode 2 got a second file, merged under it as a version.
+        let extra = db.items[&eps[1]].clone();
+        let mut v = extra;
+        v.id = 9999;
+        v.extra.insert("version_of".into(), json!(eps[1]));
+        db.items.insert(9999, v);
+        assert_eq!(db.children(season).len(), 10, "the version was listed as an episode");
+        assert_eq!(db.leaves(shows[0]).len(), 20, "the version was counted as an episode");
+        let ix = crate::server::Index::build(&db);
+        assert_eq!(ix.leaves(&db, shows[0]).len(), 20, "the index counted the version as an episode");
+        // A version whose main title is gone is a title of its own again.
+        db.items.remove(&eps[1]);
+        assert_eq!(db.children(season).len(), 10);
+    }
+
+    #[test]
     fn show_filters_agree_with_and_without_the_index() {
         let (mut db, shows) = tv_library(4, 3);
         // Show 3: one episode watched (in progress, not watched, has unwatched episodes).
