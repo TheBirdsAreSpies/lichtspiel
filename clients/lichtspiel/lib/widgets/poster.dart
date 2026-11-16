@@ -193,7 +193,7 @@ class _PosterState extends State<Poster> {
                     Image.network(widget.api.img(thumb), headers: widget.api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Center(child: Text('$title', textAlign: TextAlign.center))),
                     if (missing) Container(color: Colors.black54),
                     BusyOverlay(item: item),
-                    if (missing) const Positioned(top: 4, left: 36, child: Tooltip(message: 'Datei fehlt – im Papierkorb der Mediathek', child: DecoratedBox(decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.all(Radius.circular(4))), child: Padding(padding: EdgeInsets.all(3), child: Icon(Icons.delete_outline, size: 18, color: Colors.redAccent))))),
+                    if (missing) const Center(child: Tooltip(message: 'Datei fehlt – im Papierkorb der Mediathek', child: Icon(Icons.delete, size: 56, color: Colors.redAccent, shadows: [Shadow(blurRadius: 6, color: Colors.black87)]))),
                     if (unseen > 0)
                       Positioned(top: 6, right: 6, child: Container(padding: const EdgeInsets.symmetric(horizontal: 7), decoration: BoxDecoration(color: const Color(0xFFE5A00D), borderRadius: BorderRadius.circular(10)), child: Text('$unseen', style: const TextStyle(color: Color(0xFF16120A), fontSize: 12, fontWeight: FontWeight.w700))))
                     else if (watched)
