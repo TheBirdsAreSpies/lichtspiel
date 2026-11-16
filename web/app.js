@@ -1038,11 +1038,12 @@ async function itemPage(id) {
     }) : null,
     kids.length && it.type !== 'artist' ? [h('h2', {}, it.type === 'show' ? t('Seasons') : it.type === 'album' ? t('Songs') : t('Episodes')),
       it.type === 'show' ? scroller('row', kids.map(k => posterCard(k))) :
-        h('div', { class: 'list' }, kids.map((e, i) => h('div', { class: 'li' },
+        h('div', { class: 'list' }, kids.map((e, i) => h('div', { class: 'li' + (e.missing ? ' missing' : '') },
           it.type === 'album' ? null : h('img', { src: withTok(e.thumb), loading: 'lazy' }),
-          h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, e.index ? `${e.index}. ${e.title}` : e.title)), h('div', { class: 'dim' }, [fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', e.viewOffset ? t('stopped at {time}', { time: fmtTime(e.viewOffset / 1000) }) : ''].filter(Boolean).join(' · ')),
+          h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, e.index ? `${e.index}. ${e.title}` : e.title)), h('div', { class: 'dim' }, [e.missing ? t('Unavailable') : '', fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', e.viewOffset ? t('stopped at {time}', { time: fmtTime(e.viewOffset / 1000) }) : ''].filter(Boolean).join(' · ')),
             e.summary ? h('div', { class: 'ep-plot' }, e.summary) : null),
-          h('button', { class: 'primary small', onclick: () => play(e, e.viewOffset ? e.viewOffset / 1000 : 0, kids.slice(i + 1)) }, '▶'))))] : null,
+          e.missing ? h('span', { class: 'gone-ico', title: t('The file is gone from disk; the item is in the library’s trash') }, icon('trash'))
+            : h('button', { class: 'primary small', onclick: () => play(e, e.viewOffset ? e.viewOffset / 1000 : 0, kids.slice(i + 1)) }, '▶'))))] : null,
     chapters.length ? [h('h2', {}, t('Chapters')), scroller('row extras', chapters.map(c => h('div', { class: 'card', onclick: () => play(it, c.start / 1000) },
       h('div', { class: 'poster' }, h('img', { src: withTok(c.thumb), loading: 'lazy', alt: '' })),
       h('div', { class: 't', title: c.title }, c.title.replace(/^Chapter (\d+)$/, (_, n) => t('Chapter {n}', { n }))), h('div', { class: 's' }, fmtTime(c.start / 1000)))))] : null,
