@@ -43,6 +43,7 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   path_provider: ^2.1.6
   image_picker: ^1.2.4
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

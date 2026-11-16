@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../api.dart';
 
 /// Sign in with a short code shown here and typed on another device.
@@ -62,6 +63,8 @@ class _LinkLoginScreenState extends State<LinkLoginScreen> {
   @override
   Widget build(BuildContext context) {
     final host = widget.api.base.replaceFirst(RegExp(r'^https?://'), '');
+    // Scanning opens the web page with the code already typed in.
+    final link = '${widget.api.base.replaceFirst(RegExp(r'/+$'), '')}/#/link/${code ?? ''}';
     return Scaffold(
       body: Center(
         child: ConstrainedBox(
