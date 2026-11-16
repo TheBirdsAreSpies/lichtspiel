@@ -74,19 +74,30 @@ pub fn categories(db: &Db, user: &User, sid: u64) -> Vec<Value> {
     groups(db, user, sid, "genre").iter().map(|(t, its)| directory(sid, t, "genre", its)).collect()
 }
 
+/// The names of one title that the rows compare, lower case. Made once per title, not once per comparison:
+/// in a big library "Related" would otherwise take seconds.
+struct Tags {
+    genre: Vec<String>,
+    collection: Vec<String>,
+    director: Vec<String>,
+    actor: Vec<String>,
+}
+
+fn tags(db: &Db, user_id: u64, it: &Item) -> Tags {
+    let low = |name: &str| texts(db, user_id, it, name).into_iter().map(|s| s.to_lowercase()).collect::<Vec<_>>();
+    Tags { genre: low("genre"), collection: low("collection"), director: low("director"), actor: low("actor") }
+}
+
 /// How much `b` is like `a` (estimated weights).
-pub fn similarity(db: &Db, user_id: u64, a: &Item, b: &Item) -> f64 {
-    let shared = |name: &str, limit: usize| -> usize {
-        let av: Vec<String> = texts(db, user_id, a, name).into_iter().take(limit).map(|s| s.to_lowercase()).collect();
-        texts(db, user_id, b, name).iter().filter(|x| av.contains(&x.to_lowercase())).count()
-    };
-    let genres = shared("genre", 20);
-    let collections = shared("collection", 20);
+fn similarity(a: &Tags, ay: Option<u32>, b: &Tags, by: Option<u32>) -> f64 {
+    let shared = |av: &[String], bv: &[String], limit: usize| -> usize { bv.iter().filter(|x| av.iter().take(limit).any(|y| y == *x)).count() };
+    let genres = shared(&a.genre, &b.genre, 20);
+    let collections = shared(&a.collection, &b.collection, 20);
     if genres == 0 && collections == 0 {
         return 0.0;
     }
-    let mut s = genres as f64 + 3.0 * collections as f64 + 2.0 * shared("director", 20) as f64 + shared("actor", 10) as f64;
-    if let (Some(x), Some(y)) = (a.year, b.year) {
+    let mut s = genres as f64 + 3.0 * collections as f64 + 2.0 * shared(&a.director, &b.director, 20) as f64 + shared(&a.actor, &b.actor, 10) as f64;
+    if let (Some(x), Some(y)) = (ay, by) {
         if x.abs_diff(y) <= 5 {
             s += 0.5;
         }
@@ -111,6 +122,8 @@ pub fn related(db: &Db, user: &User, it: &Item, count: usize) -> Vec<Hub> {
     };
     // Every row looks only in the same library and never shows the item itself ("&id!=").
     let pool: Vec<&Item> = db.items.values().filter(|o| o.section_id == it.section_id && o.kind == it.kind && o.id != it.id).collect();
+    let mine = tags(db, user.id, it);
+    let pool_tags: Vec<Tags> = pool.iter().map(|o| tags(db, user.id, o)).collect();
     let newest_first = |v: &mut Vec<&Item>| v.sort_by(|a, b| b.year.cmp(&a.year).then(a.sort_title.cmp(&b.sort_title)));
     let mut hubs = vec![];
     let mut push = |title: String, identifier: String, context: &str, mut list: Vec<&Item>| {
@@ -124,7 +137,8 @@ pub fn related(db: &Db, user: &User, it: &Item, count: usize) -> Vec<Hub> {
     // The films of the same series, in the order they came out (movies only); the player offers the next one.
     if it.kind == ItemKind::Movie {
         if let Some(c) = texts(db, user.id, it, "collection").into_iter().next() {
-            let mut list: Vec<&Item> = pool.iter().copied().filter(|o| texts(db, user.id, o, "collection").iter().any(|x| x.eq_ignore_ascii_case(&c))).collect();
+            let c_low = c.to_lowercase();
+            let mut list: Vec<&Item> = pool.iter().zip(&pool_tags).filter(|(_, t)| t.collection.contains(&c_low)).map(|(o, _)| *o).collect();
             list.sort_by(|a, b| a.year.unwrap_or(u32::MAX).cmp(&b.year.unwrap_or(u32::MAX)).then(a.sort_title.cmp(&b.sort_title)));
             push(c, "movie.collection".into(), "hub.movie.collection", list);
         }
@@ -136,20 +150,22 @@ pub fn related(db: &Db, user: &User, it: &Item, count: usize) -> Vec<Hub> {
         push(format!("Other Editions of {}", it.title), "movie.editions".into(), "hub.movie.editions", eds);
     }
     // Related: the most alike first.
-    let mut scored: Vec<(f64, &Item)> = pool.iter().map(|o| (similarity(db, user.id, it, o), *o)).filter(|(s, _)| *s >= SIMILAR_MIN_SCORE).collect();
+    let mut scored: Vec<(f64, &Item)> = pool.iter().zip(&pool_tags).map(|(o, t)| (similarity(&mine, it.year, t, o.year), *o)).filter(|(s, _)| *s >= SIMILAR_MIN_SCORE).collect();
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal).then(b.1.rating.partial_cmp(&a.1.rating).unwrap_or(std::cmp::Ordering::Equal)));
     push(format!("Related {plural}"), format!("{prefix}.similar"), &format!("hub.{prefix}.similar"), scored.into_iter().map(|x| x.1).collect());
     // More by the first director (movies only).
     if it.kind == ItemKind::Movie {
         if let Some(d) = texts(db, user.id, it, "director").into_iter().next() {
-            let mut list: Vec<&Item> = pool.iter().copied().filter(|o| texts(db, user.id, o, "director").iter().any(|x| x.eq_ignore_ascii_case(&d))).collect();
+            let d_low = d.to_lowercase();
+            let mut list: Vec<&Item> = pool.iter().zip(&pool_tags).filter(|(_, t)| t.director.contains(&d_low)).map(|(o, _)| *o).collect();
             newest_first(&mut list);
             push(format!("More by {d}"), "movie.same.director".into(), "hub.movie.same.director", list);
         }
     }
     // More with each of the first two actors.
     for (n, a) in texts(db, user.id, it, "actor").into_iter().take(ACTOR_ROWS).enumerate() {
-        let mut list: Vec<&Item> = pool.iter().copied().filter(|o| texts(db, user.id, o, "actor").iter().any(|x| x.eq_ignore_ascii_case(&a))).collect();
+        let a_low = a.to_lowercase();
+        let mut list: Vec<&Item> = pool.iter().zip(&pool_tags).filter(|(_, t)| t.actor.contains(&a_low)).map(|(o, _)| *o).collect();
         newest_first(&mut list);
         push(format!("More with {a}"), format!("{prefix}.same.actor.{n}"), &format!("hub.{prefix}.same.actor"), list);
     }

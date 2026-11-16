@@ -935,12 +935,18 @@ async function itemPage(id) {
   markNav('');
   const it = meta(await GET('/library/metadata/' + id))[0];
   const m = it.Media && it.Media[0];
+  // Everything else the page needs is asked for at once (not one after the other); the related rows come last, after the page is drawn.
+  const topId = it.grandparentRatingKey || (it.type === 'season' ? it.parentRatingKey : null);
+  const kidsP = ['show', 'season', 'artist', 'album'].includes(it.type) ? GET(`/library/metadata/${id}/children`) : null;
+  const topP = topId ? GET('/library/metadata/' + topId) : null;
+  const chaptersP = m ? GET(`/library/metadata/${id}/chapters`).catch(() => null) : null;
+  const relatedP = (it.type === 'movie' || it.type === 'show') && (it.extra || {}).metadata_source ? GET(`/library/metadata/${id}/related?count=20`).catch(() => null) : null;
   // Merged by hand (admin: "Merge"): several files of the same title; the choice is remembered per title.
   const vers = (it.Media || []).length > 1 ? it.Media : null;
   let vi = vers ? Math.min(Number(store.get('version:' + id, 0)) || 0, vers.length - 1) : 0;
   const playV = (at) => play(vi > 0 ? Object.assign({}, it, { id: vers[vi].id, ratingKey: String(vers[vi].id), Media: undefined }) : it, at);
   const versionName = v => [v.height ? (v.height >= 2000 ? '4K' : v.height + 'p') : '', v.edition, v.size ? fmtSize(v.size) : ''].filter(Boolean).join(' · ');
-  const kids = ['show', 'season', 'artist', 'album'].includes(it.type) ? meta(await GET(`/library/metadata/${id}/children`)) : [];
+  const kids = kidsP ? meta(await kidsP) : [];
   const refresh = () => itemPage(id);
   const watched = it.leafCount ? it.viewedLeafCount === it.leafCount : it.viewCount > 0;
   const crumbs = [];
@@ -949,8 +955,7 @@ async function itemPage(id) {
   const nextEp = async () => { const l = meta(await GET(`/library/metadata/${id}/allLeaves`)); const e = l.find(x => !x.viewCount) || l[0]; if (e) play(e, e.viewOffset ? e.viewOffset / 1000 : 0, l.slice(l.indexOf(e) + 1)); };
   // Online details (plot, cast, crew …) live in it.extra; seasons and episodes borrow the show's.
   const x = it.extra || {};
-  const top = it.grandparentRatingKey || (it.type === 'season' ? it.parentRatingKey : null);
-  const topX = top ? ((meta(await GET('/library/metadata/' + top))[0] || {}).extra || {}) : x;
+  const topX = topP ? ((meta(await topP)[0] || {}).extra || {}) : x;
   const cast = x.cast || (it.type !== 'movie' ? topX.cast : null) || [];
   const ids = x.ids || topX.ids || {};
   const crew = [[t('Directed by'), x.directors], [t('Written by'), x.writers], [t('Created by'), x.creators || (it.type !== 'show' ? topX.creators : null)]].filter(r => r[1] && r[1].length);
@@ -961,15 +966,17 @@ async function itemPage(id) {
   const localTrailer = (it.Extras || []).find(e => e.extraType === 'trailer');
   const onlineVideos = matchable ? (x.trailers || []).filter(v => v && v.key) : [];
   // Rows: Other Editions, Related, More by the director, More with the first two actors.
-  const chapters = m ? ((await GET(`/library/metadata/${id}/chapters`).catch(() => null)) || { MediaContainer: {} }).MediaContainer.Chapter || [] : [];
-  const related = matchable && x.metadata_source ? ((await GET(`/library/metadata/${id}/related?count=20`)).MediaContainer.Hub || []) : [];
+  const chapters = chaptersP ? ((await chaptersP) || { MediaContainer: {} }).MediaContainer.Chapter || [] : [];
+  const relatedBox = h('div', {});
   const hero = h('img', { class: 'hero', src: withTok(`/library/metadata/${id}/art?v=${it.updatedAt || 0}`), alt: '', onerror: e => e.target.remove() });
   set(
     hero,
     h('div', { class: 'dim', style: 'margin-bottom:10px;position:relative' }, crumbs),
     h('div', { class: 'detail' },
-      h('div', { class: 'poster', 'data-id': id }, h('img', { src: withTok(it.thumb), alt: '' }),
-        isPlayable(it) && !it.missing ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: () => play(it, (it.viewOffset || 0) / 1000) }, icon('play')) : null),
+      // A click anywhere on the poster plays; a deleted item shows the big trash can instead.
+      h('div', { class: 'poster' + (it.missing ? ' missing' : '') + (isPlayable(it) && !it.missing ? ' playable' : ''), 'data-id': id, onclick: () => { if (isPlayable(it) && !it.missing) playV((it.viewOffset || 0) / 1000); } }, h('img', { src: withTok(it.thumb), alt: '' }),
+        it.missing ? h('span', { class: 'gone', title: t('The file is gone from disk; the item is in the library’s trash'), 'aria-label': t('Unavailable') }, icon('trash')) : null,
+        isPlayable(it) && !it.missing ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: e => { e.stopPropagation(); playV((it.viewOffset || 0) / 1000); } }, icon('play')) : null),
       h('div', { class: 'info' },
         h('h1', { style: 'margin-bottom:4px' }, it.type === 'episode' ? `${it.index}. ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : it.clearLogo ? h('img', { src: withTok(it.clearLogo), alt: it.title, title: it.title, style: 'max-height:96px;max-width:100%;object-fit:contain;display:block', onerror: e => e.target.replaceWith(document.createTextNode(it.title)) }) : it.title,
           it.missing ? h('span', { class: 'tag', style: 'margin-left:10px;font-size:13px;vertical-align:middle;color:var(--red)', title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null),
@@ -1043,7 +1050,8 @@ async function itemPage(id) {
       ...onlineVideos.map(v => h('div', { class: 'card', onclick: () => playOnlineVideo(v) },
         h('div', { class: 'poster' }, h('img', { src: `https://i.ytimg.com/vi/${encodeURIComponent(v.key)}/mqdefault.jpg`, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer' })),
         h('div', { class: 't', title: v.name }, v.name), h('div', { class: 's' }, [t(ONLINE_VIDEO_TYPES[v.type] || 'Extra'), t('online')].join(' · '))))])] : null,
-    related.map(hb => row(hb.title, hb.Metadata)));
+    relatedBox);
+  if (relatedP) relatedP.then(r => relatedBox.replaceChildren(...((r && r.MediaContainer.Hub) || []).map(hb => row(hb.title, hb.Metadata))));
   if (m) {
     try {
       const d = await GET(`/library/metadata/${id}/decision`);
