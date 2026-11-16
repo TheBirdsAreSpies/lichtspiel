@@ -145,7 +145,8 @@ async function signedIn(token) {
   S.token = token; saveToken(token);
   S.signingIn = true;
   set(h('div', { class: 'center' }, h('h1', {}, t('Signed in')), h('p', { class: 'dim' }, t('Loading your libraries…'))));
-  location.hash = '#/';
+  const after = S.after; S.after = '';
+  location.hash = after || '#/';
   try { await boot(); } finally { S.signingIn = false; }
   if (S.me) toast(t('Signed in as {name}', { name: S.me.username }));
 }

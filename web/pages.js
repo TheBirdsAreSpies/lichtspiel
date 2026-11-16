@@ -1906,7 +1906,8 @@ async function render() {
   try {
     if (parts[0] === 'invite' && parts[1]) return await invitePage(parts[1]);
     if (S.status.setup_needed) return setupPage();
-    if (!S.me) return loginPage();
+    // Not signed in: the page asked for is kept and opened right after the sign-in (a device link, an item).
+    if (!S.me) { S.after = parts[0] && !['login', 'invite'].includes(parts[0]) ? location.hash : ''; return loginPage(); }
     switch (parts[0]) {
       case undefined: return await homePage();
       case 'section': return await sectionPage(parts[1], qs);
