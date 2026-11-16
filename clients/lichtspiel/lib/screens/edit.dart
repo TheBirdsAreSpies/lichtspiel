@@ -14,8 +14,16 @@ Future<bool> editDetailsDialog(BuildContext context, Api api, Map<String, dynami
     final st = await api.get('/api/settings');
     langs = ((st?['languages'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e)).toList();
   } catch (_) {}
+  // Intro and credits markers exist for movies and episodes only.
+  Map<String, dynamic>? markers;
+  if (it['type'] == 'movie' || it['type'] == 'episode') {
+    try {
+      final m = await api.get('/library/metadata/${it['ratingKey']}/markers');
+      if (m is Map) markers = Map<String, dynamic>.from(m);
+    } catch (_) {}
+  }
   if (!context.mounted) return false;
-  final r = await showDialog<bool>(context: context, builder: (_) => _EditDialog(api: api, it: it, langs: langs));
+  final r = await showDialog<bool>(context: context, builder: (_) => _EditDialog(api: api, it: it, langs: langs, markers: markers));
   return r == true;
 }
 
@@ -23,7 +31,8 @@ class _EditDialog extends StatefulWidget {
   final Api api;
   final Map<String, dynamic> it;
   final List<Map<String, dynamic>> langs;
-  const _EditDialog({required this.api, required this.it, required this.langs});
+  final Map<String, dynamic>? markers;
+  const _EditDialog({required this.api, required this.it, required this.langs, this.markers});
   @override
   State<_EditDialog> createState() => _EditDialogState();
 }
@@ -33,6 +42,44 @@ class _EditDialogState extends State<_EditDialog> {
   late String langOverride, credits, useOriginal;
   String? error;
   bool saving = false;
+  // Markers as h:mm:ss; what was there at the start tells which ones were changed.
+  final mc = <String, TextEditingController>{};
+  final mInit = <String, String>{};
+
+  Map<String, dynamic>? get mk => widget.markers;
+
+  static String _clock(dynamic ms) {
+    if (ms is! num) return '';
+    final s = (ms / 1000).floor();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${s ~/ 3600}:${two((s ~/ 60) % 60)}:${two(s % 60)}';
+  }
+
+  /// "1:52:30", "52:30" or "90" to ms; null when it isn't a time.
+  static int? _unclock(String v) {
+    final t = v.trim();
+    if (t.isEmpty) return null;
+    var total = 0;
+    for (final p in t.split(':')) {
+      final n = int.tryParse(p.trim());
+      if (n == null || n < 0) return null;
+      total = total * 60 + n;
+    }
+    return total * 1000;
+  }
+
+  String _source(dynamic src, {dynamic errors}) {
+    const names = {
+      'manual': 'von Hand gesetzt',
+      'chapters': 'aus einem Kapitel „Credits“ in der Datei',
+      'picture': 'im Bild gefunden (dunkler Bildschirm mit Text am Ende)',
+      'sound': 'durch Vergleich des Tons der Folgen gefunden',
+      'none': 'nichts gefunden',
+      'pending': 'noch nicht gesucht (die Suche läuft im Hintergrund)',
+    };
+    final n = errors is num && errors > 0 ? '; Suche ${errors.toInt()}× fehlgeschlagen' : '';
+    return '${names['$src'] ?? src}$n';
+  }
 
   Map<String, dynamic> get it => widget.it;
   Map<String, dynamic> get x => Map<String, dynamic>.from(it['extra'] ?? const {});
@@ -63,6 +110,17 @@ class _EditDialogState extends State<_EditDialog> {
     langOverride = '${x['language_override'] ?? ''}';
     credits = '${x['credits_detection'] ?? ''}';
     useOriginal = '${x['use_original_title'] ?? ''}';
+    final m = mk;
+    if (m != null) {
+      final cr = (m['credits'] as List?) ?? const [];
+      final intro = (m['intro'] as List?) ?? const [];
+      mInit['cs'] = cr.isEmpty ? '' : _clock(cr[0]);
+      mInit['is'] = intro.length == 2 ? _clock(intro[0]) : '';
+      mInit['ie'] = intro.length == 2 ? _clock(intro[1]) : '';
+      for (final e in mInit.entries) {
+        mc[e.key] = TextEditingController(text: e.value);
+      }
+    }
   }
 
   Future<void> save() async {
@@ -74,12 +132,37 @@ class _EditDialogState extends State<_EditDialog> {
     body['language_override'] = langOverride;
     body['credits_detection'] = credits;
     body['use_original_title'] = useOriginal;
+    // Only changed markers are sent; emptied ones go back to what was found (only a hand-set one can be taken back).
+    final mb = <String, dynamic>{};
+    final m = mk;
+    if (m != null) {
+      final cs = mc['cs']!.text.trim(), isv = mc['is']!.text.trim(), ie = mc['ie']!.text.trim();
+      if (cs != mInit['cs']) {
+        if (cs.isNotEmpty) {
+          final ms = _unclock(cs);
+          if (ms == null) return setState(() => error = 'Abspann: bitte eine Zeit wie 1:52:30 eingeben.');
+          mb['credits'] = [ms];
+        } else if (m['source'] == 'manual') {
+          mb['credits'] = null;
+        }
+      }
+      if (isv != mInit['is'] || ie != mInit['ie']) {
+        if (isv.isEmpty && ie.isEmpty) {
+          if (m['introSource'] == 'manual') mb['intro'] = null;
+        } else {
+          final a = _unclock(isv), b = _unclock(ie);
+          if (a == null || b == null || b <= a) return setState(() => error = 'Intro: Anfang und Ende angeben, das Ende nach dem Anfang.');
+          mb['intro'] = [a, b];
+        }
+      }
+    }
     setState(() {
       saving = true;
       error = null;
     });
     try {
       await widget.api.put('/library/metadata/${it['ratingKey']}', body);
+      if (mb.isNotEmpty) await widget.api.put('/library/metadata/${it['ratingKey']}/markers', mb);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -102,6 +185,48 @@ class _EditDialogState extends State<_EditDialog> {
         ),
       );
 
+  Widget mf(String k, String label, {String? help}) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: TextField(
+          controller: mc[k],
+          decoration: InputDecoration(labelText: label, helperText: help, helperMaxLines: 2, hintText: 'h:mm:ss', border: const OutlineInputBorder()),
+        ),
+      );
+
+  Widget markerTab() {
+    final m = mk!;
+    final at = m['watchedAt'] is num ? _clock(m['watchedAt']) : '';
+    final len = m['duration'] is num ? _clock(m['duration']) : '';
+    return ListView(children: [
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Text(
+          'Intro: ${_source(m['introSource'])}.\nAbspann: ${_source(m['source'], errors: m['errors'])}.'
+          '${at.isEmpty ? '' : ' Das Video gilt ab $at von $len als gesehen.'}',
+          style: const TextStyle(color: Colors.white70),
+        ),
+      ),
+      mf('is', 'Intro beginnt bei (Std:Min:Sek)'),
+      mf('ie', 'Intro endet bei', help: 'Beide leer lassen, um zum erkannten Intro zurückzukehren.'),
+      mf('cs', 'Abspann beginnt bei', help: 'Leer lassen, um wieder die Kapitel der Datei zu verwenden.'),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: OutlinedButton(
+          onPressed: () async {
+            final msg = ScaffoldMessenger.of(context);
+            try {
+              await widget.api.post('/library/metadata/${it['ratingKey']}/credits');
+              msg.showSnackBar(const SnackBar(content: Text('Abspann wird gesucht …')));
+            } catch (e) {
+              msg.showSnackBar(SnackBar(content: Text('$e')));
+            }
+          },
+          child: const Text('Abspann erneut suchen'),
+        ),
+      ),
+    ]);
+  }
+
   Widget dd(String label, String value, Map<String, String> opts, void Function(String) on, {String? help}) => Padding(
         padding: const EdgeInsets.only(bottom: 12),
         child: DropdownButtonFormField<String>(
@@ -115,7 +240,7 @@ class _EditDialogState extends State<_EditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final tabs = ['Allgemein', 'Tags', 'Labels', 'Erweitert', 'Bilder', 'Info'];
+    final tabs = ['Allgemein', 'Tags', 'Labels', if (mk != null) 'Marker', 'Erweitert', 'Bilder', 'Info'];
     return DefaultTabController(
       length: tabs.length,
       child: AlertDialog(
@@ -150,6 +275,7 @@ class _EditDialogState extends State<_EditDialog> {
                   tf('collections', 'Sammlungen'),
                 ]),
                 ListView(children: [tf('labels', 'Labels (mit Komma getrennt)')]),
+                if (mk != null) markerTab(),
                 ListView(children: [
                   dd('Sprache der Details', langOverride, {'': 'Standard der Bibliothek', for (final l in widget.langs) '${l['code']}': '${l['name']}'}, (v) => langOverride = v,
                       help: 'Gilt beim nächsten Online-Abruf der Details (Metadaten aktualisieren).'),
