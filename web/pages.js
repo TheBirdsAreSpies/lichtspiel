@@ -1263,7 +1263,7 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
       await api('POST', '/api/continue/remove', { ids: [it.id] }); if (opts.removed) opts.removed(); toast(t('Removed from Continue Watching'));
     } } : null,
     it.type === 'clip' ? null : { label: it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), run: async () => { await toggleWatchlist(it); changed(); } },
-    { label: t('Add to …'), sub: () => addToEntries(it, changed) },
+    { label: t('Add to …'), run: () => addToDialog(it, changed) },
     { label: watched ? t('Mark as unwatched') : t('Mark as watched'), run: async () => {
       await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${it.id}`);
       if (it.leafCount) it.viewedLeafCount = watched ? 0 : it.leafCount;
@@ -1316,21 +1316,37 @@ async function deleteItem(it) {
 }
 
 // "Add to …": playlists (and for the owner the collections of a movie or show).
-async function addToEntries(it, changed) {
-  const pls = meta(await GET('/playlists?kind=manual&owner=me&sort=title'));
-  const add = async (id, title) => { const r = await api('POST', `/playlists/${id}/items`, { ids: [it.id] }); toast(r.added ? t('Added to {name}', { name: title }) : t('Already in that playlist')); };
-  const out = [...pls.map(p => ({ label: p.title, run: () => add(p.id, p.title) })),
-    pls.length ? '-' : null,
-    { label: t('New playlist…'), run: async () => { const name = await ask(t('Name of the new playlist')); if (name) { await api('POST', '/playlists', { title: name, kind: 'manual', ids: [it.id] }); toast(t('Added to {name}', { name })); } } }];
-  if (S.me.admin && (it.type === 'movie' || it.type === 'show')) {
-    const full = await fullItem(it);
-    const mine = ((full.extra || {}).collections || []);
-    const all = (await GET(`/library/sections/${it.librarySectionID}/collections`)).MediaContainer.Metadata.map(c => c.title).filter(c => !mine.includes(c));
-    const setCols = async (cols, msg) => { await api('PUT', '/library/metadata/' + it.id, { collections: cols }); toast(msg); changed(); };
-    out.push('-', ...all.map(c => ({ label: t('Collection: {name}', { name: c }), run: () => setCols([...mine, c], t('Added to {name}', { name: c })) })),
-      { label: t('New collection…'), run: async () => { const name = (await ask(t('Name of the new collection')) || '').trim(); if (name) await setCols([...mine, name], t('Added to {name}', { name })); } });
-  }
-  return out;
+// "Add to …": a search over the playlists and (for movies and shows, admins) the library's collections,
+// so a long list is never drawn at once. Both lists load in parallel.
+async function addToDialog(it, changed) {
+  const canCol = S.me.admin && (it.type === 'movie' || it.type === 'show');
+  const [pls, cols, full] = await Promise.all([
+    GET('/playlists?kind=manual&owner=me&sort=title').then(meta),
+    canCol ? GET(`/library/sections/${it.librarySectionID}/collections`).then(r => r.MediaContainer.Metadata.map(c => c.title)) : [],
+    canCol ? fullItem(it) : null]);
+  const mine = full ? ((full.extra || {}).collections || []) : [];
+  const setCols = async (names, msg) => { await api('PUT', '/library/metadata/' + it.id, { collections: names }); toast(msg); changed(); };
+  const rows = [
+    ...pls.map(p => ({ name: p.title, kind: t('Playlist'), run: async () => { const r = await api('POST', `/playlists/${p.id}/items`, { ids: [it.id] }); toast(r.added ? t('Added to {name}', { name: p.title }) : t('Already in that playlist')); } })),
+    ...cols.filter(c => !mine.includes(c)).map(c => ({ name: c, kind: t('Collection'), run: () => setCols([...mine, c], t('Added to {name}', { name: c })) }))];
+  const q = h('input', { type: 'search', placeholder: t('Search'), style: 'width:100%' });
+  const list = h('div', { class: 'list', style: 'max-height:50vh;overflow:auto;margin-top:10px' });
+  const LIMIT = 40;
+  const draw = () => {
+    const w = q.value.trim().toLowerCase();
+    const hit = rows.filter(r => !w || r.name.toLowerCase().includes(w));
+    list.replaceChildren(...hit.slice(0, LIMIT).map(r => h('div', { class: 'li', style: 'cursor:pointer', onclick: async () => {
+      try { await r.run(); box.remove(); } catch (e) { toast(e.message, 5000); }
+    } }, h('div', { class: 'grow' }, r.name), h('span', { class: 'dim' }, r.kind))),
+      hit.length > LIMIT ? h('div', { class: 'dim', style: 'padding:8px' }, t('{n} more — type to narrow down', { n: hit.length - LIMIT })) : null,
+      !hit.length ? h('div', { class: 'dim', style: 'padding:8px' }, t('Nothing found.')) : null);
+  };
+  q.oninput = draw;
+  const newPl = async () => { const name = await ask(t('Name of the new playlist')); if (name) { await api('POST', '/playlists', { title: name, kind: 'manual', ids: [it.id] }); toast(t('Added to {name}', { name })); box.remove(); } };
+  const newCol = async () => { const name = (await ask(t('Name of the new collection')) || '').trim(); if (name) { await setCols([...mine, name], t('Added to {name}', { name })); box.remove(); } };
+  const box = modal(t('Add to …'), [q, list,
+    h('div', { class: 'actions' }, h('button', { onclick: newPl }, t('New playlist…')), canCol ? h('button', { onclick: newCol }, t('New collection…')) : null, h('button', { onclick: () => box.remove() }, t('Close')))]);
+  draw(); q.focus();
 }
 
 // A link to the item's page, for someone with an account here.

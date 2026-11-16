@@ -1282,6 +1282,7 @@ I18N.add('de', 'Deutsch', {
     'Share': 'Teilen',
     'Add to queue': 'Zur Warteschlange hinzufügen',
     'Add to …': 'Hinzufügen zu …',
+    '{n} more — type to narrow down': 'Noch {n} weitere – tippe, um die Liste einzugrenzen',
     'Mark as watched': 'Als gesehen markieren',
     'Mark as unwatched': 'Als nicht gesehen markieren',
     'Marked as watched': 'Als gesehen markiert',
