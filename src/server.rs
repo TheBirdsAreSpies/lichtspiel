@@ -2541,6 +2541,13 @@ pub fn device_label(product: &str, device: &str, params: &[(String, String)], ag
     label.chars().take(100).collect()
 }
 
+/// Whether an Origin header names another address than the one this server was reached at
+/// (`host`, or one of `forwarded_hosts` from a trusted proxy).
+fn origin_is_other_site(origin: &str, host: &str, forwarded_hosts: &[String]) -> bool {
+    let Some((_, o)) = origin.split_once("://") else { return true };
+    o != host.to_ascii_lowercase() && !forwarded_hosts.iter().any(|h| h == o)
+}
+
 fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let method = req.method().as_str().to_uppercase();
     let url = req.url().to_string();
@@ -2554,6 +2561,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let (mut product, mut device_name) = (String::new(), String::new());
     let (mut xff, mut real_ip, mut forwarded) = (Vec::new(), None, Vec::new());
     let (mut fetch_site, mut origin) = (String::new(), None);
+    let mut fwd_host = Vec::new();
     for h in req.headers() {
         let f = h.field.as_str().as_str().to_ascii_lowercase();
         match f.as_str() {
@@ -2573,6 +2581,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
             "forwarded" => forwarded.push(h.value.as_str().to_string()),
             "sec-fetch-site" => fetch_site = h.value.as_str().to_ascii_lowercase(),
             "origin" => origin = Some(h.value.as_str().to_ascii_lowercase()),
+            "x-forwarded-host" => fwd_host.extend(h.value.as_str().split(',').map(|x| x.trim().to_ascii_lowercase())),
             _ => {}
         }
     }
@@ -2626,8 +2635,9 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     };
     // The browser says the request comes from a page of another website (a link, form or script there).
     // Over plain http there is no Sec-Fetch-Site, so then an Origin for another address counts too.
-    // shortcut: behind a reverse proxy on plain http that rewrites Host, the web app's own posts are refused; keep Host (or use https) there.
-    let other_site = if fetch_site.is_empty() { origin.is_some_and(|o| o.split_once("://").map(|(_, h)| h) != Some(host.to_ascii_lowercase().as_str())) }
+    // A trusted proxy that rewrites Host says the address the browser used in X-Forwarded-Host, which counts as ours as well.
+    let from_trusted_proxy = req.remote_addr().is_some_and(|a| ip_in_list(&trusted, a.ip()));
+    let other_site = if fetch_site.is_empty() { origin.as_deref().is_some_and(|o| origin_is_other_site(o, &host, if from_trusted_proxy { &fwd_host } else { &[] })) }
         else { matches!(fetch_site.as_str(), "cross-site" | "same-site") };
     // Networks that need no sign-in act as the first admin (only with an address that is believed,
     // and never for another website's page).
@@ -3489,6 +3499,16 @@ pub(crate) mod tests {
     }
 
     /// Video, subtitle and picture addresses carry a short-lived ticket instead of the sign-in token.
+    #[test]
+    fn an_origin_is_ours_when_it_names_the_host_or_a_trusted_proxys_forwarded_host() {
+        assert!(!origin_is_other_site("http://nas:8484", "nas:8484", &[]));
+        assert!(origin_is_other_site("http://evil.com", "nas:8484", &[]));
+        assert!(origin_is_other_site("null", "nas:8484", &[]));
+        // Behind a proxy that rewrites Host, the address the browser used counts.
+        assert!(!origin_is_other_site("http://films.home", "127.0.0.1:8484", &["films.home".to_string()]));
+        assert!(origin_is_other_site("http://evil.com", "127.0.0.1:8484", &["films.home".to_string()]));
+    }
+
     #[test]
     fn a_ticket_opens_only_its_own_item_while_the_sign_in_lasts() {
         let (app, root) = test_app("ticket");
