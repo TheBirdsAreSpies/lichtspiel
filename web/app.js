@@ -974,8 +974,8 @@ async function itemPage(id) {
     h('div', { class: 'dim', style: 'margin-bottom:10px;position:relative' }, crumbs),
     h('div', { class: 'detail' },
       // A click anywhere on the poster plays.
-      h('div', { class: 'poster' + (isPlayable(it) && !it.missing ? ' playable' : ''), 'data-id': id, onclick: () => { if (isPlayable(it) && !it.missing) playV((it.viewOffset || 0) / 1000); } }, h('img', { src: withTok(it.thumb), alt: '' }),
-        isPlayable(it) && !it.missing ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: e => { e.stopPropagation(); playV((it.viewOffset || 0) / 1000); } }, icon('play')) : null),
+      h('div', { class: 'poster' + (isPlayable(it) ? ' playable' : ''), 'data-id': id, onclick: () => { if (isPlayable(it)) playV((it.viewOffset || 0) / 1000); } }, h('img', { src: withTok(it.thumb), alt: '' }),
+        isPlayable(it) ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: e => { e.stopPropagation(); playV((it.viewOffset || 0) / 1000); } }, icon('play')) : null),
       h('div', { class: 'info' },
         h('h1', { style: 'margin-bottom:4px' }, it.type === 'episode' ? `${it.index}. ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : it.clearLogo ? h('img', { src: withTok(it.clearLogo), alt: it.title, title: it.title, style: 'max-height:96px;max-width:100%;object-fit:contain;display:block', onerror: e => e.target.replaceWith(document.createTextNode(it.title)) }) : it.title,
           null),

@@ -187,6 +187,9 @@ button.dd.on svg{fill:var(--accent)}
 .detail{display:flex;gap:30px;align-items:flex-start}
 .detail .poster{width:240px;flex:0 0 240px}
 .detail .poster:hover .play{opacity:1}.detail .poster.playable{cursor:pointer}
+/* On hover the poster darkens, gets a gold frame and a gold play button. */
+.detail .poster.playable:hover{outline:1px solid var(--accent);outline-offset:-1px}.detail .poster.playable:hover img{filter:brightness(.4)}
+.detail .poster .play{background:var(--accent);color:#16120a}
 .poster .mosaic{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;width:100%;height:100%;gap:2px}
 .poster .mosaic img{width:100%;height:100%;object-fit:cover}
 .poster .initials{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:42px;color:var(--dim)}
