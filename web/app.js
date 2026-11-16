@@ -415,7 +415,8 @@ function pickGrid(items, cardOpts) {
     last = i; draw();
   };
   const card0 = i => posterCard(items[i], { ...cardOpts, onReplace: el => { el.dataset.i = i; cards[i] = el; draw(); }, pick: (e, circle) => {
-    if (!circle && !picked.size && !e.ctrlKey && !e.metaKey && !e.shiftKey) return false;
+    // A plain click on the poster always opens the item, even while others are selected; the circle, Ctrl and Shift select.
+    if (!circle && !e.ctrlKey && !e.metaKey && !e.shiftKey) return false;
     e.preventDefault(); toggle(i, e); return true;
   } });
   const card = i => { const c = card0(i); c.dataset.i = i; return c; };
