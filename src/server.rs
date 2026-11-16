@@ -451,6 +451,7 @@ impl App {
 
     /// Tells plugins about something, in the background.
     pub fn fire(self: &Arc<Self>, event: &str, data: Value) {
+        crate::trakt::on_event(self, event, &data);
         if self.listeners(event).is_empty() {
             return;
         }
@@ -2399,6 +2400,7 @@ pub fn start_background(app: &Arc<App>) {
     crate::downloads::start(app);
     // Watched state with a Plex server, both ways (when switched on).
     crate::plexsync::start(app);
+    crate::trakt::start(app);
     let retry = details_retry_list(&app.db.lock().unwrap());
     if !retry.is_empty() {
         app.queue_online_details(&retry, false);

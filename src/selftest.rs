@@ -484,6 +484,24 @@ pub fn run(out: &Path) -> bool {
         );
     }
 
+    // ---- Trakt: the admin enters the app, nobody else sees the secret, connecting needs the app first
+    {
+        let before = friend.get("/api/trakt").json();
+        let by_friend = friend.call("PUT", "/api/trakt", Some(json!({"client_id": "x"})), &[]).status;
+        let early = friend.post("/api/trakt/connect", json!({})).status;
+        let set = c.call("PUT", "/api/trakt", Some(json!({"client_id": "abc123", "client_secret": "s3cret-value", "sync_enabled": true, "interval_minutes": 1})), &[]);
+        let admin_view = c.get("/api/trakt").json();
+        let friend_view = friend.get("/api/trakt").json();
+        steps.add(
+            "trakt",
+            before["configured"] == json!(false) && by_friend == 403 && early == 400 && set.status == 200 && admin_view["configured"] == json!(true)
+                && admin_view["client_secret_hint"] == json!("…alue") && admin_view["interval_minutes"] == json!(10) && friend_view["configured"] == json!(true)
+                && friend_view.get("client_secret_hint").is_none() && friend_view["connected"] == json!(false),
+            format!("not set up at first; only an admin may change it (HTTP {by_friend}); connecting without an app is refused (HTTP {early}); the secret is shown to the admin as its last letters only and never to others"),
+        );
+        c.call("PUT", "/api/trakt", Some(json!({"client_id": "", "client_secret": "", "sync_enabled": false})), &[]);
+    }
+
     // ---- users: home profiles picked on the sign-in screen, with and without a PIN
     {
         let open = c.post("/api/users", json!({"username": "guest", "home": true}));

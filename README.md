@@ -103,16 +103,18 @@ Linux/Windows machine):
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Three
-  are included: an `.nfo` file reader, a webhook / Discord notifier and **Trakt** (below).
-- **Trakt** — switch the *Trakt* plugin on under **Plugins** and give it a Trakt app's Client ID
-  and Client Secret (create one at <https://trakt.tv/oauth/applications/new>, redirect URI
-  `urn:ietf:wg:oauth:2.0:oob`). Then everyone connects their own Trakt account under
-  **Settings → Trakt** (a code to type in at trakt.tv/activate). While a movie or episode plays,
-  Trakt shows "watching now" (paused when paused); once it is watched it goes into the Trakt
-  history, and so does anything marked as watched by hand. **Bring in my Trakt history** marks
-  everything watched on Trakt as watched here too (matched by IMDb / TMDB / TVDB ids, so the
-  details download should be on). The logins are kept in the plugin's folder (`tokens.json`).
+  details, react to events (new item, playback, invites …) and add their own API calls. Two
+  are included: an `.nfo` file reader and a webhook / Discord notifier.
+- **Trakt** — built in. An admin creates a Trakt app (<https://trakt.tv/oauth/applications/new>, redirect
+  URI `urn:ietf:wg:oauth:2.0:oob`) and enters its Client ID and Client Secret under **Settings → Your
+  account → Trakt**. Then everyone connects their own Trakt account there (a code to type in at
+  trakt.tv/activate). While a movie or episode plays, Trakt shows "watching now" (paused when paused);
+  once it is watched it goes into the Trakt history, and so does anything marked as watched by hand.
+  **Sync now** (and, when switched on, an automatic sync every hour or so) brings watched titles,
+  ratings and the watchlist together in both directions. Nothing is ever removed on either side; when
+  a rating differs, the side that changed it since the last sync wins. Titles are matched by IMDb / TMDB
+  / TVDB ids, so the details download should be on. The logins and settings are kept in
+  `data/trakt.json` (the `/config` volume in Docker), so they survive image updates.
 - **English and German** — the web app follows the browser's language; anyone can switch it
   under **Settings → Your account** (kept per browser). Language packs live in `web/lang/`
   (`de.js`); to add another, copy it, translate the texts, and list it in `src/server.rs`

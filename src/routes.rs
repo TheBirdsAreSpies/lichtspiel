@@ -189,6 +189,12 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/imdb-ratings/refresh", "Admin: download IMDb's ratings file now and update every rating (in the background; progress in /api/metadata/status)"),
     ("GET", "/api/import/old-server", "Admin: is the old server's data found here, is an import running, and the last import's report"),
     ("GET", "/api/import/old-server/preview", "Admin: what the old server's database holds ?db=folder or file: libraries with suggested folders here, accounts, counts"),
+    ("GET", "/api/trakt", "Your Trakt connection: whether the server has a Trakt app, whether you are connected (and as whom), what the last sync did; admins also get the Client ID and the settings"),
+    ("PUT", "/api/trakt", "Admin: change {client_id, client_secret, scrobble, send_marked_watched, sync_enabled, sync_watched, sync_ratings, sync_watchlist, interval_minutes}"),
+    ("POST", "/api/trakt/connect", "Start connecting your Trakt account → {code, url, expires_in, interval}: type the code in at the address"),
+    ("POST", "/api/trakt/poll", "Ask whether the code was typed in → {status: waiting|connected|expired|denied}"),
+    ("POST", "/api/trakt/disconnect", "Forget (and revoke) your Trakt login"),
+    ("POST", "/api/trakt/sync", "Sync your watched titles, ratings and watchlist with Trakt now, in both directions (in the background; the result is in GET /api/trakt)"),
     ("GET", "/api/plex-sync", "Admin: syncing with a Plex server: address, interval, what is synced, folder translations, Plex accounts (tokens shown as their last letters), whether it runs and the last run's report"),
     ("PUT", "/api/plex-sync", "Admin: change {enabled, url, interval_minutes, watched, resume, ratings, path_map: [{from, to}], accounts: [{id?, token?, user_id}]} (a known id without a token keeps its token)"),
     ("POST", "/api/plex-sync/test", "Admin: check {url?, token? or account_id?}: the Plex server's name, its movie and show libraries and their folders with the folder here"),
@@ -226,7 +232,7 @@ pub fn route_group(path: &str) -> &'static str {
         5
     } else if path.starts_with("/playlists") {
         6
-    } else if path.starts_with("/api/users") || path.starts_with("/api/invites") {
+    } else if path.starts_with("/api/users") || path.starts_with("/api/invites") || path.starts_with("/api/trakt") {
         7
     } else if path.starts_with("/api/plugins") {
         8
@@ -749,6 +755,17 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("POST", ["api", "plex-sync", "run"]) => {
             if !admin { return need_admin(); }
             if crate::plexsync::start_now(app) { js(202, json!({"ok": true, "started": true})) } else { fail(409, "A sync with Plex is already running") }
+        }
+        ("GET", ["api", "trakt"]) => ok(crate::trakt::public(app, &user)),
+        ("PUT", ["api", "trakt"]) => {
+            if !admin { return need_admin(); }
+            match crate::trakt::update(app, &ctx.body) { Ok(()) => ok(crate::trakt::public(app, &user)), Err(e) => fail(400, &e) }
+        }
+        ("POST", ["api", "trakt", "connect"]) => match crate::trakt::connect(app, &user) { Ok(v) => ok(v), Err(e) => fail(400, &e) },
+        ("POST", ["api", "trakt", "poll"]) => match crate::trakt::poll(app, &user) { Ok(v) => ok(v), Err(e) => fail(400, &e) },
+        ("POST", ["api", "trakt", "disconnect"]) => match crate::trakt::disconnect(app, &user) { Ok(()) => ok(json!({"ok": true})), Err(e) => fail(400, &e) },
+        ("POST", ["api", "trakt", "sync"]) => {
+            if crate::trakt::sync_now(app, user.id) { js(202, json!({"ok": true, "started": true})) } else { fail(409, "A sync with Trakt is already running") }
         }
         ("GET", ["api", "activity"]) => {
             if !user.admin { return fail(403, "Only an admin can do this"); }
