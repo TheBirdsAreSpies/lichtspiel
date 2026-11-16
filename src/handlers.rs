@@ -874,7 +874,7 @@ fn scaled_poster(app: &Arc<App>, id: u64, src: &Path, width: u32) -> Option<Path
 }
 
 pub fn thumb(app: &Arc<App>, user: &User, iid: &str, width: Option<u32>) -> Resp {
-    let (poster, file, duration, title, kind, first_leaf, id) = {
+    let (poster, file, duration, title, kind, id) = {
         let db = app.db.lock().unwrap();
         let Some(it) = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)) else { return fail(404, "Not found") };
         if !db.can_see_item(user, it) {
@@ -888,8 +888,7 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str, width: Option<u32>) -> Resp
         if poster.is_none() && it.kind == ItemKind::Track {
             poster = it.parent_id.and_then(|p| db.items.get(&p)).and_then(|a| a.poster.clone());
         }
-        let first_leaf = if it.kind.playable() { None } else { db.leaves(it.id).first().copied() };
-        (poster, it.file.as_ref().map(|f| f.path.clone()), it.file.as_ref().map_or(it.duration_ms, |f| f.duration_ms), it.title.clone(), it.kind, first_leaf, it.id)
+        (poster, it.file.as_ref().map(|f| f.path.clone()), it.file.as_ref().map_or(it.duration_ms, |f| f.duration_ms), it.title.clone(), it.kind, it.id)
     };
     // The type is read from the file itself (a .jpg may really be a PNG);
     // something that is not a photo at all is skipped.
@@ -903,13 +902,15 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str, width: Option<u32>) -> Resp
     if std::fs::metadata(&cache).map(|m| m.len() > 0).unwrap_or(false) {
         return with_cache(serve_file(&cache, "image/jpeg", None, false));
     }
-    let source = match (file, first_leaf) {
-        (Some(f), _) => Some((f, duration)),
-        (None, Some(leaf)) => {
+    // The first episode of a show or season is looked for only now: searching the library for it on every
+    // request (also for the many that have a poster) held up every other request.
+    let source = match file {
+        Some(f) => Some((f, duration)),
+        None if !kind.playable() => {
             let db = app.db.lock().unwrap();
-            db.items.get(&leaf).and_then(|l| l.file.as_ref().map(|f| (f.path.clone(), l.duration_ms)))
+            db.leaves(id).first().and_then(|leaf| db.items.get(leaf)).and_then(|l| l.file.as_ref().map(|f| (f.path.clone(), l.duration_ms)))
         }
-        _ => None,
+        None => None,
     };
     if let Some((src, dur)) = source.filter(|(p, _)| app.may_send(Path::new(p), false)) {
         let at = if dur > 0 { (dur as f64 / 1000.0 * 0.1).min(300.0) } else { 5.0 };

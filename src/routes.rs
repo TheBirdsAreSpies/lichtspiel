@@ -887,8 +887,10 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["library", "metadata", iid, "related"]) => with_item(app, &user, iid, |db, it| {
             let count = ctx.param("count").and_then(|c| c.parse().ok()).filter(|c: &usize| *c > 0).unwrap_or(related::HUB_COUNT);
+            // One index for all rows: without it every title of every row searched the whole library.
+            let ix = Index::build(db);
             let hubs: Vec<Value> = related::related(db, &user, it, count).into_iter().map(|hb| {
-                let list: Vec<Value> = hb.ids.iter().filter_map(|i| db.items.get(i)).map(|i| item_json(db, &user, i, false)).collect();
+                let list: Vec<Value> = hb.ids.iter().filter_map(|i| db.items.get(i)).map(|i| item_json_ix(db, &user, i, false, Some(&ix))).collect();
                 json!({"title": hb.title, "hubIdentifier": hb.identifier, "context": hb.context, "type": it.kind.as_str(), "size": list.len(), "more": hb.more, "Metadata": list})
             }).collect();
             ok(json!({"MediaContainer": {"size": hubs.len(), "Hub": hubs}}))
@@ -955,14 +957,16 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             with_item(app, &user, &iid.to_string(), |db, it| ok(item_json(db, &user, it, true)))
         }
         ("GET", ["library", "metadata", iid, "children"]) => with_item(app, &user, iid, |db, it| {
-            let list: Vec<Value> = db.children(it.id).iter().map(|c| item_json(db, &user, c, false)).collect();
+            let ix = Index::build(db);
+            let list: Vec<Value> = db.children(it.id).iter().map(|c| item_json_ix(db, &user, c, false, Some(&ix))).collect();
             let n = list.len();
             ok(container(list, n, 0, json!({"parentTitle": it.title, "parentRatingKey": it.id.to_string()})))
         }),
         ("GET", ["library", "metadata", iid, "allLeaves"]) => with_item(app, &user, iid, |db, it| {
             let mut ids = db.leaves(it.id);
             query::sort_items(db, user.id, &mut ids, ctx.param("sort").unwrap_or("episode_order"));
-            let list: Vec<Value> = ids.iter().filter_map(|i| db.items.get(i)).map(|c| item_json(db, &user, c, false)).collect();
+            let ix = Index::build(db);
+            let list: Vec<Value> = ids.iter().filter_map(|i| db.items.get(i)).map(|c| item_json_ix(db, &user, c, false, Some(&ix))).collect();
             let n = list.len();
             ok(container(list, n, 0, json!({})))
         }),
@@ -1516,7 +1520,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             };
             let db = app.db.lock().unwrap();
             let ids = query::run_smart(&db, &user, &q);
-            let list: Vec<Value> = ids.iter().take(200).filter_map(|i| db.items.get(i)).map(|i| item_json(&db, &user, i, false)).collect();
+            let ix = Index::build(&db);
+            let list: Vec<Value> = ids.iter().take(200).filter_map(|i| db.items.get(i)).map(|i| item_json_ix(&db, &user, i, false, Some(&ix))).collect();
             ok(container(list, ids.len(), 0, json!({})))
         }
         ("GET", ["playlists", pid]) => {
@@ -1551,8 +1556,9 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 query::sort_items(&db, user.id, &mut ids, s);
             }
             let (pg, off) = page(ctx, &ids);
+            let ix = Index::build(&db);
             let list: Vec<Value> = pg.iter().filter_map(|i| db.items.get(i)).map(|i| {
-                let mut v = item_json(&db, &user, i, false);
+                let mut v = item_json_ix(&db, &user, i, false, Some(&ix));
                 v["playlistItemID"] = json!(i);
                 v
             }).collect();
