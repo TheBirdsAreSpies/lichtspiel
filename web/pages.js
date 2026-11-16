@@ -1283,7 +1283,6 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
       if (!await sure(t('Remove the online details of "{title}"? It goes back to the file name and is not matched automatically again until you pick a match.', { title: it.title }), { ok: t('Unmatch'), danger: true })) return;
       const r = await api('DELETE', `/library/metadata/${it.id}/match`); toast(t(r.message), 4000); changed();
     } } : null,
-    admin && play && opts.detail ? { label: t('Credits…'), run: () => creditsDialog(it) } : null,
     admin ? { label: t('Optimize…'), run: () => optimizeDialog(it) } : null,
     admin && opts.detail && (it.Media || []).length > 1 ? { label: t('Split the merged versions'), run: async () => {
       const r = await api('POST', `/library/metadata/${it.id}/split`); toast(t('{n} versions are separate titles again', { n: r.split })); changed();

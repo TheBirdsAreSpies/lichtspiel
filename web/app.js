@@ -1268,25 +1268,6 @@ function sureTyped(text, word, { ok = t('Delete') } = {}) {
   });
 }
 
-// Where the end credits start: decides when the video counts as watched.
-async function creditsDialog(it) {
-  const r = await GET(`/library/metadata/${it.id}/markers`);
-  const parse = v => { const p = v.trim().split(':').map(Number); if (!v.trim() || p.some(isNaN)) return null; return p.reduce((a, b) => a * 60 + b, 0) * 1000; };
-  const inp = h('input', { value: r.credits.length ? fmtTime(r.credits[0] / 1000) : '', placeholder: t('e.g. 1:52:30'), style: 'width:140px' });
-  const from = { manual: t('set by hand'), chapters: t('from a chapter named Credits in the file'), picture: t('found in the picture (dark screen with text near the end)'), none: t('none found (no Credits chapter, and the end of the video doesn’t look like credits)'), pending: t('not looked for yet (detection runs in the background)') }[r.source] + (r.errors ? t('; detection failed {n} time(s)', { n: r.errors }) : '');
-  const save = async credits => { try { await api('PUT', `/library/metadata/${it.id}/markers`, { credits }); toast(t('Saved')); box.remove(); } catch (e) { toast(e.message, 5000); } };
-  const box = modal(t('End credits'), [
-    h('p', { class: 'dim' }, t('Credits marker: {from}. This video counts as watched at {at} of {length}.', { from, at: fmtTime(r.watchedAt / 1000), length: fmtTime(r.duration / 1000) })),
-    formRow(t('Credits start at (hours:minutes:seconds)'), inp),
-    h('div', { class: 'actions' },
-      h('button', { class: 'primary', onclick: () => { const ms = parse(inp.value); if (ms === null) return toast(t('Enter a time like 1:52:30')); save([ms]); } }, t('Save')),
-      r.source === 'manual' ? h('button', { onclick: () => save(null) }, t('Use the file’s chapters')) : null,
-      h('button', { title: t('Read the chapters of this file again and look for the end credits'), onclick: async () => {
-        try { await api('POST', `/library/metadata/${it.id}/credits`); toast(t('Detecting credits…')); box.remove(); pollActivity(); setTimeout(() => creditsDialog(it), 2500); } catch (e) { toast(e.message, 6000); }
-      } }, t('Detect credits again')),
-      h('button', { onclick: () => box.remove() }, t('Cancel')))]);
-}
-
 // Pick the right online entry when the automatic match was wrong or missing.
 function fixMatch(it, done) {
   const x = it.extra || {};
@@ -1347,6 +1328,21 @@ async function editItem(it, saved) {
   const field = (k, label, val, o = {}) => formRow(label, (f[k] = h(o.area ? 'textarea' : 'input', { value: val ?? '', type: o.type || 'text', style: 'width:100%' })), o.help, o.area);
   const movie = it.type === 'movie' || it.type === 'episode';
   const fmtAt = ts => ts ? new Date(ts * (ts < 1e12 ? 1000 : 1)).toLocaleString(I18N.lang) : '';
+  // Intro and credits markers (movies and episodes): shown as h:mm:ss, saved with the rest.
+  const mk = movie ? await GET(`/library/metadata/${it.id}/markers`).catch(() => null) : null;
+  const clock = ms => (ms || ms === 0) ? fmtTime(ms / 1000) : '';
+  const unclock = v => { const p = v.trim().split(':').map(Number); if (!v.trim() || p.some(n => isNaN(n) || n < 0)) return null; return p.reduce((a, b) => a * 60 + b, 0) * 1000; };
+  const mf = {}, mInit = mk ? { cs: clock((mk.credits || [])[0]), is: clock((mk.intro || [])[0]), ie: clock((mk.intro || [])[1]) } : {};
+  const srcText = (src, errors) => ({ manual: t('set by hand'), chapters: t('from a chapter named Credits in the file'), picture: t('found in the picture (dark screen with text near the end)'), sound: t('found by comparing the sound of the episodes'),
+    none: t('none found'), pending: t('not looked for yet (detection runs in the background)') }[src] || src) + (errors ? t('; detection failed {n} time(s)', { n: errors }) : '');
+  const markerPane = mk ? [t('Markers'), [
+    h('p', { class: 'dim', style: 'margin-top:0' }, t('Intro: {from}.', { from: srcText(mk.introSource) }), h('br'), t('Credits: {from}. This video counts as watched at {at} of {length}.', { from: srcText(mk.source, mk.errors), at: fmtTime(mk.watchedAt / 1000), length: fmtTime(mk.duration / 1000) })),
+    formRow(t('Intro starts at (hours:minutes:seconds)'), (mf.is = h('input', { value: mInit.is, placeholder: t('e.g. 0:00:45'), style: 'width:140px' }))),
+    formRow(t('Intro ends at'), (mf.ie = h('input', { value: mInit.ie, placeholder: t('e.g. 0:02:10'), style: 'width:140px' })), t('Empty both to go back to the found intro.')),
+    formRow(t('Credits start at'), (mf.cs = h('input', { value: mInit.cs, placeholder: t('e.g. 1:52:30'), style: 'width:140px' })), t('Empty to use the file’s chapters again.')),
+    h('button', { title: t('Read the chapters of this file again and look for the end credits'), onclick: async () => {
+      try { await api('POST', `/library/metadata/${it.id}/credits`); toast(t('Detecting credits…')); pollActivity(); } catch (e) { toast(e.message, 6000); }
+    } }, t('Detect credits again'))]] : null;
   const panes = [
     [t('General'), [
       field('title', t('Title'), it.title), field('sort_title', t('Sort title'), it.titleSort, { help: t('Leave empty to derive it from the title.') }),
@@ -1359,6 +1355,7 @@ async function editItem(it, saved) {
       field('directors', t('Directors'), list(x.directors)), field('countries', t('Countries'), list(x.countries)), field('genres', t('Genres'), list(it.genres)),
       field('writers', t('Writers'), list(x.writers)), field('producers', t('Producers'), list(x.producers)), field('collections', t('Collections'), list(x.collections))]],
     [t('Labels'), [field('labels', t('Labels (comma separated)'), list(x.labels))]],
+    markerPane,
     [t('Advanced'), [
       formRow(t('Language for details'), (f.language_override = h('select', {}, h('option', { value: '' }, t('Library default')), langs.map(l => h('option', { value: l.code, selected: x.language_override === l.code }, l.name)))), t('Applies the next time the details are fetched online (menu "⋯" → refresh).')),
       formRow(t('Detect credits'), (f.credits_detection = h('select', {}, [['', t('Library default')], ['on', t('Yes')], ['off', t('No')]].map(([v, n]) => h('option', { value: v, selected: (x.credits_detection || '') === v }, n)))), t('Whether the "Skip credits" mark is searched for in this title.')),
@@ -1371,6 +1368,7 @@ async function editItem(it, saved) {
       it.addedAt ? [h('div', { class: 'dim' }, t('Added')), h('div', {}, fmtAt(it.addedAt))] : null,
       it.updatedAt ? [h('div', { class: 'dim' }, t('Last updated')), h('div', {}, fmtAt(it.updatedAt))] : null,
       ((it.Media || [])[0] || {}).file ? [h('div', { class: 'dim' }, t('Path')), h('div', { style: 'word-break:break-all' }, it.Media[0].file)] : null)]]];
+  for (let i = panes.length - 1; i >= 0; i--) if (!panes[i]) panes.splice(i, 1);
   panes.push(panes.splice(panes.findIndex(p => p[0] === t('Advanced')), 1)[0]); // Advanced last
   const bodies = panes.map(([, kids], i) => h('div', { style: i ? 'display:none' : '' }, kids));
   const links = panes.map(([name], i) => h('a', { href: '#', class: i ? '' : 'on', onclick: e => {
@@ -1382,7 +1380,19 @@ async function editItem(it, saved) {
       const body = {}; for (const [k, el] of Object.entries(f)) body[k] = el.value;
       body.year = body.year ? Number(body.year) : null; body.rating = body.rating ? Number(String(body.rating).replace(',', '.')) : null;
       if (!body.sort_title.trim()) delete body.sort_title;
-      await api('PUT', '/library/metadata/' + it.id, body); box.remove(); saved ? saved() : itemPage(it.id);
+      // Only markers that were changed are sent; emptied ones go back to what was found (only a hand-set one can be taken back).
+      const mb = {};
+      if (mk) {
+        const cs = mf.cs.value.trim(), is = mf.is.value.trim(), ie = mf.ie.value.trim();
+        if (cs !== mInit.cs) { if (cs) { const ms = unclock(cs); if (ms === null) return toast(t('Enter a time like 1:52:30')); mb.credits = [ms]; } else if (mk.source === 'manual') mb.credits = null; }
+        if (is !== mInit.is || ie !== mInit.ie) {
+          if (!is && !ie) { if (mk.introSource === 'manual') mb.intro = null; }
+          else { const a = unclock(is), b = unclock(ie); if (a === null || b === null || b <= a) return toast(t('Enter the intro start and end, the end after the start')); mb.intro = [a, b]; }
+        }
+      }
+      await api('PUT', '/library/metadata/' + it.id, body);
+      if (Object.keys(mb).length) await api('PUT', `/library/metadata/${it.id}/markers`, mb);
+      box.remove(); saved ? saved() : itemPage(it.id);
     } }, t('Save')), h('button', { onclick: () => box.remove() }, t('Cancel')))]);
 }
 
