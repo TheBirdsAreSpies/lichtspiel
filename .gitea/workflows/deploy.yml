@@ -22,6 +22,11 @@
 #                       The deploy stops before touching the running server if it can't write there.
 #                       For the graphics chip the deploy adds the group of /dev/dri/renderD128 itself
 #                       (`--group-add`) when LICHTSPIEL_DOCKER_ARGS passes /dev/dri and has no --group-add.
+#   LICHTSPIEL_MEDIA_GROUPS  groups (numbers, separated by spaces) the server's user joins to read the videos
+#                       (default 101 = "administrators" on a Synology). The server runs as 1026:100, and a
+#                       shared folder whose permissions name only other groups (DSM's usual: administrators,
+#                       not "users") refuses it: everything then shows as missing. Set it to a single space
+#                       when "users" or the user itself may read the videos.
 #
 # docker-compose.yml describes the same container for a manual install; keep mounts and devices in both
 # alike. This workflow replaces a container of that name, also one that Container Manager created.
@@ -40,6 +45,7 @@ env:
   DOCKER_ARGS: ${{ vars.LICHTSPIEL_DOCKER_ARGS || '--device /dev/dri:/dev/dri' }}
   OLD_SERVER_DIR: ${{ vars.LICHTSPIEL_OLD_SERVER || '' }}
   RUN_AS: ${{ vars.LICHTSPIEL_USER || '' }}
+  MEDIA_GROUPS: ${{ vars.LICHTSPIEL_MEDIA_GROUPS || '101' }}
 
 jobs:
   deploy:
@@ -103,6 +109,8 @@ jobs:
               gid=$(docker run --rm --device /dev/dri:/dev/dri --entrypoint stat ${NAME}:latest -c %g /dev/dri/renderD128 2>/dev/null || true)
               if [ -n "$gid" ]; then DOCKER_ARGS="${DOCKER_ARGS} --group-add $gid"; else echo "No /dev/dri/renderD128 found: the server will convert videos on the processor."; fi ;;
           esac
+          # Groups that may read the videos (after the check above, which looks for a --group-add of the owner's).
+          for g in ${MEDIA_GROUPS}; do DOCKER_ARGS="${DOCKER_ARGS} --group-add $g"; done
           # Starting is part of the check: a failed `docker run` (bash -e) must also lead to the rollback.
           if start ${NAME}:latest && healthy; then
             echo "Lichtspiel ${GITHUB_SHA::8} is running."

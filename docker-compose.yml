@@ -37,3 +37,9 @@ services:
     # deploy looks this number up and adds it by itself.)
     # group_add:
     #   - "937"
+    # The videos: a Synology shared folder usually grants only "administrators" (group 101), not
+    # "users", so the server (uid 1026, group 100) is refused and everything shows as missing. The
+    # group joins it for reading; the folder is mounted read-only above. If "users" may read the videos,
+    # remove this. (The Gitea deploy does the same with LICHTSPIEL_MEDIA_GROUPS, default 101.)
+    group_add:
+      - "101"
