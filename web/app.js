@@ -629,9 +629,12 @@ function filterUI({ st, go, advRules, lastKey, loadFilters }) {
       const list = h('div', { class: 'fp-values' });
       const fill = () => {
         const needle = search.value.trim().toLowerCase();
-        const vals = f.values.filter(x => !needle || valueName(f.filter, x.value).toLowerCase().includes(needle));
+        const all = f.values.filter(x => !needle || valueName(f.filter, x.value).toLowerCase().includes(needle));
+        // Thousands of names (actors, directors) are not all drawn: the search narrows them down.
+        const vals = all.slice(0, 300);
         list.replaceChildren(...(vals.length ? vals.map(x => h('button', { class: 'fp-val' + (x.value === on ? ' on' : ''), onclick: () => setFilter(f.filter, x.value === on ? '' : x.value) },
-          h('span', {}, valueName(f.filter, x.value)), h('small', { class: 'dim' }, String(x.count)))) : [h('div', { class: 'dim', style: 'padding:8px' }, t('None found'))]));
+          h('span', {}, valueName(f.filter, x.value)), h('small', { class: 'dim' }, String(x.count)))) : [h('div', { class: 'dim', style: 'padding:8px' }, t('None found'))]),
+          ...(all.length > vals.length ? [h('div', { class: 'dim', style: 'padding:8px' }, t('{n} more — type to narrow down', { n: all.length - vals.length }))] : []));
       };
       search.oninput = fill; fill();
       right.replaceChildren(search, list);

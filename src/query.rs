@@ -789,6 +789,9 @@ pub fn section_filters(db: &Db, user_id: u64, items: &[&Item], kind: ItemKind, o
     use std::collections::BTreeMap;
     let label = |f: &'static str| -> &'static str { ITEM_FIELDS.iter().find(|x| x.0 == f).map(|x| x.2).unwrap_or(f) };
     let mut out = vec![];
+    // The filters that look at the episodes below a show are looked up in an index made once;
+    // searching the whole library for every show took seconds.
+    let ix = filters_for(kind).iter().any(|f| LEAF_FIELDS.contains(f)).then(|| Index::build(db));
     for f in filters_for(kind) {
         if (!owner && OWNER_FILTERS.contains(f)) || (!advanced && ADVANCED_FILTERS.contains(f)) {
             continue;
@@ -797,7 +800,7 @@ pub fn section_filters(db: &Db, user_id: u64, items: &[&Item], kind: ItemKind, o
         let mut is_bool = false;
         let mut yes = 0;
         for it in items {
-            match field(db, user_id, it, f) {
+            match field_ix(db, ix.as_ref(), user_id, it, f) {
                 FieldValue::Bool(b) => {
                     is_bool = true;
                     yes += b as usize;
