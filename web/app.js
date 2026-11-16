@@ -601,7 +601,21 @@ document.addEventListener('click', e => {
 
 // The filter menu of the library pages (also used by the watchlist): the button, the panel with the kinds of filter and their
 // values, the advanced rules and the chips of what is on. st holds the state (f.<name> = value, rules, rmatch), go() applies it.
-function filterUI({ st, go, advRules, lastKey, loadFilters }) {
+// The lists of filter values cover the whole library whatever is filtered, so they are fetched once a
+// minute at most (and ahead of the click) instead of on every page and every change of a filter.
+const FILTER_CACHE = new Map();
+function cachedFilters(url) {
+  const hit = FILTER_CACHE.get(url);
+  if (hit && Date.now() - hit.at < 60000) return hit.p;
+  const p = GET(url).then(r => r.MediaContainer.Filter);
+  FILTER_CACHE.set(url, { at: Date.now(), p });
+  p.catch(() => FILTER_CACHE.delete(url));
+  return p;
+}
+
+function filterUI({ st, go, advRules, lastKey, loadFilters, prefetch }) {
+  // Ask for the values shortly after the page is up, so the panel opens at once.
+  if (prefetch) setTimeout(() => { Promise.resolve().then(loadFilters).catch(() => {}); }, 400);
   const filterName = f => t(FILTER_NAMES[f] || f);
   const valueName = (f, v) => f === 'video_resolution' ? (RES_NAMES[v] || v) : f === 'decade' ? t('{v}s', { v }) : /_language$/.test(f) ? (langName(v) || v) : v;
   const setFilter = (f, v) => { if (v) st['f.' + f] = v; else delete st['f.' + f]; go(); };
@@ -755,8 +769,8 @@ async function sectionPage(id, qs) {
     const cur = opts.find(o => o[0] === st[key]) || opts[0];
     return dropBtn(cur[1], () => opts.map(([v, l]) => ({ label: l, checked: st[key] === v, run: () => { st[key] = v; if (key === 'type') { st.sort = ''; st.rules = ''; for (const k of Object.keys(st)) if (k.startsWith('f.')) delete st[k]; } go(); } })), { title, on: key !== 'sort' && !!st[key] });
   };
-  const {filterBtn, chips, closePanel} = filterUI({ st, go, advRules, lastKey: 'libFilterField:' + sec.type + ':' + (st.type || ''),
-    loadFilters: async () => (await GET(`/library/sections/${id}/filters?includeAdvanced=1${st.type ? '&type=' + st.type : ''}`)).MediaContainer.Filter });
+  const {filterBtn, chips, closePanel} = filterUI({ st, go, advRules, lastKey: 'libFilterField:' + sec.type + ':' + (st.type || ''), prefetch: true,
+    loadFilters: () => cachedFilters(`/library/sections/${id}/filters?includeAdvanced=1${st.type ? '&type=' + st.type : ''}`) });
   const text = (key, ph, w) => h('input', { placeholder: ph, value: st[key], style: `width:${w}px`, onchange: e => { st[key] = e.target.value.trim(); go(); } });
   // ----- sorting: the field and its direction
   const sortFields = (st.type === 'season' || st.type === 'episode' ? [['show', 'TV show']] : []).concat(SORT_FIELDS);
@@ -1309,9 +1323,10 @@ function fixMatch(it, done) {
       const r = await GET(`/library/metadata/${it.id}/matches?title=${encodeURIComponent(title.value)}&year=${encodeURIComponent(year.value)}`);
       if (!r.matches.length) return results.replaceChildren(h('div', { class: 'dim' }, t('Nothing found. Try another spelling or leave the year empty.')));
       results.replaceChildren(...r.matches.map(c => h('div', { class: 'li', style: 'cursor:pointer', onclick: async () => {
-        results.replaceChildren(h('div', { class: 'dim' }, t('Downloading details for {title}…', { title: c.title })));
-        try { const a = await api('PUT', `/library/metadata/${it.id}/match`, { source: c.source, id: c.id }); toast(t(a.message), 4000); box.remove(); if (done) done(); else itemPage(it.id); }
-        catch (e) { results.replaceChildren(h('div', { class: 'err' }, e.message)); }
+        // The dialog closes at once; the details come in the background and the page refreshes when they are there.
+        box.remove(); toast(t('Downloading details for {title}…', { title: c.title }), 60000);
+        try { const a = await api('PUT', `/library/metadata/${it.id}/match`, { source: c.source, id: c.id }); toast(t(a.message), 4000); if (done) done(); else if (location.hash === '#/item/' + it.id) itemPage(it.id); }
+        catch (e) { toast(e.message, 8000); }
       } },
         c.thumb ? h('img', { src: c.thumb, referrerpolicy: 'no-referrer' }) : h('div', { class: 'initials', style: 'width:46px;height:68px' }, c.title[0] || '?'),
         h('div', { class: 'grow' }, h('b', {}, c.title), c.year ? ` (${c.year})` : '', h('div', { class: 'dim' }, `${c.source} · ${t('fit {n}%', { n: Math.round(Math.max(0, Math.min(1, c.score)) * 100) })}`),

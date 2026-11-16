@@ -306,7 +306,8 @@ pub fn index_for(db: &Db, rules: &[Rule]) -> Option<Index> {
 pub fn field_ix(db: &Db, ix: Option<&Index>, user_id: u64, item: &Item, name: &str) -> FieldValue {
     use FieldValue::*;
     let leaves_of = |id: u64| ix.map_or_else(|| db.leaves(id), |x| x.leaves(db, id));
-    let view = db.view(user_id, item.id);
+    // Looked up only by the fields that need it: building the key for every field of every item was a large part of the cost.
+    let view = || db.view(user_id, item.id);
     let file = item.file.as_ref();
     let show = || -> Option<&Item> {
         let season = db.items.get(&item.parent_id?)?;
@@ -343,7 +344,7 @@ pub fn field_ix(db: &Db, ix: Option<&Index>, user_id: u64, item: &Item, name: &s
         "year" => Num(item.year.map(|y| y as f64)),
         "genre" => Text(item.genres.clone()),
         "rating" => Num(item.rating.map(|r| r as f64)),
-        "user_rating" => Num(view.rating.map(|r| r as f64)),
+        "user_rating" => Num(view().rating.map(|r| r as f64)),
         "content_rating" => Text(vec![item.content_rating.clone()]),
         "studio" => Text(vec![item.studio.clone()]),
         "summary" => Text(vec![item.summary.clone()]),
@@ -376,19 +377,19 @@ pub fn field_ix(db: &Db, ix: Option<&Index>, user_id: u64, item: &Item, name: &s
         "audience_rating" => Num(item.rating.map(|r| r as f64).or_else(|| score_of(top(), &["imdb", "tmdb"]))),
         "critic_rating" => Num(score_of(top(), &["rotten_tomatoes", "metacritic"])),
         "release_date" => Num(item.extra.get("originally_available").and_then(|v| v.as_str()).and_then(date_to_unix).or(item.year.map(|y| (days_from_civil(y as i64, 1, 1) * 86400) as f64))),
-        "progress" => Num(if item.duration_ms > 0 && view.view_offset_ms > 0 { Some(view.view_offset_ms as f64 * 100.0 / item.duration_ms as f64) } else { None }),
+        "progress" => Num(if item.duration_ms > 0 && view().view_offset_ms > 0 { Some(view().view_offset_ms as f64 * 100.0 / item.duration_ms as f64) } else { None }),
         "bitrate" => Num(file.map(|f| (f.bitrate / 1000) as f64).filter(|b| *b > 0.0)),
-        "last_viewed_at" => Num(if view.last_viewed_at > 0 { Some(view.last_viewed_at as f64) } else { None }),
+        "last_viewed_at" => Num(if view().last_viewed_at > 0 { Some(view().last_viewed_at as f64) } else { None }),
         "duration" => Num(Some(item.duration_ms as f64 / 60000.0)),
-        "watched" => Bool(if item.kind.playable() { view.view_count > 0 } else { watched_container(db).0 }),
+        "watched" => Bool(if item.kind.playable() { view().view_count > 0 } else { watched_container(db).0 }),
         "in_progress" => Bool(if item.kind.playable() {
-            view.view_offset_ms > 0
+            view().view_offset_ms > 0
         } else {
             watched_container(db).1
         }),
-        "unwatched" => Bool(if item.kind.playable() { view.view_count == 0 } else { !watched_container(db).0 }),
+        "unwatched" => Bool(if item.kind.playable() { view().view_count == 0 } else { !watched_container(db).0 }),
         "unwatched_leaves" => Bool(if item.kind.playable() {
-            view.view_count == 0
+            view().view_count == 0
         } else {
             leaves_of(item.id).iter().any(|l| db.view(user_id, *l).view_count == 0)
         }),
@@ -423,9 +424,9 @@ pub fn field_ix(db: &Db, ix: Option<&Index>, user_id: u64, item: &Item, name: &s
         }).unwrap_or_default()),
         "audio_layout" => Text(file.map(|f| f.streams.iter().filter(|s| s.kind == "audio").map(layout_name).filter(|s| !s.is_empty()).collect()).unwrap_or_default()),
         "folder" => Text(file.and_then(|f| std::path::Path::new(&f.path).parent().map(|p| p.to_string_lossy().to_string())).into_iter().collect()),
-        "view_count" => Num(Some(view.view_count as f64)),
-        "favorite" => Bool(view.favorite),
-        "watchlist" => Bool(view.watchlist_at > 0),
+        "view_count" => Num(Some(view().view_count as f64)),
+        "favorite" => Bool(view().favorite),
+        "watchlist" => Bool(view().watchlist_at > 0),
         "container" => Text(vec![file.map(|f| f.container.clone()).unwrap_or_default()]),
         "video_codec" => Text(vec![file.and_then(|f| f.video()).map(|v| v.codec.clone()).unwrap_or_default()]),
         "audio_codec" => Text(file.map(|f| f.streams.iter().filter(|s| s.kind == "audio").map(|s| s.codec.clone()).collect()).unwrap_or_default()),
