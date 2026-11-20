@@ -1,13 +1,14 @@
 # Open items after the 2026-11-15/16 review
 
-The review of 2026-11-15 and 2026-11-16 found 126 problems. Almost all are fixed; [review-2026-11-15.md](review-2026-11-15.md) lists every one with its commit. This page lists only what is still open: 2 items postponed as nice to have, 4 partly fixed, and a few known limits that are worth real follow-up work. Every "where" below was checked again against the code at commit `ddb46ee` (2026-11-20).
+The review of 2026-11-15 and 2026-11-16 found 126 problems. Almost all are fixed; [review-2026-11-15.md](review-2026-11-15.md) lists every one with its commit. This page lists only what is still open: 1 item postponed as nice to have, 4 partly fixed, and a few known limits that are worth real follow-up work. Every "where" below was checked again against the code at commit `ddb46ee` (2026-11-20).
 
 Changes since the first version of this page (`2e6689d`):
 
 - **P8** (Trakt lock) no longer applies: the Trakt plugin was replaced by Trakt built into the server (`7dd9693`), which changes its file under an in-process lock.
 - The known limit "a reverse proxy that rewrites `Host` gets 403" is fixed (`925310e`).
 - The review branches are merged into `main` and pushed, so the deploy has run.
-- On 2026-11-20 the small (S) items were fixed: W11, W12, W13, W15 and W16 in `3b997c3`; C16 and C18 in `62edc5f`; P9 (`trakt.json` is now mode 0600) in `d341d67`; P10 in `76ae467`; D10 in `f12f477`. C17 is still open because it needs a check on Windows. W12 still wants a try in Safari.
+- On 2026-11-20 the small (S) items were fixed: W11, W12, W13, W15 and W16 in `3b997c3`; C16 and C18 in `62edc5f`; P9 (`trakt.json` is now mode 0600) in `d341d67`; P10 in `76ae467`; D10 in `f12f477`. W12 still wants a try in Safari.
+- **C17** is fixed by `fa82202`, checked on 2026-11-20: on Windows "Speichern" opens the file with `?ticket=` and never `?token=` (`lib/screens/downloads.dart:32-44`). Against a running server the ticket loads its own address (200), is refused for another address, without sign-in and after signing out (401 each), and does not contain the token. Not clicked in the Windows app itself; `launchUrl` passes the link on unchanged.
 
 ## Getting started
 
@@ -59,7 +60,6 @@ Commits use Conventional Commits with a scope, and the subject describes what th
 |---|---|---|---|---|
 | C7 | Client | Big photos are refused on Mac and Windows | partly | M |
 | C12 | Client | Minor player errors bring up the error screen | partly | M |
-| C17 | Client | The token in the browser history on Windows | postponed (probably fixed) | S |
 | W14 | Web | A huge library builds one empty card per title up front | postponed | M |
 | D8 | Deploy | Compose and `deploy.yml` define the same container twice | partly | M |
 | D11 | Deploy | The Docker image is about 350 MB, the server in it about 15 MB | idea | S / M |
@@ -86,15 +86,6 @@ Report: [reviews/2026-11-15-client.md](reviews/2026-11-15-client.md).
 - **Problem:** media_kit passes many mpv log lines on as errors, and some are recoverable. With any quality other than "Original", one failed HLS segment request (a `tcp:` line) goes straight to "Wiedergabe fehlgeschlagen", even though mpv would have carried on.
 - **Fix:** ignore an error while playback is still moving, for example when `player.state.playing` is true and the position keeps advancing over the next second or two. The media_kit docs don't say which errors are recoverable, so test it with a real failed segment.
 - **Size:** M.
-
-#### C17. The token in the browser history on Windows
-
-- **Status:** postponed in the overview, but **probably fixed, needs a check on Windows.**
-- **Where:** `lib/screens/downloads.dart:31-36` (`saveFile`), `lib/api.dart:380` (`ticketLink`).
-- **Problem (as reported):** on platforms other than iOS and macOS, "Speichern" opened the file in the system browser with `?token=<account token>`, which stays in the browser history.
-- **What the code does now:** since `fa82202`, `saveFile` asks the server for a ticket (`/api/ticket?path=…`) and opens the address with `?ticket=` instead of the token. A file ticket is tied to that one address and to the sign-in, and runs out after at most 6 hours (`src/auth.rs:92`); signing out ends it. So the history keeps only a short-lived, single-file ticket.
-- **Fix:** run "Speichern" once on Windows and look at the address in the browser history: it should show `ticket=` and no `token=`. If it does, mark C17 fixed. The original one-line idea (`if (!Platform.isAndroid) return _download(…)`, so Windows downloads in the app) is still possible if you'd rather keep the browser out completely.
-- **Size:** S.
 
 ### Web
 
@@ -173,4 +164,4 @@ The review branches are deployed now, but these checks have not been recorded as
 - [ ] The relay: Lichtspiel on the relay computer is updated, and remote access still works.
 - [ ] The macOS app: an `https://` address that only speaks http falls back to http on the home network (`<nas-lan-ip>`), and does **not** fall back when the server is reached from outside (`<your-server>`).
 - [ ] Ticket renewal during a very long playback in a real browser (more than 6 hours).
-- [ ] C12 and C17 above need a real device (a failed HLS segment; "Speichern" on Windows).
+- [ ] C12 above needs a real device (a failed HLS segment).
