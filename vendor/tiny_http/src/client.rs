@@ -6,6 +6,8 @@ use std::io::{BufReader, BufWriter, ErrorKind, Read};
 
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use crate::common::{HTTPVersion, Method};
 use crate::util::RefinedTcpStream;
@@ -37,6 +39,30 @@ pub struct ClientConnection {
 
     // lichtspiel: true until the first byte has been read on a plain (non-TLS) connection
     check_for_tls: bool,
+
+    // lichtspiel: when the header now being read must be complete (None between requests)
+    deadline: Option<Instant>,
+
+    // lichtspiel: a byte of the next request has come
+    started: bool,
+}
+
+// lichtspiel: how long a client may take for a request's header (the request line and the headers),
+// counted from its first byte, and how long a new connection may stay silent. A client that sends its
+// header a byte at a time no longer holds a thread for ever. Between requests on a kept-open
+// connection there is no limit, as before (a long video answer is still being sent then).
+// The socket gets a read timeout of the same length (set where the connection is accepted), so a
+// read that waits wakes up to look at the clock; one that times out between requests just waits on.
+// A request body that stops coming for that long ends the body (the handler sees an error).
+static HEADER_DEADLINE_MS: AtomicU64 = AtomicU64::new(30_000);
+
+/// lichtspiel: changes how long a client may take to send a request's header (30 s by default).
+pub fn set_header_deadline(d: Duration) {
+    HEADER_DEADLINE_MS.store(d.as_millis().max(1) as u64, Ordering::Relaxed);
+}
+
+pub(crate) fn header_deadline() -> Duration {
+    Duration::from_millis(HEADER_DEADLINE_MS.load(Ordering::Relaxed))
 }
 
 // lichtspiel: limits for the request line and headers, so that one client cannot make the server
@@ -76,7 +102,22 @@ impl ClientConnection {
             no_more_requests: false,
             secure,
             check_for_tls: !secure,
+            // A new connection gets the same time to send its first header (with HTTPS that
+            // includes the TLS handshake, which happens on the first read).
+            deadline: Some(Instant::now() + header_deadline()),
+            started: false,
         }
+    }
+
+    /// lichtspiel: past the deadline for the header now being read
+    fn past_deadline(&self) -> bool {
+        self.deadline.is_some_and(|d| Instant::now() >= d)
+    }
+
+    /// lichtspiel: the header is read; the body and the wait for the next request have no limit.
+    fn end_deadline(&mut self) {
+        self.started = false;
+        self.deadline = None;
     }
 
     /// true if the connection is HTTPS
@@ -96,9 +137,28 @@ impl ClientConnection {
             let byte = self.next_header_source.by_ref().bytes().next();
 
             let byte = match byte {
+                // lichtspiel: the socket's read timeout (WouldBlock on Linux and macOS, TimedOut on
+                // Windows): nothing came for a while. Past the deadline that ends the connection;
+                // otherwise (also between requests, where there is no deadline) read on.
+                Some(Err(e)) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                    if self.past_deadline() {
+                        return Err(ReadError::ReadIoError(IoError::new(ErrorKind::TimedOut, "header not complete in time")));
+                    }
+                    continue;
+                }
                 Some(b) => b.map_err(ReadError::ReadIoError)?,
                 None => return Err(ReadError::ReadIoError(IoError::new(ErrorKind::ConnectionAborted, "Unexpected EOF"))),
             };
+
+            // lichtspiel: the clock for a request's header starts with its first byte, and a header
+            // sent a byte at a time is cut off at the deadline
+            if !self.started {
+                self.started = true;
+                self.deadline.get_or_insert(Instant::now() + header_deadline());
+            }
+            if self.past_deadline() {
+                return Err(ReadError::ReadIoError(IoError::new(ErrorKind::TimedOut, "header not complete in time")));
+            }
 
             // lichtspiel: a client speaking TLS to the plain HTTP port starts with a handshake
             // record (0x16) and then waits for the server's answer; close at once instead of
@@ -165,6 +225,7 @@ impl ClientConnection {
 
             (method, path, version, headers)
         };
+        self.end_deadline();
 
         // building the writer for the request
         let writer = self.sink.next().unwrap();
@@ -232,6 +293,10 @@ impl Iterator for ClientConnection {
                     return None; // we don't know where the next request would start,
                                  // se we have to close
                 }
+
+                // lichtspiel: a connection that stayed silent is closed without an answer (a
+                // browser may open one ahead and never use it)
+                Err(ReadError::ReadIoError(ref err)) if err.kind() == ErrorKind::TimedOut && !self.started => return None,
 
                 Err(ReadError::ReadIoError(ref err)) if err.kind() == ErrorKind::TimedOut => {
                     // request timeout

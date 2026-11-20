@@ -95,7 +95,9 @@ impl RefinedTcpStream {
     {
         let stream: Stream = stream.into();
 
-        let (read, write) = (stream.clone(), stream);
+        // lichtspiel: the read half is the original socket, which has the read timeout (on Windows
+        // a clone keeps timeouts of its own)
+        let (write, read) = (stream.clone(), stream);
 
         let read = RefinedTcpStream {
             stream: read,

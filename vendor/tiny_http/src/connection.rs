@@ -95,6 +95,15 @@ impl Connection {
         }
     }
 
+    // lichtspiel: the deadline on reading a request's header (see client.rs)
+    pub(crate) fn set_read_timeout(&self, t: Option<std::time::Duration>) -> std::io::Result<()> {
+        match self {
+            Self::Tcp(s) => s.set_read_timeout(t),
+            #[cfg(unix)]
+            Self::Unix(s) => s.set_read_timeout(t),
+        }
+    }
+
     pub(crate) fn try_clone(&self) -> std::io::Result<Self> {
         match self {
             Self::Tcp(s) => s.try_clone().map(Self::from),

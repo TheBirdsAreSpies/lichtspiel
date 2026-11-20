@@ -110,6 +110,8 @@ use std::thread;
 use std::time::Duration;
 
 use client::ClientConnection;
+// lichtspiel: how long a client may take to send a request's header
+pub use client::set_header_deadline;
 use connection::Connection;
 use util::MessagesQueue;
 
@@ -297,6 +299,9 @@ impl Server {
                 let new_client = match server.accept() {
                     Ok((sock, _)) => {
                         use util::RefinedTcpStream;
+                        // lichtspiel: reads give up after a while, so the deadline on a request's
+                        // header can be kept (see client.rs)
+                        let _ = sock.set_read_timeout(Some(client::header_deadline()));
                         let (read_closable, write_closable) = match ssl {
                             None => RefinedTcpStream::new(sock),
                             #[cfg(any(feature = "ssl-openssl", feature = "ssl-rustls"))]
