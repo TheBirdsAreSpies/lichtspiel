@@ -11,7 +11,9 @@
   var d = document.documentElement, mq = window.matchMedia ? matchMedia('(prefers-color-scheme: light)') : null;
   var apply = function () {
     var c = 'system'; try { c = localStorage.getItem('theme') || 'system'; } catch (e) { /* storage blocked */ }
-    d.setAttribute('data-theme', c === 'light' || (c !== 'dark' && mq && mq.matches) ? 'light' : 'dark');
+    d.setAttribute('data-theme', c === 'oled' ? 'oled' : c === 'light' || (c !== 'dark' && mq && mq.matches) ? 'light' : 'dark');
+    var a = 'amber'; try { a = localStorage.getItem('accent') || 'amber'; } catch (e) { /* storage blocked */ }
+    d.setAttribute('data-accent', a);
   };
   apply(); window.applyTheme = apply;
   if (mq && mq.addEventListener) mq.addEventListener('change', apply);
@@ -20,11 +22,21 @@
 <style>
 :root{--s1:#3987e5;--s2:#d95926;--s3:#199e70;--bg:#13161a;--panel:#1c2025;--panel2:#252a30;--line:#2e343b;--text:#eceef1;--dim:#9aa1aa;--accent:#f2a516;--accent2:#ffbf3f;--red:#e5534b;--green:#55c773;--r:8px;
   --line2:#4a525b;--input:#101317;--topline:#0c0e10;--faint:#6f7780;--scroll:#3a414a;--axis:#3a4148;--menu:#22272d;--menu-line:#353c44;--hover:#2f363e;
-  --tint:#2b2312;--tintg:#1d2a22;--code:#0e1013;--get:#6cb6ff;--hovfill:rgba(255,255,255,.05)}
+  --on-accent:#16120a;--tint:color-mix(in srgb,var(--accent) 16%,var(--panel));--tintg:#1d2a22;--code:#0e1013;--get:#6cb6ff;--hovfill:rgba(255,255,255,.05)}
 /* The light theme: the script in <head> sets data-theme to "light" or "dark" (the choice, or the system's when it is "system"). */
 :root[data-theme=light]{--s1:#2a6fcf;--s2:#c24a14;--s3:#12805a;--bg:#f4f5f7;--panel:#ffffff;--panel2:#eceef2;--line:#d9dde3;--text:#1b1f24;--dim:#5b646f;--accent:#d98e04;--accent2:#e8a21f;--red:#c9362e;--green:#1f8a3d;
   --line2:#aab1ba;--input:#ffffff;--topline:#d9dde3;--faint:#7a838d;--scroll:#c3c9d0;--axis:#c3c9d0;--menu:#ffffff;--menu-line:#d3d8de;--hover:#e6e9ee;
-  --tint:#fbefd0;--tintg:#dff3e5;--code:#eceef2;--get:#1f66c2;--hovfill:rgba(0,0,0,.05)}
+  --on-accent:#16120a;--tint:color-mix(in srgb,var(--accent) 18%,var(--panel));--tintg:#dff3e5;--code:#eceef2;--get:#1f66c2;--hovfill:rgba(0,0,0,.05)}
+/* OLED: pure black instead of dark grey. Accent colours: amber is the default above. */
+:root[data-theme=oled]{--bg:#000;--panel:#0b0c0d;--panel2:#17191b;--line:#25282c;--input:#000;--topline:#000;--menu:#0b0c0d;--menu-line:#2a2e33;--hover:#1c1f22}
+:root[data-accent=blue]{--accent:#4c9aff;--accent2:#7ab5ff;--on-accent:#08141f}
+:root[data-theme=light][data-accent=blue]{--accent:#1f66c2;--accent2:#3a80d9;--on-accent:#ffffff}
+:root[data-accent=green]{--accent:#3ecf75;--accent2:#6fe09a;--on-accent:#07170d}
+:root[data-theme=light][data-accent=green]{--accent:#1b8a45;--accent2:#2fa35a;--on-accent:#ffffff}
+:root[data-accent=red]{--accent:#ff6b61;--accent2:#ff8f87;--on-accent:#1f0a08}
+:root[data-theme=light][data-accent=red]{--accent:#c9362e;--accent2:#de5148;--on-accent:#ffffff}
+:root[data-accent=violet]{--accent:#a78bfa;--accent2:#c0a9fd;--on-accent:#14102a}
+:root[data-theme=light][data-accent=violet]{--accent:#6d4ad6;--accent2:#8566e6;--on-accent:#ffffff}
 *{box-sizing:border-box}
 html{height:100%;background:var(--bg);color-scheme:dark}
 html[data-theme=light]{color-scheme:light}
@@ -34,7 +46,7 @@ a{color:inherit;text-decoration:none}
 button,input,select,textarea{font:inherit;color:inherit}
 button{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 14px;cursor:pointer}
 button:hover{border-color:var(--line2)}
-button.primary{background:var(--accent);border-color:var(--accent);color:#16120a;font-weight:600}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
 button.primary:hover{background:var(--accent2)}
 button.danger{color:var(--red)}
 button.small{padding:3px 9px;font-size:13px}
@@ -117,25 +129,25 @@ h2{font-size:19px;margin:28px 0 12px}
 .poster.busy img{filter:brightness(.6)}
 .poster .bar{position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(0,0,0,.6)}
 .poster .bar i{display:block;height:100%;background:var(--accent)}
-.poster .badge{position:absolute;top:6px;right:6px;background:var(--accent);color:#16120a;font-size:12px;font-weight:700;border-radius:10px;padding:0 7px}
+.poster .badge{position:absolute;top:6px;right:6px;background:var(--accent);color:var(--on-accent);font-size:12px;font-weight:700;border-radius:10px;padding:0 7px}
 .card.watched .poster::before{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,.45),rgba(0,0,0,.2) 40%,rgba(0,0,0,.2));pointer-events:none;transition:opacity .15s}
 .card.watched:hover .poster::before{opacity:0}
 .poster .seen{position:absolute;top:7px;right:7px;width:24px;height:24px;border-radius:50%;background:rgba(14,16,19,.72);border:1.5px solid var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.45);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
 .poster .seen svg{width:15px;height:15px;fill:var(--accent)}
-.poster .pick{position:absolute;top:6px;left:6px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);opacity:0;transition:opacity .15s;cursor:pointer;color:#16120a;font-size:14px;font-weight:800;line-height:20px;text-align:center}
+.poster .pick{position:absolute;top:6px;left:6px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);opacity:0;transition:opacity .15s;cursor:pointer;color:var(--on-accent);font-size:14px;font-weight:800;line-height:20px;text-align:center}
 .poster .pick:hover{border-color:var(--accent)}
 .card:hover .pick,.grid.picking .pick{opacity:1}
 .card.picked .pick{background:var(--accent);border-color:var(--accent)}
 .card.picked .pick::after{content:"\2713"}
 .card:hover .poster,.card.picked .poster{outline:3px solid var(--accent)}
 .poster .more{position:absolute;right:6px;bottom:10px;width:30px;height:30px;padding:0;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:18px;line-height:28px;opacity:0;transition:opacity .15s;transform:rotate(90deg)}
-.poster .more:hover,.poster .more:focus-visible{background:var(--accent);color:#16120a}
+.poster .more:hover,.poster .more:focus-visible{background:var(--accent);color:var(--on-accent)}
 .poster .edit{position:absolute;left:6px;bottom:10px;width:30px;height:30px;padding:0;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s}
 .poster .edit svg{width:16px;height:16px;fill:currentColor}
-.poster .edit:hover,.poster .edit:focus-visible{background:var(--accent);color:#16120a}
+.poster .edit:hover,.poster .edit:focus-visible{background:var(--accent);color:var(--on-accent)}
 .poster .play{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;padding:0;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s,transform .15s,background .15s}
 .poster .play svg{width:30px;height:30px;fill:currentColor}
-.poster .play:hover,.poster .play:focus-visible{background:var(--accent);color:#16120a;transform:scale(1.08)}
+.poster .play:hover,.poster .play:focus-visible{background:var(--accent);color:var(--on-accent);transform:scale(1.08)}
 .card:hover .more,.poster .more:focus-visible,.card:hover .edit,.poster .edit:focus-visible,.card:hover .play,.poster .play:focus-visible{opacity:1}
 @media (hover:none){.poster .more,.poster .edit{opacity:1}}
 .menu{position:fixed;z-index:30;min-width:200px;max-width:min(360px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;background:var(--menu);border:1px solid var(--menu-line);border-radius:10px;padding:5px;box-shadow:0 12px 32px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.3);animation:menu-in .12s ease-out;scrollbar-width:thin;scrollbar-color:var(--scroll) transparent}
@@ -208,7 +220,7 @@ button.dd.on svg{fill:var(--accent)}
 .detail .poster:hover .play{opacity:1}.detail .poster.playable{cursor:pointer}
 /* On hover the poster darkens, gets a gold frame and a gold play button. */
 .detail .poster.playable:hover{outline:1px solid var(--accent);outline-offset:-1px}.detail .poster.playable:hover img{filter:brightness(.4)}
-.detail .poster .play{background:var(--accent);color:#16120a}
+.detail .poster .play{background:var(--accent);color:var(--on-accent)}
 .poster .mosaic{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;width:100%;height:100%;gap:2px}
 .poster .mosaic img{width:100%;height:100%;object-fit:cover}
 .poster .initials{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:42px;color:var(--dim)}
@@ -540,7 +552,7 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 <body>
 <div id="top">
   <button id="navbtn" aria-label="Menu" data-t-aria-label="Menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-  <a class="logo" href="#/"><svg viewBox="0 0 32 32"><path d="M8 5l20 11-20 11z" fill="#f2a516"/></svg><span id="sname">Lichtspiel</span></a>
+  <a class="logo" href="#/"><svg viewBox="0 0 32 32"><path d="M8 5l20 11-20 11z" style="fill:var(--accent)"/></svg><span id="sname">Lichtspiel</span></a>
   <div id="search"><input id="q" placeholder="Search movies and shows" data-t-placeholder="Search movies and shows" autocomplete="off"></div>
   <div id="activity" title="Background work on the server" data-t-title="Background work on the server"></div>
   <a id="npbtn" href="#/dashboard" style="display:none" title="Dashboard" data-t-title="Dashboard" aria-label="Dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-8 6 16 3-8h4"/></svg><b></b></a>
