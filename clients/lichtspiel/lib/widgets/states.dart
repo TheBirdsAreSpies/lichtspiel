@@ -4,7 +4,11 @@ import '../theme.dart';
 
 /// What went wrong, in words for the user: the server's and the network's errors are German already,
 /// anything else (a bug, an answer of the wrong shape) is not shown raw.
-String errorText(Object e) => e is ApiError ? e.message : 'Etwas ist schiefgelaufen';
+String errorText(Object e) {
+  if (e is ApiError) return e.message;
+  debugPrint('Unexpected error: $e');
+  return 'Etwas ist schiefgelaufen';
+}
 
 /// A failed load: what went wrong and a button to try again. With a plain text as [error] it is a quiet
 /// note instead (an empty list, nothing found).

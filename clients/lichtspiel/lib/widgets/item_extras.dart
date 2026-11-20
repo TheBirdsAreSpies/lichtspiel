@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/poster.dart';
 import '../theme.dart';
+import 'states.dart';
 
 const _problems = {
   'playback': 'Spielt nicht ab / bricht ab',
@@ -28,7 +29,7 @@ Future<void> historyDialog(BuildContext context, Api api, Map<String, dynamic> i
     final r = await api.get('/library/metadata/$id/history');
     rows = [for (final e in (r['history'] as List? ?? const [])) Map<String, dynamic>.from(e)];
   } catch (e) {
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
     return;
   }
   if (!context.mounted) return;
@@ -94,7 +95,7 @@ Future<void> reportDialog(BuildContext context, Api api, Map<String, dynamic> it
     await api.post('/library/metadata/$id/report', {'kind': kind, 'note': text});
     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Danke – das Problem wurde gemeldet')));
   } catch (e) {
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
   }
 }
 
@@ -111,7 +112,7 @@ Future<void> creditsDialog(BuildContext context, Api api, Map<String, dynamic> i
   try {
     r = await api.get('/library/metadata/$id/markers');
   } catch (e) {
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
     return;
   }
   if (!context.mounted) return;
@@ -134,7 +135,7 @@ Future<void> creditsDialog(BuildContext context, Api api, Map<String, dynamic> i
       await api.put('/library/metadata/$id/markers', {'credits': value});
       if (ctx.mounted) Navigator.pop(ctx);
     } catch (e) {
-      if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('$e')));
+      if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(errorText(e))));
     }
   }
 
@@ -161,7 +162,7 @@ Future<void> creditsDialog(BuildContext context, Api api, Map<String, dynamic> i
                 ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Abspann wird erkannt…')));
               }
             } catch (e) {
-              if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('$e')));
+              if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(errorText(e))));
             }
           },
           child: const Text('Neu erkennen'),

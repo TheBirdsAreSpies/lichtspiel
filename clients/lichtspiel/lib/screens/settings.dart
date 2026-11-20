@@ -11,6 +11,7 @@ import 'server_settings.dart';
 import 'users.dart';
 import '../widgets/bar.dart';
 import '../theme.dart';
+import '../widgets/states.dart';
 
 String fmtDateTime(dynamic secs) {
   if (secs is! num || secs <= 0) return '–';
@@ -120,7 +121,7 @@ Future<void> _twoFactorDialog(BuildContext context, Api api, String secret, Stri
                 await api.post('/api/me/2fa/enable', {'code': code.text.trim()});
                 if (ctx.mounted) Navigator.pop(ctx);
               } catch (e) {
-                set(() => err = '$e');
+                set(() => err = errorText(e));
               }
             },
             child: const Text('Einschalten'),
@@ -160,7 +161,7 @@ class _AccountTabState extends State<_AccountTab> {
       await f();
       if (mounted) _say(context, ok);
     } catch (e) {
-      if (mounted) _say(context, '$e');
+      if (mounted) _say(context, errorText(e));
     }
   }
 
@@ -273,7 +274,7 @@ class _AccountTabState extends State<_AccountTab> {
                   final fresh = await widget.api.get('/api/me');
                   if (mounted) setState(() => me = Map<String, dynamic>.from(fresh));
                 } catch (e) {
-                  if (mounted) _say(context, '$e');
+                  if (mounted) _say(context, errorText(e));
                 }
               },
               child: const Text('Einrichten'),
@@ -445,7 +446,7 @@ class _DevicesTabState extends State<_DevicesTab> {
       l.sort((a, b) => when(b).compareTo(when(a)));
       if (mounted) setState(() => tokens = l);
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = errorText(e));
     }
   }
 
@@ -465,7 +466,7 @@ class _DevicesTabState extends State<_DevicesTab> {
       await widget.api.save();
       if (mounted) _say(context, all ? 'Neues Token; ${(r['revoked'] ?? 1) - 1} andere Anmeldung(en) beendet' : 'Neues Token; das alte gilt nicht mehr');
     } catch (e) {
-      if (mounted) _say(context, '$e');
+      if (mounted) _say(context, errorText(e));
     }
     load();
   }
@@ -509,7 +510,7 @@ class _DevicesTabState extends State<_DevicesTab> {
                       try {
                         await widget.api.delete('/api/tokens/${k['id']}');
                       } catch (e) {
-                        if (context.mounted) _say(context, '$e');
+                        if (context.mounted) _say(context, errorText(e));
                       }
                       load();
                     },
@@ -544,7 +545,7 @@ class _FeedTabState extends State<_FeedTab> {
       final r = await widget.api.post('/api/rss', body);
       if (mounted && r is Map) setState(() => feed = Map<String, dynamic>.from(r));
     } catch (e) {
-      if (mounted) _say(context, '$e');
+      if (mounted) _say(context, errorText(e));
     }
   }
 

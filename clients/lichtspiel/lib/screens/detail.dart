@@ -147,7 +147,7 @@ class _DetailScreenState extends State<DetailScreen> {
     try {
       songs = await api.allLeaves(widget.id);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
       return;
     }
     if (songs.isEmpty) return;
@@ -171,7 +171,7 @@ class _DetailScreenState extends State<DetailScreen> {
     try {
       leaves = await api.allLeaves(widget.id);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
       return;
     }
     if (leaves.isEmpty) return;
@@ -391,7 +391,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(c['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, _, _) => Container(color: context.hair))),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(c['thumb']), headers: api.auth, fit: BoxFit.cover, cacheWidth: 360, errorBuilder: (_, _, _) => Container(color: context.hair))),
                       ),
                       Text('${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}'), maxLines: 1, overflow: TextOverflow.ellipsis),
                       Text(fmtClock((c['start'] ?? 0) as int), style: TextStyle(fontSize: 12, color: context.faint)),
@@ -415,7 +415,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, _, _) => Container(color: context.hair, child: const Icon(Icons.play_circle_outline)))),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, cacheWidth: 360, errorBuilder: (_, _, _) => Container(color: context.hair, child: const Icon(Icons.play_circle_outline)))),
                       ),
                       Text('${e['title']}', maxLines: 1, overflow: TextOverflow.ellipsis),
                       Text(fmtMs((e['duration'] ?? 0) as int), style: TextStyle(fontSize: 12, color: context.faint)),
@@ -431,7 +431,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network('https://i.ytimg.com/vi/${v['key']}/mqdefault.jpg', fit: BoxFit.cover, errorBuilder: (_, _, _) => Container(color: context.hair, child: const Icon(Icons.play_circle_outline)))),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network('https://i.ytimg.com/vi/${v['key']}/mqdefault.jpg', fit: BoxFit.cover, cacheWidth: 360, errorBuilder: (_, _, _) => Container(color: context.hair, child: const Icon(Icons.play_circle_outline)))),
                       ),
                       Text('${v['name'] ?? 'Trailer'}', maxLines: 1, overflow: TextOverflow.ellipsis),
                       Text('online · YouTube', style: TextStyle(fontSize: 12, color: context.faint)),
@@ -539,7 +539,7 @@ class _DetailScreenState extends State<DetailScreen> {
               load();
           }
         } catch (e) {
-          say('$e');
+          say(errorText(e));
         }
       },
       itemBuilder: (_) => [
@@ -706,7 +706,7 @@ class _DetailScreenState extends State<DetailScreen> {
         CircleAvatar(
           radius: 38,
           backgroundColor: context.hair,
-          foregroundImage: src.isEmpty ? null : NetworkImage(src, headers: api.headersFor(src)),
+          foregroundImage: src.isEmpty ? null : ResizeImage(NetworkImage(src, headers: api.headersFor(src)), width: 200, policy: ResizeImagePolicy.fit),
           onForegroundImageError: src.isEmpty ? null : (_, _) {},
           child: Text(initials),
         ),

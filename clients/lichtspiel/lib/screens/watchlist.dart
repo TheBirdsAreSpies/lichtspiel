@@ -60,7 +60,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     try {
       available ??= await widget.api.watchlistFilters(type: type);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
       return;
     }
     if (!mounted) return;

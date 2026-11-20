@@ -757,7 +757,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: SizedBox(
           width: 340,
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            SizedBox(width: 90, child: AspectRatio(aspectRatio: 16 / 9, child: Image.network(widget.api.img(n['thumb']), headers: widget.api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)))),
+            SizedBox(width: 90, child: AspectRatio(aspectRatio: 16 / 9, child: Image.network(widget.api.img(n['thumb']), headers: widget.api.auth, fit: BoxFit.cover, cacheWidth: 240, errorBuilder: (_, __, ___) => Container(color: Colors.white10)))),
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

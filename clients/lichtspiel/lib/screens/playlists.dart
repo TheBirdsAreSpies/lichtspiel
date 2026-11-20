@@ -8,6 +8,7 @@ import 'library.dart';
 import 'player.dart';
 import 'smart.dart';
 import '../theme.dart';
+import '../widgets/states.dart';
 
 String _dur(dynamic ms) {
   final m = ((ms is num ? ms : 0) / 60000).round();
@@ -25,7 +26,7 @@ Future<void> addToPlaylistDialog(BuildContext context, Api api, String itemId, {
   try {
     pls = await api.playlists(kind: 'manual', owner: 'me', sort: 'title');
   } catch (e) {
-    msg.showSnackBar(SnackBar(content: Text('$e')));
+    msg.showSnackBar(SnackBar(content: Text(errorText(e))));
     return;
   }
   var mine = <String>[];
@@ -72,7 +73,7 @@ Future<void> addToPlaylistDialog(BuildContext context, Api api, String itemId, {
       msg.showSnackBar(SnackBar(content: Text(added ? 'Zu „${plTitle(p)}“ hinzugefügt' : 'Schon in dieser Playlist')));
     }
   } catch (e) {
-    msg.showSnackBar(SnackBar(content: Text('$e')));
+    msg.showSnackBar(SnackBar(content: Text(errorText(e))));
   }
 }
 
@@ -107,7 +108,7 @@ Future<void> playPlaylist(BuildContext context, Api api, String id, {bool shuffl
   try {
     items = await api.playlistItems(id);
   } catch (e) {
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
     return;
   }
   if (!context.mounted) return;
@@ -167,7 +168,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
       final r = await widget.api.playlists(kind: kind, owner: owner, sort: sort, section: widget.section);
       if (mounted) setState(() => list = r);
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = errorText(e));
     }
   }
 
@@ -192,7 +193,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
           try {
             p = await widget.api.createPlaylist(name);
           } catch (e) {
-            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
             return;
           }
           if (!mounted) return;
@@ -226,7 +227,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                           for (final p in l)
                             ListTile(
                               leading: p['thumbs'] is List && (p['thumbs'] as List).isNotEmpty
-                                  ? ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(widget.api.img('${(p['thumbs'] as List).first}'), headers: widget.api.auth, width: 40, height: 60, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.playlist_play)))
+                                  ? ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(widget.api.img('${(p['thumbs'] as List).first}'), headers: widget.api.auth, width: 40, height: 60, fit: BoxFit.cover, cacheWidth: 100, errorBuilder: (_, __, ___) => const Icon(Icons.playlist_play)))
                                   : const Icon(Icons.playlist_play, size: 36),
                               title: Text(plTitle(p)),
                               subtitle: Text([
@@ -282,7 +283,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = errorText(e));
     }
   }
 
@@ -295,7 +296,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     try {
       await api.moveInPlaylist(widget.id, '${entryOf(items[i])}', after);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
     }
     reload();
   }
@@ -349,7 +350,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   }
               }
             } catch (e) {
-              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
             }
             reload();
           },
@@ -390,7 +391,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     final i = items.indexOf(it);
                     final thumb = '${it['squareThumb'] ?? (it['type'] == 'episode' && it['grandparentThumb'] != null ? it['grandparentThumb'] : it['thumb']) ?? ''}';
                     return ListTile(
-                      leading: thumb.isEmpty ? const Icon(Icons.movie_outlined) : ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(api.img(thumb), headers: api.auth, width: 40, height: 60, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.movie_outlined))),
+                      leading: thumb.isEmpty ? const Icon(Icons.movie_outlined) : ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(api.img(thumb), headers: api.auth, width: 40, height: 60, fit: BoxFit.cover, cacheWidth: 100, errorBuilder: (_, __, ___) => const Icon(Icons.movie_outlined))),
                       title: Text(label(it), maxLines: 1, overflow: TextOverflow.ellipsis),
                       subtitle: Text([if (it['year'] != null) '${it['year']}', _dur(it['duration']), if (((it['viewCount'] ?? 0) as num) > 0) '✓ gesehen'].where((e) => e.isNotEmpty).join(' · ')),
                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(api: api, id: '${it['ratingKey']}'))),
@@ -408,7 +409,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                               try {
                                 await api.removeFromPlaylist(widget.id, '${entryOf(it)}');
                               } catch (e) {
-                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
                               }
                               reload();
                             },
@@ -468,7 +469,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: SizedBox.expand(
-                        child: pic.isEmpty ? ColoredBox(color: context.hair, child: Icon(Icons.collections_bookmark_outlined)) : Image.network(widget.api.img(pic), headers: widget.api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => ColoredBox(color: context.hair)),
+                        child: pic.isEmpty ? ColoredBox(color: context.hair, child: Icon(Icons.collections_bookmark_outlined)) : Image.network(widget.api.img(pic), headers: widget.api.auth, fit: BoxFit.cover, cacheWidth: 600, errorBuilder: (_, __, ___) => ColoredBox(color: context.hair)),
                       ),
                     ),
                   ),

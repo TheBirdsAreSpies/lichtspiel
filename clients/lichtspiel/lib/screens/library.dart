@@ -152,7 +152,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       if (shuffle) list = smartShuffle(list);
       await Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: widget.api, item: list.first, queue: list.sublist(1))));
     } catch (e) {
-      say('$e');
+      say(errorText(e));
     }
   }
 
@@ -169,7 +169,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       if (!keep) picked.clear();
       if (mounted) setState(() {});
     } catch (e) {
-      say('$e');
+      say(errorText(e));
     }
   }
 
@@ -215,7 +215,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       picked.clear();
       await reload();
     } catch (e) {
-      say('$e');
+      say(errorText(e));
     }
   }
 
@@ -242,7 +242,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             try {
               it = await widget.api.item(picked.first);
             } catch (e) {
-              return say('$e');
+              return say(errorText(e));
             }
             if (!mounted) return;
             await editDetailsDialog(context, widget.api, it);
@@ -481,7 +481,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       available ??= await widget.api.filters(sectionId, type: type);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
       return;
     }
     if (!mounted) return;

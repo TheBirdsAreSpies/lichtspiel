@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../api.dart';
 import '../screens/player.dart';
 import '../theme.dart';
+import 'states.dart';
 
 /// "Zusammen schauen": opens a room for [item] and shows the link/code to send; "Starten" joins it.
 Future<void> watchTogether(BuildContext context, Api api, Map<String, dynamic> item) async {
@@ -36,7 +37,7 @@ Future<void> watchTogether(BuildContext context, Api api, Map<String, dynamic> i
       ),
     );
   } catch (e) {
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
   }
 }
 
@@ -47,7 +48,7 @@ Future<void> joinTogetherWith(BuildContext context, Api api, String code) async 
     if (!context.mounted) return;
     await Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: api, item: {'id': st['item'], 'ratingKey': '${st['item']}', 'viewOffset': st['position']}, together: code)));
   } catch (e) {
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
   }
 }
 

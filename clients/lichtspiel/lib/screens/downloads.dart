@@ -8,6 +8,7 @@ import '../api.dart';
 import '../widgets/poster.dart';
 import 'detail.dart' show fmtSize;
 import '../theme.dart';
+import '../widgets/states.dart';
 
 const dlQualities = {
   'original': 'Originalqualität',
@@ -197,7 +198,7 @@ Future<void> downloadDialog(BuildContext context, Api api, List<Map<String, dyna
       action: SnackBarAction(label: 'Öffnen', onPressed: () => nav.push(MaterialPageRoute(builder: (_) => DownloadsScreen(api: api)))),
     ));
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('$e')));
+    messenger.showSnackBar(SnackBar(content: Text(errorText(e))));
   }
 }
 
@@ -238,7 +239,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       });
       if (((r['queued'] ?? 0) as num) + ((r['converting'] ?? 0) as num) > 0) timer = Timer(const Duration(seconds: 2), reload);
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = errorText(e));
     }
   }
 
@@ -246,7 +247,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     try {
       await f();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
     }
     reload();
   }
@@ -316,7 +317,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           if (x['thumb'] != null)
             Padding(
               padding: const EdgeInsets.only(right: 10),
-              child: Image.network(widget.api.img('${x['thumb']}'), headers: widget.api.auth, width: 40, height: 60, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 60)),
+              child: Image.network(widget.api.img('${x['thumb']}'), headers: widget.api.auth, width: 40, height: 60, fit: BoxFit.cover, cacheWidth: 100, errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 60)),
             ),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
