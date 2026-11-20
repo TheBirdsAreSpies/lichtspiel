@@ -7,12 +7,15 @@ import '../screens/player.dart';
 import 'activity.dart';
 import 'together.dart';
 import 'item_extras.dart';
+import 'states.dart';
 import '../screens/playlists.dart' show addToPlaylistDialog;
 import '../screens/downloads.dart';
 import '../theme.dart';
 
-/// A poster card with title, subtitle, watched mark and progress bar. Focusable (D-pad / remote ready).
-/// With the mouse over it, a play button, (admins) an edit pencil and a "…" menu appear, as in the web app.
+/// A poster card with title, subtitle, watched mark and progress bar. Focusable (D-pad / remote ready):
+/// the focused poster grows a little and gets a frame in the accent colour.
+/// With the mouse over it (or focused), a play button, (admins) an edit pencil and a "…" menu appear, as in the web app.
+/// On a phone or tablet the picture stays clear: a tap opens the title, a long press opens the menu.
 class Poster extends StatefulWidget {
   /// Set once the signed-in person is known to be the owner.
   static bool admin = false;
@@ -38,6 +41,7 @@ class Poster extends StatefulWidget {
 
 class _PosterState extends State<Poster> {
   bool hover = false;
+  bool focused = false;
 
   Map<String, dynamic> get item => widget.item;
   String get id => '${item['ratingKey'] ?? item['id']}';
@@ -76,6 +80,8 @@ class _PosterState extends State<Poster> {
       context: context,
       position: RelativeRect.fromLTRB(at.dx, at.dy, size.width - at.dx, size.height - at.dy),
       items: [
+        if (touch && playable && item['missing'] != true) const PopupMenuItem(value: 'play', child: Text('Abspielen')),
+        if (widget.onPick != null && !widget.picked) const PopupMenuItem(value: 'pick', child: Text('Auswählen')),
         if (playable && !(item['missing'] == true)) const PopupMenuItem(value: 'queue', child: Text('Zur Warteschlange')),
         if (widget.onRemoved != null) const PopupMenuItem(value: 'unresume', child: Text('Aus „Weiterschauen“ entfernen')),
         if (playable && item['missing'] != true && item['type'] != 'track') const PopupMenuItem(value: 'together', child: Text('Zusammen schauen…')),
@@ -93,6 +99,12 @@ class _PosterState extends State<Poster> {
     if (v == null || !mounted) return;
     try {
       switch (v) {
+        case 'play':
+          await play();
+          return;
+        case 'pick':
+          widget.onPick?.call();
+          return;
         case 'queue':
           PlayerScreen.userQueue.add(item);
           say('Zur Warteschlange hinzugefügt – sie läuft nach dem aktuellen Video');
@@ -122,8 +134,18 @@ class _PosterState extends State<Poster> {
           widget.onRemoved?.call();
           return;
         case 'watched':
-          await widget.api.setWatched(id, !watched);
-          say(watched ? 'Als ungesehen markiert' : 'Als gesehen markiert');
+          final was = watched;
+          await widget.api.setWatched(id, !was);
+          if (mounted) {
+            undoSnack(context, was ? 'Als ungesehen markiert' : 'Als gesehen markiert', () async {
+              try {
+                await widget.api.setWatched(id, was);
+              } catch (e) {
+                say(errorText(e));
+              }
+              await reload();
+            });
+          }
         case 'refresh':
           say('Lade Details…');
           final r = await widget.api.post('/library/metadata/$id/refresh');
@@ -135,9 +157,17 @@ class _PosterState extends State<Poster> {
           await matchDialog(context, widget.api, await widget.api.item(id));
       }
     } catch (e) {
-      say('$e');
+      say(errorText(e));
     }
     await reload();
+  }
+
+  /// Long press: the menu on a phone (at the poster), choosing while several are being chosen.
+  void longPress() {
+    if (widget.onPick != null && (widget.selecting || !touch)) return widget.onPick!();
+    final b = context.findRenderObject() as RenderBox?;
+    if (b == null) return;
+    menu(b.localToGlobal(b.size.center(Offset.zero)));
   }
 
   Future<void> edit() async {
@@ -165,7 +195,8 @@ class _PosterState extends State<Poster> {
     final missing = item['missing'] == true;
     final leaves = ((item['leafCount'] ?? 0) as num).toInt();
     final unseen = leaves > 0 ? leaves - ((item['viewedLeafCount'] ?? 0) as num).toInt() : 0;
-    final show = hover || touch;
+    final show = hover || focused;
+    final cache = (widget.width * MediaQuery.devicePixelRatioOf(context)).round();
     return SizedBox(
       width: widget.width,
       child: MouseRegion(
@@ -174,6 +205,7 @@ class _PosterState extends State<Poster> {
         child: GestureDetector(
           onSecondaryTapUp: (d) => menu(d.globalPosition),
           child: InkWell(
+            onFocusChange: (f) => setState(() => focused = f),
             onTap: () {
               final pick = widget.onPick;
               if (pick != null && (widget.selecting || HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isShiftPressed)) {
@@ -182,16 +214,19 @@ class _PosterState extends State<Poster> {
                 widget.onTap();
               }
             },
-            onLongPress: widget.onPick,
+            onLongPress: longPress,
             borderRadius: BorderRadius.circular(6),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              AspectRatio(
+              AnimatedScale(
+                scale: focused ? 1.05 : 1,
+                duration: const Duration(milliseconds: 120),
+                child: AspectRatio(
                 aspectRatio: 2 / 3,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(6),
                   child: Stack(fit: StackFit.expand, children: [
                     Container(color: context.hair),
-                    Image.network(widget.api.img(thumb), headers: widget.api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Center(child: Text('$title', textAlign: TextAlign.center))),
+                    Image.network(widget.api.img(thumb), headers: widget.api.auth, fit: BoxFit.cover, cacheWidth: cache, errorBuilder: (_, _, _) => Center(child: Text('$title', textAlign: TextAlign.center))),
                     if (missing) Container(color: Colors.black54),
                     BusyOverlay(item: item),
                     if (missing) const Center(child: Tooltip(message: 'Datei fehlt – im Papierkorb der Mediathek', child: Icon(Icons.delete, size: 56, color: Colors.redAccent, shadows: [Shadow(blurRadius: 6, color: Colors.black87)]))),
@@ -208,6 +243,7 @@ class _PosterState extends State<Poster> {
                           child: Icon(Icons.check, size: 15, color: context.accent),
                         ),
                       ),
+                    if (focused && !widget.picked) Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(border: Border.all(color: context.accent, width: 3), borderRadius: BorderRadius.circular(6)))),
                     if (widget.picked) Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(border: Border.all(color: context.accent, width: 3), borderRadius: BorderRadius.circular(6), color: context.accent.withValues(alpha: .2)))),
                     if (widget.onPick != null && (widget.picked || widget.selecting || show))
                       Positioned(
@@ -238,6 +274,7 @@ class _PosterState extends State<Poster> {
                       ),
                   ]),
                 ),
+              ),
               ),
               const SizedBox(height: 6),
               Text('$title', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
