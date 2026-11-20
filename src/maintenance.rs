@@ -180,6 +180,7 @@ pub fn restore(app: &App, name: &str) -> Result<(), String> {
     if !(name.starts_with("library-") && name.ends_with(".db")) || name.contains(['/', '\\']) { return Err("That is not a backup file".into()); }
     let src = backup_dir(app).join(name);
     if !src.is_file() { return Err("That backup does not exist any more".into()); }
+    let _no_sync = crate::plexsync::hold_for_restore()?;
     // Read from a copy: opening a file can write next to it.
     let tmp = app.data_dir.join("restore-check.db");
     let _ = std::fs::remove_file(&tmp);

@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -33,6 +33,24 @@ const OFFSET_SLACK_MS: u64 = 5000;
 const PAGE: usize = 1000;
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
+/// Restores going on. A sync and a restore never overlap: the sync's state names item numbers of
+/// the library it read, and writing it after a restore would tie them to the restored one.
+static RESTORING: AtomicUsize = AtomicUsize::new(0);
+
+/// Kept by a restore while it runs; no sync starts meanwhile.
+pub struct RestoreGuard(());
+impl Drop for RestoreGuard {
+    fn drop(&mut self) { RESTORING.fetch_sub(1, Ordering::SeqCst); }
+}
+
+/// Marks a restore as running, or refuses while a sync runs. (Each side sets its own flag first and
+/// then looks at the other's, so a sync and a restore starting together can't both go ahead.)
+pub fn hold_for_restore() -> Result<RestoreGuard, String> {
+    RESTORING.fetch_add(1, Ordering::SeqCst);
+    let guard = RestoreGuard(());
+    if RUNNING.load(Ordering::SeqCst) { return Err("A sync with Plex is running; restore once it is done".into()); }
+    Ok(guard)
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Account {
@@ -441,16 +459,20 @@ fn directed<T>(dir: &str, picked: T, here: T, plex: T) -> T {
     }
 }
 
-/// Starts a run on a background thread unless one is running.
-pub fn start_now(app: &Arc<App>) -> bool {
-    if RUNNING.swap(true, Ordering::SeqCst) { return false; }
+/// Starts a run on a background thread unless one or a restore is running.
+pub fn start_now(app: &Arc<App>) -> Result<(), &'static str> {
+    if RUNNING.swap(true, Ordering::SeqCst) { return Err("A sync with Plex is already running"); }
+    if RESTORING.load(Ordering::SeqCst) > 0 {
+        RUNNING.store(false, Ordering::SeqCst);
+        return Err("A backup is being restored; try again in a moment");
+    }
     let a = app.clone();
     std::thread::spawn(move || {
         let r = run(&a);
         RUNNING.store(false, Ordering::SeqCst);
         if let Err(e) = &r { elog!("Plex sync: {e}"); }
     });
-    true
+    Ok(())
 }
 
 /// Runs every few minutes when switched on.
@@ -464,7 +486,7 @@ pub fn start(app: &Arc<App>) {
             if !c.enabled || c.url.is_empty() || c.accounts.is_empty() { continue; }
             if last.is_some_and(|t| t.elapsed() < Duration::from_secs(c.interval_minutes.max(1) * 60)) { continue; }
             last = Some(Instant::now());
-            start_now(&a);
+            let _ = start_now(&a);
         }
     });
 }
@@ -729,6 +751,18 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn no_sync_starts_while_a_backup_is_restored() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-sync-restore-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = std::sync::Arc::new(crate::server::App::open(&root.join("data")));
+        let restore = super::hold_for_restore().unwrap();
+        let r = super::start_now(&app);
+        drop(restore);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(r, Err("A backup is being restored; try again in a moment"));
+    }
+
     use super::*;
 
     #[test]

@@ -999,6 +999,8 @@ I18N.add('de', 'Deutsch', {
     'The person for this Plex account no longer exists': 'Die Person zu diesem Plex-Konto gibt es nicht mehr',
     'Plex did not accept the token (HTTP 401)': 'Plex hat den Token nicht angenommen (HTTP 401)',
     'A sync with Plex is already running': 'Ein Abgleich mit Plex läuft schon',
+    'A sync with Plex is running; restore once it is done': 'Ein Abgleich mit Plex läuft gerade; stell die Sicherung wieder her, sobald er fertig ist',
+    'A backup is being restored; try again in a moment': 'Eine Sicherung wird gerade wiederhergestellt; versuch es gleich noch einmal',
     // ---------- library filter menu
     'Filter': 'Filter',
     'Filter ({n})': 'Filter ({n})',

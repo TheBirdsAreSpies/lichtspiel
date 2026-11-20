@@ -757,7 +757,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("POST", ["api", "plex-sync", "run"]) => {
             if !admin { return need_admin(); }
-            if crate::plexsync::start_now(app) { js(202, json!({"ok": true, "started": true})) } else { fail(409, "A sync with Plex is already running") }
+            match crate::plexsync::start_now(app) { Ok(()) => js(202, json!({"ok": true, "started": true})), Err(e) => fail(409, e) }
         }
         ("GET", ["api", "trakt"]) => ok(crate::trakt::public(app, &user)),
         ("PUT", ["api", "trakt"]) => {
