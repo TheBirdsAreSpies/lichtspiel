@@ -10,6 +10,7 @@ Changes since the first version of this page (`2e6689d`):
 - On 2026-11-20 the small (S) items were fixed: W11, W12, W13, W15 and W16 in `3b997c3`; C16 and C18 in `62edc5f`; P9 (`trakt.json` is now mode 0600) in `d341d67`; P10 in `76ae467`; D10 in `f12f477`. W12 still wants a try in Safari.
 - **C17** is fixed by `fa82202`, checked on 2026-11-20: on Windows "Speichern" opens the file with `?ticket=` and never `?token=` (`lib/screens/downloads.dart:32-44`). Against a running server the ticket loads its own address (200), is refused for another address, without sign-in and after signing out (401 each), and does not contain the token. Not clicked in the Windows app itself; `launchUrl` passes the link on unchanged.
 - **S11** is fixed: `every_route_needs_sign_in_and_every_admin_route_needs_an_admin` (`src/server.rs`) calls every `ROUTES` entry without sign-in (401 expected, except a short open list) and every "Admin:" entry as a profile (403 expected). Checked that it fails when a route is moved into the open block.
+- Two known limits are fixed: a restore now runs `Db::after_load` like a start does (old default server name, default playlists; test `a_restored_old_backup_gets_the_new_server_name_and_the_default_playlists`), and the app puts brackets around an IPv6 address typed without them (`Api.normalize`, with a test).
 
 ## Getting started
 
@@ -131,12 +132,10 @@ From "Known limits" in the overview, only the ones that are real follow-up work.
 
 | Limit | Where | Suggested direction |
 |---|---|---|
-| Restore doesn't run `Db::after_load`, so the old default server name isn't renamed and default playlists aren't created until the next start. | `src/maintenance.rs:179-214` (`restore` calls `upgrade()` only, `:203`); `after_load` is `src/db.rs:1284` | Call `loaded.after_load()` next to `loaded.upgrade()` in `restore`, and add a restore test for it. |
 | A Plex sync running during a restore can write `plex-sync-state.json` again for the replaced library. | `src/maintenance.rs:209` (deletes the file); `src/plexsync.rs:35` (`RUNNING`), `:135` (the state file) | Refuse a restore while `RUNNING` is set, or make the sync drop its state write when a restore happened during the run. |
 | The client doesn't cut off a body that stalls after the headers. | `clients/lichtspiel/lib/api.dart:195-197` (`_send`: the timer is cancelled once the headers arrive) | An idle timeout on the body stream (no bytes for N seconds) rather than a total limit, so big lists over slow lines still work (C-R2). |
 | The download dialog stays open if the download fails before the dialog's first frame. | `clients/lichtspiel/lib/screens/downloads.dart:63-68` (`dialogContext` is set in the builder), `:137` (closes only if it is set) | Close it through the root navigator once the dialog is up, or wait for the first frame before starting the download. |
 | dart:io can't close a socket stuck in a TLS handshake. | `clients/lichtspiel/lib/api.dart:173` (a `shortcut:` comment) | Nothing simple in dart:io today; revisit when it gains a handshake timeout. One leaked socket per failed try. |
-| An IPv6 address typed without brackets is not handled. | `clients/lichtspiel/lib/api.dart:87-93` (`normalize`) | If the text has two or more `:` and no `[`, wrap the host in brackets before adding the port. Add a test. |
 | A client that trickles header bytes slowly still holds a thread. | `vendor/tiny_http/src/client.rs:42-45` (per-line and count limits only) | An overall deadline for reading the request line and headers (for example 30 s) in the vendored reader. |
 | No rate limit on home-network discovery (GDM). | `src/gdm.rs:45-50` | A small per-sender limit (one answer per address per second). It already answers only home-network senders. |
 | `?token=` in addresses is still accepted, for older clients and scripts. | `src/server.rs:2663-2667` | Log when it is used, then drop it once the Flutter app and scripts are all on `X-Token`. Keep `?ticket=`. |

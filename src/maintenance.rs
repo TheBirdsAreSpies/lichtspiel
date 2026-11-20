@@ -200,6 +200,8 @@ pub fn restore(app: &App, name: &str) -> Result<(), String> {
         // backup still name files on disk (pictures, seek-bar stills), so they are never reused.
         loaded.ticket_key = std::mem::take(&mut db.ticket_key);
         loaded.next_id = loaded.next_id.max(db.next_id);
+        // The same updates as at start: the old default name and the default playlists.
+        loaded.after_load();
         loaded.upgrade();
         *db = loaded;
         st.forget_written();
@@ -394,6 +396,27 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         assert!(next >= after, "item numbers {next}..{after} would be handed out twice");
         assert!(!state_left, "the plex sync state of the newer library was kept");
+    }
+    #[test]
+    fn a_restored_old_backup_gets_the_new_server_name_and_the_default_playlists() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-restore-after-load-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = crate::server::App::open(&root.join("data"));
+        // A backup from an older version: the old default name and no default playlists yet.
+        let defaults = {
+            let mut db = app.db.lock().unwrap();
+            db.settings.server_name = "Media Server".into();
+            let n = db.playlists.len();
+            db.playlists.clear();
+            n
+        };
+        let name = std::path::Path::new(&super::backup(&app).unwrap()).file_name().unwrap().to_string_lossy().to_string();
+        super::restore(&app, &name).unwrap();
+        let (server_name, playlists) = { let db = app.db.lock().unwrap(); (db.settings.server_name.clone(), db.playlists.len()) };
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(defaults > 0, "a new library has no default playlists to compare with");
+        assert_eq!(server_name, crate::server::APP_NAME);
+        assert_eq!(playlists, defaults, "the default playlists were not made after the restore");
     }
     #[test]
     fn restore_drops_rows_the_live_file_could_not_read() {
