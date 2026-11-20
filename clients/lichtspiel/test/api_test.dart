@@ -23,6 +23,12 @@ void main() {
     expect(Api.normalize('http://[fd00::5]:9000'), 'http://[fd00::5]:9000');
   });
 
+  test('an IPv6 address typed without brackets gets them', () {
+    expect(Api.normalize('fd00::5'), 'http://[fd00::5]:8484');
+    expect(Api.normalize('https://fe80::1:2:3/'), 'https://[fe80::1:2:3]:8484');
+    expect(Api.normalize('2001:db8::7/web'), 'http://[2001:db8::7]:8484/web');
+  });
+
   test('a token from an older version moves into the keychain once', () async {
     SharedPreferences.setMockInitialValues({'server': 'http://nas:8484', 'token': 'old'});
     FlutterSecureStorage.setMockInitialValues({});

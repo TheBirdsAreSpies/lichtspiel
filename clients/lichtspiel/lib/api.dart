@@ -84,9 +84,12 @@ class Api {
   }
 
   /// "nas" -> "http://nas:8484"; keeps an explicit scheme and port ("[fd00::5]" for IPv6).
+  /// An IPv6 address typed without brackets ("fd00::5") gets them; it can't carry a port then.
   static String normalize(String s) {
     s = s.trim().replaceAll(RegExp(r'/+$'), '');
     if (!s.startsWith('http://') && !s.startsWith('https://')) s = 'http://$s';
+    final m = RegExp(r'^(https?://)([^/\[\]]*)(.*)$').firstMatch(s);
+    if (m != null && ':'.allMatches(m[2]!).length >= 2) s = '${m[1]}[${m[2]}]${m[3]}';
     final u = Uri.tryParse(s);
     if (u != null && u.host.isNotEmpty && !u.hasPort) s = u.replace(port: 8484).toString();
     return s;
