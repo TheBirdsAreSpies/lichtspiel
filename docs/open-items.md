@@ -62,7 +62,7 @@ Commits use Conventional Commits with a scope, and the subject describes what th
 |---|---|---|---|---|
 | C7 | Client | Big photos are refused on Mac and Windows | partly | M |
 | C12 | Client | Minor player errors bring up the error screen | partly | M |
-| W14 | Web | A huge library builds one empty card per title up front | postponed | M |
+| W14 | Web | A huge library builds one empty card per title up front | partly | M |
 | D8 | Deploy | Compose and `deploy.yml` define the same container twice | partly | M |
 | D11 | Deploy | The Docker image was 616 MB; now 425 MB with Jellyfin's ffmpeg | check on the NAS | S |
 
@@ -94,10 +94,19 @@ Report: [reviews/2026-11-15-web.md](reviews/2026-11-15-web.md). Remember the reb
 
 #### W14. A huge library builds one empty card per title up front
 
-- **Status:** postponed.
-- **Where:** `web/app.js:554-560` (`grid._reserve`), `:927-928` (reserves every remaining title and observes each placeholder).
-- **Problem:** the "Songs" view of an 80,000-track music library builds 80,000 placeholder cards (about 320,000 elements) and observes each one before anything shows. The tab freezes for seconds, worst on a phone. Not measured.
-- **Fix:** measure first with a big generated library. If it's slow, reserve placeholders only for a few thousand titles ahead of the loaded range and keep one tall spacer element for the rest.
+- **Status:** partly fixed (2026-11-20). Opening a huge library is fast now; jumping far into it the first time is not yet.
+- **Measured** in Edge (headless, 1280 px wide), building the grid as the library page does (60 cards, the rest empty), with the CPU also slowed down 4× as a rough stand-in for a phone:
+
+  | Titles | Before (normal / 4× slower) | After |
+  |---|---|---|
+  | 5,000 | 0.1 s / 0.5 s | |
+  | 20,000 | 0.4 s / 2.1 s | 0.03 s / 0.18 s |
+  | 80,000 | 1.6 s / 8.4 s (400,590 elements) | 0.04 s / 0.16 s |
+
+  Most of the time was the browser laying out the empty cards, not making them.
+- **What changed:** `pickGrid()` makes empty cards 1,500 at a time (`web/app.js:655`, `grid._reserve`). Below the last one, a single block (`.grid-rest`) stands in for the rest, as tall as their rows (the scroll bar and a saved scroll position stay right: the height is the same before and after the block turns into cards, also after the poster size changes). When it comes near the screen, by scrolling or by dragging the scroll bar into it, it turns into empty cards down to a bit below the screen (`:643`). A letter at the side first makes the cards up to its title (`grid._ensure`, `:1211`). The block is never the browser's scroll anchor (`overflow-anchor: none`); otherwise the browser holds it in place while cards go in above it, and it builds the whole library after all.
+- **Still open:** cards are made in one run from the top, so the first jump far down (the scroll bar dragged to the end, or "Z") still makes all the empty cards before it: about 0.9 s, or 4.3 s with the CPU slowed 4×, at 80,000 titles. It happens once per visit, and the page no longer freezes when it opens.
+- **Fix for the rest:** real windowing: only the cards around the screen exist, with a spacer above and below that start and end on whole rows (they have to be rebuilt when the number of columns changes), and `grid.children[i]` in the library page replaced by a lookup by title number.
 - **Size:** M.
 
 ### Deploy
