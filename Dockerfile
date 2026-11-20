@@ -14,7 +14,7 @@ COPY vendor ./vendor
 # changes, so a build after a small change takes minutes instead of a quarter of an hour.
 # (No BuildKit needed: the Synology's Docker often has no buildx.)
 RUN mkdir src && echo 'fn main() {}' > src/main.rs \
- && cargo build --release --no-default-features \
+ && cargo build --release --locked --no-default-features \
  && rm -rf src
 COPY src ./src
 COPY web ./web
@@ -22,11 +22,11 @@ COPY web ./web
 ARG GIT_SHA=
 # The status window is left out: a NAS has no screen. (touch: the copied files are older than the
 # empty program built above, and cargo would take it for up to date.)
-RUN touch src/main.rs && cargo build --release --no-default-features
+RUN touch src/main.rs && cargo build --release --locked --no-default-features
 
 # `docker build --target test .` runs the tests (the automatic build on Gitea does this first).
 FROM build AS test
-RUN cargo test --release --no-default-features
+RUN cargo test --release --locked --no-default-features
 
 FROM debian:bookworm-slim
 # ffmpeg does the transcoding; the VA drivers let Intel-based Synology models
