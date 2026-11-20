@@ -84,10 +84,12 @@ pub fn stored_token_id(hash: &str) -> &str {
 /// browser history, the download list). `scope` is an item id (its video, subtitles, stills and theme),
 /// "p" (pictures and pre-roll videos) or the path of one file to save; see `ticket_scope`. It holds the
 /// short id of the sign-in it was made with, so signing out ends it too. The end time is rounded
-/// (pictures: 1 to 1.5 hours, the rest 5 to 6 hours), so addresses stay the same and pictures stay cached.
+/// (pictures: 6 to 12 hours, the rest 5 to 6 hours), so addresses stay the same and the browser keeps the
+/// pictures it has (a new ticket is a new address, which it fetches again). A picture ticket opens only
+/// pictures, and signing out ends it at once.
 /// → (ticket, end time in unix seconds)
 pub fn ticket(key: &str, user: u64, scope: &str, token: Option<&str>, now: u64) -> (String, u64) {
-    let (step, life) = if scope == "p" { (1800, 5400) } else { (3600, 6 * 3600) };
+    let (step, life) = if scope == "p" { (6 * 3600, 12 * 3600) } else { (3600, 6 * 3600) };
     let expires = now / step * step + life;
     let msg = format!("{user}.{expires}.{}.{scope}", token.map(token_id).unwrap_or_default());
     (format!("{msg}.{}", sig(key, &msg)), expires)

@@ -896,6 +896,13 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str, width: Option<u32>) -> Resp
         if let Some(small) = width.filter(|w| *w >= 64).and_then(|w| scaled_poster(app, id, Path::new(&p), w)) {
             return with_cache(serve_file(&small, "image/jpeg", None, false));
         }
+        // A small copy was asked for but is still being made: the original now, kept only briefly,
+        // so the browser asks again soon and then gets the small one.
+        if width.is_some_and(|w| w >= 64) {
+            let mut r = serve_file(Path::new(&p), mime, None, false);
+            r.add_header(header("Cache-Control", "private, max-age=60"));
+            return r;
+        }
         return with_cache(serve_file(Path::new(&p), mime, None, false));
     }
     let cache: PathBuf = app.data_dir.join("cache").join("thumbs").join(format!("{id}.jpg"));
@@ -991,8 +998,10 @@ pub fn frame(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     r
 }
 
+/// Pictures may be kept for a day: a changed poster or background has a new address (?v= the item's
+/// change time), so a kept copy is never an outdated one.
 pub fn with_cache(mut r: Resp) -> Resp {
-    r.add_header(header("Cache-Control", "private, max-age=3600"));
+    r.add_header(header("Cache-Control", "private, max-age=86400"));
     r
 }
 

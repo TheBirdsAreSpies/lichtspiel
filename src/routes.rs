@@ -253,14 +253,14 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
 
     // --- open to everyone
     match (m, segs.as_slice()) {
-        ("GET", ["web", "app.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_JS.as_bytes().to_vec()),
-        ("GET", ["web", "pages.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_PAGES_JS.as_bytes().to_vec()),
-        ("GET", ["web", "dashboard.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_DASHBOARD_JS.as_bytes().to_vec()),
-        ("GET", ["web", "downloads.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_DOWNLOADS_JS.as_bytes().to_vec()),
-        ("GET", ["web", "i18n.js"]) => return bytes(200, "text/javascript; charset=utf-8", WEB_I18N_JS.as_bytes().to_vec()),
+        ("GET", ["web", "app.js"]) => return web_script(WEB_JS, &ctx.params),
+        ("GET", ["web", "pages.js"]) => return web_script(WEB_PAGES_JS, &ctx.params),
+        ("GET", ["web", "dashboard.js"]) => return web_script(WEB_DASHBOARD_JS, &ctx.params),
+        ("GET", ["web", "downloads.js"]) => return web_script(WEB_DOWNLOADS_JS, &ctx.params),
+        ("GET", ["web", "i18n.js"]) => return web_script(WEB_I18N_JS, &ctx.params),
         ("GET", ["web", "lang", file]) => {
             return match WEB_LANGS.iter().find(|l| l.0 == *file) {
-                Some(l) => bytes(200, "text/javascript; charset=utf-8", l.1.as_bytes().to_vec()),
+                Some(l) => web_script(l.1, &ctx.params),
                 None => fail(404, "Not found"),
             };
         }
@@ -272,9 +272,12 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let tab = if name == crate::server::APP_NAME { esc.clone() } else { format!("{esc} · {}", crate::server::APP_NAME) };
             let page = WEB_APP
                 .replacen("<title>Lichtspiel</title>", &format!("<title>{tab}</title>"), 1)
-                .replacen("<span id=\"sname\">Lichtspiel</span>", &format!("<span id=\"sname\">{esc}</span>"), 1);
+                .replacen("<span id=\"sname\">Lichtspiel</span>", &format!("<span id=\"sname\">{esc}</span>"), 1)
+                // The scripts with the version's fingerprint, so the browser keeps them until the next update.
+                .replace(".js\"></script>", &format!(".js?v={}\"></script>", web_version()));
             let mut r = bytes(200, "text/html; charset=utf-8", page.into_bytes());
             r.add_header(crate::server::header("Content-Security-Policy", crate::server::web_csp()));
+            r.add_header(crate::server::header("Cache-Control", "no-cache"));
             return r;
         }
         ("GET", ["identity"]) => {

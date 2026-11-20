@@ -1915,6 +1915,28 @@ pub fn web_csp() -> &'static str {
     })
 }
 
+/// A short fingerprint of the web app's scripts. The page asks for them as /web/app.js?v=<this>, so the
+/// browser may keep them for good: a new version has new scripts, so a new fingerprint and new addresses.
+pub fn web_version() -> &'static str {
+    static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    V.get_or_init(|| {
+        use sha2::Digest;
+        let mut h = sha2::Sha256::new();
+        for s in [WEB_JS, WEB_PAGES_JS, WEB_DASHBOARD_JS, WEB_DOWNLOADS_JS, WEB_I18N_JS] { h.update(s.as_bytes()); }
+        for (name, s) in WEB_LANGS { h.update(name.as_bytes()); h.update(s.as_bytes()); }
+        h.finalize().iter().take(6).map(|b| format!("{b:02x}")).collect()
+    })
+}
+
+/// A script of the web app: kept for good when asked for with the current fingerprint (see `web_version`),
+/// otherwise checked with the server each time.
+pub fn web_script(body: &str, params: &[(String, String)]) -> Resp {
+    let mut r = bytes(200, "text/javascript; charset=utf-8", body.as_bytes().to_vec());
+    let current = params.iter().any(|(k, v)| k == "v" && v == web_version());
+    r.add_header(header("Cache-Control", if current { "public, max-age=31536000, immutable" } else { "no-cache" }));
+    r
+}
+
 /// Standard base64 (with padding).
 pub fn b64(data: &[u8]) -> String {
     const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -2567,6 +2589,36 @@ fn origin_is_other_site(origin: &str, host: &str, forwarded_hosts: &[String]) ->
     o != host.to_ascii_lowercase() && !forwarded_hosts.iter().any(|h| h == o)
 }
 
+/// Whether an Accept-Encoding header allows gzip (and does not turn it off with q=0).
+fn accepts_gzip(v: &str) -> bool {
+    v.split(',').any(|part| {
+        let mut it = part.split(';').map(str::trim);
+        let name = it.next().unwrap_or("").to_ascii_lowercase();
+        let off = it.any(|p| p.strip_prefix("q=").and_then(|q| q.parse::<f32>().ok()).is_some_and(|q| q <= 0.0));
+        (name == "gzip" || name == "*") && !off
+    })
+}
+
+/// Text answers (the web app's page and scripts, JSON, XML) packed with gzip. Pictures, video and
+/// downloads are packed already or are streamed, and small answers would not get smaller.
+fn gzipped(resp: Resp) -> Resp {
+    let has = |name: &'static str| resp.headers().iter().any(|h| h.field.equiv(name));
+    let ctype = resp.headers().iter().find(|h| h.field.equiv("Content-Type")).map(|h| h.value.as_str().to_ascii_lowercase()).unwrap_or_default();
+    let text = ["text/", "application/json", "application/xml", "application/javascript"].iter().any(|t| ctype.starts_with(t));
+    let fits = resp.data_length().is_some_and(|n| (1024..=32 << 20).contains(&n));
+    if !text || !fits || resp.status_code().0 != 200 || has("Content-Encoding") || has("Content-Range") { return resp; }
+    let (status, mut headers) = (resp.status_code(), resp.headers().to_vec());
+    let mut body = Vec::new();
+    if resp.into_reader().read_to_end(&mut body).is_err() { return bytes(500, "text/plain", b"Could not read the answer".to_vec()); }
+    let level = if body.len() > 1 << 20 { flate2::Compression::fast() } else { flate2::Compression::default() };
+    let mut enc = flate2::write::GzEncoder::new(Vec::with_capacity(body.len() / 4), level);
+    let packed = std::io::Write::write_all(&mut enc, &body).and_then(|_| enc.finish());
+    let body = match packed { Ok(p) => { headers.push(header("Content-Encoding", "gzip")); p } Err(_) => body };
+    headers.push(header("Vary", "Accept-Encoding"));
+    let len = body.len();
+    Response::new(status, headers, Box::new(std::io::Cursor::new(body)) as Box<dyn Read + Send>, Some(len), None)
+}
+
 fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let method = req.method().as_str().to_uppercase();
     let url = req.url().to_string();
@@ -2581,6 +2633,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let (mut xff, mut real_ip, mut forwarded) = (Vec::new(), None, Vec::new());
     let (mut fetch_site, mut origin) = (String::new(), None);
     let mut fwd_host = Vec::new();
+    let mut gzip_ok = false;
     for h in req.headers() {
         let f = h.field.as_str().as_str().to_ascii_lowercase();
         match f.as_str() {
@@ -2601,6 +2654,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
             "sec-fetch-site" => fetch_site = h.value.as_str().to_ascii_lowercase(),
             "origin" => origin = Some(h.value.as_str().to_ascii_lowercase()),
             "x-forwarded-host" => fwd_host.extend(h.value.as_str().split(',').map(|x| x.trim().to_ascii_lowercase())),
+            "accept-encoding" => gzip_ok = accepts_gzip(h.value.as_str()),
             _ => {}
         }
     }
@@ -2681,6 +2735,7 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     if took >= 400 && !["/parts/", "/transcode", "/video/", "/hls", "/stream"].iter().any(|p| ctx.path.contains(p)) {
         crate::log::add(format!("Slow answer: {} {} took {} ms", method, ctx.path, took));
     }
+    if gzip_ok { resp = gzipped(resp); }
     // Count what is sent (bandwidth on the dashboard).
     let (status, headers, len) = (resp.status_code(), resp.headers().to_vec(), resp.data_length());
     let remote = if is_local { None } else { Some(app.stats.bytes_remote.clone()) };
@@ -3646,6 +3701,42 @@ pub(crate) mod tests {
         assert!(post("Origin: http://X:8484\r\n").starts_with("HTTP/1.1 200"), "the web app itself was refused over http");
         assert!(post("").starts_with("HTTP/1.1 200"), "an app that sends no Origin was refused");
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod gzip_tests {
+    use super::*;
+
+    fn body(r: Resp) -> (Vec<String>, Vec<u8>) {
+        let heads = r.headers().iter().map(|h| format!("{}: {}", h.field, h.value)).collect();
+        let mut b = Vec::new();
+        r.into_reader().read_to_end(&mut b).unwrap();
+        (heads, b)
+    }
+
+    #[test]
+    fn text_is_packed_only_for_browsers_that_take_gzip() {
+        assert!(accepts_gzip("gzip, deflate, br") && accepts_gzip("br;q=1.0, gzip;q=0.8") && accepts_gzip("*"));
+        assert!(!accepts_gzip("") && !accepts_gzip("br") && !accepts_gzip("gzip;q=0") && !accepts_gzip("identity"));
+        let text = "Ein langer Text. ".repeat(500);
+        let (heads, packed) = body(gzipped(bytes(200, "text/javascript; charset=utf-8", text.clone().into_bytes())));
+        assert!(heads.iter().any(|h| h == "Content-Encoding: gzip") && packed.len() < text.len() / 10);
+        let mut back = String::new();
+        flate2::read::GzDecoder::new(&packed[..]).read_to_string(&mut back).unwrap();
+        assert_eq!(back, text);
+        // Pictures, small answers and errors stay as they are.
+        for r in [bytes(200, "image/jpeg", vec![0; 5000]), bytes(200, "application/json", b"{}".to_vec()), bytes(404, "text/plain", vec![b'x'; 5000])] {
+            assert!(!body(gzipped(r)).0.iter().any(|h| h.starts_with("Content-Encoding")));
+        }
+    }
+
+    #[test]
+    fn the_page_asks_for_scripts_that_may_be_kept() {
+        let v = web_version().to_string();
+        let kept = |p: Vec<(String, String)>| body(web_script("x", &p)).0.iter().any(|h| h.contains("immutable"));
+        assert!(kept(vec![("v".into(), v)]));
+        assert!(!kept(vec![]) && !kept(vec![("v".into(), "old".into())]));
     }
 }
 
