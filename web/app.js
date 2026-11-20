@@ -657,6 +657,61 @@ const skeletonGrid = n => h('div', { class: 'grid' }, Array.from({ length: n }, 
 // Grey placeholders while a page's rows are still on their way.
 const skeletonRows = n => Array.from({ length: n }, () => [h('div', { class: 'skel skel-h' }),
   h('div', { class: 'row' }, Array.from({ length: 10 }, () => h('div', { class: 'card' }, h('div', { class: 'poster skel' }), h('div', { class: 'skel skel-t' }))))]);
+// ---------- episodes as cards (a season's page, and under the tabs of a show's page)
+// The picture plays (the episodes after it queued), the title opens the episode, "⋯" has the rest
+// (watched, edit …); after a change there, changed() draws the page again.
+function episodeCards(eps, changed) {
+  return h('div', { class: 'eps' }, eps.map((e, i) => {
+    const at = resumeAt(e), prog = at && e.duration ? Math.min(1, e.viewOffset / e.duration) : 0, seen = e.viewCount > 0;
+    const go = () => play(e, at, eps.slice(i + 1));
+    return h('div', { class: 'card ep' + (seen ? ' watched' : '') + (e.missing ? ' missing' : '') },
+      h('div', { class: 'poster', 'data-id': e.id, onclick: e.missing ? null : go },
+        e.thumb ? posterImg(e.thumb, '(max-width:760px) 92vw, 320px') : null,
+        e.missing ? h('span', { class: 'gone', title: t('The file is gone from disk; the item is in the library’s trash'), 'aria-label': t('Unavailable') }, icon('trash')) : null,
+        prog ? h('div', { class: 'bar' }, h('i', { style: `width:${prog * 100}%` })) : null,
+        seen ? h('span', { class: 'seen', title: t('Watched'), 'aria-label': t('Watched') }, icon('check')) : null,
+        e.missing ? null : h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: ev => { ev.stopPropagation(); go(); } }, icon('play')),
+        h('button', { class: 'more', title: t('More'), 'aria-label': t('More'), onclick: ev => { ev.stopPropagation(); itemMenu(e, ev.currentTarget, changed); } }, '⋯')),
+      h('a', { class: 't', href: '#/item/' + e.id, title: e.title }, e.index ? `${e.index}. ${e.title}` : e.title),
+      h('div', { class: 's' }, [e.missing ? t('Unavailable') : '', fmtDur(e.duration), at ? t('stopped at {time}', { time: fmtTime(at) }) : ''].filter(Boolean).join(' · ')),
+      e.summary ? h('div', { class: 'ep-plot' }, e.summary) : null);
+  }));
+}
+// The season a show's page opens on: the one last chosen there, else the first with something not watched yet.
+const SEASON_PICK = new Map();
+function firstSeason(showId, seasons) {
+  const kept = seasons.findIndex(s => String(s.id) === SEASON_PICK.get(String(showId)));
+  if (kept >= 0) return kept;
+  const open = seasons.findIndex(s => s.leafCount && (s.viewedLeafCount || 0) < s.leafCount && s.index !== 0);
+  return open >= 0 ? open : 0;
+}
+// A show's seasons as tabs, the chosen one's episodes below (the first already loaded with the page).
+function seasonTabs(showId, seasons, at, firstEps, changed) {
+  const cache = new Map([[String(seasons[at].id), firstEps]]);
+  let cur = at;
+  const box = h('div', { class: 'season-eps' }, episodeCards(firstEps, changed));
+  // "⋯" for the season shown (watched, edit …), as its poster had before.
+  const more = h('button', { class: 'small', title: t('More'), 'aria-label': t('More'), onclick: ev => itemMenu(seasons[cur], ev.currentTarget, changed) }, '⋯');
+  const tabs = seasons.length > 1 ? h('div', { class: 'stabs', role: 'tablist' }, seasons.map((s, k) => {
+    const left = s.leafCount ? s.leafCount - (s.viewedLeafCount || 0) : 0;
+    return h('button', { type: 'button', role: 'tab', class: k === at ? 'on' : '', 'aria-selected': String(k === at), onclick: async ev => {
+      const b = ev.currentTarget;
+      tabs.querySelectorAll('button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', String(x === b)); });
+      SEASON_PICK.set(String(showId), String(s.id)); cur = k;
+      let eps = cache.get(String(s.id));
+      if (!eps) {
+        box.classList.add('loading');
+        try { eps = meta(await GET(`/library/metadata/${s.id}/children`)); cache.set(String(s.id), eps); }
+        catch (e) { box.classList.remove('loading'); if (e.name !== 'AbortError') toast(e.message); return; }
+      }
+      if (!b.classList.contains('on')) return; // another tab was chosen meanwhile
+      box.classList.remove('loading');
+      box.replaceChildren(episodeCards(eps, changed));
+      if (!calm()) [...box.querySelectorAll('.card')].slice(0, 12).forEach((c, i) => fadeIn(c, i * 35, 'translateY(10px)'));
+    } }, seasonTitle(s.title), left && left < s.leafCount ? h('small', {}, left) : null);
+  })) : null;
+  return [h('h2', {}, seasons.length > 1 ? t('Seasons') : seasonTitle(seasons[0].title)), h('div', { class: 'stabs-row' }, tabs, more), box];
+}
 // A show or season: the first episode not watched yet (else the first), the rest of them queued after it.
 async function playNextEpisode(id) {
   const l = meta(await GET(`/library/metadata/${id}/allLeaves`));
@@ -1255,6 +1310,9 @@ async function itemPage(id) {
   const playV = (at) => play(vi > 0 ? Object.assign({}, it, { id: vers[vi].id, ratingKey: String(vers[vi].id), Media: undefined }) : it, at);
   const versionName = v => [v.height ? (v.height >= 2000 ? '4K' : v.height + 'p') : '', v.edition, v.size ? fmtSize(v.size) : ''].filter(Boolean).join(' · ');
   const kids = kidsP ? meta(await kidsP) : [];
+  // A show: the episodes of the season its page opens on come with the page (no jump when they arrive).
+  const seasonAt = it.type === 'show' && kids.length ? firstSeason(id, kids) : -1;
+  const seasonEps = seasonAt >= 0 ? meta(await GET(`/library/metadata/${kids[seasonAt].id}/children`).catch(() => ({ MediaContainer: {} }))) : [];
   // Drawn again after a change, where it was scrolled to; not when another page is open by now (an "Undo" comes later).
   const refresh = async () => {
     if (!location.hash.startsWith('#/item/' + id)) return;
@@ -1348,8 +1406,9 @@ async function itemPage(id) {
       const of = kids.filter(k => (k.releaseType || 'album') === r);
       return of.length ? [h('h2', {}, releaseName(r, true)), scroller('row', of.map(k => posterCard(k)))] : null;
     }) : null,
-    kids.length && it.type !== 'artist' ? [h('h2', {}, it.type === 'show' ? t('Seasons') : it.type === 'album' ? t('Songs') : t('Episodes')),
-      it.type === 'show' ? scroller('row', kids.map(k => posterCard(k))) :
+    seasonAt >= 0 ? seasonTabs(id, kids, seasonAt, seasonEps, refresh) : null,
+    kids.length && it.type === 'season' ? [h('h2', {}, t('Episodes')), episodeCards(kids, refresh)] : null,
+    kids.length && it.type !== 'artist' && it.type !== 'show' && it.type !== 'season' ? [h('h2', {}, it.type === 'album' ? t('Songs') : t('Episodes')),
         h('div', { class: 'list' }, kids.map((e, i) => h('div', { class: 'li' + (e.missing ? ' missing' : '') },
           it.type === 'album' ? null : h('img', { src: withTok(e.thumb), loading: 'lazy' }),
           h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, e.index ? `${e.index}. ${e.title}` : e.title)), h('div', { class: 'dim' }, [e.missing ? t('Unavailable') : '', fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', resumeAt(e) ? t('stopped at {time}', { time: fmtTime(resumeAt(e)) }) : ''].filter(Boolean).join(' · ')),
