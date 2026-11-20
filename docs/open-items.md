@@ -62,6 +62,7 @@ Commits use Conventional Commits with a scope, and the subject describes what th
 | C17 | Client | The token in the browser history on Windows | postponed (probably fixed) | S |
 | W14 | Web | A huge library builds one empty card per title up front | postponed | M |
 | D8 | Deploy | Compose and `deploy.yml` define the same container twice | partly | M |
+| D11 | Deploy | The Docker image is about 350 MB, the server in it about 15 MB | idea | S / M |
 | S11 | Server/tests | No test that every route needs sign-in or admin | partly | M |
 
 Sizes: S is under an hour and a few lines, M is a few hours or needs a decision, L is a day or more. Paths in the client section are relative to `clients/lichtspiel/`.
@@ -118,6 +119,20 @@ Report: [reviews/2026-11-15-ops.md](reviews/2026-11-15-ops.md).
 - **Problem:** both list mounts, ports, devices and the restart policy under the same name `lichtspiel`. A change to one is easy to miss in the other. If someone sets it up through Container Manager → Project and then turns on CI, the first deploy runs `docker rm -f` on the compose-made container and Container Manager shows a broken project.
 - **Fix:** keep one definition. For example, let `deploy.yml` run `docker compose up -d --no-build` with the image it just built (`image: lichtspiel:latest` in compose). Keep the rollback and the `--group-add` for `/dev/dri` working.
 - **Size:** M.
+
+#### D11. The Docker image is about 350 MB, the server in it about 15 MB
+
+- **Status:** idea, not planned yet (2026-11-20). Not a review finding. The sizes below are estimates; measure first.
+- **Where:** `Dockerfile:33-37` (the packages of the final image).
+- **Problem:** the server binary is about 15 MB; the rest is what runs next to it. Rough share: `debian:bookworm-slim` ~75 MB; `ffmpeg` from Debian 150–250 MB (it pulls in SDL, PulseAudio, X11, JACK and every codec library, which a server never uses); `mesa-va-drivers` ~100 MB (VAAPI for AMD/Radeon GPUs, mostly LLVM); `intel-media-va-driver` and `i965-va-driver` ~20 MB (VAAPI for Intel, which the Intel Synology models need); `python3` ~30 MB (only for the plugins). Pulling a new image on the NAS takes longer than it has to.
+- **Measure first:** `docker history lichtspiel:latest` (or `docker image inspect`) shows which layer is how big. Note the numbers here before changing anything.
+- **Options, easiest first:**
+  1. **Drop `mesa-va-drivers`** (one line, probably ~100 MB). The Intel Synology models use the Intel drivers, and the AMD ones (Ryzen V1500B, R1600) have no GPU. What is lost: hardware transcoding on a non-Synology host with a Radeon card. Size S.
+  2. **A leaner ffmpeg instead of Debian's**, for example `jellyfin-ffmpeg` (built for media servers, brings VAAPI and the Intel driver, no desktop libraries) or a static build. Probably another 100 MB or more. Check afterwards on the NAS that the dashboard still shows "hw" and that ffprobe and the tests (`docker build --target test`) still pass. Size M.
+  3. **Python optional:** saves ~30 MB, but the bundled plugins (`nfo-reader`, `webhook-notify`) stop working. Probably not worth it.
+  4. **Alpine instead of Debian:** little gain after 1 and 2, and the server would have to be built for musl. Not recommended.
+- **Expected result:** with 1 and 2 about 150–200 MB. Below ~100 MB is unlikely while ffmpeg with hardware drivers is in the image.
+- **Size:** S for option 1, M for option 2.
 
 ### Server and tests
 
