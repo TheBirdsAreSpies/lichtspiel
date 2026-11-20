@@ -657,6 +657,12 @@ const skeletonGrid = n => h('div', { class: 'grid' }, Array.from({ length: n }, 
 // Grey placeholders while a page's rows are still on their way.
 const skeletonRows = n => Array.from({ length: n }, () => [h('div', { class: 'skel skel-h' }),
   h('div', { class: 'row' }, Array.from({ length: 10 }, () => h('div', { class: 'card' }, h('div', { class: 'poster skel' }), h('div', { class: 'skel skel-t' }))))]);
+// A show or season: the first episode not watched yet (else the first), the rest of them queued after it.
+async function playNextEpisode(id) {
+  const l = meta(await GET(`/library/metadata/${id}/allLeaves`));
+  const e = l.find(x => !x.viewCount) || l[0];
+  if (e) play(e, e.viewOffset ? e.viewOffset / 1000 : 0, l.slice(l.indexOf(e) + 1));
+}
 // ---------- the home page's banner: a few titles in turn, big, over their backdrop
 // What it shows: where you left off first, then what is new; one title per show; at most five.
 function spotItems(hubs) {
@@ -709,7 +715,8 @@ function spotlight(list) {
       sub || facts ? h('div', { class: 'spot-facts' }, [sub, facts].filter(Boolean).join(' · ')) : null,
       it.summary ? h('p', { class: 'spot-sum' }, it.summary) : null,
       h('div', { class: 'spot-act' },
-        playable ? h('button', { class: 'primary big', onclick: () => play(it, at) }, at ? t('▶ Resume from {time}', { time: fmtTime(at) }) : t('▶ Play')) : null,
+        playable ? h('button', { class: 'primary big', onclick: () => play(it, at) }, at ? t('▶ Resume from {time}', { time: fmtTime(at) }) : t('▶ Play'))
+          : (it.type === 'show' || it.type === 'season') && it.leafCount ? h('button', { class: 'primary big', onclick: () => playNextEpisode(it.id) }, t('▶ Play next episode')) : null,
         h('a', { class: 'spot-more', href: '#/item/' + it.id }, t('More info')))].filter(Boolean);
   };
   const go = i => {
@@ -722,9 +729,10 @@ function spotlight(list) {
     [...dots.children].forEach((d, k) => { d.classList.toggle('on', k === i); d.setAttribute('aria-current', String(k === i)); });
   };
   if (list.length > 1) {
-    dots.append(...list.map(({ it }, k) => h('button', { type: 'button', title: it.grandparentTitle || it.title, 'aria-label': it.grandparentTitle || it.title, onclick: () => go(k) })));
+    // (The button is a bigger, invisible place to tap; the dot is the <i> in it.)
+    dots.append(...list.map(({ it }, k) => h('button', { type: 'button', title: it.grandparentTitle || it.title, 'aria-label': it.grandparentTitle || it.title, onclick: () => go(k) }, h('i'))));
     // The running bar in the dot ends → the next title.
-    dots.addEventListener('animationend', e => { if (e.animationName === 'spot-run' && e.target.classList.contains('on')) go(cur + 1); });
+    dots.addEventListener('animationend', e => { if (e.animationName === 'spot-run' && e.target.closest('button.on')) go(cur + 1); });
   }
   const el = h('section', { class: 'spot' + (list.length > 1 && !calm() ? ' turning' : ''), 'aria-roledescription': 'carousel' }, bg, body, dots);
   let x0 = null;
@@ -737,16 +745,30 @@ function spotlight(list) {
 async function homePage() {
   markNav('home');
   // Answer the click at once; the rows come when the server has them.
-  if (S.sections.length) set(S.hadSpot ? h('div', { class: 'spot skel' }) : h('h1', {}, t('Home')), skeletonRows(2));
+  // (Not when the home page is drawn again over itself: the banner there may stay, see below.)
+  if (S.sections.length && !main().querySelector('.spot:not(.skel)')) set(S.hadSpot ? h('div', { class: 'spot skel' }) : h('h1', {}, t('Home')), skeletonRows(2));
   const hubs = (await GET('/hubs')).MediaContainer.Hub;
   if (!S.sections.length) {
     return set(h('h1', {}, t('Welcome')), h('div', { class: 'empty' },
       S.me.admin ? [h('p', {}, t('No libraries yet. Add your movie and TV show folders to get started.')), h('button', { class: 'primary', onclick: () => (location.hash = '#/libraries') }, t('Add a library'))]
         : t('The owner has not shared any libraries with you yet.')));
   }
-  const spot = spotlight(spotItems(hubs));
+  // Drawn again in place (new details arrived while a library is scanned, every few seconds): the same
+  // titles keep the banner as it is, on the title it shows, instead of starting over at the first one.
+  const picks = spotItems(hubs), key = picks.map(({ it }) => [it.id, it.viewOffset || 0, it.updatedAt || 0].join(':')).join(' ');
+  const old = !S.offscreen && main().querySelector('.spot:not(.skel)');
+  const spot = old && old._key === key ? old : spotlight(picks);
+  if (spot) spot._key = key;
   S.hadSpot = !!spot;
-  set(spot || h('h1', {}, t('Home')), hubs.length ? hubs.map(hb => row(hb.title, hb.Metadata)) : h('div', { class: 'empty' }, t('Nothing here yet. Libraries are still being scanned, or they are empty.')));
+  const rows = hubs.length ? hubs.map(hb => row(hb.title, hb.Metadata)) : h('div', { class: 'empty' }, t('Nothing here yet. Libraries are still being scanned, or they are empty.'));
+  // The kept banner stays in the page (taken out and put back, its running bar would start over): only the rows change.
+  if (spot && spot === old) {
+    clearTimeout(S.skel);
+    for (const c of [...main().children]) if (c !== old) c.remove();
+    main().append(...[rows].flat(9).filter(Boolean));
+    return;
+  }
+  set(spot || h('h1', {}, t('Home')), rows);
 }
 // Search results by kind (movies, shows, episodes …), the kinds in the order of their best hit.
 const KIND_NAMES = { movie: 'Movies', show: 'Shows', season: 'Seasons', episode: 'Episodes', artist: 'Artists', album: 'Albums', track: 'Songs', clip: 'Videos', photo: 'Photos', collection: 'Collections' };
@@ -1242,7 +1264,7 @@ async function itemPage(id) {
   const crumbs = [];
   if (it.grandparentTitle) crumbs.push(h('a', { href: '#/item/' + it.grandparentRatingKey }, it.grandparentTitle), ' › ');
   if (it.parentTitle) crumbs.push(h('a', { href: '#/item/' + it.parentRatingKey }, seasonTitle(it.parentTitle)));
-  const nextEp = async () => { const l = meta(await GET(`/library/metadata/${id}/allLeaves`)); const e = l.find(x => !x.viewCount) || l[0]; if (e) play(e, e.viewOffset ? e.viewOffset / 1000 : 0, l.slice(l.indexOf(e) + 1)); };
+  const nextEp = () => playNextEpisode(id);
   // Online details (plot, cast, crew …) live in it.extra; seasons and episodes borrow the show's.
   const x = it.extra || {};
   const topX = topP ? ((meta(await topP)[0] || {}).extra || {}) : x;

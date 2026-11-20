@@ -528,21 +528,24 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 .spot-act{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .spot-more{display:inline-flex;align-items:center;padding:10px 22px;font-size:16px;border-radius:999px;border:1px solid var(--line2);background:color-mix(in srgb,var(--panel2) 65%,transparent);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .spot-more:hover{border-color:var(--text)}
-.spot-dots{position:absolute;right:30px;bottom:28px;z-index:2;display:flex;gap:8px}
+.spot-dots{position:absolute;right:22px;bottom:18px;z-index:2;display:flex}
 #main .spot-dots button{min-height:0}
-.spot-dots button{position:relative;width:8px;height:8px;padding:0;border:0;border-radius:4px;overflow:hidden;background:color-mix(in srgb,var(--text) 35%,transparent);transition:width .35s cubic-bezier(.2,.8,.2,1),background .3s}
-.spot-dots button:hover{background:color-mix(in srgb,var(--text) 60%,transparent)}
-.spot-dots button.on{width:34px}
-.spot-dots button.on::after{content:"";position:absolute;inset:0;background:var(--accent);transform-origin:left;transform:scaleX(1)}
-.spot.turning .spot-dots button.on::after{animation:spot-run 9s linear}
-.spot.turning:hover .spot-dots button.on::after,.spot.turning:focus-within .spot-dots button.on::after{animation-play-state:paused}
+.spot-dots button{display:flex;align-items:center;justify-content:center;padding:10px 4px;border:0;border-radius:6px;background:none}
+.spot-dots i{position:relative;display:block;width:8px;height:8px;border-radius:4px;overflow:hidden;background:color-mix(in srgb,var(--text) 35%,transparent);transition:width .35s cubic-bezier(.2,.8,.2,1),background .3s}
+.spot-dots button:hover i{background:color-mix(in srgb,var(--text) 60%,transparent)}
+.spot-dots button:focus-visible{outline:2px solid var(--accent)}
+.spot-dots button.on i{width:34px}
+.spot-dots button.on i::after{content:"";position:absolute;inset:0;background:var(--accent);transform-origin:left;transform:scaleX(1)}
+.spot.turning .spot-dots button.on i::after{animation:spot-run 9s linear}
+.spot.turning:hover .spot-dots button.on i::after,.spot.turning:focus-within .spot-dots button.on i::after{animation-play-state:paused}
 @keyframes spot-run{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 @media (max-width:760px){
   .spot{margin:-14px -14px 6px;height:min(66vh,520px)}
   .spot::after{background:linear-gradient(0deg,var(--bg) 0%,color-mix(in srgb,var(--bg) 85%,transparent) 38%,transparent 75%)}
   .spot-body{left:14px;right:14px;bottom:44px;width:auto}
   .spot-sum{-webkit-line-clamp:2;margin-bottom:14px;font-size:14px}
-  .spot-dots{left:0;right:0;bottom:18px;justify-content:center}
+  .spot-dots{left:0;right:0;bottom:6px;justify-content:center}
+  .spot-dots button{padding:14px 6px}
 }
 /* The player: its bars slide away when idle, its buttons answer the touch, the seek bar's preview pops up. */
 #player .ptop,#player .pctl{transition:opacity .35s ease,transform .35s cubic-bezier(.2,.8,.2,1)}
