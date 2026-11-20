@@ -890,6 +890,7 @@ async function settingsPage(tab, qs) {
     return set(h('h1', {}, t('Settings')), nav(tab),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Web')),
         formRow(t('Language of this app'), langSelect(), t('Saved with your account.')),
+        pref('theme', 'system', t('Appearance'), [['system', t('System')], ['light', t('Light')], ['dark', t('Dark')]], t('Follows the device’s setting. Saved with your account.'), () => window.applyTheme()),
         pref('timeFormat', 'auto', t('Time format'), [['auto', t('Automatic')], ['24', t('24-hour')], ['12', t('12-hour')]], t('Saved with your account.')),
         pref('autoLogin', '1', t('Sign in automatically'), [['1', t('Yes')], ['0', t('No')]], t('No: you are signed out when the browser is closed.'), () => { saveToken(S.token); }),
         pref('levelVolume', '0', t('Level the volume'), [['0', t('No')], ['1', t('Yes')]], t('Quiet and loud videos are brought to a similar loudness. Works for videos the server has measured (Settings → Scheduled tasks).')),
