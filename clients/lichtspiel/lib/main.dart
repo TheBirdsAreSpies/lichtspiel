@@ -2,7 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'api.dart';
-import 'screens/home.dart';
+import 'screens/shell.dart';
 import 'screens/login.dart';
 import 'theme.dart';
 
@@ -96,7 +96,7 @@ class _LichtspielAppState extends State<LichtspielApp> {
                     setState(() => api = a);
                     a.get('/api/me').then(AppTheme.adopt).catchError((_) {});
                   })
-                : HomeScreen(api: api!, onSignOut: signOut),
+                : AppShell(api: api!, onSignOut: signOut),
       ),
     );
   }

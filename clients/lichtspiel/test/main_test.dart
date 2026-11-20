@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:lichtspiel/api.dart';
 import 'package:lichtspiel/main.dart';
-import 'package:lichtspiel/screens/home.dart';
+import 'package:lichtspiel/screens/shell.dart';
 import 'package:lichtspiel/screens/login.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -19,7 +19,7 @@ void main() {
       await tester.pump(const Duration(seconds: 11));
       await tester.pump();
     }, () => MockClient((_) => never.future));
-    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.byType(AppShell), findsOneWidget);
     await tester.pump(Api.timeout); // the home screen's own requests give up too
   });
 
@@ -29,8 +29,8 @@ void main() {
     await http.runWithClient(() async {
       await tester.pumpWidget(const LichtspielApp());
       await tester.pumpAndSettle();
-      expect(find.byType(HomeScreen), findsOneWidget);
-      tester.widget<HomeScreen>(find.byType(HomeScreen)).onSignOut();
+      expect(find.byType(AppShell), findsOneWidget);
+      tester.widget<AppShell>(find.byType(AppShell)).onSignOut();
       await tester.pumpAndSettle();
     }, () => MockClient((r) async => r.url.path == '/api/logout' ? http.Response('{"error":"Please sign in"}', 401) : http.Response('{}', 200)));
     expect(find.byType(LoginScreen), findsOneWidget);

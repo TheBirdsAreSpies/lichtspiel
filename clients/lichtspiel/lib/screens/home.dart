@@ -1,26 +1,21 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../api.dart';
-import '../widgets/activity.dart';
 import '../widgets/bar.dart';
 import '../widgets/poster.dart';
-import '../widgets/queue.dart';
-import '../widgets/together.dart';
-import 'dashboard.dart';
+import '../widgets/states.dart';
 import 'detail.dart';
-import 'downloads.dart';
 import 'library.dart';
-import 'playlists.dart';
-import 'settings.dart';
-import 'watchlist.dart';
+import 'shell.dart' show sectionIcon;
 
 void openItem(BuildContext context, Api api, Map<String, dynamic> it) {
   Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(api: api, id: '${it['ratingKey']}')));
 }
 
+/// The start screen: the libraries as chips, the rows (continue watching, recently added, ...) and the search.
 class HomeScreen extends StatefulWidget {
   final Api api;
-  final VoidCallback onSignOut;
-  const HomeScreen({super.key, required this.api, required this.onSignOut});
+  const HomeScreen({super.key, required this.api});
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -29,25 +24,15 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<List<dynamic>> data = Future.wait([widget.api.hubs(), widget.api.sections()]);
   final search = TextEditingController();
   List<Map<String, dynamic>>? results;
-  bool admin = false;
+  bool searching = false;
   bool searchOpen = false; // phones: the search field is shown in the title
-
-  @override
-  void initState() {
-    super.initState();
-    widget.api.get('/api/me').then((m) {
-      if (mounted && m is Map) {
-        DownloadRights.allowed = m['can_download'] == true;
-        DownloadRights.convert = m['admin'] == true || m['allow_transcode'] != false;
-        setState(() => Poster.admin = admin = m['admin'] == true);
-      }
-      if (mounted && m is Map && m['admin'] == true) Activity.start(widget.api);
-    }).catchError((_) {});
-  }
+  Timer? typing;
+  int searchGen = 0; // a slow answer to an older search is dropped
 
   @override
   void dispose() {
-    Activity.stop();
+    typing?.cancel();
+    search.dispose();
     super.dispose();
   }
 
@@ -56,15 +41,40 @@ class _HomeScreenState extends State<HomeScreen> {
     await data;
   }
 
+  /// Searches a moment after the typing stops (Enter searches at once).
+  void typed(String q) {
+    typing?.cancel();
+    typing = Timer(const Duration(milliseconds: 300), () => doSearch(q));
+  }
+
   Future<void> doSearch(String q) async {
-    if (q.trim().isEmpty) return setState(() => results = null);
+    typing?.cancel();
+    final my = ++searchGen;
+    if (q.trim().isEmpty) {
+      return setState(() {
+        results = null;
+        searching = false;
+      });
+    }
+    setState(() => searching = true);
     try {
       final r = await widget.api.search(q.trim());
-      if (mounted) setState(() => results = r);
+      if (mounted && my == searchGen) setState(() => results = r);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted && my == searchGen) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
+    } finally {
+      if (mounted && my == searchGen) setState(() => searching = false);
     }
   }
+
+  void closeSearch() => setState(() {
+        searchOpen = false;
+        searchGen++;
+        typing?.cancel();
+        search.clear();
+        results = null;
+        searching = false;
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -74,8 +84,16 @@ class _HomeScreenState extends State<HomeScreen> {
       controller: search,
       autofocus: narrow,
       textInputAction: TextInputAction.search,
+      onChanged: typed,
       onSubmitted: doSearch,
-      decoration: const InputDecoration(hintText: 'Suchen…', prefixIcon: Icon(Icons.search), border: InputBorder.none),
+      decoration: InputDecoration(
+        hintText: 'Suchen…',
+        prefixIcon: const Icon(Icons.search),
+        suffixIcon: searching
+            ? const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+            : (!narrow && search.text.isNotEmpty ? IconButton(tooltip: 'Leeren', icon: const Icon(Icons.close), onPressed: closeSearch) : null),
+        border: InputBorder.none,
+      ),
     );
     return Scaffold(
       appBar: AppBar(
@@ -86,39 +104,24 @@ class _HomeScreenState extends State<HomeScreen> {
             IconButton(
               tooltip: searchOpen ? 'Suche schließen' : 'Suchen',
               icon: Icon(searchOpen ? Icons.close : Icons.search),
-              onPressed: () => setState(() {
-                searchOpen = !searchOpen;
-                if (!searchOpen) {
-                  search.clear();
-                  results = null;
-                }
-              }),
+              onPressed: () => searchOpen ? closeSearch() : setState(() => searchOpen = true),
             )
           else
-            SizedBox(width: 260, child: field),
-          ...barActions(context, [
-            BarAction(Icons.queue_music, 'Warteschlange', () => showQueueDialog(context, api)),
-            BarAction(Icons.groups_outlined, 'Zusammen schauen: Raum beitreten', () => joinTogetherDialog(context, api)),
-            if (DownloadRights.allowed) BarAction(Icons.download_outlined, 'Downloads', () => Navigator.push(context, MaterialPageRoute(builder: (_) => DownloadsScreen(api: api)))),
-            BarAction(Icons.bookmark_border, 'Merkliste', () => Navigator.push(context, MaterialPageRoute(builder: (_) => WatchlistScreen(api: api)))),
-            BarAction(Icons.playlist_play, 'Playlists', () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: api)))),
-            if (admin) BarAction(Icons.monitor_heart_outlined, 'Dashboard', () => Navigator.push(context, MaterialPageRoute(builder: (_) => DashboardScreen(api: api)))),
-            BarAction(Icons.settings_outlined, 'Einstellungen', () => Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen(api: api, admin: admin)))),
-            BarAction(Icons.refresh, 'Aktualisieren', reload),
-            BarAction(Icons.logout, 'Abmelden', widget.onSignOut),
-          ]),
+            SizedBox(width: 300, child: field),
+          if (!narrow) IconButton(tooltip: 'Aktualisieren', icon: const Icon(Icons.refresh), onPressed: reload),
         ],
       ),
       body: results != null
-          ? ListView(padding: const EdgeInsets.all(16), children: [
-              Wrap(spacing: 12, runSpacing: 16, children: [for (final i in results!) Poster(api: api, item: i, onTap: () => openItem(context, api, i))]),
-              if (results!.isEmpty) const Center(child: Text('Nichts gefunden.')),
-            ])
+          ? results!.isEmpty
+              ? const ErrorView(error: 'Nichts gefunden.')
+              : ListView(padding: const EdgeInsets.all(16), children: [
+                  Wrap(spacing: 12, runSpacing: 16, children: [for (final i in results!) Poster(api: api, item: i, onTap: () => openItem(context, api, i))]),
+                ])
           : FutureBuilder<List<dynamic>>(
               future: data,
               builder: (context, snap) {
-                if (snap.hasError) return Center(child: Text('${snap.error}'));
-                if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+                if (snap.hasError) return ErrorView(error: snap.error!, onRetry: reload);
+                if (!snap.hasData) return const RowsSkeleton();
                 final hubs = snap.data![0] as List<Map<String, dynamic>>;
                 final sections = snap.data![1] as List<Map<String, dynamic>>;
                 return RefreshIndicator(
@@ -126,10 +129,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: ListView(padding: const EdgeInsets.symmetric(vertical: 12), children: [
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Wrap(spacing: 8, children: [
+                      child: Wrap(spacing: 8, runSpacing: 8, children: [
                         for (final s in sections)
                           ActionChip(
-                            avatar: Icon(s['type'] == 'show' ? Icons.tv : Icons.movie),
+                            avatar: Icon(sectionIcon(s['type'])),
                             label: Text('${s['title']}'),
                             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LibraryScreen(api: api, section: s))),
                           ),
@@ -155,7 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           itemCount: items.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 12),
+          separatorBuilder: (_, _) => const SizedBox(width: 12),
           itemBuilder: (_, i) => Poster(
             api: api,
             item: items[i],
