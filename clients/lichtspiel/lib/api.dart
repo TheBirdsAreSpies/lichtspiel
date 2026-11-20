@@ -192,25 +192,30 @@ class Api {
     final url = Uri.parse('$base$path');
     final stop = Completer<void>();
     final limit = method == 'GET' && !slow ? timeout : slowTimeout;
-    final timer = Timer(limit, stop.complete);
+    void abort() { if (!stop.isCompleted) stop.complete(); }
+    final timer = Timer(limit, abort);
+    Timer? idle;
     final req = http.AbortableRequest(method, url, abortTrigger: stop.future)..headers.addAll(_headers);
     if (body != null) req.body = jsonEncode(body);
     final http.Response r;
     try {
       final s = await _client().send(req);
       timer.cancel();
-      final stalled = s.stream.timeout(limit, onTimeout: (out) {
-        if (!stop.isCompleted) stop.complete();
-        out.addError(TimeoutException('the answer stopped coming', limit));
-        out.close();
+      // From here each piece of the body restarts the clock; the abort ends the stream with an error.
+      idle = Timer(limit, abort);
+      final watched = s.stream.map((piece) {
+        idle?.cancel();
+        idle = Timer(limit, abort);
+        return piece;
       });
-      r = await http.Response.fromStream(http.StreamedResponse(stalled, s.statusCode,
+      r = await http.Response.fromStream(http.StreamedResponse(watched, s.statusCode,
           contentLength: s.contentLength, request: s.request, headers: s.headers, isRedirect: s.isRedirect,
           persistentConnection: s.persistentConnection, reasonPhrase: s.reasonPhrase));
     } catch (e) {
       throw ApiError(0, describe(e, https: url.isScheme('https')), cause: e);
     } finally {
       timer.cancel();
+      idle?.cancel();
     }
     return _decode(r);
   }
