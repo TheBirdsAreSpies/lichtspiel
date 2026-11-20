@@ -11,6 +11,8 @@ import '../widgets/item_extras.dart';
 import 'player.dart';
 import 'playlists.dart';
 import '../theme.dart';
+import '../widgets/bar.dart';
+import '../widgets/states.dart';
 
 
 String fmtMs(int ms) {
@@ -72,7 +74,7 @@ class _DetailScreenState extends State<DetailScreen> {
   List<Map<String, dynamic>> kids = [];
   List<Map<String, dynamic>> chapters = [];
   List<Map<String, dynamic>> related = [];
-  String? error;
+  Object? error;
   bool admin = false;
 
   Api get api => widget.api;
@@ -106,7 +108,7 @@ class _DetailScreenState extends State<DetailScreen> {
         related = results[3] as List<Map<String, dynamic>>;
       });
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted) setState(() => error = e);
     }
   }
 
@@ -177,18 +179,39 @@ class _DetailScreenState extends State<DetailScreen> {
     play(e);
   }
 
-  Future<void> act(Future<void> Function() f) async {
+  /// Runs a change and shows the page again; false when it failed (the error is shown).
+  Future<bool> act(Future<void> Function() f) async {
     try {
       await f();
       await load();
+      return true;
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
+      return false;
+    }
+  }
+
+  /// Watched or not, for [id] (the page's title or one episode), with "Rückgängig".
+  Future<void> setWatched(String id, bool was) async {
+    if (await act(() => api.setWatched(id, !was)) && mounted) {
+      undoSnack(context, was ? 'Als ungesehen markiert' : 'Als gesehen markiert', () => act(() => api.setWatched(id, was)));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (error != null) return Scaffold(appBar: AppBar(), body: Center(child: Text(error!)));
+    if (error != null) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: ErrorView(
+          error: error!,
+          onRetry: () {
+            setState(() => error = null);
+            load();
+          },
+        ),
+      );
+    }
     final item = it;
     if (item == null) return Scaffold(appBar: AppBar(), body: const Center(child: CircularProgressIndicator()));
     final type = '${item['type']}';
@@ -240,6 +263,57 @@ class _DetailScreenState extends State<DetailScreen> {
       if (item['parentTitle'] != null) '${item['parentTitle']}',
     ].join(' › ');
 
+    final rest = <Widget>[
+      if ('${item['tagline'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text('${item['tagline']}', style: const TextStyle(fontStyle: FontStyle.italic))),
+      if ('${item['summary'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text('${item['summary']}')),
+      if (genres.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Wrap(spacing: 6, runSpacing: 6, children: [for (final g in genres) _tag(g)])),
+      if (crew.isNotEmpty || item['studio'] != null || released.isNotEmpty || (x['original_title'] != null && x['original_title'] != item['title']))
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: _kv([
+            for (final r in crew) [r.first, r.skip(1).join(', ')],
+            if (item['studio'] != null) [type == 'show' ? 'Sender' : 'Studio', '${item['studio']}'],
+            if (x['original_title'] != null && x['original_title'] != item['title']) ['Originaltitel', '${x['original_title']}'],
+            if (released.isNotEmpty) [type == 'movie' ? 'Erschienen' : 'Erstausstrahlung', released.split('T').first],
+          ]),
+        ),
+      const SizedBox(height: 16),
+      Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        if (playable && off > 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: Text('Fortsetzen bei ${fmtClock(off)}')),
+        if (playable && off > 0) OutlinedButton(onPressed: () => play({...item, 'viewOffset': 0}), child: const Text('Von vorn')),
+        if (playable && off == 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
+        if (playable && (item['Media'] as List? ?? const []).length > 1)
+          DropdownButton<int>(
+            value: ver.clamp(0, (item['Media'] as List).length - 1),
+            onChanged: (v) => setState(() => ver = v ?? 0),
+            items: [for (var i = 0; i < (item['Media'] as List).length; i++) DropdownMenuItem(value: i, child: Text(versionName(item['Media'][i])))],
+          ),
+        if (trailer != null) OutlinedButton.icon(onPressed: () => play(trailer), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer'))
+        else if (online.isNotEmpty) OutlinedButton.icon(onPressed: () => _open('https://www.youtube.com/watch?v=${online.first['key']}'), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer (online)')),
+        if (leafCount > 0 && (type == 'artist' || type == 'album')) ...[
+          FilledButton.icon(onPressed: () => playMusic(false), icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
+          OutlinedButton.icon(onPressed: () => playMusic(true), icon: const Icon(Icons.shuffle), label: const Text('Zufall')),
+        ],
+        if (!playable && leafCount > 0 && (type == 'show' || type == 'season'))
+          FilledButton.icon(onPressed: playNextEpisode, icon: const Icon(Icons.play_arrow), label: const Text('Nächste Folge')),
+        _toggle(watched ? Icons.check_circle : Icons.check_circle_outline, watched, watched ? 'Als ungesehen markieren' : 'Als gesehen markieren', () => setWatched(key, watched)),
+        _toggle(item['favorite'] == true ? Icons.favorite : Icons.favorite_border, item['favorite'] == true, item['favorite'] == true ? 'Aus Favoriten entfernen' : 'Zu Favoriten', () => act(() => api.setFavorite(key, item['favorite'] != true))),
+        if (type != 'clip') _toggle(item['watchlist'] == true ? Icons.bookmark : Icons.bookmark_border, item['watchlist'] == true, item['watchlist'] == true ? 'Von der Merkliste entfernen' : 'Auf die Merkliste', () => act(() => api.setWatchlist(key, item['watchlist'] != true))),
+        if (DownloadRights.allowed && (playable || type == 'show' || type == 'season') && item['missing'] != true) OutlinedButton.icon(onPressed: () => downloadDialog(context, api, [item]), icon: const Icon(Icons.download), label: const Text('Herunterladen')),
+        if (playable || type == 'episode') OutlinedButton.icon(onPressed: () => addToPlaylistDialog(context, api, key, item: item), icon: const Icon(Icons.playlist_add), label: const Text('Zur Playlist')),
+        _stars(item),
+      ]),
+      if (links.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Wrap(spacing: 8, runSpacing: 4, children: [for (final l in links) ActionChip(avatar: const Icon(Icons.open_in_new, size: 14), label: Text(l[0]), onPressed: () => _open(l[1]))]),
+        ),
+      if (media != null) Padding(padding: const EdgeInsets.only(top: 16), child: _fileInfo(item, media)),
+    ];
+
+    final narrow = isNarrow(context);
+    final pad = narrow ? 16.0 : 24.0;
+
     return Scaffold(
       appBar: AppBar(actions: [
         if (item['type'] != 'clip')
@@ -253,78 +327,48 @@ class _DetailScreenState extends State<DetailScreen> {
           ),
         if (admin) _adminMenu(item),
       ]),
-      body: ListView(padding: const EdgeInsets.all(20), children: [
-        if (crumbs.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(crumbs, style: dim)),
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(
-            width: 180,
-            child: AspectRatio(
-              aspectRatio: 2 / 3,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Stack(fit: StackFit.expand, children: [
-                  Image.network(api.img(item['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair)),
-                  BusyOverlay(item: item),
-                ]),
-              ),
-            ),
-          ),
-          const SizedBox(width: 20),
-          Expanded(
+      body: ListView(padding: EdgeInsets.zero, children: [
+        Stack(children: [
+          _backdrop(item, narrow ? 230 : 380),
+          Padding(
+            padding: EdgeInsets.fromLTRB(pad, narrow ? 120 : 90, pad, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title, style: Theme.of(context).textTheme.headlineMedium),
-              if (item['missing'] == true) Text('Nicht verfügbar: die Datei fehlt auf der Festplatte.', style: TextStyle(color: context.bad)),
-              const SizedBox(height: 6),
-              Text(meta, style: dim),
-              if (ratings.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: _scores(ratings)),
-              if ('${item['tagline'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text('${item['tagline']}', style: const TextStyle(fontStyle: FontStyle.italic))),
-              if ('${item['summary'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text('${item['summary']}')),
-              if (genres.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Wrap(spacing: 6, runSpacing: 6, children: [for (final g in genres) _tag(g)])),
-              if (crew.isNotEmpty || item['studio'] != null || released.isNotEmpty || (x['original_title'] != null && x['original_title'] != item['title']))
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: _kv([
-                    for (final r in crew) [r.first, r.skip(1).join(', ')],
-                    if (item['studio'] != null) [type == 'show' ? 'Sender' : 'Studio', '${item['studio']}'],
-                    if (x['original_title'] != null && x['original_title'] != item['title']) ['Originaltitel', '${x['original_title']}'],
-                    if (released.isNotEmpty) [type == 'movie' ? 'Erschienen' : 'Erstausstrahlung', released.split('T').first],
+              if (crumbs.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(crumbs, style: dim)),
+              Row(crossAxisAlignment: narrow ? CrossAxisAlignment.end : CrossAxisAlignment.start, children: [
+                SizedBox(
+                  width: narrow ? 110 : 180,
+                  child: AspectRatio(
+                    aspectRatio: 2 / 3,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Stack(fit: StackFit.expand, children: [
+                        Container(color: context.hair),
+                        Image.network(api.img(item['thumb']), headers: api.auth, fit: BoxFit.cover, cacheWidth: 400, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                        BusyOverlay(item: item),
+                      ]),
+                    ),
+                  ),
+                ),
+                SizedBox(width: narrow ? 14 : 24),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(title, style: narrow ? Theme.of(context).textTheme.titleLarge : Theme.of(context).textTheme.headlineMedium),
+                    if (item['missing'] == true) Text('Nicht verfügbar: die Datei fehlt auf der Festplatte.', style: TextStyle(color: context.bad)),
+                    const SizedBox(height: 6),
+                    Text(meta, style: dim),
+                    if (ratings.isNotEmpty && !narrow) Padding(padding: const EdgeInsets.only(top: 8), child: _scores(ratings)),
+                    if (!narrow) ...rest,
                   ]),
                 ),
-              const SizedBox(height: 16),
-              Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                if (playable && off > 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: Text('Fortsetzen bei ${fmtClock(off)}')),
-                if (playable && off > 0) OutlinedButton(onPressed: () => play({...item, 'viewOffset': 0}), child: const Text('Von vorn')),
-                if (playable && off == 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
-                if (playable && (item['Media'] as List? ?? const []).length > 1)
-                  DropdownButton<int>(
-                    value: ver.clamp(0, (item['Media'] as List).length - 1),
-                    onChanged: (v) => setState(() => ver = v ?? 0),
-                    items: [for (var i = 0; i < (item['Media'] as List).length; i++) DropdownMenuItem(value: i, child: Text(versionName(item['Media'][i])))],
-                  ),
-                if (trailer != null) OutlinedButton.icon(onPressed: () => play(trailer), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer'))
-                else if (online.isNotEmpty) OutlinedButton.icon(onPressed: () => _open('https://www.youtube.com/watch?v=${online.first['key']}'), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer (online)')),
-                if (leafCount > 0 && (type == 'artist' || type == 'album')) ...[
-                  FilledButton.icon(onPressed: () => playMusic(false), icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
-                  OutlinedButton.icon(onPressed: () => playMusic(true), icon: const Icon(Icons.shuffle), label: const Text('Zufall')),
-                ],
-                if (!playable && leafCount > 0 && (type == 'show' || type == 'season'))
-                  FilledButton.icon(onPressed: playNextEpisode, icon: const Icon(Icons.play_arrow), label: const Text('Nächste Folge')),
-                _toggle(watched ? Icons.check_circle : Icons.check_circle_outline, watched, watched ? 'Als ungesehen markieren' : 'Als gesehen markieren', () => act(() => api.setWatched(key, !watched))),
-                _toggle(item['favorite'] == true ? Icons.favorite : Icons.favorite_border, item['favorite'] == true, item['favorite'] == true ? 'Aus Favoriten entfernen' : 'Zu Favoriten', () => act(() => api.setFavorite(key, item['favorite'] != true))),
-                if (type != 'clip') _toggle(item['watchlist'] == true ? Icons.bookmark : Icons.bookmark_border, item['watchlist'] == true, item['watchlist'] == true ? 'Von der Merkliste entfernen' : 'Auf die Merkliste', () => act(() => api.setWatchlist(key, item['watchlist'] != true))),
-                if (DownloadRights.allowed && (playable || type == 'show' || type == 'season') && item['missing'] != true) OutlinedButton.icon(onPressed: () => downloadDialog(context, api, [item]), icon: const Icon(Icons.download), label: const Text('Herunterladen')),
-                if (playable || type == 'episode') OutlinedButton.icon(onPressed: () => addToPlaylistDialog(context, api, key, item: item), icon: const Icon(Icons.playlist_add), label: const Text('Zur Playlist')),
-                _stars(item),
               ]),
-              if (links.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Wrap(spacing: 8, runSpacing: 4, children: [for (final l in links) ActionChip(avatar: const Icon(Icons.open_in_new, size: 14), label: Text(l[0]), onPressed: () => _open(l[1]))]),
-                ),
-              if (media != null) Padding(padding: const EdgeInsets.only(top: 16), child: _fileInfo(item, media)),
+              if (narrow && ratings.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 12), child: _scores(ratings)),
+              if (narrow) ...rest,
             ]),
           ),
         ]),
+        Padding(
+          padding: EdgeInsets.fromLTRB(pad, 0, pad, 24),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (cast.isNotEmpty) ...[_h('Besetzung'), SizedBox(height: 150, child: ListView(scrollDirection: Axis.horizontal, children: [for (final p in cast) _person(p)]))],
         if (kids.isNotEmpty) ...[
           _h(type == 'show' ? 'Staffeln' : 'Folgen'),
@@ -347,7 +391,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(c['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair))),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(c['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, _, _) => Container(color: context.hair))),
                       ),
                       Text('${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}'), maxLines: 1, overflow: TextOverflow.ellipsis),
                       Text(fmtClock((c['start'] ?? 0) as int), style: TextStyle(fontSize: 12, color: context.faint)),
@@ -371,7 +415,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair, child: const Icon(Icons.play_circle_outline)))),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, _, _) => Container(color: context.hair, child: const Icon(Icons.play_circle_outline)))),
                       ),
                       Text('${e['title']}', maxLines: 1, overflow: TextOverflow.ellipsis),
                       Text(fmtMs((e['duration'] ?? 0) as int), style: TextStyle(fontSize: 12, color: context.faint)),
@@ -387,7 +431,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network('https://i.ytimg.com/vi/${v['key']}/mqdefault.jpg', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair, child: const Icon(Icons.play_circle_outline)))),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network('https://i.ytimg.com/vi/${v['key']}/mqdefault.jpg', fit: BoxFit.cover, errorBuilder: (_, _, _) => Container(color: context.hair, child: const Icon(Icons.play_circle_outline)))),
                       ),
                       Text('${v['name'] ?? 'Trailer'}', maxLines: 1, overflow: TextOverflow.ellipsis),
                       Text('online · YouTube', style: TextStyle(fontSize: 12, color: context.faint)),
@@ -405,7 +449,7 @@ class _DetailScreenState extends State<DetailScreen> {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: (hub['Metadata'] as List).length,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
                 itemBuilder: (_, i) {
                   final m = Map<String, dynamic>.from((hub['Metadata'] as List)[i]);
                   return Poster(api: api, item: m, onTap: () => openItem(context, api, m));
@@ -413,11 +457,42 @@ class _DetailScreenState extends State<DetailScreen> {
               ),
             ),
           ],
+          ]),
+        ),
       ]),
     );
   }
 
   Widget _h(String t) => Padding(padding: const EdgeInsets.only(top: 24, bottom: 8), child: Text(t, style: Theme.of(context).textTheme.titleMedium));
+
+  /// The wide background picture at the top, fading into the page; on a computer only a faint one behind the text.
+  Widget _backdrop(Map<String, dynamic> item, double height) {
+    final bg = Theme.of(context).scaffoldBackgroundColor;
+    final narrow = isNarrow(context);
+    final id = '${item['ratingKey'] ?? item['id'] ?? widget.id}';
+    final art = const {'movie', 'show', 'season', 'episode'}.contains(item['type']) ? api.img('/library/metadata/$id/art') : '';
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: Stack(fit: StackFit.expand, children: [
+        if (art.isNotEmpty)
+          Opacity(
+            opacity: narrow ? .9 : .35,
+            child: Image.network(art, headers: api.auth, fit: BoxFit.cover, alignment: Alignment.topCenter, cacheWidth: 1280, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+          ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [bg.withValues(alpha: narrow ? 0 : .2), bg.withValues(alpha: narrow ? .35 : .6), bg],
+              stops: const [0, .55, 1],
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
 
   Widget _adminMenu(Map<String, dynamic> item) {
     final type = '${item['type']}';
@@ -567,15 +642,26 @@ class _DetailScreenState extends State<DetailScreen> {
   Widget _toggle(IconData icon, bool on, String tip, VoidCallback onTap) =>
       IconButton(tooltip: tip, onPressed: onTap, icon: Icon(icon, color: on ? context.accent : null), style: IconButton.styleFrom(backgroundColor: context.hair));
 
-  /// Five stars on the server's 0-10 scale (each star is worth 2); tap the active last star's "clear" to remove.
+  /// Five stars on the server's 0-10 scale (each star is worth 2); "löschen" removes the rating.
+  /// Each star is a 40-point target, big enough for a finger.
   Widget _stars(Map<String, dynamic> item) {
     final cur = ((item['userRating'] ?? 0) as num).round();
+    const box = 40.0;
     return Row(mainAxisSize: MainAxisSize.min, children: [
       for (var i = 1; i <= 5; i++)
         // Left half of a star = half a star, right half = the whole star (as in the web app).
-        GestureDetector(
-          onTapUp: (d) => act(() => api.rate(key, d.localPosition.dx < 13 ? i * 2 - 1 : i * 2)),
-          child: Icon(cur >= i * 2 ? Icons.star : (cur == i * 2 - 1 ? Icons.star_half : Icons.star_border), color: cur >= i * 2 - 1 ? context.accent : context.ghost, size: 26),
+        Tooltip(
+          message: '${i - 1},5 oder $i ${i == 1 ? 'Stern' : 'Sterne'}',
+          waitDuration: const Duration(milliseconds: 600),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (d) => act(() => api.rate(key, d.localPosition.dx < box / 2 ? i * 2 - 1 : i * 2)),
+            child: SizedBox(
+              width: box,
+              height: box,
+              child: Icon(cur >= i * 2 ? Icons.star : (cur == i * 2 - 1 ? Icons.star_half : Icons.star_border), color: cur >= i * 2 - 1 ? context.accent : context.ghost, size: 32),
+            ),
+          ),
         ),
       if (cur > 0) TextButton(onPressed: () => act(() => api.rate(key, -1)), child: const Text('löschen')),
     ]);
@@ -621,7 +707,7 @@ class _DetailScreenState extends State<DetailScreen> {
           radius: 38,
           backgroundColor: context.hair,
           foregroundImage: src.isEmpty ? null : NetworkImage(src, headers: api.headersFor(src)),
-          onForegroundImageError: src.isEmpty ? null : (_, __) {},
+          onForegroundImageError: src.isEmpty ? null : (_, _) {},
           child: Text(initials),
         ),
         const SizedBox(height: 6),
@@ -632,35 +718,60 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
+  /// One episode: its picture with the progress bar and a mark when watched (a watched one is dimmed),
+  /// title, length and summary. A long press marks it watched or not.
   Widget _episode(Map<String, dynamic> e) {
     final seen = ((e['viewCount'] ?? 0) as int) > 0;
     final off = (e['viewOffset'] ?? 0) as int;
+    final dur = (e['duration'] ?? 0) as int;
+    final missing = e['missing'] == true;
     final sub = [
-      if (((e['duration'] ?? 0) as int) > 0) fmtMs(e['duration']),
-      if (seen) '✓ gesehen',
-      if (off > 0) 'gestoppt bei ${fmtClock(off)}',
+      if (dur > 0) fmtMs(dur),
+      if (off > 0 && dur > 0) 'noch ${fmtMs(dur - off)}',
+      if (missing) 'Datei fehlt',
     ].join(' · ');
     return InkWell(
       onTap: () => openItem(context, api, e),
+      onLongPress: () => setWatched('${e['ratingKey'] ?? e['id']}', seen),
+      borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SizedBox(
-            width: 140,
+            width: isNarrow(context) ? 120 : 160,
             child: AspectRatio(
               aspectRatio: 16 / 9,
-              child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair))),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Stack(fit: StackFit.expand, children: [
+                  Container(color: context.hair),
+                  Opacity(opacity: seen || missing ? .5 : 1, child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, cacheWidth: 360, errorBuilder: (_, _, _) => const SizedBox.shrink())),
+                  if (missing) const Center(child: Icon(Icons.delete, color: Colors.redAccent, size: 30)),
+                  if (seen && !missing)
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xB80E1013), border: Border.all(color: context.accent, width: 1.5)),
+                        child: Icon(Icons.check, size: 13, color: context.accent),
+                      ),
+                    ),
+                  if (off > 0 && dur > 0) Positioned(left: 0, right: 0, bottom: 0, child: LinearProgressIndicator(value: (off / dur).clamp(0, 1).toDouble(), minHeight: 3)),
+                ]),
+              ),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(e['index'] != null ? '${e['index']}. ${e['title']}' : '${e['title']}', style: const TextStyle(fontWeight: FontWeight.w600)),
-              Text(sub, style: TextStyle(fontSize: 12, color: context.faint)),
+              Text(e['index'] != null ? '${e['index']}. ${e['title']}' : '${e['title']}', style: TextStyle(fontWeight: FontWeight.w600, color: seen ? context.dim : null)),
+              if (sub.isNotEmpty) Text(sub, style: TextStyle(fontSize: 12, color: missing ? context.bad : context.faint)),
               if ('${e['summary'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text('${e['summary']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: context.soft))),
             ]),
           ),
-          IconButton(tooltip: 'Abspielen', onPressed: () => play(e), icon: Icon(Icons.play_circle_fill, color: context.accent)),
+          if (!missing) IconButton(tooltip: off > 0 ? 'Fortsetzen' : 'Abspielen', onPressed: () => play(e), icon: Icon(Icons.play_circle_fill, color: context.accent)),
         ]),
       ),
     );
