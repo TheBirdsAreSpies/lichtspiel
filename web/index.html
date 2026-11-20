@@ -489,6 +489,33 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 .card.ph .poster{background:var(--panel)}
 .skel-t{height:12px;margin-top:8px;width:80%}
 @keyframes skel{to{background-position:-200% 0}}
+/* Motion (with the rest in app.js, motion()): posters and backdrops fade in once loaded, a poster lifts under
+   the mouse, dialogs and messages slide in. None of it when the system asks for less motion. */
+#main > img.hero{opacity:0}
+#main > img.hero.in{opacity:.22}
+@media (prefers-reduced-motion:no-preference){
+  .poster img.fade{opacity:0;transition:opacity .35s ease-out,transform .5s cubic-bezier(.2,.8,.2,1)}
+  .poster img.fade.in{opacity:1}
+  #main > img.hero{transition:opacity .8s ease-out}
+  .card .poster{outline:3px solid transparent;transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s,outline-color .2s}
+  .card:active .poster{transform:scale(.97);transition-duration:.1s}
+  @media (hover:hover){
+    .card:hover .poster{transform:translateY(-3px);box-shadow:0 10px 22px rgba(0,0,0,.35)}
+    .card:hover .poster img{transform:scale(1.05)}
+    .card.ph:hover .poster{transform:none;box-shadow:none}
+  }
+  .modal{animation:fade-in .18s ease-out}
+  .modal .box{animation:pop-in .24s cubic-bezier(.2,.8,.2,1)}
+  #toast{animation:toast-in .24s cubic-bezier(.2,.8,.2,1)}
+  @media (max-width:760px){
+    body.nav-open #side{animation:side-in .24s cubic-bezier(.2,.8,.2,1)}
+    body.nav-open::after{animation:fade-in .24s ease-out}
+  }
+}
+@keyframes fade-in{from{opacity:0}}
+@keyframes pop-in{from{opacity:0;transform:translateY(10px) scale(.97)}}
+@keyframes toast-in{from{opacity:0;transform:translate(-50%,12px)}}
+@keyframes side-in{from{transform:translateX(-100%)}}
 
 /* phones: a bar at the bottom (home, watchlist, playlists, the menu with the libraries and the rest) instead of the
    side bar, a one-line scrolling library bar, smaller posters, scrolling tables and tabs */

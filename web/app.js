@@ -55,12 +55,40 @@ function set(...kids) {
   if (S.offscreen) return S.offscreen.replaceChildren(...list);
   const kept = [...main().querySelectorAll('.tabs')].map(e => e.scrollLeft);
   main().replaceChildren(...list); window.scrollTo(0, 0);
+  motion();
   main().querySelectorAll('.tabs').forEach((bar, i) => {
     if (kept[i]) bar.scrollLeft = kept[i];
     const on = bar.querySelector('a.on'); if (!on || bar.scrollWidth <= bar.clientWidth) return;
     const b = bar.getBoundingClientRect(), o = on.getBoundingClientRect();
     if (o.left < b.left || o.right > b.right) bar.scrollLeft += o.left - b.left - (b.width - o.width) / 2;
   });
+}
+// ---------- motion
+// A new page fades in; a poster clicked in a list grows into the poster of the title's page while the rest
+// of that page fades in beside it. Only on a change of page (MOTION.enter, set on hashchange), never when a
+// page is drawn again in place after a change on it, and not at all when the system asks for less motion.
+const MOTION = { enter: 0, from: null };
+window.addEventListener('hashchange', () => { MOTION.enter = Date.now(); });
+const calm = () => !window.matchMedia || matchMedia('(prefers-reduced-motion: reduce)').matches;
+// From transparent to whatever the element has (the page's backdrop is only faintly visible, for one).
+const fadeIn = (el, delay = 0, shift = '') => el && el.animate([{ opacity: 0, transform: shift || 'none', offset: 0 }], { duration: 320, delay, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+function motion() {
+  if (!MOTION.enter) return;
+  // Grey placeholders first: the page that replaces them is still the new page and gets the motion.
+  const skel = !!main().querySelector('.skel');
+  const fresh = Date.now() - MOTION.enter < 4000;
+  if (!skel) MOTION.enter = 0;
+  if (!fresh || calm()) { if (!skel) MOTION.from = null; return; }
+  const from = MOTION.from;
+  const to = !skel && from && Date.now() - from.at < 2500 && main().querySelector(`.detail > .poster[data-id="${from.id}"]`);
+  if (!skel) MOTION.from = null;
+  const b = to && to.getBoundingClientRect(), a = from && from.rect;
+  if (!to || !a.width || !b.width) { main().animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' }); return; }
+  to.style.zIndex = 5;
+  to.animate([{ transformOrigin: 'top left', transform: `translate(${a.left - b.left}px,${a.top - b.top}px) scale(${a.width / b.width},${a.height / b.height})`, borderRadius: '8px' },
+    { transformOrigin: 'top left', transform: 'none' }], { duration: 440, easing: 'cubic-bezier(.2,.8,.2,1)' }).onfinish = () => { to.style.zIndex = ''; };
+  for (const el of main().children) if (!el.contains(to) && !el.matches('img.hero')) fadeIn(el, 120);
+  fadeIn(to.parentNode.querySelector('.info'), 60, 'translateX(18px)');
 }
 // A short message at the bottom; with action ({ label, run }) a button in it ("Undo"), and it stays a little longer.
 function toast(msg, ms = 2600, action) {
@@ -392,7 +420,11 @@ function posterCard(it, opts = {}) {
   };
   // A real link: Tab and Enter reach it, Ctrl-click and the middle button open it in a new tab.
   card = h('a', { href: '#/item/' + it.id, class: 'card' + (seen ? ' watched' : '') + (it.missing ? ' missing' : '') + (['artist', 'album', 'track'].includes(it.type) ? ' music' : ''),
-    onclick: e => { if (card._held || (opts.pick && opts.pick(e, false))) { e.preventDefault(); card._held = false; } },
+    onclick: e => {
+      if (card._held || (opts.pick && opts.pick(e, false))) { e.preventDefault(); card._held = false; return; }
+      // Where the poster is: the title's page lets it grow from here (see motion()). Not for a new tab.
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.button) MOTION.from = { id: String(it.id), rect: card.querySelector('.poster').getBoundingClientRect(), at: Date.now() };
+    },
     onpointerenter: e => { if (e.pointerType === 'mouse') setTimeout(() => { if (card.matches(':hover')) prefetchItem(it); }, 150); } },
     h('div', { class: 'poster', 'data-id': it.id }, img ? posterImg(img) : null,
       it.missing ? h('span', { class: 'gone', title: t('The file is gone from disk; the item is in the library’s trash'), 'aria-label': t('Unavailable') }, icon('trash')) : null,
@@ -411,10 +443,13 @@ function posterCard(it, opts = {}) {
 // A poster in the size it is shown: the browser picks the smallest copy that is sharp enough (the server
 // makes them once; the slider in a library's bar can make the posters up to about twice as wide).
 const POSTER_W = [240, 360, 600];
-function posterImg(src) {
+// In a list it fades in once loaded. With sizes (a title's own page): at once, no fade; the copy picked is
+// mostly the one its card in the list already loaded, so the poster that grows into it is there right away.
+function posterImg(src, sizes) {
   const at = w => withTok(src + (src.includes('?') ? '&' : '?') + 'w=' + w);
   return h('img', { src: at(360), srcset: POSTER_W.map(w => `${at(w)} ${w}w`).join(', '),
-    sizes: `(max-width:760px) 34vw, ${Math.round(cardSize() * 1.4)}px`, loading: 'lazy', alt: '' });
+    sizes: sizes || `(max-width:760px) 34vw, ${Math.round(cardSize() * 1.4)}px`, loading: sizes ? null : 'lazy', alt: '',
+    class: sizes ? null : 'fade', onload: sizes ? null : e => e.target.classList.add('in') });
 }
 // Holding a finger on el for half a second runs fn; the tap that ends it then opens nothing (el._held).
 // The phone's own menu for links is left out there, as is selecting the text.
@@ -1126,13 +1161,16 @@ async function itemPage(id) {
   // Rows: Other Editions, Related, More by the director, More with the first two actors.
   const chapters = chaptersP ? ((await chaptersP) || { MediaContainer: {} }).MediaContainer.Chapter || [] : [];
   const relatedBox = h('div', {});
-  const hero = h('img', { class: 'hero', src: withTok(`/library/metadata/${id}/art?v=${it.updatedAt || 0}`), alt: '', onerror: e => e.target.remove() });
+  // The backdrop fades in once loaded; drawn again in place (after a change) it stays as it was.
+  const heroSrc = withTok(`/library/metadata/${id}/art?v=${it.updatedAt || 0}`), oldHero = main().querySelector('img.hero.in');
+  const hero = h('img', { class: 'hero' + (oldHero && oldHero.src === new URL(heroSrc, location.href).href ? ' in' : ''), src: heroSrc, alt: '',
+    onload: e => e.target.classList.add('in'), onerror: e => e.target.remove() });
   set(
     hero,
     h('div', { class: 'dim', style: 'margin-bottom:10px;position:relative' }, crumbs),
     h('div', { class: 'detail', 'data-id': id },
       // A click anywhere on the poster plays.
-      h('div', { class: 'poster' + (isPlayable(it) ? ' playable' : ''), 'data-id': id, onclick: () => { if (isPlayable(it)) playV((it.viewOffset || 0) / 1000); } }, h('img', { src: withTok(it.thumb), alt: '' }),
+      h('div', { class: 'poster' + (isPlayable(it) ? ' playable' : ''), 'data-id': id, onclick: () => { if (isPlayable(it)) playV((it.viewOffset || 0) / 1000); } }, it.thumb ? posterImg(it.thumb, '(max-width:760px) 180px, 240px') : h('img', { src: withTok(it.thumb), alt: '' }),
         isPlayable(it) ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: e => { e.stopPropagation(); playV((it.viewOffset || 0) / 1000); } }, icon('play')) : null),
       h('div', { class: 'info' },
         h('h1', { style: 'margin-bottom:4px' }, it.type === 'episode' ? `${it.index}. ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : it.clearLogo ? h('img', { src: withTok(it.clearLogo), alt: it.title, title: it.title, style: 'max-height:96px;max-width:100%;object-fit:contain;display:block', onerror: e => e.target.replaceWith(document.createTextNode(it.title)) }) : it.title,

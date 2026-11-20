@@ -1972,6 +1972,7 @@ async function render() {
   const kept = again && S.me && BACK.pages.get(k);
   if (kept && Date.now() - kept.at < 10 * 60 * 1000) {
     main().replaceChildren(...kept.nodes);
+    MOTION.enter = 0; MOTION.from = null; // back where it was: at once, no motion
     markNav(BACK_KEEP[parts[0] || '']);
     window.scrollTo(0, BACK.scroll.get(k) || 0);
     const box = h('div'), rec = [];
