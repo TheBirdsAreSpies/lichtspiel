@@ -120,7 +120,10 @@ h2{font-size:19px;margin:28px 0 12px}
 .rowwrap:hover .arrow.show{opacity:1}
 .rowwrap .arrow:hover{color:var(--accent)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--card,140px),1fr));gap:22px 18px}
-.card{width:140px;flex:0 0 140px;cursor:pointer}
+.card{display:block;width:140px;flex:0 0 140px;cursor:pointer;color:inherit}
+.card:focus-visible{outline:none}
+.card:focus-visible .poster{outline:3px solid var(--accent);outline-offset:2px}
+.card:focus-visible .more,.card:focus-visible .edit,.card:focus-visible .play,.card:focus-within .more,.card:focus-within .edit,.card:focus-within .play{opacity:1}
 .grid .card{width:auto}
 .poster{position:relative;aspect-ratio:2/3;border-radius:var(--r);overflow:hidden;background:var(--panel2)}
 .poster img{width:100%;height:100%;object-fit:cover;display:block}
@@ -149,7 +152,8 @@ h2{font-size:19px;margin:28px 0 12px}
 .poster .play svg{width:30px;height:30px;fill:currentColor}
 .poster .play:hover,.poster .play:focus-visible{background:var(--accent);color:var(--on-accent);transform:scale(1.08)}
 .card:hover .more,.poster .more:focus-visible,.card:hover .edit,.poster .edit:focus-visible,.card:hover .play,.poster .play:focus-visible{opacity:1}
-@media (hover:none){.poster .more,.poster .edit{opacity:1}}
+/* touch screens: only the picture; a finger held on it opens the menu (play, select and the rest) */
+@media (hover:none){.poster .more,.poster .edit,.poster .play{display:none}.card{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}}
 .menu{position:fixed;z-index:30;min-width:200px;max-width:min(360px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;background:var(--menu);border:1px solid var(--menu-line);border-radius:10px;padding:5px;box-shadow:0 12px 32px rgba(0,0,0,.55),0 2px 6px rgba(0,0,0,.3);animation:menu-in .12s ease-out;scrollbar-width:thin;scrollbar-color:var(--scroll) transparent}
 @keyframes menu-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .menu .mi{display:flex;align-items:center;gap:10px;width:100%;min-height:34px;text-align:left;background:none;border:0;border-radius:6px;padding:6px 12px;font-size:14px;color:var(--text);white-space:nowrap}
@@ -268,7 +272,8 @@ button.profile:hover .avatar,button.profile:focus-visible .avatar{border-color:v
 .center input.pin{font-size:22px;letter-spacing:8px;text-align:center}
 .err{color:var(--red);margin-top:10px;min-height:20px}
 .ok{color:var(--green)}
-#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:10px 18px;border-radius:8px;display:none;z-index:30}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:10px 18px;border-radius:8px;display:none;z-index:30;align-items:center;gap:16px;max-width:calc(100vw - 24px)}
+#toast button{flex:none;background:none;border:0;color:var(--accent);font-weight:600;padding:4px 6px;margin:-4px -8px -4px 0}
 #player{position:fixed;inset:0;background:#000;z-index:20;display:none;flex-direction:column;--cue:100%;user-select:none;color:#fff}
 #player video{position:absolute;inset:0;width:100%;height:100%;background:#000}
 #player video::cue{font-size:var(--cue);color:var(--cue-color,#fff);background:var(--cue-bg,rgba(0,0,0,.55))}
@@ -444,6 +449,8 @@ svg.viz rect.hov{fill:var(--hovfill)}
 .ranked .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:760px){.np-list,.dash-charts,.dash-cols{grid-template-columns:minmax(0,1fr)}}
 .empty{padding:40px;text-align:center;color:var(--dim);background:var(--panel);border-radius:var(--r)}
+.errorpage .big{font-size:34px;line-height:1;color:var(--faint);margin-bottom:10px}
+.errorpage p{margin:0 0 16px}
 @media (max-width:760px){.field,.modal .field{grid-template-columns:minmax(0,1fr);gap:4px}.field>.help{grid-column:1}.field.top>label{padding-top:0}#side{display:none}#main{margin-left:0;padding:18px}.pickbar{left:50%;max-width:calc(100vw - 32px)}#top .logo{min-width:0}.detail{flex-direction:column}.detail .poster{width:180px;flex-basis:auto}}
 
 /* a library's page: the bar stays on top, only the posters scroll */
@@ -480,14 +487,26 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 .skel-t{height:12px;margin-top:8px;width:80%}
 @keyframes skel{to{background-position:-200% 0}}
 
-/* phones: menu button instead of the side bar, a one-line scrolling library bar, smaller posters, scrolling tables and tabs */
-#navbtn{display:none}
+/* phones: a bar at the bottom (home, watchlist, playlists, the menu with the libraries and the rest) instead of the
+   side bar, a one-line scrolling library bar, smaller posters, scrolling tables and tabs */
+#navbtn,#tabbar{display:none}
 @media (max-width:760px){
   #navbtn{display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:40px;height:40px;padding:0;background:none;border:0;color:var(--text)}
   #navbtn svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
   body:has(#side[style*="none"]) #navbtn{display:none}
   body.nav-open #side{display:block;z-index:20;width:min(280px,80vw);box-shadow:6px 0 24px rgba(0,0,0,.5)}
   body.nav-open::after{content:"";position:fixed;inset:56px 0 0 0;background:rgba(0,0,0,.5);z-index:19}
+  #tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;height:58px;background:var(--panel);border-top:1px solid var(--topline);z-index:18}
+  #tabbar a,#tabbar button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0;background:none;border:0;border-radius:0;font-size:11px;color:var(--dim)}
+  #tabbar span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #tabbar svg{width:24px;height:24px;fill:currentColor}
+  #tabbar a.on,body.nav-open #tabmenu{color:var(--accent)}
+  body:has(#tabbar) #navbtn{display:none}
+  body:has(#side[style*="none"]) #tabbar{display:none}
+  /* the open menu and the dimmed page leave the bar free, so its menu button closes the menu again */
+  body.nav-open #side,body.nav-open::after{bottom:58px}
+  #toast{bottom:70px}
+  .pickbar{bottom:70px}
   #top{gap:6px;padding:0 8px}
   #top{overflow:hidden}
   #top>*{flex-shrink:0}
@@ -498,7 +517,7 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   #who{gap:2px;flex:0 0 auto;min-width:0}
   #who .link{max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #npbtn{flex:0 0 auto;padding:0 6px}
-  #main{padding:14px 14px 60px}
+  #main{padding:14px 14px 84px}
   h1{font-size:22px;margin-bottom:12px}
   #main button,#main select,#main input:not([type=checkbox]):not([type=radio]):not([type=range]){min-height:38px;font-size:16px}
   /* library: the bar that stays on top is one row you can swipe, not a wall of controls */
@@ -566,6 +585,12 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   <div id="ver"></div>
 </nav>
 <main id="main"><p class="dim" data-t="Loading…">Loading…</p></main>
+<nav id="tabbar">
+  <a href="#/" data-nav="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg><span data-t="Home">Home</span></a>
+  <a href="#/watchlist" data-nav="watchlist"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15-5-2.18L7 18V5h10v13z"/></svg><span data-t="Watchlist">Watchlist</span></a>
+  <a href="#/playlists" data-nav="playlists"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10h11v2H3zm0-4h11v2H3zm0 8h7v2H3zm13-1v8l6-4z"/></svg><span data-t="Playlists">Playlists</span></a>
+  <button id="tabmenu" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg><span data-t="Menu">Menu</span></button>
+</nav>
 <div id="player">
   <video id="video" playsinline crossorigin="anonymous"></video>
   <div class="pspin" id="pspin"></div>

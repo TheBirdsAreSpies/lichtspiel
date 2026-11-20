@@ -10,7 +10,9 @@ async function playlistsPage(qs) {
   const st = { kind: p.get('kind') || '', owner: p.get('owner') || '', sort: p.get('sort') || 'pinned:desc,title', title: p.get('title') || '' };
   const go = () => { const n = new URLSearchParams(); for (const [k, v] of Object.entries(st)) if (v) n.set(k, v); location.hash = '#/playlists?' + n; };
   const q = new URLSearchParams(); for (const [k, v] of Object.entries(st)) if (v) q.set(k, v);
+  const wait = skeletonSoon(() => set(h('h1', {}, t('Playlists')), skeletonGrid(12)));
   const list = meta(await GET('/playlists?' + q));
+  wait();
   const sel = (key, opts) => h('select', { onchange: e => { st[key] = e.target.value; go(); } }, opts.map(([v, l]) => h('option', { value: v, selected: st[key] === v }, l)));
   set(h('h1', {}, t('Playlists')),
     h('div', { class: 'bar-tools' },
@@ -1265,7 +1267,8 @@ const fullItem = async it => (it.Media && it.Media[0].streams) || it._full ? it 
 const leavesOf = async it => isPlayable(it) ? [it] : meta(await GET(`/library/metadata/${it.id}/allLeaves`));
 
 function closeMenus() { document.querySelectorAll('.menu').forEach(m => m.remove()); }
-document.addEventListener('mousedown', e => { if (!e.target.closest('.menu')) closeMenus(); }, true);
+// (Not for the mouse events a phone sends after a finger held on a poster: that just opened its menu.)
+document.addEventListener('mousedown', e => { const c = e.target.closest('a.card'); if (!e.target.closest('.menu') && !(c && c._held)) closeMenus(); }, true);
 window.addEventListener('hashchange', closeMenus);
 window.addEventListener('resize', closeMenus);
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.menu')) { e.stopImmediatePropagation(); closeMenus(); } }, true);
@@ -1336,6 +1339,9 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
   // Extras (trailers …) are left out: they belong to their movie.
   const deletable = S.me.can_delete && it.type !== 'clip' && !(it.extra || {}).extra_type;
   openMenu(anchor, [
+    opts.play ? { label: t('Play'), run: opts.play } : null,
+    opts.select ? { label: t('Select'), run: opts.select } : null,
+    opts.play || opts.select ? '-' : null,
     { label: t('Watch together'), run: () => watchTogether(it) },
     { label: t('Share'), run: () => shareItem(it) },
     { label: t('Add to queue'), run: () => addToQueue(it) },
@@ -1344,12 +1350,7 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
     } } : null,
     it.type === 'clip' ? null : { label: it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), run: async () => { await toggleWatchlist(it); changed(); } },
     { label: t('Add to …'), run: () => addToDialog(it, changed) },
-    { label: watched ? t('Mark as unwatched') : t('Mark as watched'), run: async () => {
-      await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${it.id}`);
-      if (it.leafCount) it.viewedLeafCount = watched ? 0 : it.leafCount;
-      it.viewCount = watched ? 0 : Math.max(1, it.viewCount || 0); it.viewOffset = 0;
-      toast(watched ? t('Marked as unwatched') : t('Marked as watched')); changed();
-    } },
+    { label: watched ? t('Mark as unwatched') : t('Mark as watched'), run: () => markWatched([it], !watched, changed) },
     '-',
     admin ? { label: t('Refresh metadata'), run: async () => {
       toast(t('Downloading details…'));
@@ -1898,14 +1899,38 @@ async function startTheme(id) {
   a.play().catch(() => { /* the browser wants a click first, or there is no theme */ });
 }
 window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#/item/')) { stopTheme(); THEME.id = null; } });
+// ---------- going back: the page as it was left
+// Every history entry gets a key (history.state.k). Leaving a page keeps where it was scrolled to and, for
+// the light pages (home, search, playlists, a person), the page itself: going back shows it at once, where
+// it was, and draws it again quietly, swapping it only when what the server says has changed meanwhile.
+const BACK = { cur: null, n: 0, scroll: new Map(), pages: new Map(), recs: new Map() };
+const BACK_KEEP = { '': 'home', search: '', playlists: 'playlists', person: '' };
+function leavePage() {
+  BACK.nav = true; // the next render() is a change of page (not a redraw after a change on it)
+  const k = BACK.cur; if (!k) return;
+  BACK.scroll.set(k, window.scrollY);
+  const kind = BACK.cur_kind;
+  if (kind in BACK_KEEP && BACK.recs.has(k) && !main().querySelector('.skel')) {
+    BACK.pages.delete(k);
+    BACK.pages.set(k, { nodes: [...main().childNodes], rec: BACK.recs.get(k), at: Date.now() });
+    // Only the last few: each holds a whole page.
+    while (BACK.pages.size > 6) BACK.pages.delete(BACK.pages.keys().next().value);
+  }
+}
 async function render() {
   const hash = location.hash.slice(1) || '/';
   const [path, qs] = hash.split('?');
   const parts = path.split('/').filter(Boolean);
   if (S.nav) S.nav.abort();
   S.nav = new AbortController();
-  if (!S.status) { try { S.status = await GET('/api/status'); } catch (e) { return set(h('div', { class: 'empty' }, t('The server cannot be reached.'))); } }
-  try {
+  S.offscreen = null; S.rec = null; clearTimeout(S.skel);
+  let k = history.state && history.state.k;
+  const again = !!k && BACK.nav && BACK.scroll.has(k); // an entry seen before: back (or forward) to it
+  BACK.nav = false;
+  if (!k) { k = 'p' + Date.now().toString(36) + (BACK.n++); history.replaceState(Object.assign({}, history.state, { k }), ''); }
+  BACK.cur = k; BACK.cur_kind = parts[0] || '';
+  if (!S.status) { try { S.status = await GET('/api/status'); } catch (e) { return set(errorPage(e)); } }
+  const draw = async () => {
     if (parts[0] === 'invite' && parts[1]) return await invitePage(parts[1]);
     if (S.status.setup_needed) return setupPage();
     // Not signed in: the page asked for is kept and opened right after the sign-in (a device link, an item).
@@ -1921,7 +1946,7 @@ async function render() {
       }
       // A link that starts playing (?t= seconds in); closing the player leaves the title's page.
       case 'play': {
-        history.replaceState(null, '', '#/item/' + parts[1]);
+        history.replaceState({ k }, '', '#/item/' + parts[1]);
         await itemPage(parts[1]);
         return await play({ id: parts[1] }, Number(new URLSearchParams(qs || '').get('t')) || 0);
       }
@@ -1943,8 +1968,37 @@ async function render() {
       case 'login': location.hash = '#/'; return;
       default: return set(h('div', { class: 'empty' }, t('Page not found.')));
     }
-  } catch (e) { if (e.name !== 'AbortError') set(h('div', { class: 'empty' }, t('Something went wrong: {msg}', { msg: e.message }))); }
+  };
+  const kept = again && S.me && BACK.pages.get(k);
+  if (kept && Date.now() - kept.at < 10 * 60 * 1000) {
+    main().replaceChildren(...kept.nodes);
+    markNav(BACK_KEEP[parts[0] || '']);
+    window.scrollTo(0, BACK.scroll.get(k) || 0);
+    const box = h('div'), rec = [];
+    S.offscreen = box; S.rec = rec;
+    try { await draw(); } catch (e) { return; } finally { if (S.offscreen === box) { S.offscreen = null; S.rec = null; } }
+    if (BACK.cur !== k) return;
+    BACK.recs.set(k, rec);
+    if (rec.join(' ') === kept.rec.join(' ')) return;
+    const y = window.scrollY;
+    main().replaceChildren(...box.childNodes); window.scrollTo(0, y);
+    return;
+  }
+  const rec = [];
+  S.rec = rec;
+  try {
+    const r = await draw();
+    if (BACK.cur === k) {
+      BACK.recs.set(k, rec);
+      // Back to a page drawn anew: where it was. (A library keeps its own place, also across reloads.)
+      if (again && parts[0] !== 'section') window.scrollTo(0, BACK.scroll.get(k) || 0);
+    }
+    return r;
+  } catch (e) { if (e.name !== 'AbortError') set(errorPage(e)); }
+  finally { if (S.rec === rec) S.rec = null; }
 }
+// (Before the new page is drawn: the old one is still on screen.)
+window.addEventListener('hashchange', leavePage);
 window.addEventListener('hashchange', () => { if (!P.it && !S.signingIn) render(); });
 boot();
 

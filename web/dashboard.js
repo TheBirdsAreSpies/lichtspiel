@@ -30,7 +30,9 @@ async function watchlistPage(qs) {
   if (st.rules) q.set('rules', st.rules);
   if (st.rmatch) q.set('rmatch', st.rmatch);
   for (const [k, v] of Object.entries(st)) if (k.startsWith('f.') && v) q.set(k.slice(2), v);
+  const wait = skeletonSoon(() => set(h('h1', {}, t('Watchlist')), skeletonGrid(12)));
   const items = meta(await GET(`/api/watchlist?${q}`));
+  wait();
   const any = st.type || st.q || st.from || st.to || st.rules || Object.keys(st).some(k => k.startsWith('f.') && st[k]);
   const advRules = (() => { try { return st.rules ? JSON.parse(st.rules) : []; } catch (e) { return []; } })();
   const { filterBtn, chips, closePanel } = filterUI({ st, go, advRules, lastKey: 'libFilterField:watchlist:' + (st.type || ''),

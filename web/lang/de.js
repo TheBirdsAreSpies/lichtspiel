@@ -1744,6 +1744,15 @@ I18N.add('de', 'Deutsch', {
     'connected': 'verbunden',
     '{found} found in your libraries, {marked} newly marked as watched.': '{found} in deinen Mediatheken gefunden, {marked} neu als gesehen markiert.',
     'Waiting until the code is entered…': 'Warte, bis der Code eingegeben ist …',
+    // ---------- undo, errors, search groups, the bar at the bottom on phones
+    'Undo': 'Rückgängig',
+    'Something went wrong.': 'Etwas ist schiefgelaufen.',
+    'No connection to the server. Check the network and try again.': 'Keine Verbindung zum Server. Prüfe das Netzwerk und versuche es noch einmal.',
+    'The server answered with an error ({n}).': 'Der Server hat mit einem Fehler geantwortet ({n}).',
+    'Videos': 'Videos',
+    'Other': 'Sonstiges',
+    'Menu': 'Menü',
+    'Sign out on this device?': 'Auf diesem Gerät abmelden?',
   },
   patterns: [
     [/^Plex is not reachable: (.*)$/, 'Plex ist nicht erreichbar: $1'],

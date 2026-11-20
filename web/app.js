@@ -48,8 +48,11 @@ function formRow(label, control, help, top) {
 const MANAGE_PAGES = ['libraries', 'users', 'plugins', 'reports', 'api'];
 function set(...kids) {
   const list = kids.flat(9).filter(Boolean);
+  clearTimeout(S.skel);
   if (typeof NAV !== 'undefined' && MANAGE_PAGES.includes(NAV.cur) && S.me && S.me.admin) list.unshift(settingsNav(NAV.cur));
   // The tab bars scroll sideways on a phone: keep where they were, and keep the chosen tab in view.
+  // Drawn again quietly after going back (see render()): into a box off the page, compared afterwards.
+  if (S.offscreen) return S.offscreen.replaceChildren(...list);
   const kept = [...main().querySelectorAll('.tabs')].map(e => e.scrollLeft);
   main().replaceChildren(...list); window.scrollTo(0, 0);
   main().querySelectorAll('.tabs').forEach((bar, i) => {
@@ -59,7 +62,48 @@ function set(...kids) {
     if (o.left < b.left || o.right > b.right) bar.scrollLeft += o.left - b.left - (b.width - o.width) / 2;
   });
 }
-function toast(msg, ms = 2600) { const el = $('#toast'); el.textContent = msg; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => (el.style.display = 'none'), ms); }
+// A short message at the bottom; with action ({ label, run }) a button in it ("Undo"), and it stays a little longer.
+function toast(msg, ms = 2600, action) {
+  const el = $('#toast'), hide = () => (el.style.display = 'none');
+  el.replaceChildren(msg);
+  if (action) {
+    ms = Math.max(ms, 6000);
+    el.append(h('button', { class: 'small', onclick: () => { hide(); clearTimeout(el._t); action.run(); } }, action.label));
+  }
+  el.style.display = 'flex'; clearTimeout(el._t); el._t = setTimeout(hide, ms);
+}
+// A page that could not be drawn: what went wrong, in words for people, and a button to try again.
+// A mistake in the app itself is not shown as program text (it goes to the browser's console).
+function errorPage(e) {
+  if (!e.offline && !e.api) console.error(e);
+  const msg = e.offline || e.api ? e.message : t('Something went wrong.');
+  return h('div', { class: 'empty errorpage' },
+    h('div', { class: 'big', 'aria-hidden': 'true' }, e.offline ? '⚠' : '!'),
+    h('p', {}, msg),
+    h('button', { class: 'primary', onclick: () => render() }, t('Try again')));
+}
+// Titles marked watched or unwatched by hand. The message offers "Undo" when that gives every title back
+// exactly what it had: not when one was half watched (its place in it, or which episodes, would be lost).
+async function markWatched(list, watched, after = () => {}) {
+  const seen = it => it.leafCount ? it.viewedLeafCount === it.leafCount : it.viewCount > 0;
+  const clean = list.every(it => !it.viewOffset && (!it.leafCount || !it.viewedLeafCount || it.viewedLeafCount === it.leafCount));
+  const before = list.map(it => ({ it, seen: seen(it), viewCount: it.viewCount, viewedLeafCount: it.viewedLeafCount, viewOffset: it.viewOffset }));
+  await api('POST', `/:/${watched ? 'scrobble' : 'unscrobble'}?key=${list.map(it => it.id).join(',')}`);
+  for (const it of list) {
+    if (it.leafCount) it.viewedLeafCount = watched ? it.leafCount : 0;
+    it.viewCount = watched ? Math.max(1, it.viewCount || 0) : 0; it.viewOffset = 0;
+  }
+  after();
+  const msg = list.length === 1 ? (watched ? t('Marked as watched') : t('Marked as unwatched'))
+    : watched ? t('{n} marked as watched', { n: list.length }) : t('{n} marked as unwatched', { n: list.length });
+  // Only the titles that changed go back.
+  const changed = before.filter(b => b.seen !== watched);
+  toast(msg, 2600, clean && changed.length ? { label: t('Undo'), run: async () => {
+    await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${changed.map(b => b.it.id).join(',')}`);
+    for (const b of changed) Object.assign(b.it, { viewCount: b.viewCount, viewedLeafCount: b.viewedLeafCount, viewOffset: b.viewOffset });
+    after();
+  } } : undefined);
+}
 // A button whose request failed says why, instead of doing nothing (cancelled page reads stay quiet).
 window.addEventListener('unhandledrejection', e => { if (e.reason && e.reason.name !== 'AbortError') toast(t('Something went wrong: {msg}', { msg: e.reason.message || String(e.reason) }), 6000); });
 // Picture, video and download addresses carry a short-lived ticket (GET /api/ticket) instead of the sign-in
@@ -107,18 +151,43 @@ function audioTracks(m) {
 const friendlyChannels = n => ({ 1: 'Mono', 2: t('Stereo'), 3: '2.1', 6: '5.1', 7: '6.1', 8: '7.1' }[n] || (n ? t('{n} channels', { n }) : ''));
 
 async function api(method, path, body) {
+  // A change makes what was fetched ahead outdated; a read of it uses the copy once.
+  if (method !== 'GET') PREFETCH.clear();
+  else if (PREFETCH.has(path)) {
+    const p = PREFETCH.get(path); PREFETCH.delete(path);
+    if (Date.now() - p.at < 30000) { const j = await p.json.catch(() => null); if (j) return j; }
+  }
   const opt = { method, headers: { 'X-Token': S.token, Accept: 'application/json' } };
   if (body !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
   // A newer page cancels the reads of the one before (render() in pages.js), so a slow answer cannot draw over it.
   if (method === 'GET' && S.nav) opt.signal = S.nav.signal;
-  const r = await fetch(path, opt);
+  let r;
+  try { r = await fetch(path, opt); } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    const x = new Error(t('No connection to the server. Check the network and try again.')); x.offline = true; throw x;
+  }
   let j = null;
   try { j = await r.json(); } catch (e) { if (e.name === 'AbortError') throw e; /* not JSON */ }
   if (r.status === 401 && S.token && !path.startsWith('/api/login')) { logout(); throw new Error(t('Please sign in again')); }
-  if (!r.ok) { const e = new Error((j && j.error) ? t(j.error) : 'HTTP ' + r.status); e.data = j; throw e; }
+  if (!r.ok) { const e = new Error((j && j.error) ? t(j.error) : t('The server answered with an error ({n}).', { n: r.status })); e.data = j; e.api = true; throw e; }
+  // What a page was drawn from (render() compares it when going back).
+  if (method === 'GET' && S.rec) S.rec.push(path + ' ' + JSON.stringify(j));
   return j;
 }
 const GET = p => api('GET', p);
+// The mouse rests on a poster: its details (and a show's seasons) are fetched already, so the page opens at once.
+const PREFETCH = new Map();
+function prefetchItem(it) {
+  const paths = ['/library/metadata/' + it.id];
+  if (['show', 'season', 'artist', 'album'].includes(it.type)) paths.push(`/library/metadata/${it.id}/children`);
+  for (const path of paths) {
+    if (PREFETCH.has(path) || !S.token) continue;
+    if (PREFETCH.size > 20) PREFETCH.delete(PREFETCH.keys().next().value);
+    const json = fetch(path, { headers: { 'X-Token': S.token, Accept: 'application/json' } }).then(r => r.ok ? r.json() : null);
+    json.catch(() => {});
+    PREFETCH.set(path, { at: Date.now(), json });
+  }
+}
 const meta = j => (j && j.MediaContainer && j.MediaContainer.Metadata) || [];
 
 // ---------- sign in, first setup, invites
@@ -259,7 +328,7 @@ function drawChrome() {
   name.onclick = () => openMenu(name, [
     { label: t('Switch user'), run: switchUser },
     { label: t('Sign in a device'), run: () => { location.hash = '#/link'; } },
-    { label: t('Sign out'), run: switchUser },
+    { label: t('Sign out'), run: async () => { if (await sure(t('Sign out on this device?'), { ok: t('Sign out') })) switchUser(); } },
   ]);
   who.append(name, gear);
   document.querySelectorAll('#side .admin').forEach(e => (e.style.display = S.me.admin ? '' : 'none'));
@@ -268,9 +337,21 @@ function drawChrome() {
   drawNav();
   drawDlChip();
 }
-function markNav(key) { NAV.cur = key; document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', a.dataset.nav === key)); $('#npbtn').classList.toggle('on', key === 'dashboard'); }
+// The phone's bar at the bottom: its menu button opens the side bar over the page (and closes it again).
+$('#tabmenu').addEventListener('click', e => { e.stopPropagation(); document.body.classList.toggle('nav-open'); });
+function markNav(key) { NAV.cur = key; document.querySelectorAll('#side a, #tabbar a').forEach(a => a.classList.toggle('on', a.dataset.nav === key)); $('#npbtn').classList.toggle('on', key === 'dashboard'); }
 let searchTimer;
-$('#q').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { const v = e.target.value.trim(); location.hash = v ? '#/search/' + encodeURIComponent(v) : '#/'; }, 300); });
+// Typing searches as it goes. All of one search is a single entry in the history: the first letters open the
+// search page, the next ones replace it, and emptying the field goes back to where the search began.
+let searchFrom = null;
+$('#q').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => {
+  const v = e.target.value.trim(), on = location.hash.startsWith('#/search/');
+  if (v && on) { BACK.pages.delete(BACK.cur); history.replaceState(history.state, '', '#/search/' + encodeURIComponent(v)); render(); }
+  else if (v) { searchFrom = location.hash || '#/'; location.hash = '#/search/' + encodeURIComponent(v); }
+  else if (on && searchFrom !== null) { searchFrom = null; history.back(); }
+  else if (on) location.hash = '#/';
+}, 300); });
+window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#/search/')) searchFrom = null; });
 
 // ---------- cards
 function posterCard(it, opts = {}) {
@@ -290,34 +371,65 @@ function posterCard(it, opts = {}) {
   const seen = (mark === 'all' || (mark === 'movies') === (it.type === 'movie')) && mark !== 'none' && (it.viewCount > 0 || (it.leafCount && unseen === 0));
   // opts.pick(e, circle) = the library's multiple selection; true when it took the click.
   // The "…" menu redraws the card after a change; opts.onReplace learns of the new one.
-  const more = e => {
-    e.stopPropagation();
-    // After a change (match, refresh, unmatch, watched …) the card is redrawn with what the server has now.
-    itemMenu(it, e.currentTarget, async () => {
+  let card;
+  const replace = fresh => { if (card.isConnected) card.replaceWith(fresh); card = fresh; if (opts.onReplace) opts.onReplace(fresh); };
+  const menu = (anchor, touch) => {
+    // After a change (match, refresh, unmatch, watched, undo …) the card is redrawn with what the server has now.
+    itemMenu(it, anchor, async () => {
       try { Object.assign(it, meta(await GET('/library/metadata/' + it.id))[0]); } catch (err) { /* keep what we have */ }
-      const fresh = posterCard(it, opts); card.replaceWith(fresh); if (opts.onReplace) opts.onReplace(fresh);
-    }, { cont: opts.cont, removed: () => card.remove() });
+      const fresh = posterCard(it, opts); replace(fresh);
+    }, { cont: opts.cont, removed: () => card.remove(),
+      // On a phone the menu also holds what the buttons on the poster do with a mouse.
+      play: touch && isPlayable(it) && !it.missing ? () => play(it, (it.viewOffset || 0) / 1000) : null,
+      select: touch && opts.pick ? () => opts.pick({ preventDefault() {}, shiftKey: false, ctrlKey: true }, true) : null });
   };
+  // (The buttons sit inside the link: they do their own thing instead of opening the title.)
+  const more = e => { e.preventDefault(); e.stopPropagation(); menu(e.currentTarget, false); };
   // The pencil (admins) edits the details right here; the card is redrawn with what was saved.
   const edit = async e => {
-    e.stopPropagation();
-    editItem(await fullItem(it), async () => {
-      const fresh = posterCard(Object.assign(it, meta(await GET('/library/metadata/' + it.id))[0]), opts);
-      card.replaceWith(fresh); if (opts.onReplace) opts.onReplace(fresh);
-    });
+    e.preventDefault(); e.stopPropagation();
+    editItem(await fullItem(it), async () => replace(posterCard(Object.assign(it, meta(await GET('/library/metadata/' + it.id))[0]), opts)));
   };
-  const card = h('div', { class: 'card' + (seen ? ' watched' : '') + (it.missing ? ' missing' : '') + (['artist', 'album', 'track'].includes(it.type) ? ' music' : ''), onauxclick: e => { if (e.button === 1) { e.preventDefault(); window.open(location.pathname + '#/item/' + it.id, '_blank'); } }, onmousedown: e => { if (e.button === 1) e.preventDefault(); }, onclick: e => { if (!(opts.pick && opts.pick(e, false))) location.hash = '#/item/' + it.id; } },
-    h('div', { class: 'poster', 'data-id': it.id }, h('img', { src: withTok(img + (img.includes('?') ? '&' : '?') + 'w=360'), loading: 'lazy', alt: '' }),
+  // A real link: Tab and Enter reach it, Ctrl-click and the middle button open it in a new tab.
+  card = h('a', { href: '#/item/' + it.id, class: 'card' + (seen ? ' watched' : '') + (it.missing ? ' missing' : '') + (['artist', 'album', 'track'].includes(it.type) ? ' music' : ''),
+    onclick: e => { if (card._held || (opts.pick && opts.pick(e, false))) { e.preventDefault(); card._held = false; } },
+    onpointerenter: e => { if (e.pointerType === 'mouse') setTimeout(() => { if (card.matches(':hover')) prefetchItem(it); }, 150); } },
+    h('div', { class: 'poster', 'data-id': it.id }, img ? posterImg(img) : null,
       it.missing ? h('span', { class: 'gone', title: t('The file is gone from disk; the item is in the library’s trash'), 'aria-label': t('Unavailable') }, icon('trash')) : null,
       prog > 0 ? h('div', { class: 'bar' }, h('i', { style: `width:${prog * 100}%` })) : null,
       it.leafCount && unseen > 0 ? h('span', { class: 'badge' }, unseen) : null,
       seen ? h('span', { class: 'seen', title: t('Watched'), 'aria-label': t('Watched') }, icon('check')) : null,
-      opts.pick ? h('span', { class: 'pick', title: t('Select'), onclick: e => { e.stopPropagation(); opts.pick(e, true); } }) : null,
-      isPlayable(it) && !it.missing ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: e => { e.stopPropagation(); play(it, (it.viewOffset || 0) / 1000); } }, icon('play')) : null,
+      opts.pick ? h('span', { class: 'pick', title: t('Select'), onclick: e => { e.preventDefault(); e.stopPropagation(); opts.pick(e, true); } }) : null,
+      isPlayable(it) && !it.missing ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: e => { e.preventDefault(); e.stopPropagation(); play(it, (it.viewOffset || 0) / 1000); } }, icon('play')) : null,
       S.me.admin && it.type !== 'clip' ? h('button', { class: 'edit', title: t('Edit details'), 'aria-label': t('Edit details'), onclick: edit }, icon('edit')) : null,
       it.type === 'clip' ? null : h('button', { class: 'more', title: t('More'), 'aria-label': t('More'), onclick: more }, '⋯')),
     h('div', { class: 't', title }, title), h('div', { class: 's' }, (opts.caption && opts.caption(it)) || sub));
+  // A finger held on the poster opens the menu (there is no hover for the buttons on it).
+  if (it.type !== 'clip') longPress(card, () => menu(card.querySelector('.poster'), true));
   return card;
+}
+// A poster in the size it is shown: the browser picks the smallest copy that is sharp enough (the server
+// makes them once; the slider in a library's bar can make the posters up to about twice as wide).
+const POSTER_W = [240, 360, 600];
+function posterImg(src) {
+  const at = w => withTok(src + (src.includes('?') ? '&' : '?') + 'w=' + w);
+  return h('img', { src: at(360), srcset: POSTER_W.map(w => `${at(w)} ${w}w`).join(', '),
+    sizes: `(max-width:760px) 34vw, ${Math.round(cardSize() * 1.4)}px`, loading: 'lazy', alt: '' });
+}
+// Holding a finger on el for half a second runs fn; the tap that ends it then opens nothing (el._held).
+// The phone's own menu for links is left out there, as is selecting the text.
+function longPress(el, fn) {
+  let timer = 0, x = 0, y = 0, down = false;
+  const stop = () => { clearTimeout(timer); down = false; };
+  el.addEventListener('pointerdown', e => {
+    el._held = false;
+    if (e.pointerType !== 'touch') return;
+    x = e.clientX; y = e.clientY; stop(); down = true;
+    timer = setTimeout(() => { el._held = true; if (navigator.vibrate) navigator.vibrate(10); fn(); }, 500);
+  });
+  el.addEventListener('pointermove', e => { if (Math.abs(e.clientX - x) > 10 || Math.abs(e.clientY - y) > 10) stop(); });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(ev, stop);
+  el.addEventListener('contextmenu', e => { if (el._held || down) e.preventDefault(); });
 }
 // Poster size in the grids (the slider in a library's bar), kept per browser.
 const CARD = { min: 100, max: 300, def: 140 };
@@ -355,15 +467,9 @@ function pickGrid(items, cardOpts) {
   };
   const mark = watched => async () => {
     const idx = [...picked];
-    await api('POST', `/:/${watched ? 'scrobble' : 'unscrobble'}?key=${ids().join(',')}`);
-    for (const i of idx) {
-      const it = items[i];
-      if (it.leafCount) it.viewedLeafCount = watched ? it.leafCount : 0;
-      it.viewCount = watched ? Math.max(1, it.viewCount || 0) : 0;
-      it.viewOffset = 0;
-      const fresh = card(i); cards[i].replaceWith(fresh); cards[i] = fresh;
-    }
-    toast(watched ? t('{n} marked as watched', { n: idx.length }) : t('{n} marked as unwatched', { n: idx.length }));
+    // (Also after "Undo": the cards show what the titles have now.)
+    const redraw = () => { for (const i of idx) { const fresh = card(i); cards[i].replaceWith(fresh); cards[i] = fresh; } draw(); };
+    await markWatched(idx.map(i => items[i]), watched, redraw);
     clear();
   };
   const chosen = () => [...picked].sort((x, y) => x - y).map(i => items[i]);
@@ -433,7 +539,9 @@ function pickGrid(items, cardOpts) {
   };
   const card0 = i => posterCard(items[i], { ...cardOpts, onReplace: el => { el.dataset.i = i; cards[i] = el; draw(); }, pick: (e, circle) => {
     // A plain click on the poster always opens the item, even while others are selected; the circle, Ctrl and Shift select.
-    if (!circle && !e.ctrlKey && !e.metaKey && !e.shiftKey) return false;
+    // On a touch screen a tap selects while something is selected (there is no Ctrl, and the circles are small).
+    const touchPicking = picked.size > 0 && matchMedia('(hover: none)').matches;
+    if (!circle && !touchPicking && !e.ctrlKey && !e.metaKey && !e.shiftKey) return false;
     e.preventDefault(); toggle(i, e); return true;
   } });
   const card = i => { const c = card0(i); c.dataset.i = i; return c; };
@@ -484,6 +592,16 @@ function scroller(cls, kids) {
 const row = (title, items) => items.length ? [h('h2', {}, t(title)), scroller('row', items.map(i => posterCard(i, { cont: title === 'Continue Watching' })))] : null;
 
 // ---------- home, search, browse
+// Grey placeholders while a list loads, only when it takes a moment (a quick answer would just flicker).
+// skeletonSoon(draw) draws them after 150 ms; the function it returns stops that.
+// Anything drawn meanwhile (the page, an error, another page) calls them off.
+function skeletonSoon(draw) {
+  clearTimeout(S.skel);
+  const off = S.offscreen;
+  S.skel = setTimeout(() => { S.skel = 0; if (S.offscreen === off) draw(); }, 150);
+  return () => clearTimeout(S.skel);
+}
+const skeletonGrid = n => h('div', { class: 'grid' }, Array.from({ length: n }, () => h('div', { class: 'card ph' }, h('div', { class: 'poster skel' }), h('div', { class: 'skel skel-t' }))));
 // Grey placeholders while a page's rows are still on their way.
 const skeletonRows = n => Array.from({ length: n }, () => [h('div', { class: 'skel skel-h' }),
   h('div', { class: 'row' }, Array.from({ length: 10 }, () => h('div', { class: 'card' }, h('div', { class: 'poster skel' }), h('div', { class: 'skel skel-t' }))))]);
@@ -499,10 +617,21 @@ async function homePage() {
   }
   set(h('h1', {}, t('Home')), hubs.length ? hubs.map(hb => row(hb.title, hb.Metadata)) : h('div', { class: 'empty' }, t('Nothing here yet. Libraries are still being scanned, or they are empty.')));
 }
+// Search results by kind (movies, shows, episodes …), the kinds in the order of their best hit.
+const KIND_NAMES = { movie: 'Movies', show: 'Shows', season: 'Seasons', episode: 'Episodes', artist: 'Artists', album: 'Albums', track: 'Songs', clip: 'Videos', photo: 'Photos', collection: 'Collections' };
 async function searchPage(q) {
   markNav('');
+  const head = h('h1', {}, t('Search: {q}', { q }));
+  const wait = skeletonSoon(() => set(head, skeletonGrid(12)));
   const r = meta(await GET('/hubs/search?query=' + encodeURIComponent(q)));
-  set(h('h1', {}, t('Search: {q}', { q })), r.length ? h('div', { class: 'grid' }, r.map(i => posterCard(i))) : h('div', { class: 'empty' }, t('Nothing found.')));
+  wait();
+  if (!r.length) return set(head, h('div', { class: 'empty' }, t('Nothing found.')));
+  const groups = new Map();
+  for (const it of r) { const k = KIND_NAMES[it.type] ? it.type : 'other'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); }
+  if (groups.size === 1) return set(head, h('div', { class: 'grid' }, r.map(i => posterCard(i))));
+  set(head, [...groups].map(([k, list]) => [
+    h('h2', {}, t(KIND_NAMES[k] || 'Other'), h('span', { class: 'dim', style: 'font-weight:400;margin-left:8px;font-size:14px' }, list.length)),
+    h('div', { class: 'grid', style: 'margin-bottom:26px' }, list.map(i => posterCard(i)))]));
 }
 
 const SORTS = [['title', t('Title')], ['year:desc', t('Year (newest)')], ['year', t('Year (oldest)')], ['added_at:desc', t('Recently added')], ['rating:desc', t('Rating')], ['duration:desc', t('Length')], ['last_viewed_at:desc', t('Recently watched')], ['view_count:desc', t('Most watched')], ['random', t('Random')]];
@@ -949,9 +1078,16 @@ const plTitle = pl => pl.default ? t(pl.title) : pl.title;
 const ONLINE_VIDEO_TYPES = { Trailer: 'Trailer', Teaser: 'Teaser', Clip: 'Scene', Featurette: 'Featurette', 'Behind the Scenes': 'Behind the scenes' };
 const EXTRA_TYPES = { trailer: 'Trailer', behindthescenes: 'Behind the scenes', deleted: 'Deleted scene', featurette: 'Featurette', interview: 'Interview', scene: 'Scene', short: 'Short', other: 'Extra' };
 
+// A title's page while it loads: the poster's place and a few grey lines.
+const skeletonItem = () => h('div', { class: 'detail' }, h('div', { class: 'poster skel', style: 'aspect-ratio:2/3' }),
+  h('div', { class: 'info' }, h('div', { class: 'skel', style: 'height:30px;width:55%;margin:6px 0 16px' }), h('div', { class: 'skel', style: 'height:14px;width:30%;margin-bottom:24px' }),
+    [90, 96, 70].map(w => h('div', { class: 'skel', style: `height:12px;width:${w}%;margin-bottom:10px` }))));
 async function itemPage(id) {
   markNav('');
+  // (Not when it is drawn again in place, after a change on it.)
+  const wait = location.hash.startsWith('#/item/' + id) && main().querySelector('.detail[data-id="' + id + '"]') ? () => {} : skeletonSoon(() => set(skeletonItem()));
   const it = meta(await GET('/library/metadata/' + id))[0];
+  wait();
   const m = it.Media && it.Media[0];
   // Everything else the page needs is asked for at once (not one after the other); the related rows come last, after the page is drawn.
   const topId = it.grandparentRatingKey || (it.type === 'season' ? it.parentRatingKey : null);
@@ -965,7 +1101,11 @@ async function itemPage(id) {
   const playV = (at) => play(vi > 0 ? Object.assign({}, it, { id: vers[vi].id, ratingKey: String(vers[vi].id), Media: undefined }) : it, at);
   const versionName = v => [v.height ? (v.height >= 2000 ? '4K' : v.height + 'p') : '', v.edition, v.size ? fmtSize(v.size) : ''].filter(Boolean).join(' · ');
   const kids = kidsP ? meta(await kidsP) : [];
-  const refresh = () => itemPage(id);
+  // Drawn again after a change, where it was scrolled to; not when another page is open by now (an "Undo" comes later).
+  const refresh = async () => {
+    if (!location.hash.startsWith('#/item/' + id)) return;
+    const y = window.scrollY; await itemPage(id); window.scrollTo(0, y);
+  };
   const watched = it.leafCount ? it.viewedLeafCount === it.leafCount : it.viewCount > 0;
   const crumbs = [];
   if (it.grandparentTitle) crumbs.push(h('a', { href: '#/item/' + it.grandparentRatingKey }, it.grandparentTitle), ' › ');
@@ -990,7 +1130,7 @@ async function itemPage(id) {
   set(
     hero,
     h('div', { class: 'dim', style: 'margin-bottom:10px;position:relative' }, crumbs),
-    h('div', { class: 'detail' },
+    h('div', { class: 'detail', 'data-id': id },
       // A click anywhere on the poster plays.
       h('div', { class: 'poster' + (isPlayable(it) ? ' playable' : ''), 'data-id': id, onclick: () => { if (isPlayable(it)) playV((it.viewOffset || 0) / 1000); } }, h('img', { src: withTok(it.thumb), alt: '' }),
         isPlayable(it) ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: e => { e.stopPropagation(); playV((it.viewOffset || 0) / 1000); } }, icon('play')) : null),
@@ -1023,7 +1163,7 @@ async function itemPage(id) {
             h('button', { class: 'primary big', onclick: () => playMusic(id, false) }, t('▶ Play')),
             h('button', { class: 'big', title: t('Random order; the same show or artist does not come twice in a row while others are left'), onclick: () => playMusic(id, true) }, t('Shuffle'))] : null,
           !m && it.leafCount && it.type !== 'artist' && it.type !== 'album' ? h('button', { class: 'primary big', onclick: nextEp }, t('▶ Play next episode')) : null,
-          iconBtn('check', watched ? t('Mark as unwatched') : t('Mark as watched'), async () => { await api('POST', `/:/${watched ? 'unscrobble' : 'scrobble'}?key=${it.id}`); refresh(); }, watched),
+          iconBtn('check', watched ? t('Mark as unwatched') : t('Mark as watched'), () => markWatched([it], !watched, refresh), watched),
           iconBtn(it.favorite ? 'heart' : 'heartOff', it.favorite ? t('Remove from favorites') : t('Add to favorites'), async () => { await api('PUT', `/api/items/${it.id}/favorite`, { favorite: !it.favorite }); refresh(); }, !!it.favorite),
           it.type === 'clip' ? null : iconBtn(it.watchlist ? 'mark' : 'markOff', it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), async () => { await toggleWatchlist(it); refresh(); }, !!it.watchlist),
           S.me.admin && it.type !== 'clip' ? iconBtn('edit', t('Edit details'), async () => editItem(await fullItem(it), refresh)) : null,
