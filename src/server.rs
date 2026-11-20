@@ -3572,6 +3572,40 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Every address in ROUTES needs sign-in unless it is on the short open list below, and every
+    /// address described as "Admin:" refuses a signed-in person who is not an admin.
+    #[test]
+    fn every_route_needs_sign_in_and_every_admin_route_needs_an_admin() {
+        const OPEN: &[(&str, &str)] = &[
+            ("GET", "/api/status"), ("POST", "/api/setup"), ("POST", "/api/login"), ("POST", "/api/link"), ("GET", "/api/link/{id}"),
+            ("GET", "/api/home"), ("POST", "/api/home/{id}/login"), ("GET", "/identity"),
+            ("GET", "/api/invites/{code}"), ("POST", "/api/invites/{code}/accept"), ("GET", "/rss/watchlist/{key}.xml"),
+        ];
+        for open in OPEN {
+            assert!(crate::routes::ROUTES.iter().any(|r| (r.0, r.1) == *open), "{open:?} is on the open list but not in ROUTES");
+        }
+        let (app, root, _, kid) = app_with_hidden_movie("every-route");
+        let fill = |path: &str| path.replace("{id}", "1").replace("{itemId}", "1").replace("{n}", "0").replace("{key}", "x").replace("{code}", "x").replace("{action}", "x");
+        let call = |m: &str, path: &str, tok: &str| {
+            let got = ask(&app, &format!("{m} {path} HTTP/1.1\r\nHost: x\r\nX-Token: {tok}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
+            got.lines().next().unwrap_or("").to_string()
+        };
+        let mut wrong = Vec::new();
+        for &(m, path, what) in crate::routes::ROUTES {
+            let at = fill(path);
+            if !OPEN.contains(&(m, path)) {
+                let got = call(m, &at, "");
+                if !got.starts_with("HTTP/1.1 401") { wrong.push(format!("{m} {path} without sign-in: {got}")); }
+            }
+            if what.starts_with("Admin:") {
+                let got = call(m, &at, &kid);
+                if !got.starts_with("HTTP/1.1 403") { wrong.push(format!("{m} {path} as a profile: {got}")); }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(wrong.is_empty(), "{} routes let the wrong person in:\n{}", wrong.len(), wrong.join("\n"));
+    }
+
     /// Video, subtitle and picture addresses carry a short-lived ticket instead of the sign-in token.
     #[test]
     fn an_origin_is_ours_when_it_names_the_host_or_a_trusted_proxys_forwarded_host() {

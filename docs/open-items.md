@@ -1,6 +1,6 @@
 # Open items after the 2026-11-15/16 review
 
-The review of 2026-11-15 and 2026-11-16 found 126 problems. Almost all are fixed; [review-2026-11-15.md](review-2026-11-15.md) lists every one with its commit. This page lists only what is still open: 1 item postponed as nice to have, 4 partly fixed, and a few known limits that are worth real follow-up work. Every "where" below was checked again against the code at commit `ddb46ee` (2026-11-20).
+The review of 2026-11-15 and 2026-11-16 found 126 problems. Almost all are fixed; [review-2026-11-15.md](review-2026-11-15.md) lists every one with its commit. This page lists only what is still open: 1 item postponed as nice to have, 3 partly fixed, and a few known limits that are worth real follow-up work. Every "where" below was checked again against the code at commit `ddb46ee` (2026-11-20).
 
 Changes since the first version of this page (`2e6689d`):
 
@@ -9,6 +9,7 @@ Changes since the first version of this page (`2e6689d`):
 - The review branches are merged into `main` and pushed, so the deploy has run.
 - On 2026-11-20 the small (S) items were fixed: W11, W12, W13, W15 and W16 in `3b997c3`; C16 and C18 in `62edc5f`; P9 (`trakt.json` is now mode 0600) in `d341d67`; P10 in `76ae467`; D10 in `f12f477`. W12 still wants a try in Safari.
 - **C17** is fixed by `fa82202`, checked on 2026-11-20: on Windows "Speichern" opens the file with `?ticket=` and never `?token=` (`lib/screens/downloads.dart:32-44`). Against a running server the ticket loads its own address (200), is refused for another address, without sign-in and after signing out (401 each), and does not contain the token. Not clicked in the Windows app itself; `launchUrl` passes the link on unchanged.
+- **S11** is fixed: `every_route_needs_sign_in_and_every_admin_route_needs_an_admin` (`src/server.rs`) calls every `ROUTES` entry without sign-in (401 expected, except a short open list) and every "Admin:" entry as a profile (403 expected). Checked that it fails when a route is moved into the open block.
 
 ## Getting started
 
@@ -63,7 +64,6 @@ Commits use Conventional Commits with a scope, and the subject describes what th
 | W14 | Web | A huge library builds one empty card per title up front | postponed | M |
 | D8 | Deploy | Compose and `deploy.yml` define the same container twice | partly | M |
 | D11 | Deploy | The Docker image is about 350 MB, the server in it about 15 MB | idea | S / M |
-| S11 | Server/tests | No test that every route needs sign-in or admin | partly | M |
 
 Sizes: S is under an hour and a few lines, M is a few hours or needs a decision, L is a day or more. Paths in the client section are relative to `clients/lichtspiel/`.
 
@@ -124,18 +124,6 @@ Report: [reviews/2026-11-15-ops.md](reviews/2026-11-15-ops.md).
   4. **Alpine instead of Debian:** little gain after 1 and 2, and the server would have to be built for musl. Not recommended.
 - **Expected result:** with 1 and 2 about 150–200 MB. Below ~100 MB is unlikely while ffmpeg with hardware drivers is in the image.
 - **Size:** S for option 1, M for option 2.
-
-### Server and tests
-
-Report: [reviews/2026-11-15-server.md](reviews/2026-11-15-server.md).
-
-#### S11. No test that every route needs sign-in or admin
-
-- **Status:** partly fixed in `c4f405f`. `routes_need_sign_in_or_admin` (`src/server.rs:3552`) checks the routes touched in that commit only.
-- **Where:** `src/routes.rs:255-304` (the routes open without sign-in), `:306-310` (the sign-in gate and `need_admin`), `ROUTES` at `src/routes.rs:17`.
-- **Problem:** access depends on where a match arm sits and on about 67 hand-written `need_admin()` checks. Someone adds `("GET", ["api", "settings", "export"])` to the open block, or forgets an admin check, and every test still passes.
-- **Fix:** one unit test that walks every `ROUTES` entry outside a short allow-list, calls `route()` with no user and expects 401, then calls it with a non-admin user for the entries whose description starts with "Admin:" and expects 403. Path parameters (`{id}`) need a stand-in value.
-- **Size:** M.
 
 ## Known limits worth a look
 
