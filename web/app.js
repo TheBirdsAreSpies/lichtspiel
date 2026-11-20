@@ -2,12 +2,6 @@
 // Talks only to the server's JSON API (see #/api). Part 2 is pages.js.
 // Every text shown goes through t() (i18n.js); the language packs are in web/lang/.
 'use strict';
-// A link with ?token=… (made by the status window and the self-test) signs this browser in once,
-// then the token is taken out of the address bar.
-(() => {
-  const u = new URL(location.href); const tok = u.searchParams.get('token');
-  if (tok) { try { localStorage.setItem('token', tok); } catch (e) { /* none */ } u.searchParams.delete('token'); history.replaceState(null, '', u.pathname + u.search + u.hash); }
-})();
 // Where the sign-in is kept: for good (the default), or only until the browser is closed
 // (Settings -> Web -> sign in automatically: off).
 const keepSignedIn = () => { try { return localStorage.getItem('autoLogin') !== '0'; } catch (e) { return true; } };
@@ -17,6 +11,12 @@ function saveToken(tok) {
     else { sessionStorage.setItem('token', tok); localStorage.removeItem('token'); }
   } catch (e) { /* private window: the sign-in lasts for this page */ }
 }
+// A link with ?token=… (made by the status window and the self-test) signs this browser in once (kept as
+// "sign in automatically" says), then the token is taken out of the address bar.
+(() => {
+  const u = new URL(location.href); const tok = u.searchParams.get('token');
+  if (tok) { saveToken(tok); u.searchParams.delete('token'); history.replaceState(null, '', u.pathname + u.search + u.hash); }
+})();
 function loadToken() { try { return sessionStorage.getItem('token') || localStorage.getItem('token') || ''; } catch (e) { return ''; } }
 const S = { token: loadToken(), me: null, sections: [], filters: null, status: null };
 const $ = (s, r = document) => r.querySelector(s);
@@ -191,7 +191,7 @@ function prefetchItem(it) {
 const meta = j => (j && j.MediaContainer && j.MediaContainer.Metadata) || [];
 
 // ---------- sign in, first setup, invites
-function logout() { S.token = ''; S.me = null; TK = {}; try { localStorage.removeItem('token'); sessionStorage.removeItem('token'); } catch (e) { /* none */ } location.hash = '#/login'; drawChrome(); render(); }
+function logout() { S.token = ''; S.me = null; TK = {}; Q.list = []; saveQueue(); try { localStorage.removeItem('token'); sessionStorage.removeItem('token'); } catch (e) { /* none */ } location.hash = '#/login'; drawChrome(); render(); }
 
 function authPage(title, intro, fields, button, submit) {
   const err = h('div', { class: 'err' });
@@ -1576,7 +1576,7 @@ async function editItem(it, saved) {
       }
       await api('PUT', '/library/metadata/' + it.id, body);
       if (Object.keys(mb).length) await api('PUT', `/library/metadata/${it.id}/markers`, mb);
-      box.remove(); saved ? saved() : itemPage(it.id);
+      box.remove(); if (saved) saved(); else if (location.hash === '#/item/' + it.id) itemPage(it.id); else location.hash = '#/item/' + it.id;
     } }, t('Save')), h('button', { onclick: () => box.remove() }, t('Cancel')))]);
 }
 
@@ -1986,7 +1986,7 @@ function levelVolume(it) {
   } catch (e) { /* the video just plays at its own volume */ }
 }
 async function load(at) {
-  const it = P.it;
+  const it = P.it, seq = P.loadSeq = (P.loadSeq || 0) + 1;
   levelVolume(it);
   let q = P.quality;
   // Settings → Web → quality: a video that is not bigger than the chosen quality plays as it is.
@@ -2000,7 +2000,7 @@ async function load(at) {
   const extra = (CLIENT_CODECS ? `&videoCodecs=${CLIENT_CODECS}` : '') + (P.audio ? `&audio=${P.audio}` : '') + (P.part ? `&part=${P.part}` : '') + (P.burn !== null && P.burn !== undefined ? `&subtitle=${P.burn}` : '');
   const d = await GET(`/library/metadata/${it.id}/decision?quality=${q}${extra}`);
   P.tk = await ticket('item=' + it.id);
-  if (P.it !== it) return;
+  if (P.it !== it || seq !== P.loadSeq) return; // a newer load (another quick seek) wins
   P.method = P.audio && d.method === 'direct' ? 'remux' : d.method;
   if (!d.allowed) toast(t('Converting is switched off for your account, so this file may not play here.'), 5000);
   video.querySelectorAll('track').forEach(tr => tr.remove());
@@ -2203,7 +2203,8 @@ player.addEventListener('mousemove', wake);
 player.addEventListener('touchstart', wake, { passive: true });
 
 // ---- video events
-video.addEventListener('play', () => { drawButtons(); wake(); });
+// A context started without a user gesture stays suspended (Safari), so resume it inside the click.
+video.addEventListener('play', () => { if (LEVEL.ctx && LEVEL.ctx.state === 'suspended') LEVEL.ctx.resume(); drawButtons(); wake(); });
 // A new source (another quality, or a jump in a converted video) pauses the old one
 // on its way: that is no pause (readyState is 0 then). Playing again is told at once.
 video.addEventListener('pause', () => { drawButtons(); wake(); if (!video.ended && video.readyState > 0) report('paused'); });
