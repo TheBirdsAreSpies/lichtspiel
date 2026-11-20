@@ -113,6 +113,18 @@ class PrivacyTest(unittest.TestCase):
         self.assertNotIn("a@b.c", json.dumps(body))
         self.assertNotIn("SECRET", json.dumps(body))
 
+    def test_only_an_admin_can_send_the_test_message(self):
+        sent = []
+        for admin in (False, True):
+            out = io.StringIO()
+            with mock.patch.object(main, "send", lambda urls, body: sent.append(body) or 1),                     mock.patch("sys.stdin", io.StringIO(json.dumps({"event": "api.call", "data": {"action": "test", "admin": admin},
+                                                                   "settings": {"urls": ["http://h"]}}))), redirect_stdout(out):
+                main.main()
+            if not admin:
+                self.assertIn("error", json.loads(out.getvalue()))
+                self.assertEqual(sent, [])
+        self.assertEqual(len(sent), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

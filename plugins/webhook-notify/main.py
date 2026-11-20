@@ -69,6 +69,10 @@ def main():
     urls = s.get("urls") or []
     if isinstance(urls, str):
         urls = [u.strip() for u in urls.split(",") if u.strip()]
+    # Only an admin may send the test message, so other users can't flood the channel with it.
+    if event == "api.call" and not data.get("admin"):
+        print(json.dumps({"error": "Only an admin can send a test message"}))
+        return
     if event != "api.call" and event not in (s.get("events") or []):
         print(json.dumps({"skipped": event}))
         return
