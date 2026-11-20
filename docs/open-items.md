@@ -1,14 +1,13 @@
 # Open items after the 2026-11-15/16 review
 
-The review of 2026-11-15 and 2026-11-16 found 126 problems. Almost all are fixed; [review-2026-11-15.md](review-2026-11-15.md) lists every one with its commit. This page lists only what is still open: 11 items postponed as nice to have, 5 partly fixed, and a few known limits that are worth real follow-up work. Every "where" below was checked again against the code at commit `ddb46ee` (2026-11-20).
+The review of 2026-11-15 and 2026-11-16 found 126 problems. Almost all are fixed; [review-2026-11-15.md](review-2026-11-15.md) lists every one with its commit. This page lists only what is still open: 2 items postponed as nice to have, 4 partly fixed, and a few known limits that are worth real follow-up work. Every "where" below was checked again against the code at commit `ddb46ee` (2026-11-20).
 
 Changes since the first version of this page (`2e6689d`):
 
 - **P8** (Trakt lock) no longer applies: the Trakt plugin was replaced by Trakt built into the server (`7dd9693`), which changes its file under an in-process lock.
-- **P9** (Trakt tokens readable by everyone) still applies, now to the server's `trakt.json`.
-- **W11** is partly fixed: "Fix match" no longer calls the item page directly; "Edit details" still does.
 - The known limit "a reverse proxy that rewrites `Host` gets 403" is fixed (`925310e`).
 - The review branches are merged into `main` and pushed, so the deploy has run.
+- On 2026-11-20 the small (S) items were fixed: W11, W12, W13, W15 and W16 in `3b997c3`; C16 and C18 in `62edc5f`; P9 (`trakt.json` is now mode 0600) in `d341d67`; P10 in `76ae467`; D10 in `f12f477`. C17 is still open because it needs a check on Windows. W12 still wants a try in Safari.
 
 ## Getting started
 
@@ -60,19 +59,9 @@ Commits use Conventional Commits with a scope, and the subject describes what th
 |---|---|---|---|---|
 | C7 | Client | Big photos are refused on Mac and Windows | partly | M |
 | C12 | Client | Minor player errors bring up the error screen | partly | M |
-| C16 | Client | The queue and the admin flag survive sign-out | postponed | S |
 | C17 | Client | The token in the browser history on Windows | postponed (probably fixed) | S |
-| C18 | Client | Copies of a time formatter, one unused dependency | postponed | S |
-| W11 | Web | "Edit details" from a poster's ⋯ menu doesn't change the address | partly | S |
-| W12 | Web | With "Level the volume" on, a video can play without sound | postponed | S |
-| W13 | Web | Two quick seeks while converting can land on the older position | postponed | S |
 | W14 | Web | A huge library builds one empty card per title up front | postponed | M |
-| W15 | Web | One person's play queue shows up for the next | postponed | S |
-| W16 | Web | A `?token=` link ignores "sign in automatically: off" | postponed | S |
-| P9 | Server | Trakt tokens (`trakt.json`) are readable by everyone | postponed | S |
-| P10 | Plugins | Any signed-in user can fire webhook test messages | postponed | S |
 | D8 | Deploy | Compose and `deploy.yml` define the same container twice | partly | M |
-| D10 | Deploy | The build is not locked | postponed | S |
 | S11 | Server/tests | No test that every route needs sign-in or admin | partly | M |
 
 Sizes: S is under an hour and a few lines, M is a few hours or needs a decision, L is a day or more. Paths in the client section are relative to `clients/lichtspiel/`.
@@ -97,14 +86,6 @@ Report: [reviews/2026-11-15-client.md](reviews/2026-11-15-client.md).
 - **Fix:** ignore an error while playback is still moving, for example when `player.state.playing` is true and the position keeps advancing over the next second or two. The media_kit docs don't say which errors are recoverable, so test it with a real failed segment.
 - **Size:** M.
 
-#### C16. The queue and the admin flag survive sign-out
-
-- **Status:** postponed.
-- **Where:** `lib/main.dart:55-63` (`signOut`); the state lives in `lib/screens/player.dart:63` (`PlayerScreen.userQueue`), `lib/widgets/poster.dart:21` (`Poster.admin`) and `lib/screens/downloads.dart:24-27` (`DownloadRights`).
-- **Problem:** a parent queues two films and signs out; the child's home profile signs in and sees the parent's "Warteschlange". When the child's episode ends, `findNext` (`player.dart:513`) takes the parent's film as next, which the server then refuses if the child may not see it.
-- **Fix:** in `signOut`, add `PlayerScreen.userQueue.clear(); Poster.admin = false; DownloadRights.allowed = false;`.
-- **Size:** S.
-
 #### C17. The token in the browser history on Windows
 
 - **Status:** postponed in the overview, but **probably fixed, needs a check on Windows.**
@@ -114,41 +95,9 @@ Report: [reviews/2026-11-15-client.md](reviews/2026-11-15-client.md).
 - **Fix:** run "Speichern" once on Windows and look at the address in the browser history: it should show `ticket=` and no `token=`. If it does, mark C17 fixed. The original one-line idea (`if (!Platform.isAndroid) return _download(…)`, so Windows downloads in the app) is still possible if you'd rather keep the browser out completely.
 - **Size:** S.
 
-#### C18. Copies of a time formatter, one unused dependency
-
-- **Status:** postponed (cleanup). There are now six copies instead of four.
-- **Where:** `lib/screens/detail.dart:23` (`fmtClock`), `lib/screens/player.dart:51` (`_clock`), `:118` (`clock`), `lib/screens/dashboard.dart:24` (`fmtClockMs`, takes `num`), `lib/screens/edit.dart:52` (`_clock`, takes `dynamic`), `lib/widgets/item_extras.dart:102` (`_clock`, takes `num`). `pubspec.yaml:36` has `cupertino_icons`, and nothing in `lib/` uses it.
-- **Problem:** nothing breaks; each copy has to be changed on its own, and the icon font ships for nothing.
-- **Fix:** keep `fmtClock` in `detail.dart` (or move it to a small shared file), delete the other copies and import it (callers with a `num` pass `.toInt()`; compare the output of each copy first, they may differ in details such as hours). Remove `cupertino_icons` from `pubspec.yaml`.
-- **Size:** S.
-
 ### Web
 
 Report: [reviews/2026-11-15-web.md](reviews/2026-11-15-web.md). Remember the rebuild: the web files are compiled into the server.
-
-#### W11. "Edit details" from a poster's ⋯ menu doesn't change the address
-
-- **Status:** partly. `fixMatch` now calls `itemPage` only when the address already is that item's page (`web/app.js:1469`). `editItem` still calls it directly.
-- **Where:** `web/pages.js:1361` (the ⋯ menu calls `editItem` with no `saved` callback) and the selection bar, `web/app.js:516` (same) → `web/app.js:1579` (`saved ? saved() : itemPage(it.id)`).
-- **Problem:** on a library page, open a card's ⋯ → Edit details → Save. The item page appears, but the address still says `#/section/…`. Back leaves the library entirely, a reload shows the library again, and the library page's scroll listeners stay active.
-- **Fix:** in `editItem`, use `location.hash = '#/item/' + it.id` instead of calling `itemPage(it.id)` directly (or do as `fixMatch` does).
-- **Size:** S.
-
-#### W12. With "Level the volume" on, a video can play without sound
-
-- **Status:** postponed (needs Safari to reproduce).
-- **Where:** `web/app.js:1974-1986` (`levelVolume`, which creates the `AudioContext` and calls `LEVEL.ctx.resume()` at `:1985`), `:1990` (called at the start of `load()`), `:2206` (the video's `play` listener). The resume runs when loading, not on a user click.
-- **Problem:** once the video is routed through the `AudioContext`, all sound goes through it, and a context started without a user gesture stays suspended. Open a `#/play/123` link with leveling on: autoplay is blocked, the user clicks ▶, the picture plays and there is no sound. Safari is the most likely to show this.
-- **Fix:** in the `play` listener at `:2206`, add `if (LEVEL.ctx && LEVEL.ctx.state === 'suspended') LEVEL.ctx.resume();`. That runs inside the user's click.
-- **Size:** S.
-
-#### W13. Two quick seeks while converting can land on the older position
-
-- **Status:** postponed.
-- **Where:** `web/app.js:1988-2003` (`load`; after the awaits it only checks `P.it !== it`).
-- **Problem:** two `load()` calls for the same title both pass the check. Click the seek bar twice quickly during a conversion: if the first `/decision` answer arrives last, playback jumps back to the first position, and each call has started its own ffmpeg stream.
-- **Fix:** `const seq = ++P.loadSeq;` at the start of `load`, and `if (P.it !== it || seq !== P.loadSeq) return;` after the awaits.
-- **Size:** S.
 
 #### W14. A huge library builds one empty card per title up front
 
@@ -157,42 +106,6 @@ Report: [reviews/2026-11-15-web.md](reviews/2026-11-15-web.md). Remember the reb
 - **Problem:** the "Songs" view of an 80,000-track music library builds 80,000 placeholder cards (about 320,000 elements) and observes each one before anything shows. The tab freezes for seconds, worst on a phone. Not measured.
 - **Fix:** measure first with a big generated library. If it's slow, reserve placeholders only for a few thousand titles ahead of the loaded range and keep one tall spacer element for the rest.
 - **Size:** M.
-
-#### W15. One person's play queue shows up for the next
-
-- **Status:** postponed.
-- **Where:** `web/pages.js:1473-1474` (the queue is kept in `localStorage` under `queue`), `web/app.js:194` (`logout` doesn't clear it).
-- **Problem:** on a family TV with home profiles, A queues episodes and uses "Switch user". B sees "Queue (12)" with A's titles, and ▶ tries to play titles B may not see.
-- **Fix:** in `logout()`, add `Q.list = []; saveQueue();`. Or key the storage by user: `'queue:' + S.me.id`.
-- **Size:** S.
-
-#### W16. A `?token=` link ignores "sign in automatically: off"
-
-- **Status:** postponed.
-- **Where:** `web/app.js:9` (always writes the token to `localStorage`); `saveToken` is at `:14`.
-- **Problem:** a sign-in link from the status window or the self-test keeps the token after the browser closes, even when the user chose session-only sign-in.
-- **Fix:** call `saveToken(tok)` instead of `localStorage.setItem('token', tok)`, and move that block below `saveToken`.
-- **Size:** S.
-
-### Plugins and Trakt
-
-Report: [reviews/2026-11-15-ops.md](reviews/2026-11-15-ops.md).
-
-#### P9. Trakt tokens are readable by everyone
-
-- **Status:** postponed. Reported for the old plugin's `tokens.json`; the built-in Trakt sync has the same problem with `trakt.json`.
-- **Where:** `src/trakt.rs:28` (the file name), `:108-113` (`write`).
-- **Problem:** the access and refresh tokens of every user are written with the default mode (usually 0644) into the data folder, which may be reachable over SMB. Any NAS account that can read that share can copy them and act on the users' Trakt accounts.
-- **Fix:** on Unix, set the mode of the temporary file to 0600 before the rename (`std::os::unix::fs::PermissionsExt`, behind `#[cfg(unix)]`), or create it with `OpenOptions` and `.mode(0o600)`.
-- **Size:** S.
-
-#### P10. Any signed-in user can fire webhook test messages
-
-- **Status:** postponed.
-- **Where:** `src/routes.rs:1885` → `src/handlers.rs:1149` (`plugin_call`, no admin check); `plugins/webhook-notify/main.py:72` (every `api.call` sends a test message).
-- **Problem:** a non-admin user, or a script with their token, calls `POST /api/plugins/webhook-notify/call/test` in a loop. The Discord or ntfy channel is spammed, and each call starts a Python process that can run up to 15 s.
-- **Fix:** in webhook-notify, answer `api.call` only when `data.get("admin")` is true; the server already sends `admin` (`handlers.rs:1156`).
-- **Size:** S.
 
 ### Deploy
 
@@ -205,14 +118,6 @@ Report: [reviews/2026-11-15-ops.md](reviews/2026-11-15-ops.md).
 - **Problem:** both list mounts, ports, devices and the restart policy under the same name `lichtspiel`. A change to one is easy to miss in the other. If someone sets it up through Container Manager → Project and then turns on CI, the first deploy runs `docker rm -f` on the compose-made container and Container Manager shows a broken project.
 - **Fix:** keep one definition. For example, let `deploy.yml` run `docker compose up -d --no-build` with the image it just built (`image: lichtspiel:latest` in compose). Keep the rollback and the `--group-add` for `/dev/dri` working.
 - **Size:** M.
-
-#### D10. The build is not locked
-
-- **Status:** postponed.
-- **Where:** `Dockerfile:4` (`FROM rust:1-slim-bookworm`), `:17`, `:25` and `:29` (the cargo calls, none with `--locked`).
-- **Problem:** if `Cargo.toml` changes without a matching `Cargo.lock`, CI quietly builds versions nobody tested, and a new Rust release can break a push that changed nothing.
-- **Fix:** add `--locked` to the three cargo calls. Optionally pin the image to a fixed `rust:1.xx-slim-bookworm`.
-- **Size:** S.
 
 ### Server and tests
 
