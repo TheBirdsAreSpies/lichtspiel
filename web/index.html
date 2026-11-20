@@ -449,6 +449,9 @@ svg.viz rect.hov{fill:var(--hovfill)}
 .ranked .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:760px){.np-list,.dash-charts,.dash-cols{grid-template-columns:minmax(0,1fr)}}
 .empty{padding:40px;text-align:center;color:var(--dim);background:var(--panel);border-radius:var(--r)}
+/* a name and its control in one row; on a narrow screen the control goes below, the name is never squeezed */
+label.pair{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin:0;color:var(--text);max-width:100%}
+label.pair>span{flex:0 0 auto;max-width:100%}
 .errorpage .big{font-size:34px;line-height:1;color:var(--faint);margin-bottom:10px}
 .errorpage p{margin:0 0 16px}
 @media (max-width:760px){.field,.modal .field{grid-template-columns:minmax(0,1fr);gap:4px}.field>.help{grid-column:1}.field.top>label{padding-top:0}#side{display:none}#main{margin-left:0;padding:18px}.pickbar{left:50%;max-width:calc(100vw - 32px)}#top .logo{min-width:0}.detail{flex-direction:column}.detail .poster{width:180px;flex-basis:auto}}
@@ -546,6 +549,8 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   .filterpanel{left:8px!important;right:8px;top:64px!important;width:auto;height:calc(100vh - 80px);flex-direction:column}
   .fp-left{flex:0 0 auto;max-height:38%;border-right:0;border-bottom:1px solid var(--menu-line)}
   .li>.grow{flex:1 1 140px}
+  /* a library's card: its details take the whole width, the buttons go below them */
+  .li.libcard>.grow{flex-basis:100%}
   /* settings: nothing may be wider than the screen (long paths, versions, option texts, fixed widths) */
   #main{overflow-x:clip}
   #main p,#main .help,#main .ctl,#main label,#main b,#main code,#main .panel{overflow-wrap:anywhere}

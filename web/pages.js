@@ -234,7 +234,7 @@ async function librariesPage() {
       setTimeout(() => { polling = false; refreshList(Math.max(0, more - 1)); }, 2000);
     }
   };
-  const drawList = secs => listBox.replaceChildren(...(secs.length ? [h('div', { class: 'list' }, secs.map(s => h('div', { class: 'li' },
+  const drawList = secs => listBox.replaceChildren(...(secs.length ? [h('div', { class: 'list' }, secs.map(s => h('div', { class: 'li libcard' },
       h('div', { class: 'grow' }, h('b', {}, s.title), ' ', h('span', { class: 'tag' }, sectionKind(s.type)), s.scanning ? h('span', { class: 'tag smart' }, t('scanning…')) : null,
         h('div', { class: 'dim' }, (s.type === 'show' ? t('{n} shows', { n: s.count }) + ', ' : '') + t('{n} videos · last scan {when}', { n: s.videoCount, when: s.scannedAt ? fmtDateTime(s.scannedAt) : t('never') })),
         h('div', { class: 'dim', style: 'font-size:13px' }, s.paths.join(' · ')),
@@ -243,12 +243,12 @@ async function librariesPage() {
             h('input', { type: 'checkbox', checked: s.creditsDetection !== false, onchange: async e => { try { await api('PUT', '/library/sections/' + s.id, { credits_detection: e.target.checked }); toast(t('Saved')); } catch (er) { toast(er.message); } } }), t('Enable credits detection')),
           s.type === 'show' ? h('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;color:var(--text)', title: t('Detect show intros, showing the "Skip intro" button in the player, when enabled in server settings.') },
             h('input', { type: 'checkbox', checked: s.introDetection !== false, onchange: async e => { try { await api('PUT', '/library/sections/' + s.id, { intro_detection: e.target.checked }); toast(t('Saved')); } catch (er) { toast(er.message); } } }), t('Enable intro detection')) : null,
-          h('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;color:var(--text)', title: t('How often this library is looked at for new files. Folder watching and "Scan now" work independently.') }, t('Scan interval'),
+          h('label', { class: 'pair', title: t('How often this library is looked at for new files. Folder watching and "Scan now" work independently.') }, h('span', {}, t('Scan interval')),
             h('select', { onchange: async e => { try { await api('PUT', '/library/sections/' + s.id, { scan_interval_minutes: e.target.value === '' ? null : Number(e.target.value) }); toast(t('Saved')); } catch (er) { toast(er.message); } } },
               h('option', { value: '', selected: s.scanIntervalMinutes == null }, t('Same as server')),
               h('option', { value: '0', selected: s.scanIntervalMinutes === 0 }, t('Never by itself')),
               [[15, 'every 15 minutes'], [30, 'every 30 minutes'], [60, 'hourly'], [120, 'every 2 hours'], [360, 'every 6 hours'], [720, 'every 12 hours'], [1440, 'daily']].map(([m, l]) => h('option', { value: String(m), selected: s.scanIntervalMinutes === m }, t(l))))),
-          h('label', { style: 'display:flex;gap:6px;align-items:center;margin:0;color:var(--text)', title: t('Language of titles, plots and episode names downloaded for this library') }, t('Details language'),
+          h('label', { class: 'pair', title: t('Language of titles, plots and episode names downloaded for this library') }, h('span', {}, t('Details language')),
             langSel(s.language || '', langs, async e => {
               try { const r = await api('PUT', '/library/sections/' + s.id, { language: e.target.value }); toast(r.refetching ? t('Downloading details for {n} movies and shows again — progress is shown at the top', { n: r.refetching }) : t('Saved'), 6000); }
               catch (er) { toast(er.message); }
