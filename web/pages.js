@@ -1927,6 +1927,7 @@ async function render() {
   let k = history.state && history.state.k;
   const again = !!k && BACK.nav && BACK.scroll.has(k); // an entry seen before: back (or forward) to it
   BACK.nav = false;
+  MOTION.back = again; MOTION.stagger = 0; // back to a page seen before: no posters coming in one by one
   if (!k) { k = 'p' + Date.now().toString(36) + (BACK.n++); history.replaceState(Object.assign({}, history.state, { k }), ''); }
   BACK.cur = k; BACK.cur_kind = parts[0] || '';
   if (!S.status) { try { S.status = await GET('/api/status'); } catch (e) { return set(errorPage(e)); } }

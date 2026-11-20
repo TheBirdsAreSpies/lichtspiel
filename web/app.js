@@ -83,12 +83,27 @@ function motion() {
   const to = !skel && from && Date.now() - from.at < 2500 && main().querySelector(`.detail > .poster[data-id="${from.id}"]`);
   if (!skel) MOTION.from = null;
   const b = to && to.getBoundingClientRect(), a = from && from.rect;
-  if (!to || !a.width || !b.width) { main().animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' }); return; }
+  if (!to || !a.width || !b.width) {
+    main().animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' });
+    if (!skel && !MOTION.back) { MOTION.stagger = Date.now(); stagger(); }
+    return;
+  }
   to.style.zIndex = 5;
   to.animate([{ transformOrigin: 'top left', transform: `translate(${a.left - b.left}px,${a.top - b.top}px) scale(${a.width / b.width},${a.height / b.height})`, borderRadius: '8px' },
     { transformOrigin: 'top left', transform: 'none' }], { duration: 440, easing: 'cubic-bezier(.2,.8,.2,1)' }).onfinish = () => { to.style.zIndex = ''; };
   for (const el of main().children) if (!el.contains(to) && !el.matches('img.hero')) fadeIn(el, 120);
   fadeIn(to.parentNode.querySelector('.info'), 60, 'translateX(18px)');
+}
+// The posters in view come in one after the other (row by row, left to right); the rest are simply there.
+// A page that adds its posters a moment after it is drawn (a library) calls it again then: only once,
+// and only right after the page was opened (not going back to it).
+function stagger() {
+  if (!MOTION.stagger || Date.now() - MOTION.stagger > 1500) return;
+  const W = innerWidth, H = innerHeight;
+  const seen = [...main().querySelectorAll('.card:not(.ph)')].filter(c => { const r = c.getBoundingClientRect(); return r.width && r.top < H && r.bottom > 0 && r.left < W && r.right > 0; });
+  if (!seen.length) return;
+  MOTION.stagger = 0;
+  seen.slice(0, 36).forEach((c, i) => fadeIn(c, 60 + i * 28, 'translateY(14px)'));
 }
 // A short message at the bottom; with action ({ label, run }) a button in it ("Undo"), and it stays a little longer.
 function toast(msg, ms = 2600, action) {
@@ -640,17 +655,96 @@ const skeletonGrid = n => h('div', { class: 'grid' }, Array.from({ length: n }, 
 // Grey placeholders while a page's rows are still on their way.
 const skeletonRows = n => Array.from({ length: n }, () => [h('div', { class: 'skel skel-h' }),
   h('div', { class: 'row' }, Array.from({ length: 10 }, () => h('div', { class: 'card' }, h('div', { class: 'poster skel' }), h('div', { class: 'skel skel-t' }))))]);
+// ---------- the home page's banner: a few titles in turn, big, over their backdrop
+// What it shows: where you left off first, then what is new; one title per show; at most five.
+function spotItems(hubs) {
+  const of = id => ((hubs.find(hb => hb.hubIdentifier === id) || {}).Metadata || []);
+  const pool = [...of('continueWatching').slice(0, 2), ...of('recentlyAddedMovies').slice(0, 4), ...of('recentlyAddedEpisodes').slice(0, 3)];
+  // Nothing new and nothing started: whatever the other rows hold.
+  if (!pool.length) for (const hb of hubs) pool.push(...(hb.Metadata || []).slice(0, 3));
+  const seen = new Set(), out = [];
+  for (const it of pool) {
+    if (!it || it.missing || !['movie', 'show', 'season', 'episode'].includes(it.type)) continue;
+    const key = it.grandparentRatingKey || (it.type === 'season' ? it.parentRatingKey : null) || it.id;
+    if (seen.has(String(key))) continue;
+    seen.add(String(key));
+    const hub = hubs.find(hb => (hb.Metadata || []).includes(it));
+    out.push({ it, label: hub ? t(hub.title) : '' });
+    if (out.length >= 5) break;
+  }
+  return out;
+}
+// Each title stays about nine seconds (the bar in its dot shows how long; the mouse on the banner holds it),
+// a dot or a swipe picks another. Nothing turns by itself when the system asks for less motion.
+function spotlight(list) {
+  if (!list.length) return null;
+  let cur = -1;
+  const bg = h('div', { class: 'spot-bg' }), body = h('div', { class: 'spot-body' }), dots = h('div', { class: 'spot-dots' });
+  const imgs = [];
+  const backdrop = i => {
+    if (imgs[i] || !list[i]) return;
+    const it = list[i].it, src = it.grandparentRatingKey || (it.type === 'season' ? it.parentRatingKey : null) || it.id;
+    imgs[i] = h('img', { src: withTok(`/library/metadata/${src}/art?v=${it.updatedAt || 0}`), alt: '', onload: e => e.target.classList.add('ok') });
+    bg.append(imgs[i]);
+  };
+  const content = ({ it, label }) => {
+    const show = it.type === 'episode' || it.type === 'season';
+    const title = it.type === 'episode' ? it.grandparentTitle : it.type === 'season' ? it.parentTitle : it.title;
+    const sub = it.type === 'episode' ? `${t('S{n}', { n: it.parentIndex || 0 })} ${t('E{n}', { n: it.index || 0 })} · ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : '';
+    const facts = [it.year, it.duration && it.type !== 'show' ? fmtDur(it.duration) : '', ...(it.genres || []).slice(0, 2)].filter(Boolean).join(' · ');
+    const playable = isPlayable(it), at = (it.viewOffset || 0) / 1000;
+    const head = h('h2', { class: 'spot-title' }, title);
+    // The title's logo, when it has one, instead of the name (details asked for once, also ready for a click).
+    if (!show) {
+      prefetchItem(it);
+      const p = PREFETCH.get('/library/metadata/' + it.id);
+      if (p) p.json.then(j => {
+        const logo = j && j.MediaContainer && (j.MediaContainer.Metadata || [])[0] && j.MediaContainer.Metadata[0].clearLogo;
+        if (logo && head.isConnected) head.replaceChildren(h('img', { src: withTok(logo), alt: title, onerror: e => e.target.replaceWith(title) }));
+      }).catch(() => {});
+    }
+    return [label ? h('div', { class: 'spot-label' }, label) : null, head,
+      sub || facts ? h('div', { class: 'spot-facts' }, [sub, facts].filter(Boolean).join(' · ')) : null,
+      it.summary ? h('p', { class: 'spot-sum' }, it.summary) : null,
+      h('div', { class: 'spot-act' },
+        playable ? h('button', { class: 'primary big', onclick: () => play(it, at) }, at ? t('▶ Resume from {time}', { time: fmtTime(at) }) : t('▶ Play')) : null,
+        h('a', { class: 'spot-more', href: '#/item/' + it.id }, t('More info')))].filter(Boolean);
+  };
+  const go = i => {
+    i = (i + list.length) % list.length;
+    if (i === cur) return;
+    cur = i; backdrop(i); backdrop(i + 1);
+    imgs.forEach((im, k) => im && im.classList.toggle('on', k === i));
+    body.replaceChildren(...content(list[i]));
+    body.classList.remove('anim'); void body.offsetWidth; body.classList.add('anim');
+    [...dots.children].forEach((d, k) => { d.classList.toggle('on', k === i); d.setAttribute('aria-current', String(k === i)); });
+  };
+  if (list.length > 1) {
+    dots.append(...list.map(({ it }, k) => h('button', { type: 'button', title: it.grandparentTitle || it.title, 'aria-label': it.grandparentTitle || it.title, onclick: () => go(k) })));
+    // The running bar in the dot ends → the next title.
+    dots.addEventListener('animationend', e => { if (e.animationName === 'spot-run' && e.target.classList.contains('on')) go(cur + 1); });
+  }
+  const el = h('section', { class: 'spot' + (list.length > 1 && !calm() ? ' turning' : ''), 'aria-roledescription': 'carousel' }, bg, body, dots);
+  let x0 = null;
+  el.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') x0 = e.clientX; });
+  el.addEventListener('pointerup', e => { if (x0 === null) return; const dx = e.clientX - x0; x0 = null; if (Math.abs(dx) > 50 && list.length > 1) go(cur + (dx < 0 ? 1 : -1)); });
+  el.addEventListener('pointercancel', () => { x0 = null; });
+  go(0);
+  return el;
+}
 async function homePage() {
   markNav('home');
   // Answer the click at once; the rows come when the server has them.
-  if (S.sections.length) set(h('h1', {}, t('Home')), skeletonRows(2));
+  if (S.sections.length) set(S.hadSpot ? h('div', { class: 'spot skel' }) : h('h1', {}, t('Home')), skeletonRows(2));
   const hubs = (await GET('/hubs')).MediaContainer.Hub;
   if (!S.sections.length) {
     return set(h('h1', {}, t('Welcome')), h('div', { class: 'empty' },
       S.me.admin ? [h('p', {}, t('No libraries yet. Add your movie and TV show folders to get started.')), h('button', { class: 'primary', onclick: () => (location.hash = '#/libraries') }, t('Add a library'))]
         : t('The owner has not shared any libraries with you yet.')));
   }
-  set(h('h1', {}, t('Home')), hubs.length ? hubs.map(hb => row(hb.title, hb.Metadata)) : h('div', { class: 'empty' }, t('Nothing here yet. Libraries are still being scanned, or they are empty.')));
+  const spot = spotlight(spotItems(hubs));
+  S.hadSpot = !!spot;
+  set(spot || h('h1', {}, t('Home')), hubs.length ? hubs.map(hb => row(hb.title, hb.Metadata)) : h('div', { class: 'empty' }, t('Nothing here yet. Libraries are still being scanned, or they are empty.')));
 }
 // Search results by kind (movies, shows, episodes …), the kinds in the order of their best hit.
 const KIND_NAMES = { movie: 'Movies', show: 'Shows', season: 'Seasons', episode: 'Episodes', artist: 'Artists', album: 'Albums', track: 'Songs', clip: 'Videos', photo: 'Photos', collection: 'Collections' };
@@ -1045,6 +1139,7 @@ async function sectionPage(id, qs) {
     const want = LIBPOS[myHash];
     await loadPage(0, first);
     if (want) window.scrollTo(0, want.y);
+    else stagger();
   }
   // Where you are: the first poster under the bar gives the number (in the counter) and the letter (lit in the side list).
   let raf = 0, lastPos = 0;

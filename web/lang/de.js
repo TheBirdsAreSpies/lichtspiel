@@ -530,6 +530,7 @@ I18N.add('de', 'Deutsch', {
     '▶ Resume from {time}': '▶ Fortsetzen ab {time}',
     '▶ Play from start': '▶ Von vorne abspielen',
     '▶ Play': '▶ Abspielen',
+    'More info': 'Mehr Infos',
     '▶ Play next episode': '▶ Nächste Episode abspielen',
     'Mark unwatched': 'Als nicht gesehen markieren',
     'Mark watched': 'Als gesehen markieren',
