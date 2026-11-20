@@ -178,6 +178,8 @@ document.addEventListener('error', e => { const src = e.target.tagName === 'IMG'
 const smallTok = (p, w) => withTok(p + (p.includes('?') ? '&' : '?') + 'w=' + w);
 const fmtNum = (n, digits) => Number(n).toLocaleString(I18N.lang, digits === undefined ? undefined : { minimumFractionDigits: digits, maximumFractionDigits: digits });
 const fmtDur = ms => { if (!ms) return ''; const m = Math.round(ms / 60000); if (m < 1) return Math.max(1, Math.round(ms / 1000)) + ' s'; return m >= 60 ? t('{h} h {m} min', { h: Math.floor(m / 60), m: m % 60 }) : t('{m} min', { m }); };
+// Where to go on from, in seconds; less than a second in counts as not started (no "Resume from 0:00").
+const resumeAt = it => (it.viewOffset || 0) >= 1000 ? it.viewOffset / 1000 : 0;
 const fmtTime = s => { s = Math.max(0, Math.floor(s)); const hh = Math.floor(s / 3600), mm = Math.floor(s / 60) % 60, ss = s % 60; return (hh ? hh + ':' + String(mm).padStart(2, '0') : mm) + ':' + String(ss).padStart(2, '0'); };
 const fmtDate = sec => sec ? new Date(sec * 1000).toLocaleDateString(I18N.lang) : '';
 const hour12 = () => { const v = store.get('timeFormat', 'auto'); return v === '12' ? true : v === '24' ? false : undefined; };
@@ -692,7 +694,7 @@ function spotlight(list) {
     const title = it.type === 'episode' ? it.grandparentTitle : it.type === 'season' ? it.parentTitle : it.title;
     const sub = it.type === 'episode' ? `${t('S{n}', { n: it.parentIndex || 0 })} ${t('E{n}', { n: it.index || 0 })} · ${it.title}` : it.type === 'season' ? seasonTitle(it.title) : '';
     const facts = [it.year, it.duration && it.type !== 'show' ? fmtDur(it.duration) : '', ...(it.genres || []).slice(0, 2)].filter(Boolean).join(' · ');
-    const playable = isPlayable(it), at = (it.viewOffset || 0) / 1000;
+    const playable = isPlayable(it), at = resumeAt(it);
     const head = h('h2', { class: 'spot-title' }, title);
     // The title's logo, when it has one, instead of the name (details asked for once, also ready for a click).
     if (!show) {
@@ -1284,9 +1286,9 @@ async function itemPage(id) {
         // Play first; the toggles as round icons (their state shows in colour); everything else under "⋯".
         h('div', { class: 'actions item-actions' },
           m && it.missing ? h('button', { class: 'big unavailable', disabled: true, title: t('The file is gone from disk; the item is in the library’s trash') }, t('Unavailable')) : null,
-          m && !it.missing && it.viewOffset ? h('button', { class: 'primary big', onclick: () => playV(it.viewOffset / 1000) }, t('▶ Resume from {time}', { time: fmtTime(it.viewOffset / 1000) })) : null,
-          m && !it.missing && it.viewOffset ? iconBtn('restart', t('▶ Play from start'), () => playV(0)) : null,
-          m && !it.missing && !it.viewOffset ? h('button', { class: 'primary big', onclick: () => playV(0) }, t('▶ Play')) : null,
+          m && !it.missing && resumeAt(it) ? h('button', { class: 'primary big', onclick: () => playV(resumeAt(it)) }, t('▶ Resume from {time}', { time: fmtTime(resumeAt(it)) })) : null,
+          m && !it.missing && resumeAt(it) ? iconBtn('restart', t('▶ Play from start'), () => playV(0)) : null,
+          m && !it.missing && !resumeAt(it) ? h('button', { class: 'primary big', onclick: () => playV(0) }, t('▶ Play')) : null,
           vers ? h('select', { title: t('Version'), 'aria-label': t('Version'), onchange: e => { vi = Number(e.target.value); store.set('version:' + id, vi); } },
             vers.map((v, i) => h('option', { value: i, selected: i === vi }, versionName(v)))) : null,
           // A trailer file next to the movie first, else the first online trailer.
@@ -1328,7 +1330,7 @@ async function itemPage(id) {
       it.type === 'show' ? scroller('row', kids.map(k => posterCard(k))) :
         h('div', { class: 'list' }, kids.map((e, i) => h('div', { class: 'li' + (e.missing ? ' missing' : '') },
           it.type === 'album' ? null : h('img', { src: withTok(e.thumb), loading: 'lazy' }),
-          h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, e.index ? `${e.index}. ${e.title}` : e.title)), h('div', { class: 'dim' }, [e.missing ? t('Unavailable') : '', fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', e.viewOffset ? t('stopped at {time}', { time: fmtTime(e.viewOffset / 1000) }) : ''].filter(Boolean).join(' · ')),
+          h('div', { class: 'grow' }, h('a', { href: '#/item/' + e.id }, h('b', {}, e.index ? `${e.index}. ${e.title}` : e.title)), h('div', { class: 'dim' }, [e.missing ? t('Unavailable') : '', fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', resumeAt(e) ? t('stopped at {time}', { time: fmtTime(resumeAt(e)) }) : ''].filter(Boolean).join(' · ')),
             e.summary ? h('div', { class: 'ep-plot' }, e.summary) : null),
           e.missing ? h('span', { class: 'gone-ico', title: t('The file is gone from disk; the item is in the library’s trash') }, icon('trash'))
             : h('button', { class: 'primary small', onclick: () => play(e, e.viewOffset ? e.viewOffset / 1000 : 0, kids.slice(i + 1)) }, '▶'))))] : null,
