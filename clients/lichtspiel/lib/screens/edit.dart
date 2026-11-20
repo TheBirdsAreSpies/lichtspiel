@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api.dart';
+import '../theme.dart';
 
 String _list(dynamic v) => ((v as List?) ?? const []).join(', ');
 
@@ -203,7 +204,7 @@ class _EditDialogState extends State<_EditDialog> {
         child: Text(
           'Intro: ${_source(m['introSource'])}.\nAbspann: ${_source(m['source'], errors: m['errors'])}.'
           '${at.isEmpty ? '' : ' Das Video gilt ab $at von $len als gesehen.'}',
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(color: context.soft),
         ),
       ),
       mf('is', 'Intro beginnt bei (Std:Min:Sek)'),
@@ -296,7 +297,7 @@ class _EditDialogState extends State<_EditDialog> {
                 ]),
               ]),
             ),
-            if (error != null) Text(error!, style: const TextStyle(color: Colors.redAccent)),
+            if (error != null) Text(error!, style: TextStyle(color: context.bad)),
           ]),
         ),
         actions: [
@@ -378,10 +379,10 @@ class _ImagePickerState extends State<_ImagePicker> {
         if (has && u != null)
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 200),
-            child: Image.network('${widget.api.abs(u)}${u.contains('?') ? '&' : '?'}t=$stamp', headers: widget.api.auth, errorBuilder: (_, __, ___) => const Text('Kein Bild', style: TextStyle(color: Colors.white54))),
+            child: Image.network('${widget.api.abs(u)}${u.contains('?') ? '&' : '?'}t=$stamp', headers: widget.api.auth, errorBuilder: (_, __, ___) => Text('Kein Bild', style: TextStyle(color: context.faint))),
           )
         else
-          const Text('Kein Bild', style: TextStyle(color: Colors.white54)),
+          Text('Kein Bild', style: TextStyle(color: context.faint)),
         const SizedBox(height: 6),
         Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
           OutlinedButton(onPressed: fromFile, child: const Text('Aus Datei')),
@@ -397,7 +398,7 @@ class _ImagePickerState extends State<_ImagePicker> {
                 say('$e');
               }
             },
-            child: const Text('Entfernen', style: TextStyle(color: Colors.redAccent)),
+            child: Text('Entfernen', style: TextStyle(color: context.bad)),
           ),
         ]),
       ]),
@@ -497,7 +498,7 @@ class _MatchDialogState extends State<_MatchDialog> {
           ]),
           const SizedBox(height: 8),
           if (busy && l == null) const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
-          if (message != null) Padding(padding: const EdgeInsets.all(8), child: Text(message!, style: const TextStyle(color: Colors.white70))),
+          if (message != null) Padding(padding: const EdgeInsets.all(8), child: Text(message!, style: TextStyle(color: context.soft))),
           if (l != null)
             Expanded(
               child: ListView(children: [

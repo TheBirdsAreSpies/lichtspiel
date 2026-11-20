@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../theme.dart';
 
 const _fieldNames = {
   'title': 'Titel', 'kind': 'Art (movie, show, episode …)', 'year': 'Jahr', 'genre': 'Genre', 'rating': 'Bewertung', 'user_rating': 'Meine Bewertung',
@@ -285,7 +286,7 @@ class _SmartDialogState extends State<_SmartDialog> {
                     ),
                   ]),
                   const SizedBox(height: 12),
-                  const Text('Bibliotheken (keine gewählt = alle)', style: TextStyle(color: Colors.white60)),
+                  Text('Bibliotheken (keine gewählt = alle)', style: TextStyle(color: context.dim)),
                   Wrap(spacing: 8, children: [
                     for (final s in sections)
                       FilterChip(
@@ -304,8 +305,8 @@ class _SmartDialogState extends State<_SmartDialog> {
                     CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, title: const Text('Auf der Startseite zeigen'), value: pinned, onChanged: (v) => setState(() => pinned = v == true)),
                   ],
                   const SizedBox(height: 8),
-                  Text(preview, style: const TextStyle(color: Colors.white60)),
-                  if (error != null && loaded) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: const TextStyle(color: Colors.redAccent))),
+                  Text(preview, style: TextStyle(color: context.dim)),
+                  if (error != null && loaded) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: TextStyle(color: context.bad))),
                 ]),
               ),
       ),

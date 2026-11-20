@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import '../widgets/poster.dart';
 import 'detail.dart' show fmtSize;
+import '../theme.dart';
 
 const dlQualities = {
   'original': 'Originalqualität',
@@ -71,7 +72,7 @@ Future<void> _download(BuildContext context, Api api, String url) async {
         builder: (_, v, _) => Column(mainAxisSize: MainAxisSize.min, children: [
           LinearProgressIndicator(value: v),
           if (v != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text('${(v * 100).toStringAsFixed(0)} %')),
-          const Padding(padding: EdgeInsets.only(top: 8), child: Text('Lass die App dabei geöffnet.', style: TextStyle(color: Colors.white54))),
+          Padding(padding: EdgeInsets.only(top: 8), child: Text('Lass die App dabei geöffnet.', style: TextStyle(color: context.faint))),
         ]),
       ),
       actions: [
@@ -166,10 +167,10 @@ Future<void> downloadDialog(BuildContext context, Api api, List<Map<String, dyna
             q == 'original'
                 ? 'Die Datei, wie sie auf dem Server liegt. Sie ist sofort fertig.'
                 : 'Wird auf dem Server in MP4 (H.264, Stereo) umgewandelt, das überall läuft. Du findest sie unter „Downloads“ mit Fortschritt und lädst sie von dort, wenn sie fertig ist. Eine Datei, die schon klein genug ist, kommt unverändert.',
-            style: const TextStyle(color: Colors.white54),
+            style: TextStyle(color: context.faint),
           ),
           if (!DownloadRights.convert)
-            const Padding(padding: EdgeInsets.only(top: 8), child: Text('Du darfst keine Videos umwandeln lassen, deshalb geht nur die Originalqualität.', style: TextStyle(color: Colors.white54))),
+            Padding(padding: EdgeInsets.only(top: 8), child: Text('Du darfst keine Videos umwandeln lassen, deshalb geht nur die Originalqualität.', style: TextStyle(color: context.faint))),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
@@ -275,7 +276,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                     d['allowed'] == true
                         ? 'Über „Herunterladen…“ bei einem Film, einer Folge, Staffel oder Serie.${(d['keep_days'] ?? 0) != 0 ? ' Umgewandelte Kopien bleiben ${d['keep_days']} Tage auf dem Server.' : ''}'
                         : 'Downloads sind für dein Konto abgeschaltet. Frag den Besitzer des Servers.',
-                    style: const TextStyle(color: Colors.white54),
+                    style: TextStyle(color: context.faint),
                   ),
                   const SizedBox(height: 8),
                   Text([if (busy > 0) '$busy werden umgewandelt', '${d['ready'] ?? 0} fertig', if (((d['failed'] ?? 0) as num) > 0) '${d['failed']} fehlgeschlagen'].join(' · ')),
@@ -320,10 +321,10 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(name(x), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-              Text(info, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              Text(info, style: TextStyle(color: context.faint, fontSize: 12)),
               if (state == 'converting' || state == 'queued')
                 Padding(padding: const EdgeInsets.only(top: 6), child: LinearProgressIndicator(value: ((x['progress'] ?? 0) as num) / 100)),
-              if (state == 'failed' && x['error'] != null) Text('${x['error']}', style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+              if (state == 'failed' && x['error'] != null) Text('${x['error']}', style: TextStyle(color: context.bad, fontSize: 12)),
             ]),
           ),
           if (state == 'ready' && parts > 1)

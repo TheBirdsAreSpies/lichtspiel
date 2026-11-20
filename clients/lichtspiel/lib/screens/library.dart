@@ -7,6 +7,7 @@ import 'player.dart';
 import 'home.dart';
 import 'playlists.dart';
 import '../widgets/bar.dart';
+import '../theme.dart';
 
 const _sortFields = {
   'title': 'Titel',
@@ -185,7 +186,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           content: SizedBox(
             width: 420,
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Die anderen erscheinen danach als Versionen dieses Titels. Fortschritt und „gesehen“ zählen für den Titel.', style: TextStyle(color: Colors.white54)),
+              Text('Die anderen erscheinen danach als Versionen dieses Titels. Fortschritt und „gesehen“ zählen für den Titel.', style: TextStyle(color: context.faint)),
               const SizedBox(height: 8),
               const Text('Hauptversion:'),
               for (final i in list)
@@ -543,7 +544,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ],
           child: Chip(avatar: const Icon(Icons.insert_drive_file_outlined, size: 18), label: Text(container.isEmpty ? 'Dateityp' : container.toUpperCase())),
         ),
-        if (loading || total > 0 || error == null) Text(total == 1 ? '1 Eintrag' : '$total Einträge', style: const TextStyle(color: Colors.white60)),
+        if (loading || total > 0 || error == null) Text(total == 1 ? '1 Eintrag' : '$total Einträge', style: TextStyle(color: context.dim)),
       ]),
     );
     final chips = nActive == 0
@@ -611,7 +612,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                     constraints: const BoxConstraints(maxHeight: 20),
                                     child: InkWell(
                                       onTap: () => jumpTo(l.offset),
-                                      child: Center(child: FittedBox(child: Text(l.key, style: const TextStyle(fontSize: 11, color: Colors.white60)))),
+                                      child: Center(child: FittedBox(child: Text(l.key, style: TextStyle(fontSize: 11, color: context.dim)))),
                                     ),
                                   ),
                                 ),
@@ -687,7 +688,7 @@ class FilterDialogState extends State<FilterDialog> {
         dense: true,
         selected: val.isNotEmpty,
         title: Text(filterName(name)),
-        trailing: val.isNotEmpty ? const Icon(Icons.check, size: 18) : (f['count'] != null ? Text('${f['count']}', style: const TextStyle(color: Colors.white54)) : null),
+        trailing: val.isNotEmpty ? const Icon(Icons.check, size: 18) : (f['count'] != null ? Text('${f['count']}', style: TextStyle(color: context.faint)) : null),
         onTap: () => set(name, val.isNotEmpty ? null : 'true'),
       );
     }
@@ -695,7 +696,7 @@ class FilterDialogState extends State<FilterDialog> {
       dense: true,
       selected: name == cur,
       title: Text(filterName(name), style: TextStyle(fontWeight: val.isNotEmpty ? FontWeight.bold : null)),
-      trailing: val.isNotEmpty ? Text(valueName(name, val), style: const TextStyle(fontSize: 12, color: Colors.white54)) : const Icon(Icons.chevron_right, size: 18),
+      trailing: val.isNotEmpty ? Text(valueName(name, val), style: TextStyle(fontSize: 12, color: context.faint)) : const Icon(Icons.chevron_right, size: 18),
       onTap: () => setState(() {
         cur = name;
         needle.clear();
@@ -746,7 +747,7 @@ class FilterDialogState extends State<FilterDialog> {
                                   dense: true,
                                   selected: v == on,
                                   title: Text(valueName(cur, v)),
-                                  trailing: Text('${values[i]['count'] ?? ''}', style: const TextStyle(color: Colors.white54)),
+                                  trailing: Text('${values[i]['count'] ?? ''}', style: TextStyle(color: context.faint)),
                                   onTap: () => set(cur, v == on ? null : v),
                                 );
                               },

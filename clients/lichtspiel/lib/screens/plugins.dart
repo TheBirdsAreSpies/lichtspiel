@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import 'settings.dart' show fmtDateTime;
+import '../theme.dart';
 
 void _say(BuildContext c, String s) => ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(s), duration: const Duration(seconds: 6)));
 
@@ -87,19 +88,19 @@ class _PluginsScreenState extends State<PluginsScreen> {
           : d == null
               ? const Center(child: CircularProgressIndicator())
               : ListView(padding: const EdgeInsets.all(16), children: [
-                  Text('Plugins bringen Funktionen mit: Details ergänzen, Benachrichtigungen senden, auf die Wiedergabe reagieren. Jedes Plugin liegt in einem eigenen Ordner in „${d['folder']}“ mit einer plugin.json; danach „Neu laden“.', style: const TextStyle(color: Colors.white54)),
-                  for (final e in (d['errors'] as List? ?? const [])) Padding(padding: const EdgeInsets.only(top: 8), child: Text('$e', style: const TextStyle(color: Colors.redAccent))),
+                  Text('Plugins bringen Funktionen mit: Details ergänzen, Benachrichtigungen senden, auf die Wiedergabe reagieren. Jedes Plugin liegt in einem eigenen Ordner in „${d['folder']}“ mit einer plugin.json; danach „Neu laden“.', style: TextStyle(color: context.faint)),
+                  for (final e in (d['errors'] as List? ?? const [])) Padding(padding: const EdgeInsets.only(top: 8), child: Text('$e', style: TextStyle(color: context.bad))),
                   const SizedBox(height: 8),
                   if (plugins.isEmpty) const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Noch keine Plugins installiert.'))),
                   for (final p in plugins) _plugin(p),
                   const SizedBox(height: 16),
                   Text('Letzte Plugin-Aktivität', style: Theme.of(context).textTheme.titleMedium),
-                  if (log.isEmpty) const Text('Noch nichts.', style: TextStyle(color: Colors.white54)),
+                  if (log.isEmpty) Text('Noch nichts.', style: TextStyle(color: context.faint)),
                   for (final l in log.take(40))
                     ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      leading: Icon(l['ok'] == true ? Icons.check_circle_outline : Icons.error_outline, color: l['ok'] == true ? Colors.greenAccent : Colors.redAccent, size: 18),
+                      leading: Icon(l['ok'] == true ? Icons.check_circle_outline : Icons.error_outline, color: l['ok'] == true ? context.good : context.bad, size: 18),
                       title: Text('${l['plugin']} · ${l['event']}'),
                       subtitle: Text('${fmtDateTime(l['at'])}${'${l['detail'] ?? ''}'.isEmpty ? '' : ' · ${l['detail']}'}'),
                     ),
@@ -120,7 +121,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Expanded(child: Text('${p['name']}  v${p['version'] ?? '?'}${p['author'] != null ? '  von ${p['author']}' : ''}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
-            Text(on ? 'an' : 'aus', style: TextStyle(color: on ? Colors.greenAccent : Colors.white54)),
+            Text(on ? 'an' : 'aus', style: TextStyle(color: on ? context.good : context.faint)),
             const SizedBox(width: 8),
             on
                 ? OutlinedButton(onPressed: () => run(() => widget.api.post('/api/plugins/$id/disable')), child: const Text('Ausschalten'))
@@ -253,7 +254,7 @@ class _PluginPanelState extends State<_PluginPanel> {
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
                   Text('${p['title'] ?? widget.name}', style: Theme.of(context).textTheme.titleMedium),
-                  if (p['status'] == 'on') const Padding(padding: EdgeInsets.only(left: 10), child: Text('verbunden', style: TextStyle(color: Colors.greenAccent))),
+                  if (p['status'] == 'on') Padding(padding: EdgeInsets.only(left: 10), child: Text('verbunden', style: TextStyle(color: context.good))),
                 ]),
                 if (p['text'] != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text('${p['text']}')),
                 if (p['link'] != null)
@@ -339,7 +340,7 @@ class _PollDialogState extends State<_PollDialog> {
         if (message.isNotEmpty) Text(message),
         if (code.isNotEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: SelectableText(code, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w700, letterSpacing: 4))),
         if (link.isNotEmpty) TextButton(onPressed: () => launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication), child: Text(link)),
-        const Text('Wartet, bis der Code eingegeben wurde…', style: TextStyle(color: Colors.white54)),
+        Text('Wartet, bis der Code eingegeben wurde…', style: TextStyle(color: context.faint)),
       ]),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Abbrechen'))],
     );

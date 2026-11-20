@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
 import '../discovery.dart';
 import 'link_login.dart';
+import '../theme.dart';
 
 class LoginScreen extends StatefulWidget {
   final void Function(Api) onSignedIn;
@@ -156,7 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const Text('Lichtspiel', textAlign: TextAlign.center, style: TextStyle(fontSize: 34, fontWeight: FontWeight.w600)),
               const SizedBox(height: 28),
               if (found.isNotEmpty) ...[
-                const Text('Im Netzwerk gefunden', style: TextStyle(color: Colors.white54)),
+                Text('Im Netzwerk gefunden', style: TextStyle(color: context.faint)),
                 for (final s in found)
                   ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -190,7 +191,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: busy ? null : () => signInProfile(p),
                     ),
                 ]),
-                const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Center(child: Text('oder mit Passwort anmelden', style: TextStyle(color: Colors.white54)))),
+                Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Center(child: Text('oder mit Passwort anmelden', style: TextStyle(color: context.faint)))),
               ],
               TextField(controller: user, autofillHints: const [AutofillHints.username], decoration: const InputDecoration(labelText: 'Benutzername')),
               TextField(controller: pass, obscureText: true, autofillHints: const [AutofillHints.password], onSubmitted: (_) => submit(), decoration: const InputDecoration(labelText: 'Passwort')),

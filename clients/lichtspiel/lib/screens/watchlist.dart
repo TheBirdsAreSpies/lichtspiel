@@ -3,6 +3,7 @@ import '../api.dart';
 import '../widgets/poster.dart';
 import 'detail.dart';
 import 'library.dart' show FilterDialog, filterName, valueName;
+import '../theme.dart';
 
 /// What you want to watch later, with the type, sort, year and title filters of the web app.
 class WatchlistScreen extends StatefulWidget {
@@ -113,7 +114,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
             field(search, 'Nach Titel filtern', 170),
             field(from, 'Jahr ab', 90, number: true),
             field(to, 'Jahr bis', 90, number: true),
-            if (list != null) Text(list.length == 1 ? '1 Eintrag' : '${list.length} Einträge', style: const TextStyle(color: Colors.white60)),
+            if (list != null) Text(list.length == 1 ? '1 Eintrag' : '${list.length} Einträge', style: TextStyle(color: context.dim)),
           ]),
         ),
         if (filters.isNotEmpty)

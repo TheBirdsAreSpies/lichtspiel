@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../theme.dart';
 
 enum _T { text, number, flag, pick, secret, lines }
 
@@ -212,7 +213,7 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
   }
 
   Widget field(_F f) {
-    final help = f.help == null ? null : Text(f.help!, style: const TextStyle(fontSize: 12, color: Colors.white54));
+    final help = f.help == null ? null : Text(f.help!, style: TextStyle(fontSize: 12, color: context.faint));
     Widget w;
     switch (f.type) {
       case _T.flag:
@@ -259,10 +260,10 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(found ? 'ffmpeg gefunden: ${tc['ffmpeg_version']}' : 'ffmpeg wurde nicht gefunden. Installiere es oder gib unten den Pfad an; ohne ffmpeg spielen nur browserfreundliche Dateien.',
-            style: TextStyle(color: found ? Colors.greenAccent : Colors.redAccent)),
-        if (hw.isNotEmpty) Text('Hardware-Encoder: ${hw.join(', ')}', style: const TextStyle(color: Colors.white60)),
-        if (hw.isNotEmpty) Text(work.isNotEmpty ? 'Funktioniert hier: ${work.join(', ')}' : 'Keiner davon funktioniert hier, der Prozessor konvertiert.', style: const TextStyle(color: Colors.white60)),
-        Text('Konvertiert mit: ${tc['hw_in_use'] == 'none' ? 'dem Prozessor (Software)' : tc['hw_in_use']}', style: const TextStyle(color: Colors.white60)),
+            style: TextStyle(color: found ? context.good : context.bad)),
+        if (hw.isNotEmpty) Text('Hardware-Encoder: ${hw.join(', ')}', style: TextStyle(color: context.dim)),
+        if (hw.isNotEmpty) Text(work.isNotEmpty ? 'Funktioniert hier: ${work.join(', ')}' : 'Keiner davon funktioniert hier, der Prozessor konvertiert.', style: TextStyle(color: context.dim)),
+        Text('Konvertiert mit: ${tc['hw_in_use'] == 'none' ? 'dem Prozessor (Software)' : tc['hw_in_use']}', style: TextStyle(color: context.dim)),
       ]),
     );
   }
@@ -289,8 +290,8 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
           for (final e in ps.entries)
             ListView(padding: const EdgeInsets.all(16), children: [
               if (e.key == 'transcoder') info(),
-              if (e.key == 'general') Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Datenordner auf dem Server: ${resp['data_dir']}', style: const TextStyle(color: Colors.white60))),
-              if (e.key == 'network' && resp['lan_url'] != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Adresse im Heimnetz: ${resp['lan_url']}', style: const TextStyle(color: Colors.white60))),
+              if (e.key == 'general') Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Datenordner auf dem Server: ${resp['data_dir']}', style: TextStyle(color: context.dim))),
+              if (e.key == 'network' && resp['lan_url'] != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Adresse im Heimnetz: ${resp['lan_url']}', style: TextStyle(color: context.dim))),
               for (final f in e.value.$2) field(f),
             ]),
         ]),

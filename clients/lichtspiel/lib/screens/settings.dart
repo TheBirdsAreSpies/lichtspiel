@@ -10,6 +10,7 @@ import 'plugins.dart';
 import 'server_settings.dart';
 import 'users.dart';
 import '../widgets/bar.dart';
+import '../theme.dart';
 
 String fmtDateTime(dynamic secs) {
   if (secs is! num || secs <= 0) return '–';
@@ -178,6 +179,30 @@ class _AccountTabState extends State<_AccountTab> {
           child: FilledButton(onPressed: () => run(() async => widget.api.post('/api/me/profile', {'full_name': name.text}), 'Gespeichert'), child: const Text('Speichern')),
         ),
       ]),
+      _panel(context, 'Darstellung', [
+        ValueListenableBuilder<ThemeMode>(
+          valueListenable: AppTheme.mode,
+          builder: (context, mode, _) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SegmentedButton<ThemeMode>(
+              segments: const [
+                ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_outlined), label: Text('System')),
+                ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('Hell')),
+                ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('Dunkel')),
+              ],
+              selected: {mode},
+              onSelectionChanged: (v) async {
+                await AppTheme.set(v.first);
+                // Kept with the account, so the web app shows the same.
+                try {
+                  await widget.api.post('/api/me/prefs', {'theme': AppTheme.keyOf(v.first)});
+                } catch (_) {}
+              },
+            ),
+            const SizedBox(height: 6),
+            Text('„System“ folgt der Einstellung des Geräts.', style: TextStyle(fontSize: 12, color: context.dim)),
+          ]),
+        ),
+      ]),
       _panel(context, 'Zweistufige Anmeldung', [
         if (m['two_factor'] == true) ...[
           const Text('Die zweistufige Anmeldung ist eingeschaltet.'),
@@ -319,7 +344,7 @@ class _PlaybackTabState extends State<_PlaybackTab> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(label),
-              if (help.isNotEmpty) Text(help, style: const TextStyle(fontSize: 12, color: Colors.white60)),
+              if (help.isNotEmpty) Text(help, style: TextStyle(fontSize: 12, color: context.dim)),
             ]),
           ),
           control,
@@ -417,7 +442,7 @@ class _DevicesTabState extends State<_DevicesTab> {
     if (l == null) return const Center(child: CircularProgressIndicator());
     if (l.isEmpty) return const Center(child: Text('Keine Geräte.'));
     return ListView(padding: const EdgeInsets.all(16), children: [
-      const Padding(padding: EdgeInsets.only(bottom: 8), child: Text('Browser, Apps und Skripte, die an deinem Konto angemeldet sind.', style: TextStyle(color: Colors.white60))),
+      Padding(padding: EdgeInsets.only(bottom: 8), child: Text('Browser, Apps und Skripte, die an deinem Konto angemeldet sind.', style: TextStyle(color: context.dim))),
       Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Wrap(spacing: 8, children: [
@@ -495,7 +520,7 @@ class _FeedTabState extends State<_FeedTab> {
     final on = f['enabled'] == true;
     return ListView(padding: const EdgeInsets.all(16), children: [
       _panel(context, 'Merkliste als Feed', [
-        const Text('Deine Merkliste als RSS-Feed für einen Feedreader oder eine Automatisierung. Wer die Adresse kennt, kann die Liste lesen – halte sie also privat.', style: TextStyle(color: Colors.white60)),
+        Text('Deine Merkliste als RSS-Feed für einen Feedreader oder eine Automatisierung. Wer die Adresse kennt, kann die Liste lesen – halte sie also privat.', style: TextStyle(color: context.dim)),
         const SizedBox(height: 12),
         if (on) ...[
           SelectableText('${f['url']}'),

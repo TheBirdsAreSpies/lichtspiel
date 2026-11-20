@@ -4,10 +4,12 @@ import 'package:media_kit/media_kit.dart';
 import 'api.dart';
 import 'screens/home.dart';
 import 'screens/login.dart';
+import 'theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  await AppTheme.load();
   runApp(const LichtspielApp());
 }
 
@@ -38,7 +40,7 @@ class _LichtspielAppState extends State<LichtspielApp> {
       if (a != null) {
         try {
           // Away from home a LAN address may get no answer at all: don't wait for the system to give up.
-          await a.get('/api/me').timeout(const Duration(seconds: 8));
+          await AppTheme.adopt(await a.get('/api/me').timeout(const Duration(seconds: 8)));
         } on ApiError catch (e) {
           debugPrint('Checking the saved sign-in at ${a.base} failed: ${e.cause ?? e}');
           if (e.status == 401) a = null;
@@ -62,35 +64,40 @@ class _LichtspielAppState extends State<LichtspielApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: navKey,
-      // The mouse's "back" button (button 4) goes one screen back, like in a browser.
-      // On a phone held sideways nothing goes under the notch (the strips stay dark).
-      builder: (context, child) => ColoredBox(
-        color: const Color(0xFF121212),
-        child: SafeArea(
-          top: false,
-          bottom: false,
-          child: Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: (e) {
-              if (e.kind == PointerDeviceKind.mouse && (e.buttons & kBackMouseButton) != 0) navKey.currentState?.maybePop();
-            },
-            child: child ?? const SizedBox.shrink(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppTheme.mode,
+      builder: (context, mode, _) => MaterialApp(
+        navigatorKey: navKey,
+        // The mouse's "back" button (button 4) goes one screen back, like in a browser.
+        // On a phone held sideways nothing goes under the notch (the strips keep the page colour).
+        builder: (context, child) => ColoredBox(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          child: SafeArea(
+            top: false,
+            bottom: false,
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (e) {
+                if (e.kind == PointerDeviceKind.mouse && (e.buttons & kBackMouseButton) != 0) navKey.currentState?.maybePop();
+              },
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         ),
+        title: 'Lichtspiel',
+        debugShowCheckedModeBanner: false,
+        themeMode: mode,
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        home: loading
+            ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+            : api == null
+                ? LoginScreen(onSignedIn: (a) {
+                    setState(() => api = a);
+                    a.get('/api/me').then(AppTheme.adopt).catchError((_) {});
+                  })
+                : HomeScreen(api: api!, onSignOut: signOut),
       ),
-      title: 'Lichtspiel',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(useMaterial3: true).copyWith(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFE5A00D), brightness: Brightness.dark),
-        scaffoldBackgroundColor: const Color(0xFF121212),
-      ),
-      home: loading
-          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
-          : api == null
-              ? LoginScreen(onSignedIn: (a) => setState(() => api = a))
-              : HomeScreen(api: api!, onSignOut: signOut),
     );
   }
 }

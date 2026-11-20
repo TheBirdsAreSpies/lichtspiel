@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/poster.dart';
+import '../theme.dart';
 
 const _problems = {
   'playback': 'Spielt nicht ab / bricht ab',
@@ -68,7 +69,7 @@ Future<void> reportDialog(BuildContext context, Api api, Map<String, dynamic> it
         content: SizedBox(
           width: 420,
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Der Besitzer dieses Servers sieht deine Meldung.', style: TextStyle(color: Colors.white54)),
+            Text('Der Besitzer dieses Servers sieht deine Meldung.', style: TextStyle(color: context.faint)),
             const SizedBox(height: 8),
             DropdownButton<String>(
               value: kind,
@@ -144,7 +145,7 @@ Future<void> creditsDialog(BuildContext context, Api api, Map<String, dynamic> i
       content: SizedBox(
         width: 420,
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Abspann-Marke: ${sources['${r['source']}'] ?? r['source']}. Das Video gilt ab ${_clock((r['watchedAt'] ?? 0) as num)} von ${_clock((r['duration'] ?? 0) as num)} als gesehen.', style: const TextStyle(color: Colors.white54)),
+          Text('Abspann-Marke: ${sources['${r['source']}'] ?? r['source']}. Das Video gilt ab ${_clock((r['watchedAt'] ?? 0) as num)} von ${_clock((r['duration'] ?? 0) as num)} als gesehen.', style: TextStyle(color: context.faint)),
           const SizedBox(height: 8),
           TextField(controller: inp, decoration: const InputDecoration(labelText: 'Abspann beginnt bei (Std:Min:Sek)', hintText: 'z. B. 1:52:30')),
         ]),

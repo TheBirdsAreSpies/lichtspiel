@@ -4,6 +4,7 @@ import 'detail.dart' show fmtSize;
 import 'downloads.dart' show saveFile;
 import 'settings.dart' show fmtDateTime;
 import '../widgets/bar.dart';
+import '../theme.dart';
 
 /// Admin: backups, compacting and cleaning up, optimized versions, the server log and reported problems.
 class MaintenanceScreen extends StatelessWidget {
@@ -109,7 +110,7 @@ class _BackupsTabState extends State<_BackupsTab> {
       const SizedBox(height: 12),
       Align(alignment: Alignment.centerLeft, child: FilledButton(onPressed: busy ? null : backupNow, child: const Text('Jetzt sichern'))),
       const SizedBox(height: 12),
-      if (list.isEmpty) const Text('Im Sicherungsordner liegen noch keine Sicherungen.', style: TextStyle(color: Colors.white54)),
+      if (list.isEmpty) Text('Im Sicherungsordner liegen noch keine Sicherungen.', style: TextStyle(color: context.faint)),
       for (final b in list)
         ListTile(
           contentPadding: EdgeInsets.zero,
@@ -159,7 +160,7 @@ class _ToolsTabState extends State<_ToolsTab> {
   Widget tool(String title, String help, String button, VoidCallback onPressed) => ListTile(
         contentPadding: EdgeInsets.zero,
         title: Text(title),
-        subtitle: Text(help, style: const TextStyle(color: Colors.white54)),
+        subtitle: Text(help, style: TextStyle(color: context.faint)),
         trailing: OutlinedButton(onPressed: onPressed, child: Text(button)),
       );
 
@@ -182,9 +183,9 @@ class _ToolsTabState extends State<_ToolsTab> {
       Text('Optimierte Versionen', style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 8),
       if (error != null) Text(error!) else if (items == null) const Center(child: CircularProgressIndicator()) else ...[
-        Text(items.isEmpty ? 'Noch nichts optimiert. Öffne einen Titel und wähle „Optimieren“.' : '${items.length} optimierte Version(en), ${fmtSize(total)} insgesamt.', style: const TextStyle(color: Colors.white54)),
+        Text(items.isEmpty ? 'Noch nichts optimiert. Öffne einen Titel und wähle „Optimieren“.' : '${items.length} optimierte Version(en), ${fmtSize(total)} insgesamt.', style: TextStyle(color: context.faint)),
         for (final i in items.take(30)) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${i['title']}'), trailing: Text('${i['quality'] ?? ''} · ${fmtSize((i['size'] ?? 0) as num)}')),
-        if (items.length > 30) Text('… und ${items.length - 30} weitere', style: const TextStyle(color: Colors.white54)),
+        if (items.length > 30) Text('… und ${items.length - 30} weitere', style: TextStyle(color: context.faint)),
         if (items.isNotEmpty)
           Align(
             alignment: Alignment.centerLeft,

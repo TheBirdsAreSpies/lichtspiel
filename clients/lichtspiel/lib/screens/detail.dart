@@ -10,6 +10,7 @@ import 'downloads.dart';
 import '../widgets/item_extras.dart';
 import 'player.dart';
 import 'playlists.dart';
+import '../theme.dart';
 
 const _gold = Color(0xFFE5A00D);
 
@@ -232,7 +233,7 @@ class _DetailScreenState extends State<DetailScreen> {
       if (item['rating'] != null && ratings.isEmpty) '★ ${item['rating']}',
       if (leafCount > 0) '${item['viewedLeafCount'] ?? 0}/$leafCount gesehen',
     ].join('  ·  ');
-    final dim = const TextStyle(color: Colors.white60);
+    final dim = TextStyle(color: context.dim);
 
     final title = type == 'episode' ? '${item['index']}. ${item['title']}' : '${item['title']}';
     final crumbs = [
@@ -263,7 +264,7 @@ class _DetailScreenState extends State<DetailScreen> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: Stack(fit: StackFit.expand, children: [
-                  Image.network(api.img(item['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)),
+                  Image.network(api.img(item['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair)),
                   BusyOverlay(item: item),
                 ]),
               ),
@@ -273,7 +274,7 @@ class _DetailScreenState extends State<DetailScreen> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(title, style: Theme.of(context).textTheme.headlineMedium),
-              if (item['missing'] == true) const Text('Nicht verfügbar: die Datei fehlt auf der Festplatte.', style: TextStyle(color: Colors.redAccent)),
+              if (item['missing'] == true) Text('Nicht verfügbar: die Datei fehlt auf der Festplatte.', style: TextStyle(color: context.bad)),
               const SizedBox(height: 6),
               Text(meta, style: dim),
               if (ratings.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: _scores(ratings)),
@@ -347,10 +348,10 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(c['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10))),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(c['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair))),
                       ),
                       Text('${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}'), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text(fmtClock((c['start'] ?? 0) as int), style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                      Text(fmtClock((c['start'] ?? 0) as int), style: TextStyle(fontSize: 12, color: context.faint)),
                     ]),
                   ),
                 ),
@@ -371,10 +372,10 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10, child: const Icon(Icons.play_circle_outline)))),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair, child: const Icon(Icons.play_circle_outline)))),
                       ),
                       Text('${e['title']}', maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text(fmtMs((e['duration'] ?? 0) as int), style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                      Text(fmtMs((e['duration'] ?? 0) as int), style: TextStyle(fontSize: 12, color: context.faint)),
                     ]),
                   ),
                 ),
@@ -387,10 +388,10 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network('https://i.ytimg.com/vi/${v['key']}/mqdefault.jpg', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10, child: const Icon(Icons.play_circle_outline)))),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network('https://i.ytimg.com/vi/${v['key']}/mqdefault.jpg', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair, child: const Icon(Icons.play_circle_outline)))),
                       ),
                       Text('${v['name'] ?? 'Trailer'}', maxLines: 1, overflow: TextOverflow.ellipsis),
-                      const Text('online · YouTube', style: TextStyle(fontSize: 12, color: Colors.white54)),
+                      Text('online · YouTube', style: TextStyle(fontSize: 12, color: context.faint)),
                     ]),
                   ),
                 ),
@@ -487,7 +488,7 @@ class _DetailScreenState extends State<DetailScreen> {
 
   Widget _tag(String t) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(color: context.hair, borderRadius: BorderRadius.circular(12)),
         child: Text(t, style: const TextStyle(fontSize: 12)),
       );
 
@@ -497,7 +498,7 @@ class _DetailScreenState extends State<DetailScreen> {
         children: [
           for (final r in rows)
             TableRow(children: [
-              Padding(padding: const EdgeInsets.only(right: 16, bottom: 3), child: Text(r[0], style: const TextStyle(color: Colors.white54))),
+              Padding(padding: const EdgeInsets.only(right: 16, bottom: 3), child: Text(r[0], style: TextStyle(color: context.faint))),
               Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(r[1])),
             ]),
         ],
@@ -549,13 +550,13 @@ class _DetailScreenState extends State<DetailScreen> {
         message: count != null ? '${e.value}: ${s['score']} · $count ${s['count_label'] == 'reviews' ? 'Kritiken' : 'Stimmen'}' : '${e.value}: ${s['score']}',
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
+          decoration: BoxDecoration(color: context.hair, borderRadius: BorderRadius.circular(6)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             _mark(e.key, '${s['score']}'),
             const SizedBox(width: 8),
             Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
               Text('${s['score']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, height: 1.1)),
-              Text(count != null ? '$count ${s['count_label'] == 'reviews' ? 'Kritiken' : 'Stimmen'}' : e.value, style: const TextStyle(fontSize: 11, color: Colors.white54)),
+              Text(count != null ? '$count ${s['count_label'] == 'reviews' ? 'Kritiken' : 'Stimmen'}' : e.value, style: TextStyle(fontSize: 11, color: context.faint)),
             ]),
           ]),
         ),
@@ -565,7 +566,7 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Widget _toggle(IconData icon, bool on, String tip, VoidCallback onTap) =>
-      IconButton(tooltip: tip, onPressed: onTap, icon: Icon(icon, color: on ? _gold : null), style: IconButton.styleFrom(backgroundColor: Colors.white10));
+      IconButton(tooltip: tip, onPressed: onTap, icon: Icon(icon, color: on ? _gold : null), style: IconButton.styleFrom(backgroundColor: context.hair));
 
   /// Five stars on the server's 0-10 scale (each star is worth 2); tap the active last star's "clear" to remove.
   Widget _stars(Map<String, dynamic> item) {
@@ -575,7 +576,7 @@ class _DetailScreenState extends State<DetailScreen> {
         // Left half of a star = half a star, right half = the whole star (as in the web app).
         GestureDetector(
           onTapUp: (d) => act(() => api.rate(key, d.localPosition.dx < 13 ? i * 2 - 1 : i * 2)),
-          child: Icon(cur >= i * 2 ? Icons.star : (cur == i * 2 - 1 ? Icons.star_half : Icons.star_border), color: cur >= i * 2 - 1 ? _gold : Colors.white38, size: 26),
+          child: Icon(cur >= i * 2 ? Icons.star : (cur == i * 2 - 1 ? Icons.star_half : Icons.star_border), color: cur >= i * 2 - 1 ? _gold : context.ghost, size: 26),
         ),
       if (cur > 0) TextButton(onPressed: () => act(() => api.rate(key, -1)), child: const Text('löschen')),
     ]);
@@ -587,7 +588,7 @@ class _DetailScreenState extends State<DetailScreen> {
     final subs = ((media['subtitles'] as List?) ?? const []).map((s) => '${(s is Map ? (s['language'] ?? s['file'] ?? s['codec']) : s) ?? ''}').where((s) => s.isNotEmpty).toSet().join(', ');
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(color: context.hair, borderRadius: BorderRadius.circular(8)),
       child: _kv([
         ['Dateityp', '${_container(media)}${media['size'] != null ? ' · ${fmtSize(media['size'])}' : ''}'],
         if (type != 'track')
@@ -619,14 +620,14 @@ class _DetailScreenState extends State<DetailScreen> {
       child: Column(children: [
         CircleAvatar(
           radius: 38,
-          backgroundColor: Colors.white10,
+          backgroundColor: context.hair,
           foregroundImage: src.isEmpty ? null : NetworkImage(src, headers: api.headersFor(src)),
           onForegroundImageError: src.isEmpty ? null : (_, __) {},
           child: Text(initials),
         ),
         const SizedBox(height: 6),
         Text(name, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-        if (p['role'] != null) Text('${p['role']}', maxLines: 1, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.white54)),
+        if (p['role'] != null) Text('${p['role']}', maxLines: 1, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: context.faint)),
       ]),
       ),
     );
@@ -649,15 +650,15 @@ class _DetailScreenState extends State<DetailScreen> {
             width: 140,
             child: AspectRatio(
               aspectRatio: 16 / 9,
-              child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10))),
+              child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(e['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair))),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(e['index'] != null ? '${e['index']}. ${e['title']}' : '${e['title']}', style: const TextStyle(fontWeight: FontWeight.w600)),
-              Text(sub, style: const TextStyle(fontSize: 12, color: Colors.white54)),
-              if ('${e['summary'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text('${e['summary']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: Colors.white70))),
+              Text(sub, style: TextStyle(fontSize: 12, color: context.faint)),
+              if ('${e['summary'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text('${e['summary']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: context.soft))),
             ]),
           ),
           IconButton(tooltip: 'Abspielen', onPressed: () => play(e), icon: const Icon(Icons.play_circle_fill, color: _gold)),

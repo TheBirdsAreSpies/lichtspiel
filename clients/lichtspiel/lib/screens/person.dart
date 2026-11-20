@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/poster.dart';
 import 'home.dart';
+import '../theme.dart';
 
 /// An actor and everything they are in (the web app's person page).
 class PersonScreen extends StatefulWidget {
@@ -28,7 +29,7 @@ class _PersonScreenState extends State<PersonScreen> {
     return FutureBuilder<Map<String, dynamic>>(
       future: details,
       builder: (context, snap) {
-        if (snap.hasError) return Padding(padding: const EdgeInsets.only(top: 24), child: Text('${snap.error}', style: const TextStyle(color: Colors.white54)));
+        if (snap.hasError) return Padding(padding: const EdgeInsets.only(top: 24), child: Text('${snap.error}', style: TextStyle(color: context.faint)));
         if (!snap.hasData) return const Padding(padding: EdgeInsets.only(top: 24), child: Center(child: CircularProgressIndicator()));
         final d = snap.data!;
         final photos = ((d['photos'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e)).toList();
@@ -40,7 +41,7 @@ class _PersonScreenState extends State<PersonScreen> {
         final facts = [born, died, '${d['place_of_birth'] ?? ''}'].where((x) => x.isNotEmpty).join(' · ');
         Widget head(String t) => Padding(padding: const EdgeInsets.only(top: 28, bottom: 10), child: Text(t, style: Theme.of(context).textTheme.titleLarge));
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (facts.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 20), child: Text(facts, style: const TextStyle(color: Colors.white60))),
+          if (facts.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 20), child: Text(facts, style: TextStyle(color: context.dim))),
           if ('${d['biography'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text('${d['biography']}')),
           if (photos.length > 1) ...[
             head('Fotos'),
@@ -75,13 +76,13 @@ class _PersonScreenState extends State<PersonScreen> {
                       borderRadius: BorderRadius.circular(4),
                       child: Opacity(
                         opacity: c['item'] != null ? 1 : .55,
-                        child: Image.network(c['item'] != null ? widget.api.img('${c['item']['thumb']}') : '${c['poster'] ?? ''}', headers: c['item'] != null ? widget.api.auth : null, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)),
+                        child: Image.network(c['item'] != null ? widget.api.img('${c['item']['thumb']}') : '${c['poster'] ?? ''}', headers: c['item'] != null ? widget.api.auth : null, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair)),
                       ),
                     ),
                   ),
-                  title: Text('${c['title']}', style: TextStyle(color: c['item'] != null ? null : Colors.white60)),
+                  title: Text('${c['title']}', style: TextStyle(color: c['item'] != null ? null : context.dim)),
                   subtitle: Text([c['year'], c['type'] == 'show' ? 'Serie' : 'Film', c['role']].where((x) => x != null && '$x'.isNotEmpty).join(' · ')),
-                  trailing: Text(c['item'] != null ? 'In deinen Bibliotheken' : 'Nicht in deinen Bibliotheken', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                  trailing: Text(c['item'] != null ? 'In deinen Bibliotheken' : 'Nicht in deinen Bibliotheken', style: TextStyle(fontSize: 12, color: context.faint)),
                   onTap: c['item'] == null ? null : () => openItem(context, widget.api, Map<String, dynamic>.from(c['item'])),
                 )
             else
@@ -92,7 +93,7 @@ class _PersonScreenState extends State<PersonScreen> {
                   child: c['item'] != null
                       ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Poster(api: widget.api, item: Map<String, dynamic>.from(c['item']), onTap: () => openItem(context, widget.api, Map<String, dynamic>.from(c['item']))),
-                          if ('${c['role'] ?? ''}'.isNotEmpty) Text('${c['role']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                          if ('${c['role'] ?? ''}'.isNotEmpty) Text('${c['role']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: context.faint)),
                         ])
                       : Opacity(
                           opacity: .55,
@@ -103,12 +104,12 @@ class _PersonScreenState extends State<PersonScreen> {
                                 aspectRatio: 2 / 3,
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(6),
-                                  child: c['poster'] != null ? Image.network('${c['poster']}', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)) : Container(color: Colors.white10),
+                                  child: c['poster'] != null ? Image.network('${c['poster']}', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair)) : Container(color: context.hair),
                                 ),
                               ),
                               const SizedBox(height: 6),
                               Text('${c['title']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
-                              Text([c['year'], c['role']].where((x) => x != null && '$x'.isNotEmpty).join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                              Text([c['year'], c['role']].where((x) => x != null && '$x'.isNotEmpty).join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: context.faint)),
                             ]),
                           ),
                         ),
@@ -147,8 +148,8 @@ class _PersonScreenState extends State<PersonScreen> {
                   width: 160,
                   height: 220,
                   child: src.isEmpty
-                      ? Container(color: Colors.white10, alignment: Alignment.center, child: Text(initials, style: const TextStyle(fontSize: 42)))
-                      : Image.network(src, headers: widget.api.headersFor(src), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10, alignment: Alignment.center, child: Text(initials, style: const TextStyle(fontSize: 42)))),
+                      ? Container(color: context.hair, alignment: Alignment.center, child: Text(initials, style: const TextStyle(fontSize: 42)))
+                      : Image.network(src, headers: widget.api.headersFor(src), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair, alignment: Alignment.center, child: Text(initials, style: const TextStyle(fontSize: 42)))),
                 ),
               ),
               const SizedBox(width: 20),
@@ -156,7 +157,7 @@ class _PersonScreenState extends State<PersonScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(name, style: Theme.of(context).textTheme.headlineMedium),
                   const SizedBox(height: 6),
-                  Text(n == 1 ? 'In 1 Film oder Serie deiner Bibliotheken' : 'In $n Filmen und Serien deiner Bibliotheken', style: const TextStyle(color: Colors.white60)),
+                  Text(n == 1 ? 'In 1 Film oder Serie deiner Bibliotheken' : 'In $n Filmen und Serien deiner Bibliotheken', style: TextStyle(color: context.dim)),
                 ]),
               ),
             ]),
@@ -170,7 +171,7 @@ class _PersonScreenState extends State<PersonScreen> {
                     width: 140,
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Poster(api: widget.api, item: it, onTap: () => openItem(context, widget.api, it)),
-                      if (it['role'] != null) Text('als ${it['role']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                      if (it['role'] != null) Text('als ${it['role']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: context.faint)),
                     ]),
                   ),
               ]),

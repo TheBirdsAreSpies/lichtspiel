@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../api.dart';
 import 'home.dart';
+import '../theme.dart';
 
 String fmtBits(num bytesPerSec) {
   final b = bytesPerSec * 8;
@@ -183,13 +184,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           : ListView(padding: const EdgeInsets.all(20), children: [
               Text(
                 'Läuft seit ${fmtUptime((data['now'] ?? 0) - (data['started_at'] ?? 0))} · Version ${data['version']} · ${fmtBytes(data['bytes_sent'] ?? 0)} gesendet · aktualisiert alle ${data['sample_seconds']} s',
-                style: const TextStyle(color: Colors.white60),
+                style: TextStyle(color: context.dim),
               ),
               const SizedBox(height: 16),
               _tiles(data),
               _h('Läuft gerade'),
               if ((data['playing'] as List).isEmpty)
-                const Padding(padding: EdgeInsets.all(22), child: Center(child: Text('Gerade läuft nichts.', style: TextStyle(color: Colors.white54))))
+                Padding(padding: EdgeInsets.all(22), child: Center(child: Text('Gerade läuft nichts.', style: TextStyle(color: context.faint))))
               else
                 for (final p in data['playing'] as List) _playing(Map<String, dynamic>.from(p)),
               _h('Nutzer'),
@@ -217,13 +218,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _tile(String label, String value, String note) => Container(
         width: 210,
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+        decoration: BoxDecoration(color: context.hair, borderRadius: BorderRadius.circular(10)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: const TextStyle(color: Colors.white60, fontSize: 12)),
+          Text(label, style: TextStyle(color: context.dim, fontSize: 12)),
           const SizedBox(height: 4),
           Text(value, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w600)),
           const SizedBox(height: 2),
-          Text(note, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          Text(note, style: TextStyle(color: context.faint, fontSize: 12)),
         ]),
       );
 
@@ -263,7 +264,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           InkWell(
             onTap: () => openItem(context, api, {'ratingKey': p['id']}),
-            child: SizedBox(width: 70, child: AspectRatio(aspectRatio: 2 / 3, child: Image.network(api.img(p['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10)))),
+            child: SizedBox(width: 70, child: AspectRatio(aspectRatio: 2 / 3, child: Image.network(api.img(p['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair)))),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -271,7 +272,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Row(children: [
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  Text(sub, style: const TextStyle(color: Colors.white60)),
+                  Text(sub, style: TextStyle(color: context.dim)),
                 ])),
                 IconButton(tooltip: 'Wiedergabe beenden', icon: const Icon(Icons.stop_circle_outlined), onPressed: () => stop(p, p['type'] == 'episode' ? '$title · ${p['title']}' : title)),
               ]),
@@ -285,7 +286,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Table(columnWidths: const {0: IntrinsicColumnWidth()}, children: [
                 for (final r in rows)
                   TableRow(children: [
-                    Padding(padding: const EdgeInsets.only(right: 14, bottom: 2), child: Text(r[0], style: const TextStyle(color: Colors.white54, fontSize: 13))),
+                    Padding(padding: const EdgeInsets.only(right: 14, bottom: 2), child: Text(r[0], style: TextStyle(color: context.faint, fontSize: 13))),
                     Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(r[1], style: const TextStyle(fontSize: 13))),
                   ]),
               ]),
@@ -295,7 +296,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(width: 10),
                 Expanded(child: LinearProgressIndicator(value: pct, minHeight: 4)),
                 const SizedBox(width: 10),
-                Text(((p['duration'] ?? 0) as num) > 0 ? '${fmtClockMs(p['offset'] ?? 0)} / ${fmtClockMs(p['duration'])}' : '', style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                Text(((p['duration'] ?? 0) as num) > 0 ? '${fmtClockMs(p['offset'] ?? 0)} / ${fmtClockMs(p['duration'])}' : '', style: TextStyle(fontSize: 12, color: context.dim)),
               ]),
             ]),
           ),
@@ -325,7 +326,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             DataRow(cells: [
               DataCell(Text('${u['username']}${u['admin'] == true ? ' (Admin)' : ''}', style: const TextStyle(fontWeight: FontWeight.bold))),
               DataCell(Row(children: [
-                Icon(Icons.circle, size: 10, color: u['active'] == true ? Colors.greenAccent : Colors.grey),
+                Icon(Icons.circle, size: 10, color: u['active'] == true ? context.good : Colors.grey),
                 const SizedBox(width: 6),
                 Text(u['active'] == true ? 'aktiv' : 'abwesend'),
               ])),
@@ -353,20 +354,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final times = [for (final s in ss) (s['at'] as num)];
     return [
       _chart('Bandbreite · $unit', times, [
-        _Series('Lokal', Colors.lightBlueAccent, [for (final s in ss) s['out_bps'] == null ? null : (((s['out_bps'] as num) - ((s['out_remote_bps'] ?? 0) as num)).clamp(0, double.infinity)) * 8 / div]),
-        _Series('Extern', Colors.orangeAccent, [for (final s in ss) s['out_bps'] == null ? null : ((s['out_remote_bps'] ?? 0) as num) * 8 / div]),
+        _Series('Lokal', context.info, [for (final s in ss) s['out_bps'] == null ? null : (((s['out_bps'] as num) - ((s['out_remote_bps'] ?? 0) as num)).clamp(0, double.infinity)) * 8 / div]),
+        _Series('Extern', context.warn, [for (final s in ss) s['out_bps'] == null ? null : ((s['out_remote_bps'] ?? 0) as num) * 8 / div]),
       ], null, unit: unit),
       _chart('Prozessor', times, [
-        _Series('System', Colors.lightBlueAccent, [for (final s in ss) v(s, 'cpu')]),
-        _Series('Lichtspiel', Colors.orangeAccent, [for (final s in ss) v(s, 'cpu_server')]),
+        _Series('System', context.info, [for (final s in ss) v(s, 'cpu')]),
+        _Series('Lichtspiel', context.warn, [for (final s in ss) v(s, 'cpu_server')]),
       ], 100, unit: '%'),
       _chart('Arbeitsspeicher', times, [
-        _Series('System', Colors.lightBlueAccent, [for (final s in ss) v(s, 'mem_used') == null ? null : v(s, 'mem_used')! / 1e9]),
-        _Series('Lichtspiel', Colors.orangeAccent, [for (final s in ss) v(s, 'mem_server') == null ? null : v(s, 'mem_server')! / 1e9]),
+        _Series('System', context.info, [for (final s in ss) v(s, 'mem_used') == null ? null : v(s, 'mem_used')! / 1e9]),
+        _Series('Lichtspiel', context.warn, [for (final s in ss) v(s, 'mem_server') == null ? null : v(s, 'mem_server')! / 1e9]),
       ], memMax, unit: 'GB'),
       _chart('Streams', times, [
-        _Series('Läuft', Colors.lightBlueAccent, [for (final s in ss) v(s, 'streams')]),
-        _Series('Umgewandelt', Colors.orangeAccent, [for (final s in ss) v(s, 'transcodes')]),
+        _Series('Läuft', context.info, [for (final s in ss) v(s, 'streams')]),
+        _Series('Umgewandelt', context.warn, [for (final s in ss) v(s, 'transcodes')]),
       ], ss.fold<num>(4, (m, s) => ((s['streams'] ?? 0) as num) > m ? (s['streams'] as num) : m), unit: ''),
     ];
   }
@@ -382,7 +383,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               for (final s in series) ...[Icon(Icons.circle, size: 10, color: s.color), const SizedBox(width: 4), Text(s.name, style: const TextStyle(fontSize: 12)), const SizedBox(width: 12)],
             ]),
             const SizedBox(height: 8),
-            SizedBox(height: 150, width: double.infinity, child: CustomPaint(painter: _LinePainter(times, series, max, unit))),
+            SizedBox(height: 150, width: double.infinity, child: CustomPaint(painter: _LinePainter(times, series, max, unit, context.hair2, context.faint))),
           ]),
         ),
       );
@@ -455,14 +456,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Row(children: [
               Text('${hours ? 'Gesehene Stunden' : 'Wiedergaben'} pro ${weekly ? 'Woche' : 'Tag'}', style: const TextStyle(fontWeight: FontWeight.w600)),
               const Spacer(),
-              Text('${r['size']} Wiedergaben · ${dur(r['minutes'] ?? 0)} gesehen', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+              Text('${r['size']} Wiedergaben · ${dur(r['minutes'] ?? 0)} gesehen', style: TextStyle(color: context.dim, fontSize: 12)),
             ]),
             const SizedBox(height: 8),
-            SizedBox(height: 180, width: double.infinity, child: CustomPaint(painter: _BarPainter(buckets))),
+            SizedBox(height: 180, width: double.infinity, child: CustomPaint(painter: _BarPainter(buckets, context.hair2, context.faint, {'movie': context.info, 'episode': context.warn}))),
             const SizedBox(height: 6),
-            const Row(children: [
-              Icon(Icons.circle, size: 10, color: Colors.lightBlueAccent), SizedBox(width: 4), Text('Filme', style: TextStyle(fontSize: 12)), SizedBox(width: 12),
-              Icon(Icons.circle, size: 10, color: Colors.orangeAccent), SizedBox(width: 4), Text('Folgen', style: TextStyle(fontSize: 12)), SizedBox(width: 12),
+            Row(children: [
+              Icon(Icons.circle, size: 10, color: context.info), SizedBox(width: 4), Text('Filme', style: TextStyle(fontSize: 12)), SizedBox(width: 12),
+              Icon(Icons.circle, size: 10, color: context.warn), SizedBox(width: 4), Text('Folgen', style: TextStyle(fontSize: 12)), SizedBox(width: 12),
               Icon(Icons.circle, size: 10, color: Colors.grey), SizedBox(width: 4), Text('Sonstiges', style: TextStyle(fontSize: 12)),
             ]),
           ]),
@@ -477,12 +478,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               padding: const EdgeInsets.all(12),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Text('Am häufigsten gesehen', style: TextStyle(fontWeight: FontWeight.w600)),
-                if (titles.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('Keine Wiedergaben in dieser Zeit.', style: TextStyle(color: Colors.white54))),
+                if (titles.isEmpty) Padding(padding: EdgeInsets.all(8), child: Text('Keine Wiedergaben in dieser Zeit.', style: TextStyle(color: context.faint))),
                 for (final x in titles)
                   ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: SizedBox(width: 34, child: Image.network(api.img(x['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.white10))),
+                    leading: SizedBox(width: 34, child: Image.network(api.img(x['thumb']), headers: api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair))),
                     title: Text('${x['title'] ?? '(entfernt)'}', maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text([x['year'], if (x['type'] == 'show') 'Serie'].where((e) => e != null).join(' · ')),
                     trailing: Text('${x['plays']}×'),
@@ -499,9 +500,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               padding: const EdgeInsets.all(12),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Text('Top-Nutzer', style: TextStyle(fontWeight: FontWeight.w600)),
-                if (topUsers.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('Keine Wiedergaben in dieser Zeit.', style: TextStyle(color: Colors.white54))),
+                if (topUsers.isEmpty) Padding(padding: EdgeInsets.all(8), child: Text('Keine Wiedergaben in dieser Zeit.', style: TextStyle(color: context.faint))),
                 for (final x in topUsers)
-                  ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${x['username'] ?? '?'}'), trailing: Text('${x['plays']} Wiedergaben · ${dur(x['minutes'] ?? 0)}', style: const TextStyle(fontSize: 12, color: Colors.white60))),
+                  ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${x['username'] ?? '?'}'), trailing: Text('${x['plays']} Wiedergaben · ${dur(x['minutes'] ?? 0)}', style: TextStyle(fontSize: 12, color: context.dim))),
               ]),
             ),
           ),
@@ -513,14 +514,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           padding: const EdgeInsets.all(12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('Letzte Wiedergaben', style: TextStyle(fontWeight: FontWeight.w600)),
-            if (recent.isEmpty) const Padding(padding: EdgeInsets.all(8), child: Text('Keine Wiedergaben in dieser Zeit.', style: TextStyle(color: Colors.white54))),
+            if (recent.isEmpty) Padding(padding: EdgeInsets.all(8), child: Text('Keine Wiedergaben in dieser Zeit.', style: TextStyle(color: context.faint))),
             for (final e in recent)
               ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 title: Text(what(Map.from(e['item'] ?? const {})), maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text('${fmtDateTime(e['at'])} · ${e['user'] ?? '?'}'),
-                trailing: Text(e['manual'] == true ? 'von Hand markiert' : '${dur(e['minutes'] ?? 0)}${e['live'] == true ? ' · läuft gerade' : ''}', style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                trailing: Text(e['manual'] == true ? 'von Hand markiert' : '${dur(e['minutes'] ?? 0)}${e['live'] == true ? ' · läuft gerade' : ''}', style: TextStyle(fontSize: 12, color: context.dim)),
                 onTap: (e['item'] is Map && e['item']['id'] != null) ? () => openItem(context, api, {'ratingKey': e['item']['id']}) : null,
               ),
           ]),
@@ -542,7 +543,8 @@ class _LinePainter extends CustomPainter {
   final List<_Series> series;
   final num? max;
   final String unit;
-  _LinePainter(this.times, this.series, this.max, this.unit);
+  final Color gridColor, textColor;
+  _LinePainter(this.times, this.series, this.max, this.unit, this.gridColor, this.textColor);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -557,7 +559,7 @@ class _LinePainter extends CustomPainter {
       }
     }
     if (top <= 0) top = 1;
-    final grid = Paint()..color = Colors.white12..strokeWidth = 1;
+    final grid = Paint()..color = gridColor..strokeWidth = 1;
     for (var i = 0; i <= 4; i++) {
       final y = h - h * i / 4;
       canvas.drawLine(Offset(left, y), Offset(size.width, y), grid);
@@ -596,7 +598,7 @@ class _LinePainter extends CustomPainter {
   }
 
   void _text(Canvas c, String s, Offset o, double size) {
-    final tp = TextPainter(text: TextSpan(text: s, style: TextStyle(color: Colors.white54, fontSize: size)), textDirection: TextDirection.ltr)..layout();
+    final tp = TextPainter(text: TextSpan(text: s, style: TextStyle(color: textColor, fontSize: size)), textDirection: TextDirection.ltr)..layout();
     tp.paint(c, o);
   }
 
@@ -613,7 +615,9 @@ class _Bucket {
 
 class _BarPainter extends CustomPainter {
   final List<_Bucket> buckets;
-  _BarPainter(this.buckets);
+  final Color gridColor, textColor;
+  final Map<String, Color> colors;
+  _BarPainter(this.buckets, this.gridColor, this.textColor, this.colors);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -622,16 +626,15 @@ class _BarPainter extends CustomPainter {
     double total(_Bucket b) => b.parts.values.fold<double>(0, (a, v) => a + v.toDouble());
     var top = buckets.fold<double>(0, (m, b) => total(b) > m ? total(b) : m);
     if (top <= 0) top = 1;
-    final grid = Paint()..color = Colors.white12;
+    final grid = Paint()..color = gridColor;
     for (var i = 0; i <= 4; i++) {
       final y = h - h * i / 4;
       canvas.drawLine(Offset(left, y), Offset(size.width, y), grid);
-      final tp = TextPainter(text: TextSpan(text: (top * i / 4).toStringAsFixed(top < 10 ? 1 : 0), style: const TextStyle(color: Colors.white54, fontSize: 11)), textDirection: TextDirection.ltr)..layout();
+      final tp = TextPainter(text: TextSpan(text: (top * i / 4).toStringAsFixed(top < 10 ? 1 : 0), style: TextStyle(color: textColor, fontSize: 11)), textDirection: TextDirection.ltr)..layout();
       tp.paint(canvas, Offset(0, y - 6));
     }
     if (buckets.isEmpty) return;
     final bw = w / buckets.length;
-    const colors = {'movie': Colors.lightBlueAccent, 'episode': Colors.orangeAccent};
     for (var i = 0; i < buckets.length; i++) {
       var y = h;
       for (final k in ['movie', 'episode', 'other']) {
@@ -644,7 +647,7 @@ class _BarPainter extends CustomPainter {
     }
     final step = (buckets.length / 6).ceil().clamp(1, 1000);
     for (var i = 0; i < buckets.length; i += step) {
-      final tp = TextPainter(text: TextSpan(text: buckets[i].label, style: const TextStyle(color: Colors.white54, fontSize: 11)), textDirection: TextDirection.ltr)..layout();
+      final tp = TextPainter(text: TextSpan(text: buckets[i].label, style: TextStyle(color: textColor, fontSize: 11)), textDirection: TextDirection.ltr)..layout();
       tp.paint(canvas, Offset(left + bw * i, h + 3));
     }
   }

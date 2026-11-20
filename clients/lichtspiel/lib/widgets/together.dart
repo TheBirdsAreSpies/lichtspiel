@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../api.dart';
 import '../screens/player.dart';
+import '../theme.dart';
 
 /// "Zusammen schauen": opens a room for [item] and shows the link/code to send; "Starten" joins it.
 Future<void> watchTogether(BuildContext context, Api api, Map<String, dynamic> item) async {
@@ -16,7 +17,7 @@ Future<void> watchTogether(BuildContext context, Api api, Map<String, dynamic> i
       builder: (ctx) => AlertDialog(
         title: const Text('Zusammen schauen'),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Schick diesen Link oder Code an die, mit denen du schauen willst (sie brauchen ein Konto hier, das diese Mediathek sehen darf). Wer abspielt, pausiert oder springt, bewegt alle.', style: TextStyle(color: Colors.white54)),
+          Text('Schick diesen Link oder Code an die, mit denen du schauen willst (sie brauchen ein Konto hier, das diese Mediathek sehen darf). Wer abspielt, pausiert oder springt, bewegt alle.', style: TextStyle(color: context.faint)),
           const SizedBox(height: 12),
           SelectableText(link),
           Text('Code: $code'),

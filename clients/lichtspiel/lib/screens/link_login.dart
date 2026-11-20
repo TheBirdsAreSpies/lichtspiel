@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../api.dart';
+import '../theme.dart';
 
 /// Sign in with a short code shown here and typed on another device.
 class LinkLoginScreen extends StatefulWidget {
@@ -73,7 +74,7 @@ class _LinkLoginScreenState extends State<LinkLoginScreen> {
             const Text('Mit Code anmelden', textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
             const SizedBox(height: 20),
             Text('Scanne den QR-Code mit einem Handy, das schon angemeldet ist. Oder öffne dort im Browser\nhttp://$host/#/link\nund gib diesen Code ein:',
-                textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, height: 1.5)),
+                textAlign: TextAlign.center, style: TextStyle(color: context.soft, height: 1.5)),
             const SizedBox(height: 24),
             if (error != null)
               Text(error!, textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).colorScheme.error))

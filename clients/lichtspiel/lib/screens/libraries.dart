@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../theme.dart';
 
 /// Admin: the libraries with scanning, detection and folders, and adding a new one.
 class LibrariesScreen extends StatefulWidget {
@@ -180,10 +181,10 @@ class _LibrariesScreenState extends State<LibrariesScreen> {
             Text('${s['title']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(width: 8),
             Chip(label: Text(kinds[type] ?? type), visualDensity: VisualDensity.compact),
-            if (s['scanning'] == true) const Padding(padding: EdgeInsets.only(left: 8), child: Text('scannt…', style: TextStyle(color: Colors.amber))),
+            if (s['scanning'] == true) Padding(padding: EdgeInsets.only(left: 8), child: Text('scannt…', style: TextStyle(color: context.gold))),
           ]),
-          Text('${type == 'show' ? '${s['count']} Serien, ' : ''}${s['videoCount'] ?? 0} Videos · letzter Scan: ${when(s['scannedAt'])}', style: const TextStyle(color: Colors.white60)),
-          Text(((s['paths'] as List?) ?? const []).join(' · '), style: const TextStyle(fontSize: 12, color: Colors.white38)),
+          Text('${type == 'show' ? '${s['count']} Serien, ' : ''}${s['videoCount'] ?? 0} Videos · letzter Scan: ${when(s['scannedAt'])}', style: TextStyle(color: context.dim)),
+          Text(((s['paths'] as List?) ?? const []).join(' · '), style: TextStyle(fontSize: 12, color: context.ghost)),
           Wrap(spacing: 20, crossAxisAlignment: WrapCrossAlignment.center, children: [
             Row(mainAxisSize: MainAxisSize.min, children: [
               Checkbox(value: s['creditsDetection'] != false, onChanged: (v) => run(() => api.put('/library/sections/$id', {'credits_detection': v}), ok: 'Gespeichert')),
@@ -261,7 +262,7 @@ class _LibrariesScreenState extends State<LibrariesScreen> {
               child: const Text('Papierkorb leeren'),
             ),
             OutlinedButton(onPressed: () => foldersDialog(s), child: const Text('Ordner')),
-            TextButton(onPressed: () => remove(s), child: const Text('Entfernen', style: TextStyle(color: Colors.redAccent))),
+            TextButton(onPressed: () => remove(s), child: Text('Entfernen', style: TextStyle(color: context.bad))),
           ]),
         ]),
       ),

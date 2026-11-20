@@ -9,6 +9,7 @@ import 'together.dart';
 import 'item_extras.dart';
 import '../screens/playlists.dart' show addToPlaylistDialog;
 import '../screens/downloads.dart';
+import '../theme.dart';
 
 /// A poster card with title, subtitle, watched mark and progress bar. Focusable (D-pad / remote ready).
 /// With the mouse over it, a play button, (admins) an edit pencil and a "…" menu appear, as in the web app.
@@ -189,7 +190,7 @@ class _PosterState extends State<Poster> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(6),
                   child: Stack(fit: StackFit.expand, children: [
-                    Container(color: Colors.white10),
+                    Container(color: context.hair),
                     Image.network(widget.api.img(thumb), headers: widget.api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Center(child: Text('$title', textAlign: TextAlign.center))),
                     if (missing) Container(color: Colors.black54),
                     BusyOverlay(item: item),
@@ -240,7 +241,7 @@ class _PosterState extends State<Poster> {
               ),
               const SizedBox(height: 6),
               Text('$title', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
-              Text(widget.caption != null && widget.caption!.isNotEmpty ? widget.caption! : sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+              Text(widget.caption != null && widget.caption!.isNotEmpty ? widget.caption! : sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: context.faint)),
             ]),
           ),
         ),

@@ -7,6 +7,7 @@ import 'detail.dart';
 import 'library.dart';
 import 'player.dart';
 import 'smart.dart';
+import '../theme.dart';
 
 String _dur(dynamic ms) {
   final m = ((ms is num ? ms : 0) / 60000).round();
@@ -375,10 +376,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               onSelectionChanged: (s) => setState(() => watched = s.first),
             ),
             SizedBox(width: 170, child: TextField(decoration: const InputDecoration(isDense: true, hintText: 'Nach Titel filtern', border: OutlineInputBorder()), onChanged: (v) => setState(() => q = v.trim()))),
-            Text('${shown.length} von ${items.length} Einträgen · ${_dur(p['duration'])}', style: const TextStyle(color: Colors.white60)),
+            Text('${shown.length} von ${items.length} Einträgen · ${_dur(p['duration'])}', style: TextStyle(color: context.dim)),
           ]),
         ),
-        if (p['summary'] != null && '${p['summary']}'.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: Text('${p['summary']}', style: const TextStyle(color: Colors.white60))),
+        if (p['summary'] != null && '${p['summary']}'.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: Text('${p['summary']}', style: TextStyle(color: context.dim))),
         Expanded(
           child: shown.isEmpty
               ? Center(child: Text(manual ? 'Leer. Öffne einen Film oder eine Folge und wähle „Zur Playlist“.' : 'Aktuell passt nichts zu diesen Regeln.'))
@@ -467,13 +468,13 @@ class _GroupsScreenState extends State<GroupsScreen> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: SizedBox.expand(
-                        child: pic.isEmpty ? const ColoredBox(color: Colors.white10, child: Icon(Icons.collections_bookmark_outlined)) : Image.network(widget.api.img(pic), headers: widget.api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Colors.white10)),
+                        child: pic.isEmpty ? ColoredBox(color: context.hair, child: Icon(Icons.collections_bookmark_outlined)) : Image.network(widget.api.img(pic), headers: widget.api.auth, fit: BoxFit.cover, errorBuilder: (_, __, ___) => ColoredBox(color: context.hair)),
                       ),
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text('${d['title']}', maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text(n == 1 ? '1 Eintrag' : '$n Einträge', style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                  Text(n == 1 ? '1 Eintrag' : '$n Einträge', style: TextStyle(fontSize: 12, color: context.dim)),
                 ]),
               );
             },

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../api.dart';
 import '../widgets/bar.dart';
+import '../theme.dart';
 
 /// Admin: people, their rights, local users and invite links (the web app's "Users & invites").
 class UsersScreen extends StatefulWidget {
@@ -140,7 +141,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 TextField(controller: pin, obscureText: true, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'PIN (optional)', helperText: '4 bis 8 Ziffern. Admins brauchen eine.')),
                 SwitchListTile(value: home, title: const Text('Heimprofil'), onChanged: (v) => set(() => home = v)),
                 SwitchListTile(value: admin, title: const Text('Admin'), onChanged: (v) => set(() => admin = v)),
-                if (err != null) Text(err!, style: const TextStyle(color: Colors.redAccent)),
+                if (err != null) Text(err!, style: TextStyle(color: context.bad)),
               ]),
             ),
           ),
@@ -222,7 +223,7 @@ class _UsersScreenState extends State<UsersScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Text('${u['username']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            if (self) const Padding(padding: EdgeInsets.only(left: 8), child: Text('(du)', style: TextStyle(color: Colors.white60))),
+            if (self) Padding(padding: EdgeInsets.only(left: 8), child: Text('(du)', style: TextStyle(color: context.dim))),
             if (u['two_factor'] == true) const Padding(padding: EdgeInsets.only(left: 8), child: Icon(Icons.lock_outline, size: 16)),
             const Spacer(),
             if (!self) ...[
@@ -251,11 +252,11 @@ class _UsersScreenState extends State<UsersScreen> {
                     }
                   }
                 },
-                child: const Text('Entfernen', style: TextStyle(color: Colors.redAccent)),
+                child: Text('Entfernen', style: TextStyle(color: context.bad)),
               ),
             ],
           ]),
-          if ('${u['email'] ?? ''}'.isNotEmpty) Text('${u['email']}', style: const TextStyle(color: Colors.white60)),
+          if ('${u['email'] ?? ''}'.isNotEmpty) Text('${u['email']}', style: TextStyle(color: context.dim)),
           const SizedBox(height: 4),
           Wrap(spacing: 4, runSpacing: 0, crossAxisAlignment: WrapCrossAlignment.center, children: [
             Text('Bibliotheken: ${access(u)}'),
@@ -328,7 +329,7 @@ class _UsersScreenState extends State<UsersScreen> {
                   const SizedBox(height: 16),
                   Text('Einladungen', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
-                  if (invites.isEmpty) const Text('Keine Einladungen.', style: TextStyle(color: Colors.white60)),
+                  if (invites.isEmpty) Text('Keine Einladungen.', style: TextStyle(color: context.dim)),
                   for (final i in invites)
                     Card(
                       child: ListTile(

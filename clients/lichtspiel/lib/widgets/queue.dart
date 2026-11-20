@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../screens/player.dart';
+import '../theme.dart';
 
 String _title(Map<String, dynamic> x) {
   if (x['type'] == 'episode') return '${x['grandparentTitle'] ?? ''} · S${x['parentIndex'] ?? 0}E${x['index'] ?? 0} ${x['title']}';
@@ -21,7 +22,7 @@ Future<void> showQueueDialog(BuildContext context, Api api) {
           child: q.isEmpty
               ? const Text('Die Warteschlange ist leer. Über das „…“-Menü eines Titels lässt sich etwas hinzufügen.')
               : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Padding(padding: EdgeInsets.only(bottom: 8), child: Text('Läuft nacheinander, nach dem aktuellen Video.', style: TextStyle(color: Colors.white54))),
+                  Padding(padding: EdgeInsets.only(bottom: 8), child: Text('Läuft nacheinander, nach dem aktuellen Video.', style: TextStyle(color: context.faint))),
                   Flexible(
                     child: ListView(shrinkWrap: true, children: [
                       for (var i = 0; i < q.length; i++)
