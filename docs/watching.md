@@ -1,0 +1,71 @@
+# Watching
+
+When a video counts as watched, credits and intro detection, theme music and deep analysis. Back to the [README](../README.md).
+
+## When something counts as watched
+
+A video counts as watched at **whichever comes first: 90 % or the start of
+the end credits**. The credits are found in two ways:
+
+1. a **chapter** in the file called "Credits", "End Credits", "Abspann", "Générique" …;
+2. otherwise the server **looks at the picture** of the last part of the video (the last 30 %,
+   1 to 15 minutes): end credits are a dark screen with a little bright text, for at least
+   20 seconds. Only key frames are read, so a file takes seconds, not minutes. (Credits shown over moving
+   pictures can be missed.)
+
+Credits detection runs by itself: with **Settings → Generate credits video markers** on "as a
+scheduled task and when media is added" (the default) new files are checked within a minute;
+on "as a scheduled task" once a day. To run it now, press **Detect credits** next to a library
+on the **Libraries** page, or **Credits… → Detect credits again** on a movie or episode (API:
+`POST /library/sections/{id}/credits`, `POST /library/metadata/{id}/credits`). A file that fails more than 3 times is not retried automatically, and libraries with
+"Enable credits detection" off are skipped. You can always type the time yourself under
+**Credits…** (e.g. `1:52:30`). Without a credits time, 90 % is used. **Settings → Mark videos
+as watched** offers other choices.
+
+## Theme music
+
+A movie's or show's page plays its theme music quietly, once, and fades it out when you leave.
+The music comes from a `theme.mp3` in its folder (also `theme-1.mp3`, or .m4a, .flac, .ogg, .wav,
+.aac). A show without one gets its theme from an online list, by its TheTVDB number, the first
+time its page opens; it is then kept in `data/themes`. Movies only have music from a file. Turn
+the playing off under **Settings → Web → Play theme music**, and the download off under **Download
+show theme music**. Browsers may need one click on the page first.
+
+## Skip intro (TV shows)
+
+The server finds a show's intro by **listening**: it reads the sound of the first 10 minutes
+of every episode in a season and compares the episodes with each other. The stretch of sound
+(longer than 20 seconds) that most episodes share is the intro, even when it starts at a
+different time in each episode because of a cold open. While it plays, the player shows
+**Skip intro**, which jumps to its end; the seek bar marks it in blue.
+
+It needs at least two episodes of a season, and runs by itself like credits detection
+(**Settings → Generate intro video markers**, default "as a scheduled task and when media is
+added"). To run it now, press **Detect intros** next to a TV library on the **Libraries** page
+(API: `POST /library/sections/{id}/intros`, `POST /library/metadata/{id}/intros` for one show,
+season or episode). Each TV library has **Enable intro detection** to switch it off. When fewer
+than half of a season's episodes share an intro, the season gets none. An
+intro can also be set by hand with `PUT /library/metadata/{id}/markers` and
+`{"intro": [start ms, end ms]}`.
+
+## Deep analysis
+
+The bitrate of a file is only its average: a busy scene can need far more for a while, and a
+player with only a little video stored ahead of it then stops to wait. **Deep analysis**
+(*Ausführliche Analyse*) reads every packet of the file, without decoding anything, and plays them
+back on paper. For eight connection speeds, from 5 to 500 Mbit/s, it finds the lowest speed at which
+the player's store never runs empty. The player's store holds 7.2 seconds of the connection, and
+playback starts after 5 seconds of filling it.
+
+It only matters when a stream has a speed limit (a quality chosen in the player, or the limit for
+people outside the home network). A video is sent as it is when the measured speed plus 5 % fits the
+limit. A video that was not analyzed is taken to need twice its bitrate, so it is converted sooner.
+On the home network without a limit it changes nothing.
+
+Run it with **Deep analysis** in the menu of a video or a library, or turn on **Settings → Scheduled
+tasks → Run deep analysis** (off by default): one video at a time inside the
+maintenance window, the latest changed first, and again when a file changes. It reads every file
+completely, so a large library keeps the disks busy for a long time. **Media info** shows the result
+under *Connection speed needed*. Plain **Analyze** only reads the file's header, which takes
+seconds.
+

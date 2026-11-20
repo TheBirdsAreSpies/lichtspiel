@@ -23,7 +23,7 @@ Changes since the first version of this page (`2e6689d`):
 | `plugins/` | Bundled Python plugins (`nfo-reader`, `webhook-notify`) |
 | `Dockerfile`, `docker-compose.yml`, `.gitea/workflows/deploy.yml` | The image, the Synology setup, and the automatic deploy |
 
-`README.md` describes the architecture in more detail.
+`README.md` and the guides it links in `docs/` describe how everything works.
 
 ### Build and test
 
