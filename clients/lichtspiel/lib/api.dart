@@ -184,20 +184,29 @@ class Api {
   }
 
   /// Sends one request; when the answer does not start in time it is aborted, which closes its connection.
-  /// The body is then read without a limit: a big list over a slow line may take longer than [timeout].
+  /// The body then has no overall limit, so a big list over a slow line may take longer than [timeout];
+  /// only a body that stops coming (no bytes for as long) is aborted the same way.
   /// [slow]: a GET that waits for the server's online lookups gets [slowTimeout] like a change.
   /// Network failures become an [ApiError] with status 0 and a German message.
   Future<dynamic> _send(String method, String path, Object? body, {bool slow = false}) async {
     final url = Uri.parse('$base$path');
     final stop = Completer<void>();
-    final timer = Timer(method == 'GET' && !slow ? timeout : slowTimeout, stop.complete);
+    final limit = method == 'GET' && !slow ? timeout : slowTimeout;
+    final timer = Timer(limit, stop.complete);
     final req = http.AbortableRequest(method, url, abortTrigger: stop.future)..headers.addAll(_headers);
     if (body != null) req.body = jsonEncode(body);
     final http.Response r;
     try {
       final s = await _client().send(req);
       timer.cancel();
-      r = await http.Response.fromStream(s);
+      final stalled = s.stream.timeout(limit, onTimeout: (out) {
+        if (!stop.isCompleted) stop.complete();
+        out.addError(TimeoutException('the answer stopped coming', limit));
+        out.close();
+      });
+      r = await http.Response.fromStream(http.StreamedResponse(stalled, s.statusCode,
+          contentLength: s.contentLength, request: s.request, headers: s.headers, isRedirect: s.isRedirect,
+          persistentConnection: s.persistentConnection, reasonPhrase: s.reasonPhrase));
     } catch (e) {
       throw ApiError(0, describe(e, https: url.isScheme('https')), cause: e);
     } finally {

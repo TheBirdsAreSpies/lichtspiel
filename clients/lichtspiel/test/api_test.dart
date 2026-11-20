@@ -186,18 +186,43 @@ void main() {
       expect(tried.where((u) => u.contains('example.com')), ['https://nas.example.com:8484/api/status']);
     });
 
-    test('a slow answer body is read to the end: the timeout only covers the wait for the answer', () async {
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      addTearDown(() => server.close(force: true));
-      server.listen((r) async {
-        r.response.headers.contentType = ContentType.json;
-        r.response.write('{"machine_id":');
-        await r.response.flush();
-        await Future<void>.delayed(Api.timeout * 2);
-        r.response.write('"m"}');
-        await r.response.close();
+    /// A server that sends the head of an answer at once and its body byte by byte, [pause] apart;
+    /// a null [pause] stops after the first byte and waits. [hungUp] completes when the app hangs up.
+    Future<({int port, Future<void> hungUp, ServerSocket server})> trickling(Duration? pause) async {
+      final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final hungUp = Completer<void>();
+      const body = '{"machine_id":"m"}';
+      server.listen((s) async {
+        s.listen((_) {}, onDone: () { if (!hungUp.isCompleted) hungUp.complete(); }, onError: (_) { if (!hungUp.isCompleted) hungUp.complete(); });
+        try {
+          s.write('HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\n\r\n');
+          for (var i = 0; i < body.length; i++) {
+            s.write(body[i]);
+            await s.flush();
+            if (pause == null) return;
+            await Future<void>.delayed(pause);
+          }
+          await s.close();
+        } catch (_) {}
       });
-      expect((await Api('http://127.0.0.1:${server.port}').status())['machine_id'], 'm');
+      return (port: server.port, hungUp: hungUp.future, server: server);
+    }
+
+    test('a slow answer body is read to the end while it keeps coming, longer than the timeout', () async {
+      final s = await trickling(Api.timeout ~/ 5);
+      addTearDown(s.server.close);
+      final watch = Stopwatch()..start();
+      expect((await Api('http://127.0.0.1:${s.port}').status())['machine_id'], 'm');
+      expect(watch.elapsed, greaterThan(Api.timeout * 2));
+    });
+
+    test('an answer body that stops coming gives up after the timeout and hangs up', () async {
+      final s = await trickling(null);
+      addTearDown(s.server.close);
+      final watch = Stopwatch()..start();
+      expect(await failure(Api('http://127.0.0.1:${s.port}').get('/api/status')), 'Server antwortet nicht (Zeitüberschreitung)');
+      expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
+      await s.hungUp.timeout(const Duration(seconds: 2));
     });
 
     test('actor details wait for the server\'s online lookup longer than a normal request', () async {
