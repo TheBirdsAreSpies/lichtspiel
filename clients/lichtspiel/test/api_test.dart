@@ -132,6 +132,7 @@ void main() {
       final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
       final port = s.port;
       await s.close();
+      Api.timeout = const Duration(seconds: 10); // Windows needs over a second to refuse a connection: longer than this group's short timeout
       expect(await failure(Api('http://127.0.0.1:$port').get('/api/status')), 'Verbindung abgelehnt – läuft der Server?');
     });
 
@@ -241,6 +242,7 @@ void main() {
       final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
       final port = s.port;
       await s.close();
+      Api.timeout = const Duration(seconds: 10); // Windows needs over a second to refuse a connection: longer than this group's short timeout
       expect(await failure(Api.reach('http://127.0.0.1:$port')), 'Verbindung abgelehnt – läuft der Server?');
     });
   });

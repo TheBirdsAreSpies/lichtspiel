@@ -106,8 +106,9 @@ class Api {
     if (timedOut) return 'Server antwortet nicht (Zeitüberschreitung)';
     if (https && e is TlsException) return 'Server spricht kein HTTPS – http:// verwenden'; // HandshakeException is one too
     if (s.contains('Failed host lookup')) return 'Adresse nicht gefunden';
+    // 61 macOS, 111 Linux, 10061 Winsock, 1225 what dart:io reports on Windows (ERROR_CONNECTION_REFUSED)
     final code = e is SocketException ? e.osError?.errorCode : null;
-    if (s.contains('Connection refused') || const {61, 111, 10061}.contains(code)) return 'Verbindung abgelehnt – läuft der Server?';
+    if (s.contains('Connection refused') || const {61, 111, 1225, 10061}.contains(code)) return 'Verbindung abgelehnt – läuft der Server?';
     return 'Server nicht erreichbar';
   }
 
