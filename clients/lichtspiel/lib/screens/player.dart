@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
+import '../clock.dart';
 import '../widgets/poster.dart';
 
 const _speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
@@ -46,13 +47,6 @@ Future<void> savePlayerPref(Api api, String k, Object v) async {
   try {
     await api.post('/api/me/prefs', {k: v is bool ? (v ? '1' : '0') : '$v'});
   } catch (_) {}
-}
-
-String _clock(int ms) {
-  final s = ms ~/ 1000;
-  final h = s ~/ 3600, m = (s % 3600) ~/ 60, sec = s % 60;
-  final mm = m.toString().padLeft(2, '0'), ss = sec.toString().padLeft(2, '0');
-  return h > 0 ? '$h:$mm:$ss' : '$m:$ss';
 }
 
 /// Plays through libmpv, which handles mkv/HEVC/HDR/ASS directly, so the server's direct URL is used.
@@ -115,12 +109,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     ticksTimer = Timer(const Duration(seconds: 3), () => ticksOn.value = false);
   }
 
-  static String clock(int ms) {
-    final t = ms ~/ 1000, h = t ~/ 3600, m = (t % 3600) ~/ 60, sec = t % 60;
-    String two(int n) => n.toString().padLeft(2, '0');
-    return h > 0 ? '$h:${two(m)}:${two(sec)}' : '$m:${two(sec)}';
-  }
-
   /// Over the seek bar: the time, the chapter's name and a still from the server, like the web app.
   Widget seekTip() {
     return Positioned.fill(
@@ -159,7 +147,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           child: Image.network(widget.api.abs('/library/parts/$id/frame?t=$step'), headers: widget.api.auth, fit: BoxFit.cover, gaplessPlayback: true, errorBuilder: (_, __, ___) => const SizedBox()),
                         ),
                       const SizedBox(height: 4),
-                      Text('${clock(ms)}$name', textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12)),
+                      Text('${fmtClock(ms)}$name', textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12)),
                     ]),
                   ),
                 ),
@@ -1033,7 +1021,7 @@ class _SettingsMenuState extends State<_SettingsMenu> {
               dense: true,
               selected: s.chapters.lastWhere((x) => ((x['start'] ?? 0) as num) <= p.state.position.inMilliseconds, orElse: () => s.chapters.first) == c,
               title: Text('${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}')),
-              trailing: Text(_clock((c['start'] ?? 0) as int), style: const TextStyle(color: Colors.white60)),
+              trailing: Text(fmtClock((c['start'] ?? 0) as int), style: const TextStyle(color: Colors.white60)),
               onTap: () {
                 p.seek(Duration(milliseconds: (c['start'] ?? 0) as int));
                 Navigator.pop(context);

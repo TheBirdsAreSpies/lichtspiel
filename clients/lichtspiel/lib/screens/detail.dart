@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../clock.dart';
 import '../widgets/activity.dart';
 import '../widgets/poster.dart';
 import 'home.dart';
@@ -18,13 +19,6 @@ import '../widgets/states.dart';
 String fmtMs(int ms) {
   final m = ms ~/ 60000;
   return m >= 60 ? '${m ~/ 60} h ${m % 60} min' : '$m min';
-}
-
-String fmtClock(int ms) {
-  final s = ms ~/ 1000;
-  final h = s ~/ 3600, m = (s % 3600) ~/ 60, sec = s % 60;
-  final mm = m.toString().padLeft(2, '0'), ss = sec.toString().padLeft(2, '0');
-  return h > 0 ? '$h:$mm:$ss' : '$m:$ss';
 }
 
 String fmtSize(num b) => b > 1e9 ? '${(b / 1e9).toStringAsFixed(1)} GB' : '${(b / 1e6).toStringAsFixed(0)} MB';

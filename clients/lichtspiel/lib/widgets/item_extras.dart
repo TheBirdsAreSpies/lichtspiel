@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../clock.dart';
 import '../widgets/poster.dart';
 import '../theme.dart';
 import 'states.dart';
@@ -99,12 +100,6 @@ Future<void> reportDialog(BuildContext context, Api api, Map<String, dynamic> it
   }
 }
 
-String _clock(num ms) {
-  final t = ms ~/ 1000, h = t ~/ 3600, m = (t % 3600) ~/ 60, s = t % 60;
-  String two(int n) => n.toString().padLeft(2, '0');
-  return h > 0 ? '$h:${two(m)}:${two(s)}' : '$m:${two(s)}';
-}
-
 /// Admin: where the end credits start; the video counts as watched from there.
 Future<void> creditsDialog(BuildContext context, Api api, Map<String, dynamic> item) async {
   final id = '${item['ratingKey'] ?? item['id']}';
@@ -117,7 +112,7 @@ Future<void> creditsDialog(BuildContext context, Api api, Map<String, dynamic> i
   }
   if (!context.mounted) return;
   final credits = (r['credits'] as List?) ?? const [];
-  final inp = TextEditingController(text: credits.isEmpty ? '' : _clock(credits.first as num));
+  final inp = TextEditingController(text: credits.isEmpty ? '' : fmtClock(credits.first as num));
   const sources = {
     'manual': 'von Hand gesetzt',
     'chapters': 'aus einem Kapitel „Credits“ in der Datei',
@@ -146,7 +141,7 @@ Future<void> creditsDialog(BuildContext context, Api api, Map<String, dynamic> i
       content: SizedBox(
         width: 420,
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Abspann-Marke: ${sources['${r['source']}'] ?? r['source']}. Das Video gilt ab ${_clock((r['watchedAt'] ?? 0) as num)} von ${_clock((r['duration'] ?? 0) as num)} als gesehen.', style: TextStyle(color: context.faint)),
+          Text('Abspann-Marke: ${sources['${r['source']}'] ?? r['source']}. Das Video gilt ab ${fmtClock((r['watchedAt'] ?? 0) as num)} von ${fmtClock((r['duration'] ?? 0) as num)} als gesehen.', style: TextStyle(color: context.faint)),
           const SizedBox(height: 8),
           TextField(controller: inp, decoration: const InputDecoration(labelText: 'Abspann beginnt bei (Std:Min:Sek)', hintText: 'z. B. 1:52:30')),
         ]),

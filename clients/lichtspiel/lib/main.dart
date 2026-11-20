@@ -2,9 +2,12 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'api.dart';
+import 'screens/downloads.dart';
+import 'screens/player.dart';
 import 'screens/shell.dart';
 import 'screens/login.dart';
 import 'theme.dart';
+import 'widgets/poster.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,6 +35,7 @@ class _LichtspielAppState extends State<LichtspielApp> {
     Api.onUnauthorized = (a) {
       if (a != api) return;
       a.forget();
+      _forgetUser();
       navKey.currentState?.popUntil((r) => r.isFirst);
       if (mounted) setState(() => api = null);
     };
@@ -52,6 +56,13 @@ class _LichtspielAppState extends State<LichtspielApp> {
     });
   }
 
+  /// The next person on this device starts clean: no queue, no admin menus, no download rights.
+  void _forgetUser() {
+    PlayerScreen.userQueue.clear();
+    Poster.admin = false;
+    DownloadRights.allowed = false;
+  }
+
   Future<void> signOut() async {
     final a = api; // a 401 here signs out already (onUnauthorized) and sets api to null
     if (a == null) return;
@@ -59,6 +70,7 @@ class _LichtspielAppState extends State<LichtspielApp> {
       await a.post('/api/logout');
     } catch (_) {}
     await a.forget();
+    _forgetUser();
     if (mounted) setState(() => api = null);
   }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../clock.dart';
 import 'home.dart';
 import '../theme.dart';
 
@@ -20,13 +21,6 @@ String fmtBytes(num b) {
 }
 
 String fmtPct(dynamic v) => v == null ? '–' : '${(v as num).toStringAsFixed(0)} %';
-
-String fmtClockMs(num ms) {
-  final s = ms ~/ 1000;
-  final h = s ~/ 3600, m = (s % 3600) ~/ 60, sec = s % 60;
-  final mm = m.toString().padLeft(2, '0'), ss = sec.toString().padLeft(2, '0');
-  return h > 0 ? '$h:$mm:$ss' : '$m:$ss';
-}
 
 String fmtUptime(num sec) {
   final d = sec ~/ 86400, h = (sec % 86400) ~/ 3600, m = (sec % 3600) ~/ 60;
@@ -296,7 +290,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(width: 10),
                 Expanded(child: LinearProgressIndicator(value: pct, minHeight: 4)),
                 const SizedBox(width: 10),
-                Text(((p['duration'] ?? 0) as num) > 0 ? '${fmtClockMs(p['offset'] ?? 0)} / ${fmtClockMs(p['duration'])}' : '', style: TextStyle(fontSize: 12, color: context.dim)),
+                Text(((p['duration'] ?? 0) as num) > 0 ? '${fmtClock(p['offset'] ?? 0)} / ${fmtClock(p['duration'])}' : '', style: TextStyle(fontSize: 12, color: context.dim)),
               ]),
             ]),
           ),
