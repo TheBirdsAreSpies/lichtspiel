@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/poster.dart';
 import 'detail.dart';
-import 'library.dart' show FilterDialog, filterName, valueName;
+import 'library.dart' show showFilters, filterName, valueName;
+import '../widgets/bar.dart';
+import '../widgets/states.dart';
 import '../theme.dart';
 
 /// What you want to watch later, with the type, sort, year and title filters of the web app.
@@ -27,7 +29,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   List<Map<String, dynamic>>? available; // the filters with the values found on the watchlist (per type)
   final search = TextEditingController(), from = TextEditingController(), to = TextEditingController();
   List<Map<String, dynamic>>? items;
-  String? error;
+  Object? error;
   int gen = 0;
 
   @override
@@ -50,7 +52,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       });
       if (mounted && my == gen) setState(() => items = r);
     } catch (e) {
-      if (mounted && my == gen) setState(() => error = '$e');
+      if (mounted && my == gen) setState(() => error = e);
     }
   }
 
@@ -62,11 +64,32 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       return;
     }
     if (!mounted) return;
-    await showDialog(context: context, builder: (_) => FilterDialog(available: available!, filters: filters, onChanged: reload));
+    await showFilters(context, available: available!, filters: filters, onChanged: reload);
     if (mounted) setState(() {});
   }
 
-  Widget field(TextEditingController c, String hint, double w, {bool number = false}) => SizedBox(
+  /// Phones: the year range, which has no room in the bar.
+  Future<void> openYears() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.viewInsetsOf(ctx).bottom),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Jahr', style: Theme.of(ctx).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Row(children: [Expanded(child: field(from, 'ab', null, number: true)), const SizedBox(width: 12), Expanded(child: field(to, 'bis', null, number: true))]),
+          const SizedBox(height: 16),
+          Align(alignment: Alignment.centerRight, child: FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Anwenden'))),
+        ]),
+      ),
+    );
+    if (mounted) reload();
+  }
+
+  Widget field(TextEditingController c, String hint, double? w, {bool number = false}) => SizedBox(
         width: w,
         child: TextField(
           controller: c,
@@ -79,28 +102,59 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   @override
   Widget build(BuildContext context) {
     final list = items;
+    final narrow = isNarrow(context);
+    final years = (from.text.trim().isNotEmpty ? 1 : 0) + (to.text.trim().isNotEmpty ? 1 : 0);
+    final types = SegmentedButton<String>(
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment(value: '', label: Text('Alle')),
+        ButtonSegment(value: 'movie', label: Text('Filme')),
+        ButtonSegment(value: 'show', label: Text('Serien')),
+        ButtonSegment(value: 'episode', label: Text('Folgen')),
+      ],
+      selected: {type},
+      onSelectionChanged: (s) {
+        type = s.first;
+        filters.clear(); // the kinds of filter differ per type
+        available = null;
+        reload();
+      },
+    );
+    final compact = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+      child: Column(children: [
+        SizedBox(width: double.infinity, child: types),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(child: field(search, 'Nach Titel filtern', null)),
+          IconButton(tooltip: 'Filter', onPressed: openFilters, icon: Badge(isLabelVisible: filters.isNotEmpty, label: Text('${filters.length}'), child: const Icon(Icons.filter_list))),
+          PopupMenuButton<String>(
+            tooltip: 'Sortieren: ${sorts[sort]}',
+            icon: const Icon(Icons.sort),
+            onSelected: (v) {
+              sort = v;
+              reload();
+            },
+            itemBuilder: (_) => [for (final e in sorts.entries) CheckedPopupMenuItem(value: e.key, checked: e.key == sort, child: Text(e.value))],
+          ),
+          IconButton(tooltip: 'Jahr', onPressed: openYears, icon: Badge(isLabelVisible: years > 0, label: Text('$years'), child: const Icon(Icons.date_range_outlined))),
+        ]),
+      ]),
+    );
     return Scaffold(
-      appBar: AppBar(title: const Text('Merkliste')),
+      appBar: AppBar(
+        title: narrow && list != null
+            ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Merkliste'),
+                Text(list.length == 1 ? '1 Eintrag' : '${list.length} Einträge', style: TextStyle(fontSize: 12, color: context.dim)),
+              ])
+            : const Text('Merkliste'),
+      ),
       body: Column(children: [
-        Padding(
+        if (narrow) compact else Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            SegmentedButton<String>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: '', label: Text('Alle')),
-                ButtonSegment(value: 'movie', label: Text('Filme')),
-                ButtonSegment(value: 'show', label: Text('Serien')),
-                ButtonSegment(value: 'episode', label: Text('Folgen')),
-              ],
-              selected: {type},
-              onSelectionChanged: (s) {
-                type = s.first;
-                filters.clear(); // the kinds of filter differ per type
-                available = null;
-                reload();
-              },
-            ),
+            types,
             PopupMenuButton<String>(
               tooltip: 'Sortieren',
               onSelected: (v) {
@@ -144,11 +198,15 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
           ),
         Expanded(
           child: error != null
-              ? Center(child: Text(error!))
+              ? ErrorView(error: error!, onRetry: reload)
               : list == null
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const GridSkeleton()
                   : list.isEmpty
-                      ? const Center(child: Text('Deine Merkliste ist leer. Nutze „Auf die Merkliste“ bei einem Film oder einer Serie.'))
+                      ? ErrorView(
+                          error: filters.isNotEmpty || years > 0 || search.text.trim().isNotEmpty || type.isNotEmpty
+                              ? 'Nichts auf der Merkliste passt zu diesen Filtern.'
+                              : 'Deine Merkliste ist leer. Nutze „Auf die Merkliste“ bei einem Film oder einer Serie.',
+                        )
                       : GridView.builder(
                           padding: const EdgeInsets.all(16),
                           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 170, childAspectRatio: 0.48, crossAxisSpacing: 12, mainAxisSpacing: 12),

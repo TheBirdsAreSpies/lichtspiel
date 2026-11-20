@@ -6,11 +6,13 @@ import '../theme.dart';
 /// anything else (a bug, an answer of the wrong shape) is not shown raw.
 String errorText(Object e) => e is ApiError ? e.message : 'Etwas ist schiefgelaufen';
 
-/// A failed load: what went wrong and a button to try again.
+/// A failed load: what went wrong and a button to try again. With a plain text as [error] it is a quiet
+/// note instead (an empty list, nothing found).
 class ErrorView extends StatelessWidget {
   final Object error;
   final VoidCallback? onRetry;
-  const ErrorView({super.key, required this.error, this.onRetry});
+  final IconData? icon;
+  const ErrorView({super.key, required this.error, this.onRetry, this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +21,7 @@ class ErrorView extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(offline ? Icons.cloud_off_outlined : Icons.error_outline, size: 48, color: context.ghost),
+          Icon(icon ?? (offline ? Icons.cloud_off_outlined : error is String ? Icons.inbox_outlined : Icons.error_outline), size: 48, color: context.ghost),
           const SizedBox(height: 12),
           Text(error is String ? error as String : errorText(error), textAlign: TextAlign.center, style: TextStyle(color: context.dim)),
           if (onRetry != null) ...[

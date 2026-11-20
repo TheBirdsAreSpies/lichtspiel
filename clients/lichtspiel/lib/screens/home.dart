@@ -113,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: results != null
           ? results!.isEmpty
-              ? const ErrorView(error: 'Nichts gefunden.')
+              ? const ErrorView(error: 'Nichts gefunden.', icon: Icons.search_off)
               : ListView(padding: const EdgeInsets.all(16), children: [
                   Wrap(spacing: 12, runSpacing: 16, children: [for (final i in results!) Poster(api: api, item: i, onTap: () => openItem(context, api, i))]),
                 ])

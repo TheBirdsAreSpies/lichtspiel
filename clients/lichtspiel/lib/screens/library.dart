@@ -8,6 +8,7 @@ import 'home.dart';
 import 'playlists.dart';
 import '../widgets/bar.dart';
 import '../theme.dart';
+import '../widgets/states.dart';
 
 const _sortFields = {
   'title': 'Titel',
@@ -97,7 +98,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   int fetched = 0; // how many the server has given us (items can be fewer: a title that moved between two pages is shown once)
   int gen = 0; // bumped on every change so a slow answer to an old question is dropped
   bool loading = false;
-  String? error;
+  Object? error;
   List<({String key, int offset})> letters = [];
   double gridWidth = 0;
   bool jumping = false;
@@ -320,7 +321,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       loadLetters(my);
     } catch (e) {
       if (my == gen && mounted) setState(() {
-        error = '$e';
+        error = e;
         loading = false;
       });
     }
@@ -393,7 +394,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       });
     } catch (e) {
       if (my == gen && mounted) setState(() {
-        error = '$e';
+        error = e;
         loading = false;
       });
     }
@@ -484,15 +485,57 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return;
     }
     if (!mounted) return;
-    await showDialog(
+    await showFilters(context, available: available!, filters: filters, onChanged: reload);
+    if (mounted) setState(() {});
+  }
+
+  /// Phones: the year range and the file type, which have no room in the bar.
+  Future<void> openMore() async {
+    await showModalBottomSheet(
       context: context,
-      builder: (_) => FilterDialog(
-        available: available!,
-        filters: filters,
-        onChanged: reload,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.viewInsetsOf(ctx).bottom),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Jahr', style: Theme.of(ctx).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: _field(from, 'ab', number: true)),
+              const SizedBox(width: 12),
+              Expanded(child: _field(to, 'bis', number: true)),
+            ]),
+            const SizedBox(height: 16),
+            Text('Dateityp', style: Theme.of(ctx).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 4, children: [
+              for (final c in ['', ..._containers])
+                ChoiceChip(
+                  label: Text(c.isEmpty ? 'Alle' : c.toUpperCase()),
+                  selected: container == c,
+                  onSelected: (_) => set(() => container = c),
+                ),
+            ]),
+            const SizedBox(height: 16),
+            Row(children: [
+              TextButton(
+                onPressed: () => set(() {
+                  from.clear();
+                  to.clear();
+                  container = '';
+                }),
+                child: const Text('Zurücksetzen'),
+              ),
+              const Spacer(),
+              FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Anwenden')),
+            ]),
+          ]),
+        ),
       ),
     );
-    if (mounted) setState(() {});
+    if (mounted) reload();
   }
 
   @override
@@ -504,7 +547,49 @@ class _LibraryScreenState extends State<LibraryScreen> {
       _ => null,
     };
     final nActive = filters.length;
-    final bar = Padding(
+    final narrow = isNarrow(context);
+    final nMore = (from.text.trim().isNotEmpty || to.text.trim().isNotEmpty ? 1 : 0) + (container.isNotEmpty ? 1 : 0);
+    final countText = total == 1 ? '1 Eintrag' : '$total Einträge';
+    final compact = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+      child: Column(children: [
+        if (types != null)
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: [for (final e in types.entries) ButtonSegment(value: e.key, label: Text(e.value))],
+              selected: {type},
+              onSelectionChanged: (s) => setType(s.first),
+            ),
+          ),
+        if (types != null) const SizedBox(height: 8),
+        Row(children: [
+          Expanded(child: _field(search, 'Nach Titel filtern', icon: Icons.search)),
+          IconButton(tooltip: 'Filter', onPressed: openFilters, icon: Badge(isLabelVisible: nActive > 0, label: Text('$nActive'), child: const Icon(Icons.filter_list))),
+          PopupMenuButton<String>(
+            tooltip: 'Sortieren: ${sortFields[sortField] ?? sortField}',
+            icon: const Icon(Icons.sort),
+            onSelected: (v) {
+              if (v == '<asc>' || v == '<desc>') {
+                desc = v == '<desc>';
+                reload();
+              } else {
+                setSort(v);
+              }
+            },
+            itemBuilder: (_) => [
+              for (final e in sortFields.entries) CheckedPopupMenuItem(value: e.key, checked: e.key == sortField, child: Text(e.value)),
+              const PopupMenuDivider(),
+              CheckedPopupMenuItem(value: '<asc>', checked: !desc, child: const Text('Aufsteigend')),
+              CheckedPopupMenuItem(value: '<desc>', checked: desc, child: const Text('Absteigend')),
+            ],
+          ),
+          IconButton(tooltip: 'Jahr und Dateityp', onPressed: openMore, icon: Badge(isLabelVisible: nMore > 0, label: Text('$nMore'), child: const Icon(Icons.tune))),
+        ]),
+      ]),
+    );
+    final bar = narrow ? compact : Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
         if (types != null)
@@ -544,7 +629,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ],
           child: Chip(avatar: const Icon(Icons.insert_drive_file_outlined, size: 18), label: Text(container.isEmpty ? 'Dateityp' : container.toUpperCase())),
         ),
-        if (loading || total > 0 || error == null) Text(total == 1 ? '1 Eintrag' : '$total Einträge', style: TextStyle(color: context.dim)),
+        if (loading || total > 0 || error == null) Text(countText, style: TextStyle(color: context.dim)),
       ]),
     );
     final chips = nActive == 0
@@ -571,7 +656,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ]),
           );
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.section['title']}'), actions: barActions(context, labels: true, [
+      appBar: AppBar(
+          title: narrow && total > 0
+              ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${widget.section['title']}'),
+                  Text('${sortFields[sortField] ?? sortField} · $countText', style: TextStyle(fontSize: 12, color: context.dim)),
+                ])
+              : Text('${widget.section['title']}'),
+          actions: barActions(context, labels: true, [
         if (sectionType == 'movie' || sectionType == 'show') ...[
           BarAction(Icons.collections_bookmark_outlined, 'Sammlungen', () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'collections')))),
           BarAction(Icons.category_outlined, 'Kategorien', () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'categories')))),
@@ -584,9 +676,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
         if (chips != null) chips,
         Expanded(
           child: error != null && items.isEmpty
-              ? Center(child: Text(error!))
+              ? ErrorView(error: error!, onRetry: reload)
+              : items.isEmpty && loading
+                  ? const GridSkeleton()
               : items.isEmpty && !loading
-                  ? const Center(child: Text('Nichts passt zu diesen Filtern.'))
+                  ? ErrorView(
+                      error: nActive + nMore > 0 || search.text.trim().isNotEmpty ? 'Nichts passt zu diesen Filtern.' : 'Diese Bibliothek ist noch leer.',
+                    )
                   : LayoutBuilder(builder: (context, box) {
                       gridWidth = box.maxWidth;
                       return Stack(children: [
@@ -636,13 +732,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
       );
 }
 
+/// Opens the filter menu: a dialog with two columns on a computer, a sheet from the bottom on a phone.
+Future<void> showFilters(BuildContext context, {required List<Map<String, dynamic>> available, required Map<String, String> filters, required VoidCallback onChanged}) {
+  if (!isNarrow(context)) {
+    return showDialog(context: context, builder: (_) => FilterDialog(available: available, filters: filters, onChanged: onChanged));
+  }
+  return showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    builder: (_) => FractionallySizedBox(heightFactor: .85, child: FilterDialog(available: available, filters: filters, onChanged: onChanged, sheet: true)),
+  );
+}
+
 /// The filter menu: the kinds of filter on the left (states first, then the lists of values), the values of the
 /// chosen one with a search box on the right. Every choice applies at once, like on the web.
 class FilterDialog extends StatefulWidget {
   final List<Map<String, dynamic>> available;
   final Map<String, String> filters;
   final VoidCallback onChanged;
-  const FilterDialog({required this.available, required this.filters, required this.onChanged});
+  /// On a phone: one column, first the kinds of filter, then the values of the chosen one.
+  final bool sheet;
+  const FilterDialog({super.key, required this.available, required this.filters, required this.onChanged, this.sheet = false});
   @override
   State<FilterDialog> createState() => FilterDialogState();
 }
@@ -660,7 +772,7 @@ class FilterDialogState extends State<FilterDialog> {
   void initState() {
     super.initState();
     final first = [...main, ...more].where((f) => f['type'] != 'boolean').firstOrNull;
-    cur = first == null ? '' : '${first['filter']}';
+    cur = first == null || widget.sheet ? '' : '${first['filter']}';
   }
 
   @override
@@ -710,24 +822,52 @@ class FilterDialogState extends State<FilterDialog> {
     final on = widget.filters[cur] ?? '';
     final n = needle.text.trim().toLowerCase();
     final values = f == null ? const <Map>[] : (f['values'] as List? ?? const []).cast<Map>().where((v) => n.isEmpty || valueName(cur, '${v['value']}').toLowerCase().contains(n)).toList();
+    final kinds = ListView(children: [
+      for (final g in [states, main, more])
+        if (g.isNotEmpty) ...[...g.map(entry), const Divider(height: 1)],
+    ]);
+    if (widget.sheet) {
+      return Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 12, 4),
+          child: Row(children: [
+            if (f != null) IconButton(tooltip: 'Zurück', icon: const Icon(Icons.arrow_back), onPressed: () => setState(() => cur = '')) else const SizedBox(width: 12),
+            Expanded(child: Text(f != null ? filterName(cur) : 'Filter', style: Theme.of(context).textTheme.titleMedium)),
+            if (widget.filters.isNotEmpty && f == null)
+              TextButton(
+                onPressed: () {
+                  setState(widget.filters.clear);
+                  widget.onChanged();
+                },
+                child: const Text('Alle löschen'),
+              ),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fertig')),
+          ]),
+        ),
+        const Divider(height: 1),
+        Expanded(child: f == null ? kinds : valueList(f, on, values)),
+      ]);
+    }
     final size = MediaQuery.of(context).size;
     return Dialog(
       child: SizedBox(
         width: size.width < 680 ? size.width - 48 : 620,
         height: size.height < 560 ? size.height - 48 : 480,
         child: Row(children: [
-          SizedBox(
-            width: 210,
-            child: ListView(children: [
-              for (final g in [states, main, more])
-                if (g.isNotEmpty) ...[...g.map(entry), const Divider(height: 1)],
-            ]),
-          ),
+          SizedBox(width: 210, child: kinds),
           const VerticalDivider(width: 1),
           Expanded(
             child: f == null
                 ? const Center(child: Text('Keine gefunden.'))
-                : Column(children: [
+                : valueList(f, on, values),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  /// The values of the chosen kind of filter, with a search box.
+  Widget valueList(Map<String, dynamic> f, String on, List<Map> values) => Column(children: [
                     Padding(
                       padding: const EdgeInsets.all(8),
                       child: TextField(
@@ -753,10 +893,5 @@ class FilterDialogState extends State<FilterDialog> {
                               },
                             ),
                     ),
-                  ]),
-          ),
-        ]),
-      ),
-    );
-  }
+                  ]);
 }
