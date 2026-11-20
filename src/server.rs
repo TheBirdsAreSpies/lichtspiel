@@ -1902,14 +1902,22 @@ pub fn base_headers() -> Vec<Header> {
     ]
 }
 
+/// An inline script's hash as the browser works it out: the browser reads the page with every line
+/// break as a plain "\n", so a Windows checkout's "\r\n" (git with core.autocrlf) has to be hashed
+/// the same way, or the browser refuses the scripts and the app never gets past "signed in".
+fn inline_script_hash(script: &str) -> String {
+    use sha2::Digest;
+    let text = script.replace("\r\n", "\n").replace('\r', "\n");
+    format!("'sha256-{}'", b64(&sha2::Sha256::digest(text.as_bytes())))
+}
+
 /// What the web app's page may load: its own scripts (the one inline script by its hash), pictures
 /// from anywhere, YouTube trailers in a frame; no other website may show the page in a frame.
 pub fn web_csp() -> &'static str {
     static CSP: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     CSP.get_or_init(|| {
-        use sha2::Digest;
         let hashes: Vec<String> = WEB_APP.split("<script>").skip(1).filter_map(|s| s.split("</script>").next())
-            .map(|s| format!("'sha256-{}'", b64(&sha2::Sha256::digest(s.as_bytes())))).collect();
+            .map(inline_script_hash).collect();
         format!("default-src 'self'; script-src 'self' {}; style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src 'self' blob: data:; \
             frame-src https://www.youtube-nocookie.com; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'", hashes.join(" "))
     })
@@ -3447,9 +3455,17 @@ pub(crate) mod tests {
         assert!(!script.contains("unsafe-inline"), "any inline script may run: {script}");
         // The page's own inline script is allowed by its hash.
         let inline = WEB_APP.split("<script>").nth(1).unwrap().split("</script>").next().unwrap();
-        let hash = { use sha2::Digest; b64(&sha2::Sha256::digest(inline.as_bytes())) };
-        assert!(script.contains(&format!("'sha256-{}'", hash.to_ascii_lowercase())), "{script}");
+        assert!(script.contains(&inline_script_hash(inline).to_ascii_lowercase()), "{script}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_inline_script_checked_out_with_windows_line_breaks_gets_the_hash_the_browser_works_out() {
+        // What a browser hashes for "a\nb" (it reads "\r\n" and a lone "\r" as "\n").
+        let browser = { use sha2::Digest; format!("'sha256-{}'", b64(&sha2::Sha256::digest(b"\na();\nb();\n"))) };
+        assert_eq!(inline_script_hash("\na();\nb();\n"), browser);
+        assert_eq!(inline_script_hash("\r\na();\r\nb();\r\n"), browser);
+        assert_eq!(inline_script_hash("\ra();\rb();\r"), browser);
     }
 
     #[cfg(unix)]
