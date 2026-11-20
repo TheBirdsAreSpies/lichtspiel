@@ -1,8 +1,9 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api.dart';
+import '../picture.dart';
 import '../theme.dart';
 
 String _list(dynamic v) => ((v as List?) ?? const []).join(', ');
@@ -358,11 +359,14 @@ class _ImagePickerState extends State<_ImagePicker> {
       final f = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 3000, maxHeight: 3000, imageQuality: 92, requestFullMetadata: false);
       if (f == null) return;
       final bytes = await f.readAsBytes();
-      // On a computer the picker can't shrink the picture (image_picker ignores maxWidth/imageQuality there).
-      if (bytes.length > 3 * 1024 * 1024) return say(Platform.isIOS || Platform.isAndroid ? 'Das Bild ist zu groß (höchstens 3 MB)' : 'Das Bild ist zu groß (höchstens 3 MB) – bitte vorher verkleinern');
       final ext = f.name.toLowerCase().split('.').last;
       final mime = f.mimeType ?? {'png': 'image/png', 'webp': 'image/webp', 'gif': 'image/gif'}[ext] ?? 'image/jpeg';
-      await send({'data': 'data:$mime;base64,${base64Encode(bytes)}'});
+      // On a computer the picker can't shrink the picture (image_picker ignores maxWidth/imageQuality
+      // there), so a big one is shrunk here, away from the screen's thread.
+      if (bytes.length > maxPictureBytes) say('Das Bild wird verkleinert…');
+      final pic = bytes.length <= maxPictureBytes ? (bytes: bytes, mime: mime) : await Isolate.run(() => shrinkPicture(bytes, mime: mime));
+      if (pic == null) return say('Das Bild ist zu groß (höchstens 3 MB) und ließ sich nicht verkleinern');
+      await send({'data': 'data:${pic.mime};base64,${base64Encode(pic.bytes)}'});
     } catch (e) {
       say('$e');
     }
