@@ -64,7 +64,7 @@ Commits use Conventional Commits with a scope, and the subject describes what th
 | C12 | Client | Minor player errors bring up the error screen | partly | M |
 | W14 | Web | A huge library builds one empty card per title up front | postponed | M |
 | D8 | Deploy | Compose and `deploy.yml` define the same container twice | partly | M |
-| D11 | Deploy | The Docker image is about 350 MB, the server in it about 15 MB | idea | S / M |
+| D11 | Deploy | The Docker image was 616 MB; now 425 MB with Jellyfin's ffmpeg | check on the NAS | S |
 
 Sizes: S is under an hour and a few lines, M is a few hours or needs a decision, L is a day or more. Paths in the client section are relative to `clients/lichtspiel/`.
 
@@ -112,19 +112,13 @@ Report: [reviews/2026-11-15-ops.md](reviews/2026-11-15-ops.md).
 - **Fix:** keep one definition. For example, let `deploy.yml` run `docker compose up -d --no-build` with the image it just built (`image: lichtspiel:latest` in compose). Keep the rollback and the `--group-add` for `/dev/dri` working.
 - **Size:** M.
 
-#### D11. The Docker image is about 350 MB, the server in it about 15 MB
+#### D11. The Docker image is about 616 MB, the server in it about 12 MB
 
-- **Status:** idea, not planned yet (2026-11-20). Not a review finding. The sizes below are estimates; measure first.
-- **Where:** `Dockerfile:33-37` (the packages of the final image).
-- **Problem:** the server binary is about 15 MB; the rest is what runs next to it. Rough share: `debian:bookworm-slim` ~75 MB; `ffmpeg` from Debian 150–250 MB (it pulls in SDL, PulseAudio, X11, JACK and every codec library, which a server never uses); `mesa-va-drivers` ~100 MB (VAAPI for AMD/Radeon GPUs, mostly LLVM); `intel-media-va-driver` and `i965-va-driver` ~20 MB (VAAPI for Intel, which the Intel Synology models need); `python3` ~30 MB (only for the plugins). Pulling a new image on the NAS takes longer than it has to.
-- **Measure first:** `docker history lichtspiel:latest` (or `docker image inspect`) shows which layer is how big. Note the numbers here before changing anything.
-- **Options, easiest first:**
-  1. **Drop `mesa-va-drivers`** (one line, probably ~100 MB). The Intel Synology models use the Intel drivers, and the AMD ones (Ryzen V1500B, R1600) have no GPU. What is lost: hardware transcoding on a non-Synology host with a Radeon card. Size S.
-  2. **A leaner ffmpeg instead of Debian's**, for example `jellyfin-ffmpeg` (built for media servers, brings VAAPI and the Intel driver, no desktop libraries) or a static build. Probably another 100 MB or more. Check afterwards on the NAS that the dashboard still shows "hw" and that ffprobe and the tests (`docker build --target test`) still pass. Size M.
-  3. **Python optional:** saves ~30 MB, but the bundled plugins (`nfo-reader`, `webhook-notify`) stop working. Probably not worth it.
-  4. **Alpine instead of Debian:** little gain after 1 and 2, and the server would have to be built for musl. Not recommended.
-- **Expected result:** with 1 and 2 about 150–200 MB. Below ~100 MB is unlikely while ffmpeg with hardware drivers is in the image.
-- **Size:** S for option 1, M for option 2.
+- **Status:** mostly done on 2026-11-20, waiting for a check on the NAS. The image now uses Jellyfin's ffmpeg build (`jellyfin-ffmpeg7`) instead of Debian's: **616 MB → 425 MB** (the package layer 529 MB → 337 MB). The server's `--self-test` passes all 19 steps in the new image (transcoding, HLS, remux, credits detection, deep analysis).
+- **Measured** (`docker history` on the NAS, and package by package in `debian:bookworm-slim`): Debian's `ffmpeg` alone added 440 MB (LLVM 112 MB, Mesa/OpenGL, speech synthesis, ICU …), the Intel VA drivers 16 MB, `mesa-va-drivers` only 12 MB, python3 with ca-certificates 47 MB. `jellyfin-ffmpeg7` with everything it needs is 279 MB and brings its own VA drivers (Intel i965 and iHD, AMD radeonsi), VAAPI, QSV and NVENC. The first estimate (350 MB, ~100 MB for `mesa-va-drivers`) was wrong.
+- **Still to check on the NAS:** after the next deploy, the dashboard shows "hw" for a converted video, and a converted video plays. Docker Desktop on Windows has no `/dev/dri`, so hardware transcoding could not be tried here. If it fails, going back is one commit (the old `apt-get install` line).
+- **What else is left:** Python (47 MB) is needed for the plugins and the health check. Alpine would need a musl build of the server and gains little now. Below ~350 MB is unlikely while ffmpeg with hardware drivers is in the image.
+- **Size:** S (the NAS check).
 
 ## Known limits worth a look
 
