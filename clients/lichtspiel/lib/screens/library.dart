@@ -157,20 +157,52 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   /// Runs [f] for the chosen ones, then tells what happened; [keep] leaves the selection in place.
-  Future<void> doChosen(Future<void> Function(List<String> ids) f, String done, {bool keep = false}) async {
+  /// With [undo] the message offers "Rückgängig", which runs it for the same titles.
+  Future<void> doChosen(Future<void> Function(List<String> ids) f, String done, {bool keep = false, Future<void> Function()? undo}) async {
     final ids = picked.toList();
     try {
       await f(ids);
-      say(done);
-      for (final id in ids) {
-        final at = items.indexWhere((i) => _id(i) == id);
-        if (at >= 0) items[at].addAll(await widget.api.item(id));
+      if (undo != null && mounted) {
+        undoSnack(context, done, () async {
+          try {
+            await undo();
+            await refresh(ids);
+          } catch (e) {
+            say(errorText(e));
+          }
+        });
+      } else {
+        say(done);
       }
+      await refresh(ids);
       if (!keep) picked.clear();
       if (mounted) setState(() {});
     } catch (e) {
       say(errorText(e));
     }
+  }
+
+  /// Fetches the titles again, so their posters show the change.
+  Future<void> refresh(List<String> ids) async {
+    for (final id in ids) {
+      final at = items.indexWhere((i) => _id(i) == id);
+      if (at >= 0) items[at].addAll(await widget.api.item(id));
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Marks the chosen ones watched or not; undoing gives each one back the state it had, as long as
+  /// none of them was half watched (a show with some episodes seen), which a single mark cannot restore.
+  Future<void> markChosen(bool on) {
+    num n(Map i, String k) => (i[k] ?? 0) as num;
+    final list = chosen;
+    final partial = list.any((i) => n(i, 'leafCount') > 0 && n(i, 'viewedLeafCount') > 0 && n(i, 'viewedLeafCount') < n(i, 'leafCount'));
+    bool seen(Map i) => n(i, 'leafCount') > 0 ? n(i, 'viewedLeafCount') >= n(i, 'leafCount') : n(i, 'viewCount') > 0;
+    final wasOn = [for (final i in list) if (seen(i)) _id(i)], wasOff = [for (final i in list) if (!seen(i)) _id(i)];
+    return doChosen((ids) => widget.api.setWatchedAll(ids, on), on ? 'Als gesehen markiert' : 'Als ungesehen markiert', undo: partial ? null : () async {
+      if (wasOn.isNotEmpty) await widget.api.setWatchedAll(wasOn, true);
+      if (wasOff.isNotEmpty) await widget.api.setWatchedAll(wasOff, false);
+    });
   }
 
   /// Several movies (or episodes) become one title with several versions; the chosen main one stays visible.
@@ -233,9 +265,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
           TextButton(onPressed: () => setState(picked.clear), child: const Text('Auswahl aufheben')),
           FilledButton.icon(onPressed: playChosen, icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
           const SizedBox(width: 8),
-          TextButton(onPressed: () => doChosen((ids) => widget.api.setWatchlistAll(ids, true), 'Auf die Merkliste gesetzt'), child: const Text('+ Merkliste')),
-          TextButton(onPressed: () => doChosen((ids) => widget.api.setWatchedAll(ids, true), 'Als gesehen markiert'), child: const Text('Gesehen')),
-          TextButton(onPressed: () => doChosen((ids) => widget.api.setWatchedAll(ids, false), 'Als ungesehen markiert'), child: const Text('Ungesehen')),
+          TextButton(
+            onPressed: () {
+              final added = [for (final i in chosen) if (i['watchlist'] != true) _id(i)];
+              doChosen((ids) => widget.api.setWatchlistAll(ids, true), 'Auf die Merkliste gesetzt', undo: added.isEmpty ? null : () => widget.api.setWatchlistAll(added, false));
+            },
+            child: const Text('+ Merkliste'),
+          ),
+          TextButton(onPressed: () => markChosen(true), child: const Text('Gesehen')),
+          TextButton(onPressed: () => markChosen(false), child: const Text('Ungesehen')),
           TextButton(onPressed: () => addToPlaylistDialog(context, widget.api, picked.first, ids: picked.toList()), child: const Text('Zur Playlist')),
           if (admin && one) TextButton(onPressed: () async {
             final Map<String, dynamic> it;
