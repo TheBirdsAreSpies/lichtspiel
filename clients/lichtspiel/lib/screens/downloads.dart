@@ -30,7 +30,7 @@ class DownloadRights {
 /// which the Files app shows under "Auf diesem Gerät › Lichtspiel"; Mac: into the Downloads folder).
 /// Elsewhere the system browser downloads it (the link carries a short-lived ticket, never the token).
 Future<void> saveFile(BuildContext context, Api api, String url) async {
-  if (Platform.isIOS || Platform.isMacOS) return _download(context, api, url);
+  if (Platform.isIOS || Platform.isMacOS) return downloadToFile(context, api, url);
   String link;
   try {
     link = await api.ticketLink(url);
@@ -55,7 +55,9 @@ String? fileNameFrom(String? disposition) {
   return RegExp(r'filename="([^"]+)"', caseSensitive: false).firstMatch(disposition)?[1];
 }
 
-Future<void> _download(BuildContext context, Api api, String url) async {
+/// Downloads into the Downloads folder (Documents on iOS) with a progress dialog.
+@visibleForTesting
+Future<void> downloadToFile(BuildContext context, Api api, String url) async {
   final messenger = ScaffoldMessenger.of(context);
   final progress = ValueNotifier<double?>(null);
   final client = http.Client();
@@ -134,6 +136,11 @@ Future<void> _download(BuildContext context, Api api, String url) async {
   } finally {
     finished = true;
     client.close();
+    // A download that fails at once can end before the dialog's first frame, when it has no
+    // context yet; wait for that frame so the dialog can still be closed.
+    for (var i = 0; dialogContext == null && i < 10; i++) {
+      await WidgetsBinding.instance.endOfFrame;
+    }
     final d = dialogContext;
     if (!cancelled && d != null && d.mounted) Navigator.pop(d); // only the dialog, never the screen behind it
     await dialog;
