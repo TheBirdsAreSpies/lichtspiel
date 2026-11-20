@@ -109,6 +109,12 @@ fn write(app: &App, c: &Config) -> Result<(), String> {
     let p = path(app);
     let tmp = p.with_extension("tmp");
     std::fs::write(&tmp, serde_json::to_vec_pretty(c).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    // Every user's Trakt tokens are in here, and the data folder may be shared over SMB: owner only.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+    }
     std::fs::rename(&tmp, &p).map_err(|e| e.to_string())
 }
 
