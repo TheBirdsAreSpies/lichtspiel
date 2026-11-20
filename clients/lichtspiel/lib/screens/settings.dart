@@ -180,27 +180,62 @@ class _AccountTabState extends State<_AccountTab> {
         ),
       ]),
       _panel(context, 'Darstellung', [
-        ValueListenableBuilder<ThemeMode>(
-          valueListenable: AppTheme.mode,
-          builder: (context, mode, _) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            SegmentedButton<ThemeMode>(
-              segments: const [
-                ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_outlined), label: Text('System')),
-                ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('Hell')),
-                ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('Dunkel')),
-              ],
-              selected: {mode},
-              onSelectionChanged: (v) async {
-                await AppTheme.set(v.first);
-                // Kept with the account, so the web app shows the same.
-                try {
-                  await widget.api.post('/api/me/prefs', {'theme': AppTheme.keyOf(v.first)});
-                } catch (_) {}
-              },
-            ),
-            const SizedBox(height: 6),
-            Text('„System“ folgt der Einstellung des Geräts.', style: TextStyle(fontSize: 12, color: context.dim)),
-          ]),
+        ListenableBuilder(
+          listenable: AppTheme.changes,
+          builder: (context, _) {
+            // Kept with the account, so the web app shows the same.
+            Future<void> save(Map<String, String> prefs) async {
+              try {
+                await widget.api.post('/api/me/prefs', prefs);
+              } catch (_) {}
+            }
+
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 'system', icon: Icon(Icons.brightness_auto_outlined), label: Text('System')),
+                  ButtonSegment(value: 'light', icon: Icon(Icons.light_mode_outlined), label: Text('Hell')),
+                  ButtonSegment(value: 'dark', icon: Icon(Icons.dark_mode_outlined), label: Text('Dunkel')),
+                  ButtonSegment(value: 'oled', icon: Icon(Icons.contrast), label: Text('OLED')),
+                ],
+                selected: {AppTheme.choice.value},
+                onSelectionChanged: (v) async {
+                  await AppTheme.set(theme: v.first);
+                  await save({'theme': v.first});
+                },
+              ),
+              const SizedBox(height: 6),
+              Text('„System“ folgt der Einstellung des Geräts. „OLED“ ist reines Schwarz.', style: TextStyle(fontSize: 12, color: context.dim)),
+              const SizedBox(height: 16),
+              const Text('Akzentfarbe'),
+              const SizedBox(height: 8),
+              Wrap(spacing: 12, children: [
+                for (final e in AppTheme.accents.entries)
+                  Semantics(
+                    button: true,
+                    selected: AppTheme.accent.value == e.key,
+                    label: e.key,
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () async {
+                        await AppTheme.set(accentName: e.key);
+                        await save({'accent': e.key});
+                      },
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: e.value[context.isDark ? 0 : 1],
+                          border: Border.all(color: AppTheme.accent.value == e.key ? Theme.of(context).colorScheme.onSurface : context.hair2, width: AppTheme.accent.value == e.key ? 3 : 1),
+                        ),
+                      ),
+                    ),
+                  ),
+              ]),
+            ]);
+          },
         ),
       ]),
       _panel(context, 'Zweistufige Anmeldung', [

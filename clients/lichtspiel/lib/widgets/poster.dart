@@ -196,7 +196,7 @@ class _PosterState extends State<Poster> {
                     BusyOverlay(item: item),
                     if (missing) const Center(child: Tooltip(message: 'Datei fehlt – im Papierkorb der Mediathek', child: Icon(Icons.delete, size: 56, color: Colors.redAccent, shadows: [Shadow(blurRadius: 6, color: Colors.black87)]))),
                     if (unseen > 0)
-                      Positioned(top: 6, right: 6, child: Container(padding: const EdgeInsets.symmetric(horizontal: 7), decoration: BoxDecoration(color: const Color(0xFFE5A00D), borderRadius: BorderRadius.circular(10)), child: Text('$unseen', style: const TextStyle(color: Color(0xFF16120A), fontSize: 12, fontWeight: FontWeight.w700))))
+                      Positioned(top: 6, right: 6, child: Container(padding: const EdgeInsets.symmetric(horizontal: 7), decoration: BoxDecoration(color: context.accent, borderRadius: BorderRadius.circular(10)), child: Text('$unseen', style: TextStyle(color: context.onAccent, fontSize: 12, fontWeight: FontWeight.w700))))
                     else if (watched)
                       Positioned(
                         top: 6,
@@ -204,11 +204,11 @@ class _PosterState extends State<Poster> {
                         child: Container(
                           width: 24,
                           height: 24,
-                          decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xB80E1013), border: Border.all(color: const Color(0xFFE5A00D), width: 1.5)),
-                          child: const Icon(Icons.check, size: 15, color: Color(0xFFE5A00D)),
+                          decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xB80E1013), border: Border.all(color: context.accent, width: 1.5)),
+                          child: Icon(Icons.check, size: 15, color: context.accent),
                         ),
                       ),
-                    if (widget.picked) Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5A00D), width: 3), borderRadius: BorderRadius.circular(6), color: const Color(0x33E5A00D)))),
+                    if (widget.picked) Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(border: Border.all(color: context.accent, width: 3), borderRadius: BorderRadius.circular(6), color: context.accent.withValues(alpha: .2)))),
                     if (widget.onPick != null && (widget.picked || widget.selecting || show))
                       Positioned(
                         top: 6,
@@ -218,8 +218,8 @@ class _PosterState extends State<Poster> {
                           child: Container(
                             width: 24,
                             height: 24,
-                            decoration: BoxDecoration(shape: BoxShape.circle, color: widget.picked ? const Color(0xFFE5A00D) : Colors.black54, border: Border.all(color: widget.picked ? const Color(0xFFE5A00D) : Colors.white70, width: 1.5)),
-                            child: widget.picked ? const Icon(Icons.check, size: 16, color: Color(0xFF16120A)) : null,
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: widget.picked ? context.accent : Colors.black54, border: Border.all(color: widget.picked ? context.accent : Colors.white70, width: 1.5)),
+                            child: widget.picked ? Icon(Icons.check, size: 16, color: context.onAccent) : null,
                           ),
                         ),
                       ),

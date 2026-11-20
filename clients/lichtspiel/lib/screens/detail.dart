@@ -12,7 +12,6 @@ import 'player.dart';
 import 'playlists.dart';
 import '../theme.dart';
 
-const _gold = Color(0xFFE5A00D);
 
 String fmtMs(int ms) {
   final m = ms ~/ 60000;
@@ -566,7 +565,7 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Widget _toggle(IconData icon, bool on, String tip, VoidCallback onTap) =>
-      IconButton(tooltip: tip, onPressed: onTap, icon: Icon(icon, color: on ? _gold : null), style: IconButton.styleFrom(backgroundColor: context.hair));
+      IconButton(tooltip: tip, onPressed: onTap, icon: Icon(icon, color: on ? context.accent : null), style: IconButton.styleFrom(backgroundColor: context.hair));
 
   /// Five stars on the server's 0-10 scale (each star is worth 2); tap the active last star's "clear" to remove.
   Widget _stars(Map<String, dynamic> item) {
@@ -576,7 +575,7 @@ class _DetailScreenState extends State<DetailScreen> {
         // Left half of a star = half a star, right half = the whole star (as in the web app).
         GestureDetector(
           onTapUp: (d) => act(() => api.rate(key, d.localPosition.dx < 13 ? i * 2 - 1 : i * 2)),
-          child: Icon(cur >= i * 2 ? Icons.star : (cur == i * 2 - 1 ? Icons.star_half : Icons.star_border), color: cur >= i * 2 - 1 ? _gold : context.ghost, size: 26),
+          child: Icon(cur >= i * 2 ? Icons.star : (cur == i * 2 - 1 ? Icons.star_half : Icons.star_border), color: cur >= i * 2 - 1 ? context.accent : context.ghost, size: 26),
         ),
       if (cur > 0) TextButton(onPressed: () => act(() => api.rate(key, -1)), child: const Text('löschen')),
     ]);
@@ -661,7 +660,7 @@ class _DetailScreenState extends State<DetailScreen> {
               if ('${e['summary'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text('${e['summary']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: context.soft))),
             ]),
           ),
-          IconButton(tooltip: 'Abspielen', onPressed: () => play(e), icon: const Icon(Icons.play_circle_fill, color: _gold)),
+          IconButton(tooltip: 'Abspielen', onPressed: () => play(e), icon: Icon(Icons.play_circle_fill, color: context.accent)),
         ]),
       ),
     );

@@ -64,9 +64,9 @@ class _LichtspielAppState extends State<LichtspielApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: AppTheme.mode,
-      builder: (context, mode, _) => MaterialApp(
+    return ListenableBuilder(
+      listenable: AppTheme.changes,
+      builder: (context, _) => MaterialApp(
         navigatorKey: navKey,
         // The mouse's "back" button (button 4) goes one screen back, like in a browser.
         // On a phone held sideways nothing goes under the notch (the strips keep the page colour).
@@ -86,7 +86,7 @@ class _LichtspielAppState extends State<LichtspielApp> {
         ),
         title: 'Lichtspiel',
         debugShowCheckedModeBanner: false,
-        themeMode: mode,
+        themeMode: AppTheme.mode,
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         home: loading
