@@ -2,8 +2,10 @@
 //! The server answers search packets on UDP 32414 and announces itself once on start (multicast 239.0.0.250).
 
 use crate::server::{App, VERSION};
-use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 const GROUP: Ipv4Addr = Ipv4Addr::new(239, 0, 0, 250);
 const SEARCH_PORT: u16 = 32414;
@@ -27,6 +29,27 @@ fn answers(from: SocketAddr, lan_networks: &str) -> bool {
     crate::server::ip_is_local(from.ip()) || crate::server::ip_in_list(lan_networks, from.ip())
 }
 
+/// Answers per sender address and second. A few, not one: several apps on one computer may search
+/// at the same moment. More are dropped, so a flood of searches can't keep the server busy.
+const ANSWERS_PER_SECOND: u32 = 5;
+
+/// Counts answers per sender address within the current second.
+#[derive(Default)]
+struct Limit(HashMap<IpAddr, (Instant, u32)>);
+
+impl Limit {
+    fn allow(&mut self, ip: IpAddr, now: Instant) -> bool {
+        let second = Duration::from_secs(1);
+        // Forget old senders, so many addresses can't grow the list without end.
+        if self.0.len() >= 1024 { self.0.retain(|_, (t, _)| now.duration_since(*t) < second); }
+        if self.0.len() >= 1024 { return false; }
+        let e = self.0.entry(ip).or_insert((now, 0));
+        if now.duration_since(e.0) >= second { *e = (now, 0); }
+        e.1 += 1;
+        e.1 <= ANSWERS_PER_SECOND
+    }
+}
+
 /// Starts listening (in the background). Quietly gives up when the port is taken, e.g. by another media server.
 pub fn start(app: &Arc<App>) {
     let sock = match UdpSocket::bind(("0.0.0.0", SEARCH_PORT)) {
@@ -42,10 +65,11 @@ pub fn start(app: &Arc<App>) {
             let _ = sock.send_to(hello.as_bytes(), SocketAddr::from((GROUP, HELLO_PORT)));
         }
         let mut buf = [0u8; 1024];
+        let mut limit = Limit::default();
         while let Ok((n, from)) = sock.recv_from(&mut buf) {
             let st = a.settings();
             if !st.gdm_enabled { continue; }
-            if is_search(&String::from_utf8_lossy(&buf[..n])) && answers(from, &st.lan_networks) {
+            if is_search(&String::from_utf8_lossy(&buf[..n])) && answers(from, &st.lan_networks) && limit.allow(from.ip(), Instant::now()) {
                 let reply = format!("HTTP/1.0 200 OK\r\n{}", description(&a));
                 let _ = sock.send_to(reply.as_bytes(), from);
             }
@@ -61,6 +85,19 @@ mod tests {
         assert!(is_search("M-SEARCH * HTTP/1.1\r\nHost: 239.0.0.250\r\n\r\n"));
         assert!(!is_search("HELLO * HTTP/1.0\r\n"));
         assert!(!is_search("GET / HTTP/1.1"));
+    }
+    #[test]
+    fn a_sender_gets_a_few_answers_a_second_and_no_more() {
+        let mut limit = Limit::default();
+        let (a, b): (IpAddr, IpAddr) = ("192.168.1.20".parse().unwrap(), "192.168.1.21".parse().unwrap());
+        let t = Instant::now();
+        let first: Vec<bool> = (0..8).map(|_| limit.allow(a, t)).collect();
+        assert_eq!(first.iter().filter(|x| **x).count(), ANSWERS_PER_SECOND as usize);
+        assert!(limit.allow(b, t), "another sender is not held back");
+        assert!(limit.allow(a, t + Duration::from_millis(1001)), "the next second answers again");
+        // Many senders: old ones are forgotten, new ones still answered.
+        for i in 0..2000u32 { limit.allow(IpAddr::from(Ipv4Addr::from(0x0a00_0000 + i)), t); }
+        assert!(limit.allow("192.168.1.99".parse().unwrap(), t + Duration::from_secs(2)));
     }
     #[test]
     fn only_the_home_network_is_answered() {
