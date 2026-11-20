@@ -507,6 +507,13 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 .card.ph .poster{background:var(--panel)}
 .skel-t{height:12px;margin-top:8px;width:80%}
 @keyframes skel{to{background-position:-200% 0}}
+/* Arrow keys between posters (app.js): what gets focus stays clear of the bars on top and at the bottom. */
+#main a.card,#main .card a.t,#main a.person,#main .spot-act>*,#main .stabs button{scroll-margin:96px 48px 80px}
+#main:has(.libhead) .card{scroll-margin-top:240px}
+#main a.person:focus-visible{outline:none}
+#main a.person:focus-visible img,#main a.person:focus-visible .initials{outline:3px solid var(--accent);outline-offset:2px}
+.eps .card a.t:focus-visible{outline:none;color:var(--accent)}
+.eps .card:focus-within .poster{outline:3px solid var(--accent);outline-offset:2px}
 /* Motion (with the rest in app.js, motion()): posters and backdrops fade in once loaded, a poster lifts under
    the mouse, dialogs and messages slide in. None of it when the system asks for less motion. */
 #main > img.hero{opacity:0}
@@ -517,6 +524,7 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   #main > img.hero{transition:opacity .8s ease-out}
   .card .poster{outline:3px solid transparent;transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s,outline-color .2s}
   .card:active .poster{transform:scale(.97);transition-duration:.1s}
+  .card:focus-visible .poster{transform:translateY(-3px);box-shadow:0 10px 22px rgba(0,0,0,.35)}
   @media (hover:hover){
     .card:hover .poster{transform:translateY(-3px);box-shadow:0 10px 22px rgba(0,0,0,.35)}
     .card:hover .poster img{transform:scale(1.05)}

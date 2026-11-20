@@ -105,6 +105,45 @@ function stagger() {
   MOTION.stagger = 0;
   seen.slice(0, 36).forEach((c, i) => fadeIn(c, 60 + i * 28, 'translateY(14px)'));
 }
+// ---------- arrow keys from poster to poster, like on a TV
+// With a poster (or another of these) focused (Tab gets there), an arrow key moves to the nearest one in
+// that direction: across a row, into the next row or grid, up to the banner's or the title's buttons.
+// Enter opens it. Anywhere else the arrows scroll the page as always.
+const NAV_TARGETS = '#main a.card, #main .card a.t, #main a.person, #main .spot-act > *, #main .stabs button, #main .stabs-row > button, #main .item-actions > button';
+const NAV_DIRS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+document.addEventListener('keydown', e => {
+  const dir = NAV_DIRS[e.key];
+  if (!dir || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.defaultPrevented) return;
+  if ((typeof P !== 'undefined' && P.it) || document.querySelector('.modal, .menu')) return;
+  const cur = document.activeElement;
+  if (!cur || !cur.matches || !cur.matches(NAV_TARGETS)) return;
+  const a = cur.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+  const found = [];
+  for (const el of document.querySelectorAll(NAV_TARGETS)) {
+    if (el === cur || el.disabled || !el.offsetParent) continue;
+    const r = el.getBoundingClientRect();
+    if (!r.width) continue;
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    if ((dir[0] ? (x - ax) * dir[0] : (y - ay) * dir[1]) <= 2) continue;
+    if (dir[0]) {
+      // Sideways only along the same line (overlapping heights): at a row's end the key does nothing, as on a TV.
+      if (!(r.bottom > a.top + 4 && r.top < a.bottom - 4)) continue;
+      found.push({ el, line: 0, near: Math.abs(x - ax) });
+    } else {
+      // Up or down: the next line first (how far its edge is), then the nearest in it; one in view beats
+      // one scrolled away in its row.
+      const gap = dir[1] > 0 ? r.top - a.bottom : a.top - r.bottom;
+      found.push({ el, line: Math.max(0, gap), near: Math.max(0, r.left - a.right, a.left - r.right) + Math.abs(x - ax) / 1000 + (r.right < 0 || r.left > innerWidth ? 5000 : 0) });
+    }
+  }
+  const first = Math.min(...found.map(f => f.line));
+  let best = null, score = Infinity;
+  for (const f of found) if (f.line <= first + 24 && f.near < score) { score = f.near; best = f.el; }
+  if (!best) return; // nothing that way: the page scrolls
+  e.preventDefault();
+  best.focus({ preventScroll: true });
+  best.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: calm() ? 'auto' : 'smooth' });
+});
 // A short message at the bottom; with action ({ label, run }) a button in it ("Undo"), and it stays a little longer.
 function toast(msg, ms = 2600, action) {
   const el = $('#toast'), hide = () => (el.style.display = 'none');
