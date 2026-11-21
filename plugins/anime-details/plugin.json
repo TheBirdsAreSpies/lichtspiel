@@ -1,0 +1,18 @@
+{
+  "id": "anime-details",
+  "name": "Anime details",
+  "version": "1.0",
+  "author": "Lichtspiel",
+  "description": "Finds anime on AniList (no key needed) and adds the AniList score, links to AniList and MyAnimeList and the animation studio; if you like, also AniList's title and summary (in English). Settings: libraries to use it for by name (e.g. [\"Anime\"]; none = every title whose original title is Japanese and that is animated), title (\"romaji\", \"english\", \"native\" or \"\" to keep the title), summary (\"missing\" = only when there is none, \"always\", \"never\"), studio (the animation studio instead of the TV channel), genres (AniList's genres, in English).",
+  "command": ["python3", "main.py"],
+  "hooks": ["metadata.lookup"],
+  "settings": {
+    "libraries": [],
+    "title": "",
+    "summary": "missing",
+    "studio": true,
+    "genres": false
+  },
+  "timeout_seconds": 60,
+  "enabled_by_default": false
+}

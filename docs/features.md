@@ -108,9 +108,16 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Four
+  details, react to events (new item, playback, invites …) and add their own API calls. Six
   are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list**,
-  **Subtitles** and the **Library doctor**.
+  **Subtitles**, the **Library doctor** and **Anime details**.
+  **Anime details** finds anime on AniList (no key needed) and adds the AniList score, links to
+  AniList and MyAnimeList and the animation studio (`studio`; instead of the TV channel). If the
+  settings say so it also takes AniList's title (`title`: `"romaji"`, `"english"` or `"native"`;
+  empty keeps the title), its summary in English (`summary`: `"missing"` = only when there is
+  none, `"always"`, `"never"`) and its genres (`genres`). Anime are the titles in the libraries
+  named in `libraries`; with none named, titles whose original title is Japanese and that are
+  animated.
   The **Library doctor** looks through the library after each scan that changed something, once
   a day and on **Check now**, and shows admins under **Settings → Account** what may need a hand:
   titles that are there twice (versions merged on purpose do not count), videos below a width

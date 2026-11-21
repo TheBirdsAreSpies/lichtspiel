@@ -1527,7 +1527,8 @@ async function itemPage(id) {
   const crew = [[t('Directed by'), x.directors], [t('Written by'), x.writers], [t('Created by'), x.creators || (it.type !== 'show' ? topX.creators : null)]].filter(r => r[1] && r[1].length);
   const links = [ids.imdb ? ['IMDb', 'https://www.imdb.com/title/' + ids.imdb] : null, ids.tmdb ? ['TMDB', `https://www.themoviedb.org/${it.type === 'movie' ? 'movie' : 'tv'}/${ids.tmdb}`] : null,
     it.type === 'movie' && (ids.tmdb || ids.imdb) ? ['Letterboxd', ids.tmdb ? 'https://letterboxd.com/tmdb/' + ids.tmdb : 'https://letterboxd.com/imdb/' + ids.imdb] : null,
-    ids.tvmaze ? ['TVmaze', 'https://www.tvmaze.com/shows/' + ids.tvmaze] : null, ids.wikipedia ? ['Wikipedia', ids.wikipedia] : null, ids.wikidata ? ['Wikidata', 'https://www.wikidata.org/wiki/' + ids.wikidata] : null].filter(Boolean);
+    ids.tvmaze ? ['TVmaze', 'https://www.tvmaze.com/shows/' + ids.tvmaze] : null,
+    ids.anilist ? ['AniList', 'https://anilist.co/anime/' + ids.anilist] : null, ids.mal ? ['MyAnimeList', 'https://myanimelist.net/anime/' + ids.mal] : null, ids.wikipedia ? ['Wikipedia', ids.wikipedia] : null, ids.wikidata ? ['Wikidata', 'https://www.wikidata.org/wiki/' + ids.wikidata] : null].filter(Boolean);
   const matchable = it.type === 'movie' || it.type === 'show';
   const localTrailer = (it.Extras || []).find(e => e.extraType === 'trailer');
   const onlineVideos = matchable ? (x.trailers || []).filter(v => v && v.key) : [];
@@ -1670,13 +1671,15 @@ const SCORE_MARKS = {
   metacritic: n => `<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6" fill="${n >= 61 ? '#00ce7a' : n >= 40 ? '#ffbd3f' : '#ff6874'}"/><text x="16" y="23" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="900" font-size="19" fill="#1a1a1a">M</text></svg>`,
   // The audience score of Rotten Tomatoes: a bucket of popcorn, red below 60 %.
   rotten_tomatoes_audience: pct => `<svg viewBox="0 0 32 32" aria-hidden="true"><path fill="${pct >= 60 ? '#fa320a' : '#7a7f86'}" d="M8 14h16l-2 15H10z"/><path fill="#fff" d="M12 14h2l.5 15h-2zm6 0h2l-.5 15h-2z" opacity=".55"/><g fill="#ffd34d"><circle cx="10" cy="11" r="3.4"/><circle cx="16" cy="8.5" r="4"/><circle cx="22" cy="11" r="3.4"/><circle cx="13" cy="12.5" r="3"/><circle cx="19" cy="12.5" r="3"/></g></svg>`,
+  // AniList's average score, in percent.
+  anilist: () => '<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="6" fill="#152232"/><text x="16" y="22" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="900" font-size="15" fill="#3db4f2">AL</text></svg>',
   tmdb: () => '<svg viewBox="0 0 70 32" aria-hidden="true"><defs><linearGradient id="tmdb-mark" x1="0" x2="1"><stop offset="0" stop-color="#90cea1"/><stop offset=".56" stop-color="#3cbec9"/><stop offset="1" stop-color="#00b3e5"/></linearGradient></defs><rect width="70" height="32" rx="16" fill="url(#tmdb-mark)"/><text x="35" y="22" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="900" font-size="16" fill="#0d253f">TMDB</text></svg>',
 };
 
 // Scores from review sites with their marks. Values are as the source gives them.
 function scoreBadges(r) {
   if (!r) return null;
-  const names = [['imdb', 'IMDb'], ['rotten_tomatoes', 'Rotten Tomatoes'], ['rotten_tomatoes_audience', 'Rotten Tomatoes audience'], ['metacritic', 'Metacritic'], ['tmdb', 'TMDB']];
+  const names = [['imdb', 'IMDb'], ['rotten_tomatoes', 'Rotten Tomatoes'], ['rotten_tomatoes_audience', 'Rotten Tomatoes audience'], ['metacritic', 'Metacritic'], ['tmdb', 'TMDB'], ['anilist', 'AniList']];
   const shown = names.filter(([k]) => r[k] && r[k].score);
   if (!shown.length) return null;
   return h('div', { class: 'scores' }, shown.map(([k, n]) => {
