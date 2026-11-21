@@ -2185,12 +2185,12 @@ const reallyEnded = (pos, dur) => !dur || dur - pos <= 60;
 const shown = () => P.pending !== null ? P.pending : position();
 
 // together = following a "Watch together" room (not told to the others again).
-async function play(it, startAt, queue, together) {
+async function play(it, startAt, queue, together, small) {
   if (typeof stopTheme === 'function') stopTheme();
   P.queue = queue || [];
   if (!it.Media || !it.Media[0].streams) it = meta(await GET('/library/metadata/' + it.id))[0];
   P.it = it;
-  player.style.display = 'flex';
+  if (!small) player.style.display = 'flex';
   hideNext(); closePlayerMenu();
   $('#pkeys').style.display = 'none';
   const ep = it.type === 'episode', song = it.type === 'track';
@@ -2359,7 +2359,9 @@ function playNext() {
   let next = P.queue.shift();
   if (!next && Q.list.length) { next = Q.list.shift(); saveQueue(); }
   if (!next) next = P.next;
-  if (next) play(next, 0, P.queue); else closePlayer(false);
+  // Watching in the small window only: the next one plays there too.
+  const small = !!document.pictureInPictureElement && player.style.display === 'none';
+  if (next) play(next, 0, P.queue, false, small); else closePlayer(false);
 }
 // Jump to a place in the whole video.
 async function seekTo(s) {
@@ -2884,7 +2886,25 @@ function closePlayer(send) {
   if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
   render();
 }
-$('#pclose').addEventListener('click', () => closePlayer(true));
+// With picture in picture on, "back" only puts the big player away: the video plays on in its
+// small window while one looks around. Closing that window (✕, which pauses) ends playback;
+// "back to tab" brings the big player back.
+function leavePlayer() {
+  if (!document.pictureInPictureElement) return closePlayer(true);
+  closePlayerMenu(); hideNext();
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  player.style.display = 'none';
+  render();
+}
+video.addEventListener('leavepictureinpicture', () => {
+  if (!P.it || player.style.display !== 'none') return;
+  // The browser pauses the video just after this when ✕ was clicked.
+  setTimeout(() => {
+    if (!P.it || player.style.display !== 'none') return;
+    if (video.paused) closePlayer(true); else player.style.display = 'flex';
+  }, 300);
+});
+$('#pclose').addEventListener('click', leavePlayer);
 
 // ---- keyboard
 const KEYS = [['Space / K', 'Play or pause'], ['← / J', 'Back 10 seconds'], ['→ / L', 'Forward 30 seconds'], ['Shift + ← / →', '1 minute back / forward'],
@@ -2906,7 +2926,7 @@ document.addEventListener('keydown', e => {
     if ($('#pkeys').style.display === 'block') { $('#pkeys').style.display = 'none'; return; }
     if (P.menu) return closePlayerMenu();
     if ($('#pnext').style.display === 'flex') return hideNext();
-    return closePlayer(true);
+    return leavePlayer();
   }
   if (inMenu && (k === 'Enter' || k === ' ')) return;
   if (inMenu && (k === 'ArrowDown' || k === 'ArrowUp')) {

@@ -1913,14 +1913,14 @@ function stopTheme() {
   if (a) fadeTheme(a);
 }
 async function startTheme(id) {
-  if (store.get('themeMusic', '1') !== '1' || player.style.display === 'flex') return;
+  if (store.get('themeMusic', '1') !== '1' || player.style.display === 'flex' || document.pictureInPictureElement) return;
   if (THEME.id === id) return;
   THEME.id = id;
   const tk = await ticket('item=' + id).catch(() => null);
   // No ticket (offline for a moment): let the next visit or redraw try again.
   if (!tk && THEME.id === id) THEME.id = null;
   // (Left the page, or the player opened, while the ticket was on its way.)
-  if (!tk || THEME.id !== id || player.style.display === 'flex') return;
+  if (!tk || THEME.id !== id || player.style.display === 'flex' || document.pictureInPictureElement) return;
   const a = new Audio(withTicket(`/library/metadata/${id}/theme`, tk));
   a.volume = THEME_VOLUME;
   a.addEventListener('timeupdate', () => { if (a.duration - a.currentTime <= THEME_FADE_MS / 1000) fadeTheme(a); });
