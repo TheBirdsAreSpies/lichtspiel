@@ -276,20 +276,45 @@ const partStart = n => P.parts.slice(0, n).reduce((a, b) => a + b, 0);
 const split = () => P.parts.length > 1 && P.parts.every(d => d > 0);
 
 // Settings -> Web -> level the volume: videos the server has measured are brought to about -23 LUFS.
-const LEVEL = { ctx: null, gain: null };
+// Night mode (⚙): a compressor evens out the sound, so explosions don't boom and voices stay clear;
+// it works on any video (also played directly) and changes at once. Both go through one sound graph,
+// made the first time one is needed (from then on the video's sound always runs through it).
+const LEVEL = { ctx: null, gain: null, comp: null, night: store.get('nightMode', '0') === '1' };
+function soundGraph() {
+  if (LEVEL.gain) return;
+  const ctx = LEVEL.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  LEVEL.gain = ctx.createGain();
+  ctx.createMediaElementSource(video).connect(LEVEL.gain);
+  // Loud parts down (about 6:1 above -32 dB) and a limiter at the end. The browser's compressor lifts its output by
+  // itself, so it is brought down by half again: measured with a tone, -33 / -21 / -3.5 dB come out at
+  // -25 / -20 / -16.5 dB, like the app's mpv filter.
+  const comp = LEVEL.comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -32; comp.knee.value = 12; comp.ratio.value = 6; comp.attack.value = 0.005; comp.release.value = 0.3;
+  const makeup = ctx.createGain();
+  makeup.gain.value = 0.5;
+  const limit = ctx.createDynamicsCompressor();
+  limit.threshold.value = -2; limit.knee.value = 0; limit.ratio.value = 20; limit.attack.value = 0.001; limit.release.value = 0.1;
+  comp.connect(makeup); makeup.connect(limit); limit.connect(ctx.destination);
+}
+function soundRoute() {
+  LEVEL.gain.disconnect();
+  LEVEL.gain.connect(LEVEL.night ? LEVEL.comp : LEVEL.ctx.destination);
+  LEVEL.ctx.resume();
+}
 function levelVolume(it) {
   try {
     const on = store.get('levelVolume', '0') === '1' && typeof it.loudness === 'number';
-    if (!on && !LEVEL.gain) return;
-    if (!LEVEL.gain) {
-      LEVEL.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      LEVEL.gain = LEVEL.ctx.createGain();
-      LEVEL.ctx.createMediaElementSource(video).connect(LEVEL.gain);
-      LEVEL.gain.connect(LEVEL.ctx.destination);
-    }
+    if (!on && !LEVEL.gain && !LEVEL.night) return;
+    soundGraph();
     LEVEL.gain.gain.value = on ? Math.min(2, Math.max(0.3, Math.pow(10, (-23 - it.loudness) / 20))) : 1;
-    LEVEL.ctx.resume();
+    soundRoute();
   } catch (e) { /* the video just plays at its own volume */ }
+}
+function setNight(on) {
+  LEVEL.night = on;
+  store.set('nightMode', on ? '1' : '0');
+  try { soundGraph(); soundRoute(); } catch (e) { LEVEL.night = false; return toast(t('Night mode does not work in this browser.')); }
+  toast(on ? t('Night mode on: loud parts are quieter, voices are clearer.') : t('Night mode off'));
 }
 async function load(at) {
   const it = P.it, seq = P.loadSeq = (P.loadSeq || 0) + 1;
@@ -782,6 +807,7 @@ function playerMenu(name, page) {
       P.audios.length > 1 ? entry(t('Audio track'), a ? audioName(a) : t('Default audio'), () => playerMenu('settings', 'audio')) : null,
       // Makes no sense for a single movie: only where something follows (episodes, a playlist or queue).
       P.it && (P.it.type === 'episode' || P.queue.length || Q.list.length) ? choice(t('Play the next episode by itself'), P.autoNext, () => { P.autoNext = !P.autoNext; store.set('autoNext', P.autoNext ? '1' : '0'); playerMenu('settings', 'main'); }) : null,
+      P.it && P.it.type !== 'track' ? choice(t('Night mode'), LEVEL.night, () => { setNight(!LEVEL.night); playerMenu('settings', 'main'); }) : null,
       entry(t('Sleep timer'), sleepLabel(), () => playerMenu('settings', 'sleep')),
       h('div', { class: 'mi', tabindex: 0, onclick: e => { e.stopPropagation(); closePlayerMenu(); showKeys(); } }, h('span', { class: 'ck' }), t('Keyboard shortcuts'), h('span', { class: 'v' }, '?'))];
   } else if (page === 'quality') {

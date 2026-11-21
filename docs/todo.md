@@ -48,8 +48,9 @@ bundled plugins.
 
 ### Later
 
-- [ ] **Night mode / louder dialogue** — when converting, even out the sound (ffmpeg `loudnorm` /
-  `dynaudnorm`) so speech is clear and explosions don't boom; most useful for 5.1 down to stereo.
+- [x] **Night mode / louder dialogue** — even out the sound so speech is clear and explosions don't
+  boom. Built in the players instead of the converter (WebAudio in the browser, an mpv filter in
+  the app), so it works with direct play too; *Lift dialogue* for 5.1 → stereo was already there.
 - [ ] **"Coming soon" row and calendar** — new episodes of shows in the library (Sonarr or TMDB)
   and movies waiting in Radarr. Goes with the wish list.
 - [ ] **Smart collections like Kometa (plugin)** — "IMDb Top 250", "Oscar winners", Trakt lists,

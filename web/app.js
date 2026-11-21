@@ -1658,7 +1658,7 @@ const CLIENT_CODECS = (() => {
 // Audio, subtitle and watched-mark settings follow the account from browser to browser: they are kept on the
 // server too (POST /api/me/prefs); at start the server's values win, and values only this browser has go up once.
 const SYNCED = ['audioLang', 'subLang', 'subMode', 'subPrefLang', 'subSdh', 'subForced', 'subSize', 'subColor', 'subBg', 'subLift', 'burnSubs', 'watchedMark',
-  'theme', 'accent', 'timeFormat', 'cardSize', 'dlQuality', 'navMore', 'quality', 'directPlay', 'keepSmall', 'levelVolume', 'themeMusic', 'rememberTab', 'autoNext', 'timeLeft', 'speed', 'homeLayout'];
+  'theme', 'accent', 'timeFormat', 'cardSize', 'dlQuality', 'navMore', 'quality', 'directPlay', 'keepSmall', 'levelVolume', 'themeMusic', 'rememberTab', 'autoNext', 'timeLeft', 'speed', 'homeLayout', 'nightMode'];
 let prefQueue = {}, prefTimer = null;
 function syncPref(k, v) {
   if (!S.me) return;
@@ -1680,6 +1680,7 @@ function pullPrefs() {
   // What the player read when this file loaded.
   P.quality = store.get('quality', 'original'); P.speed = Number(store.get('speed', 1)) || 1;
   P.autoNext = store.get('autoNext', '1') === '1'; P.remaining = store.get('timeLeft', '0') === '1';
+  LEVEL.night = store.get('nightMode', '0') === '1';
   cardSize();
 }
 window.saveLangPref = code => (S.me ? api('POST', '/api/me/prefs', { lang: code }).catch(() => {}) : null);

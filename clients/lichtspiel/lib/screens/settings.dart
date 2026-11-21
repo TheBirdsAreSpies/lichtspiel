@@ -346,6 +346,7 @@ class _PlaybackTabState extends State<_PlaybackTab> {
           }
           if (prefs['subSize'] != null) await v.setInt('subSize', int.tryParse('${prefs['subSize']}') ?? 100);
           if (prefs['autoNext'] != null) await v.setBool('autoNext', '${prefs['autoNext']}' == '1');
+          if (prefs['nightMode'] != null) await v.setBool('nightMode', '${prefs['nightMode']}' == '1');
         }
         // Older versions saved names the server does not know (1080, 720, ...): put the server's name in their place.
         final q = v.getString('quality');
