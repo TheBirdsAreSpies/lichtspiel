@@ -416,7 +416,7 @@ I18N.add('de', 'Deutsch', {
     // ---------- sign in, setup, invites
     'Sign in': 'Anmelden',
     'Scanning {name}: {done} of {total}': '{name} wird durchsucht: {done} von {total}',
-    'Scanning {name}: finishing': '{name} wird durchsucht: Abschluss',
+    'Scanning {name}: finishing': '{name} wird durchsucht: letzte Schritte',
     'Scanning {name}: looking through the folders': '{name} wird durchsucht: Ordner werden gelesen',
     'Scanning {name}: looking through the folders, {n} videos found': '{name} wird durchsucht: Ordner werden gelesen, {n} Videos gefunden',
     'Mixed': 'Gemischt',
