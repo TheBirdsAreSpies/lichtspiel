@@ -553,6 +553,10 @@ impl App {
                 let db = self.db.lock().unwrap();
                 let Some(it) = db.items.get(id) else { continue };
                 let mut v = serde_json::to_value(it).unwrap_or(Value::Null);
+                // The library's name, so a plugin can be meant for some libraries only (e.g. "Anime").
+                if let Some(s) = db.sections.iter().find(|s| s.id == it.section_id) {
+                    v["section_name"] = json!(s.name);
+                }
                 if let Some(parent) = it.parent_id.and_then(|p| db.items.get(&p)) {
                     v["parent_title"] = json!(parent.title);
                     if let Some(gp) = parent.parent_id.and_then(|g| db.items.get(&g)) {
@@ -1665,6 +1669,9 @@ impl App {
             if r.is_ok() {
                 self.lookup_metadata(&leaves);
                 self.fire("library.item.updated", json!({"id": id}));
+            } else {
+                // Found nowhere online: a plugin may still know the title (e.g. an anime on AniList).
+                self.lookup_metadata(&[id]);
             }
             self.save();
             std::thread::sleep(Duration::from_millis(400));

@@ -25,6 +25,11 @@ to its standard input:
 The plugin may print a JSON answer as its last line of output:
 
 - `metadata.lookup` → `{"metadata": {"title": "…", "summary": "…", "year": 1999, "genres": ["…"], "rating": 7.5, "extra": {"any": "field"}}}`
+  (`data` is the item with `section_name`, and for an episode `parent_title` and `show_title`).
+  It is asked when a title is new and again after the online details were looked up — for a
+  movie or show also when none were found —, so what it answers wins over them. A field in
+  `extra` is replaced as a whole: to add to `ids` or `ratings`, send them back with the
+  item's own.
 - `api.call` → any JSON; it is returned to whoever called `POST /api/plugins/<id>/call/<action>`
   (`data` holds `action`, `body`, `params`, `user` and `admin`). An answer with
   `"mark_watched": [{"id": 42} | {"type": "movie", "ids": {"imdb": "tt…"}} | {"type": "show", "ids": {…}} |
