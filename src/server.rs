@@ -2034,8 +2034,10 @@ pub fn js(status: u16, v: Value) -> Resp {
 fn brief_in(db: &Db, id: u64) -> Value {
     let Some(it) = db.items.get(&id) else { return Value::Null };
     let ids = |i: &Item| i.extra.get("ids").cloned().unwrap_or_else(|| json!({}));
-    let show_of = |s: &Item| json!({"id": s.id, "title": s.title, "year": s.year, "ids": ids(s)});
-    let mut o = json!({"id": it.id, "type": it.kind.as_str(), "title": it.title, "year": it.year, "duration_ms": it.duration_ms, "ids": ids(it), "genres": it.genres});
+    // The poster's file on this computer (a plugin can attach it to a message).
+    let poster = |i: &Item| i.poster.as_ref().filter(|p| Path::new(p).is_file()).cloned();
+    let show_of = |s: &Item| json!({"id": s.id, "title": s.title, "year": s.year, "ids": ids(s), "poster": poster(s)});
+    let mut o = json!({"id": it.id, "type": it.kind.as_str(), "title": it.title, "year": it.year, "duration_ms": it.duration_ms, "ids": ids(it), "genres": it.genres, "poster": poster(it)});
     let parent = it.parent_id.and_then(|p| db.items.get(&p));
     match it.kind {
         ItemKind::Episode => {
