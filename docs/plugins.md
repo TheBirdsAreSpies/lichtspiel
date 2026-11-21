@@ -43,6 +43,12 @@ event's item plus `section_id` and `files` — for each file `path`, `size`, `co
 `duration_ms`, `streams` (`kind`, `codec`, `language`, `channels`, `width`, `height`, `forced`,
 `sdh`) and `external_subtitles` (the subtitle files next to it). A show or season has no files.
 
+An answer with `"refresh_subtitles": true` to an event about an item (one with `id`) makes the
+server look for that item's subtitle files again at once: next to the video, and in
+`<data>/subtitles/` below the video's folder (`/media/Movies/X` → `<data>/subtitles/media/Movies/X`,
+`C:\Movies\X` → `<data>/subtitles/C/Movies/X`), where a plugin may save subtitles when the media
+folder is read-only.
+
 `schedule.daily` is sent once a day (UTC) with `{"date": "YYYY-MM-DD", "last": "…"}`; a day missed
 while the server was off is sent right after the next start.
 

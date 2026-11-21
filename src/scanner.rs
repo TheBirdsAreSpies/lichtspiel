@@ -750,19 +750,58 @@ pub fn find_poster(dir: &Path, stem: &str) -> Option<String> {
     None
 }
 
+/// Where plugins keep the subtitles they fetch, for media folders that cannot be written to
+/// (`<data>/subtitles`): below it the video's own folder is mirrored. Set at start.
+pub static SUBTITLE_STORE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// A video folder's place in the subtitle store: "/media/Movies/X" → "<store>/media/Movies/X",
+/// "C:\Movies\X" → "<store>/C/Movies/X".
+pub fn store_dir(store: &Path, dir: &Path) -> PathBuf {
+    let mut out = store.to_path_buf();
+    for c in dir.components() {
+        match c {
+            std::path::Component::Prefix(p) => {
+                let d: String = p.as_os_str().to_string_lossy().chars().filter(|c| !matches!(c, '\\' | '/' | '?' | '.' | ':')).collect();
+                if !d.is_empty() { out.push(d); }
+            }
+            std::path::Component::Normal(n) => out.push(n),
+            _ => {}
+        }
+    }
+    out
+}
+
 fn find_subtitles(dir: &Path, stem: &str) -> Vec<String> {
+    find_subtitles_in(dir, stem, SUBTITLE_STORE.get().map(PathBuf::as_path))
+}
+
+/// The subtitle files of a video: next to it, and in its folder of the subtitle store.
+fn find_subtitles_in(dir: &Path, stem: &str, store: Option<&Path>) -> Vec<String> {
     let mut out = vec![];
-    if let Ok(rd) = std::fs::read_dir(dir) {
-        for e in rd.flatten() {
-            let p = e.path();
-            let name = e.file_name().to_string_lossy().to_string();
-            if SUBTITLE_EXTENSIONS.contains(&ext_of(&p).as_str()) && name.starts_with(stem) {
-                out.push(p.to_string_lossy().into());
+    for d in std::iter::once(dir.to_path_buf()).chain(store.map(|s| store_dir(s, dir))) {
+        if let Ok(rd) = std::fs::read_dir(&d) {
+            for e in rd.flatten() {
+                let p = e.path();
+                let name = e.file_name().to_string_lossy().to_string();
+                if SUBTITLE_EXTENSIONS.contains(&ext_of(&p).as_str()) && name.starts_with(stem) {
+                    out.push(p.to_string_lossy().into());
+                }
             }
         }
     }
     out.sort();
+    out.dedup();
     out
+}
+
+/// Looks for the subtitle files of a video file again (after a plugin saved one).
+pub fn refresh_subtitles(f: &mut MediaFile, store: &Path) -> bool {
+    let p = Path::new(&f.path);
+    let (Some(dir), Some(stem)) = (p.parent(), p.file_stem()) else { return false };
+    let now = find_subtitles_in(dir, &stem.to_string_lossy(), Some(store));
+    if now == f.external_subtitles { return false; }
+    f.external_subtitles = now;
+    true
 }
 
 /// Folders for a movie's extras, as Plex names them, and the kind of extra.
@@ -1868,6 +1907,28 @@ title=Two
         titles.sort();
         assert_eq!(titles, vec!["Curated", "Heat", "Inside"]);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn subtitles_in_the_store_are_found_next_to_those_beside_the_video() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-substore-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (media, store) = (root.join("media").join("Movies").join("Heat (1995)"), root.join("data").join("subtitles"));
+        std::fs::create_dir_all(&media).unwrap();
+        std::fs::write(media.join("Heat (1995).mkv"), b"x").unwrap();
+        std::fs::write(media.join("Heat (1995).en.srt"), b"x").unwrap();
+        let mirrored = store_dir(&store, &media);
+        assert!(mirrored.starts_with(&store) && mirrored.ends_with(Path::new("media").join("Movies").join("Heat (1995)")), "{}", mirrored.display());
+        std::fs::create_dir_all(&mirrored).unwrap();
+        std::fs::write(mirrored.join("Heat (1995).de.srt"), b"x").unwrap();
+        std::fs::write(mirrored.join("Other (2000).de.srt"), b"x").unwrap();
+        let found = find_subtitles_in(&media, "Heat (1995)", Some(&store));
+        let _ = std::fs::remove_dir_all(&root);
+        let names: Vec<String> = found.iter().map(|p| Path::new(p).file_name().unwrap().to_string_lossy().to_string()).collect();
+        assert_eq!(names.len(), 2, "{found:?}");
+        assert!(names.contains(&"Heat (1995).de.srt".to_string()) && names.contains(&"Heat (1995).en.srt".to_string()));
+        #[cfg(windows)]
+        assert_eq!(store_dir(Path::new("S"), Path::new(r"C:\Movies\X")), Path::new("S").join("C").join("Movies").join("X"));
     }
 
     /// A library in a temporary folder with these files, scanned once, and a scan function.

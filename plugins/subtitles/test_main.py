@@ -96,11 +96,12 @@ class PluginTest(unittest.TestCase):
         shutil.rmtree(self.dir, ignore_errors=True)
 
     def run_plugin(self, event, data, **settings):
-        s = {"api_key": "k", "languages": ["de"]}
+        s = {"api_key": "k", "languages": ["de"], "next_to_video": True}
         s.update(settings)
         out, err = io.StringIO(), io.StringIO()
         code = 0
-        stdin = io.StringIO(json.dumps({"event": event, "data": data, "settings": s}))
+        server = {"data_dir": os.path.join(self.dir, "data")}
+        stdin = io.StringIO(json.dumps({"event": event, "data": data, "settings": s, "server": server}))
         with mock.patch("sys.stdin", stdin), redirect_stdout(out), redirect_stderr(err):
             try:
                 main.main()
@@ -118,6 +119,7 @@ class PluginTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         target = os.path.join(self.dir, "The Matrix (1999).de.srt")
         self.assertEqual(out["saved"], [target])
+        self.assertTrue(out["refresh_subtitles"])
         with open(target) as f:
             self.assertIn("file 3", f.read())  # the hash match beats more downloads
         q = self.searches()[0]
@@ -127,6 +129,29 @@ class PluginTest(unittest.TestCase):
         SEEN.clear()
         self.run_plugin("library.item.added", {"item": movie(self.video)})
         self.assertEqual(SEEN, [])
+
+    def test_by_default_it_saves_in_the_data_folder_below_the_videos_folder(self):
+        STATE["search"] = [sub(1)]
+        code, out, err = self.run_plugin("library.item.added", {"item": movie(self.video)}, next_to_video=False)
+        self.assertEqual(code, 0, err)
+        target = main.store_dir(os.path.join(self.dir, "data", "subtitles"), self.dir)
+        target = os.path.join(target, "The Matrix (1999).de.srt")
+        self.assertEqual(out["saved"], [target])
+        self.assertTrue(os.path.isfile(target))
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "The Matrix (1999).de.srt")))
+        # Found there the next time: nobody is asked.
+        SEEN.clear()
+        self.run_plugin("library.item.added", {"item": movie(self.video)}, next_to_video=False)
+        self.assertEqual(SEEN, [])
+
+    def test_the_store_mirrors_the_folder_like_the_server(self):
+        self.assertEqual(main.store_dir("/data/subtitles", "/media/Movies/X").replace("\\", "/"), "/data/subtitles/media/Movies/X")
+        if os.name == "nt":
+            self.assertEqual(main.store_dir("S", r"C:\Movies\X"), os.path.join("S", "C", "Movies", "X"))
+
+    def test_nothing_saved_asks_for_no_refresh(self):
+        _, out, _ = self.run_plugin("library.item.added", {"item": movie(self.video)})
+        self.assertFalse(out["refresh_subtitles"])
 
     def test_a_language_the_video_already_has_is_not_searched(self):
         item = movie(self.video)

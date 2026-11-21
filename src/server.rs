@@ -198,6 +198,7 @@ impl App {
             let _ = std::fs::create_dir_all(data_dir.join(sub));
         }
         install_bundled_plugins(&data_dir.join("plugins"));
+        let _ = crate::scanner::SUBTITLE_STORE.set(data_dir.join("subtitles"));
         let (store, mut db, from_json) = open_library(data_dir);
         db.upgrade();
         // Age ratings and genres in one spelling each.
@@ -399,6 +400,8 @@ impl App {
     /// the data folder, where downloaded pictures are). Takes the library lock for a moment.
     pub fn may_send(&self, p: &Path, data: bool) -> bool {
         let mut folders: Vec<PathBuf> = self.db.lock().unwrap().sections.iter().flat_map(|s| s.paths.iter().map(PathBuf::from)).collect();
+        // Subtitles that plugins saved for read-only media folders.
+        folders.push(self.data_dir.join("subtitles"));
         if data { folders.push(self.data_dir.clone()); }
         inside_folders(&folders, p)
     }
@@ -480,6 +483,20 @@ impl App {
         std::thread::spawn(move || app.fire_now(&event, data));
     }
 
+    /// Looks for an item's subtitle files again (next to the video and in the subtitle store).
+    pub fn refresh_subtitles(&self, id: u64) {
+        let store = self.data_dir.join("subtitles");
+        let changed = {
+            let mut db = self.db.lock().unwrap();
+            let Some(it) = db.items.get_mut(&id) else { return };
+            let mut changed = false;
+            if let Some(f) = it.file.as_mut() { changed |= crate::scanner::refresh_subtitles(f, &store); }
+            for f in it.parts.iter_mut() { changed |= crate::scanner::refresh_subtitles(f, &store); }
+            changed
+        };
+        if changed { self.save(); }
+    }
+
     /// Sends `schedule.daily` if it was not sent yet today (UTC). True if it was sent now.
     pub fn daily_tick(self: &Arc<Self>) -> bool {
         let file = self.data_dir.join("plugins").join(".daily-last");
@@ -515,6 +532,10 @@ impl App {
         let server = self.server_info();
         for (pl, settings) in listeners {
             let r = plugins::invoke(&pl, &settings, event, &data, &server);
+            // A plugin that saved subtitles for the item: they are looked for again at once.
+            if let (Ok(v), Some(id)) = (&r, data["id"].as_u64()) {
+                if v["refresh_subtitles"] == json!(true) { self.refresh_subtitles(id); }
+            }
             let mut p = self.plugins.lock().unwrap();
             match r {
                 Ok(v) => p.note(&pl.manifest.id, event, true, short(&v.to_string())),
@@ -3942,6 +3963,28 @@ mod background_tests {
         assert_eq!(d["files"][0]["streams"][0]["language"], "ger");
         assert_eq!(d["files"][0]["external_subtitles"][0], "/media/Matrix (1999).en.srt");
         assert!(app.item_detail(99).is_null());
+    }
+
+    #[test]
+    fn subtitles_a_plugin_saved_in_the_data_folder_are_found_and_may_be_sent() {
+        let (app, root) = test_app("substore");
+        let media = root.join("media").join("Heat (1995)");
+        std::fs::create_dir_all(&media).unwrap();
+        let video = media.join("Heat (1995).mkv");
+        std::fs::write(&video, b"x").unwrap();
+        let mut m = item(9, "movie", json!({}));
+        m.file = Some(serde_json::from_value(json!({"path": video.to_string_lossy(), "size": 1, "modified": 0, "container": "mkv"})).unwrap());
+        app.db.lock().unwrap().items.insert(9, m);
+        let dir = crate::scanner::store_dir(&app.data_dir.join("subtitles"), &media);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Heat (1995).de.srt"), b"1").unwrap();
+        app.refresh_subtitles(9);
+        let subs = app.db.lock().unwrap().items.get(&9).unwrap().file.as_ref().unwrap().external_subtitles.clone();
+        let sendable = subs.first().is_some_and(|p| app.may_send(Path::new(p), false));
+        let elsewhere = app.may_send(&app.data_dir.join("library.db"), false);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(subs, vec![dir.join("Heat (1995).de.srt").to_string_lossy().to_string()]);
+        assert!(sendable && !elsewhere);
     }
 
     #[test]

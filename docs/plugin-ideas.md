@@ -34,7 +34,8 @@ ask the server for more (it gets no sign-in). Several plugins below need more, s
 
 ## Notes
 
-- On a Synology the media folders are often mounted read-only into the container. Plugin 1 then
-  needs the mount to be writable, or it keeps the subtitles in its own folder; it says so in its log.
+- On a Synology the media folders are mounted read-only into the container, so plugin 1 keeps its
+  subtitles in `<data>/subtitles/` (the server looks there too); `"next_to_video": true` puts them
+  next to the video on a writable mount.
 - Plugins that keep state (2, 6, 9) keep it in a JSON file in their own folder, which a newer
   bundled version never overwrites.

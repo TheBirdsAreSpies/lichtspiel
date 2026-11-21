@@ -1,9 +1,11 @@
 """Subtitles plugin.
 
 When a movie or episode arrives (library.item.added), looks for subtitles in the languages from
-settings["languages"] on OpenSubtitles and saves the best one next to the video as
-"<video name>.<language>.srt". A language the file already has (inside the video or as a subtitle
-file next to it) is skipped.
+settings["languages"] on OpenSubtitles and saves the best one as "<video name>.<language>.srt" in
+the server's subtitle folder (<data>/subtitles, below it the video's folder), so the media folder
+may stay read-only; with settings["next_to_video"] it goes next to the video instead. The answer
+asks the server to look for the item's subtitles again. A language the file already has (inside
+the video or as a subtitle file) is skipped.
 
 Its own API action: POST /api/plugins/subtitles/call/test checks the key (admins only).
 Needs a free API key from https://www.opensubtitles.com/consumers.
@@ -209,7 +211,19 @@ def sign_in(settings):
     return key, token
 
 
-def fetch(item, settings):
+def store_dir(store, folder):
+    """A video folder's place in the subtitle store, as the server works it out:
+    "/media/Movies/X" -> "<store>/media/Movies/X", "C:\\Movies\\X" -> "<store>/C/Movies/X"."""
+    drive, rest = os.path.splitdrive(folder)
+    parts = []
+    d = "".join(c for c in drive if c not in "\\/?.:")
+    if d:
+        parts.append(d)
+    parts += [p for p in rest.replace("\\", "/").split("/") if p not in ("", ".", "..")]
+    return os.path.join(store, *parts)
+
+
+def fetch(item, settings, data_dir=""):
     """Finds and saves the missing subtitles of one item. Returns the files written."""
     files = item.get("files") or []
     if item.get("type") not in ("movie", "episode") or not files:
@@ -218,8 +232,15 @@ def fetch(item, settings):
     langs = settings.get("languages") or ["de", "en"]
     if isinstance(langs, str):
         langs = [l.strip() for l in langs.split(",") if l.strip()]
-    stem = os.path.splitext(video)[0]
-    missing = [l.lower() for l in langs if not has_language(files, l) and not os.path.exists(stem + ".%s.srt" % l.lower())]
+    folder, name = os.path.split(video)
+    name = os.path.splitext(name)[0]
+    beside = os.path.join(folder, name)
+    if settings.get("next_to_video") or not data_dir:
+        stem = beside
+    else:
+        stem = os.path.join(store_dir(os.path.join(data_dir, "subtitles"), folder), name)
+    missing = [l.lower() for l in langs if not has_language(files, l)
+               and not any(os.path.exists(s + ".%s.srt" % l.lower()) for s in (stem, beside))]
     if not missing:
         return []
     if read(LIMIT_FILE).strip() == today():
@@ -245,10 +266,12 @@ def fetch(item, settings):
             text = r.read(10 * 1024 * 1024)
         target = stem + ".%s.srt" % lang
         try:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
             with open(target, "xb") as f:
                 f.write(text)
         except OSError as e:
-            raise Stop("Could not save %s (%s). Is the media folder mounted writable?" % (target, e.strerror or e))
+            hint = " Is the media folder mounted writable? Without \"next_to_video\" the subtitles go to the server's data folder." if stem == beside and data_dir else ""
+            raise Stop("Could not save %s (%s).%s" % (target, e.strerror or e, hint))
         written.append(target)
     return written
 
@@ -278,14 +301,14 @@ def main():
         print(json.dumps({"skipped": event}))
         return
     try:
-        written = fetch(data.get("item") or {}, settings)
+        written = fetch(data.get("item") or {}, settings, (msg.get("server") or {}).get("data_dir") or "")
     except (Stop, RuntimeError, OSError) as e:
         if isinstance(e, Limit):
             write_private(LIMIT_FILE, today())
         # Shown on the Plugins page as an error of this run.
         log(str(e))
         sys.exit(1)
-    print(json.dumps({"ok": True, "saved": written}))
+    print(json.dumps({"ok": True, "saved": written, "refresh_subtitles": bool(written)}))
 
 
 if __name__ == "__main__":
