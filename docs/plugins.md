@@ -34,11 +34,15 @@ The plugin may print a JSON answer as its last line of output:
   `extra` is replaced as a whole: to add to `ids` or `ratings`, send them back with the
   item's own.
 - `api.call` → any JSON; it is returned to whoever called `POST /api/plugins/<id>/call/<action>`
-  (`data` holds `action`, `body`, `params`, `user` and `admin`). An answer with
+  (`data` holds `action`, `body`, `params`, `user`, `admin` and `may_delete` — whether the caller may
+  delete files, see below). An answer with
   `"mark_watched": [{"id": 42} | {"type": "movie", "ids": {"imdb": "tt…"}} | {"type": "show", "ids": {…}} |
   {"type": "episode", "show": {"ids": {"tvdb": 123}}, "season": 1, "episode": 2}, …]` (optional
   `watched_at`, `plays`) marks those as watched for the caller; the caller gets `matched`,
-  `marked` and `not_found` back instead.
+  `marked` and `not_found` back instead. An answer with `"delete_media": [42, …]` (movie, episode,
+  season or show ids) deletes their files as if the caller had pressed **Delete** on each: only
+  when **Allow media deletion** is on and the caller may delete. The caller gets `deleted` (how
+  many went) and, if any could not, an `error` instead of the plugin's `message`.
 
 Playback events (`playback.started`, `playback.progress` — sent when a player pauses or plays
 on — `playback.stopped`, `playback.watched`) carry `user`, `time` (ms), `progress` (percent),
@@ -66,7 +70,8 @@ while the server was off is sent right after the next start.
 With `"user_panel": true` in `plugin.json` each person gets a panel of the plugin under
 **Settings**. The page asks the plugin with `api.call` action `panel` and shows
 `{"title", "text", "link", "buttons": [{"label", "action", "args", "primary", "confirm"}]}`; a button
-calls its action, with its `args` (any JSON) in the body. The panel may also have a search field,
+calls its action, with its `args` (any JSON) in the body (`"danger": true` makes its
+`confirm` question red). The panel may also have a search field,
 `"input": {"placeholder", "action", "label", "value"}`, whose action gets `{"query"}`, and a list,
 `"items": [{"title", "subtitle", "status", "status_kind", "image", "buttons"}]` (`status_kind`
 `"default"` shows the status green, `"smart"` in the accent colour; `image` is an `https://`
@@ -81,8 +86,9 @@ calls includes `lang` (the page's language). An entry may link to a page of the 
 With `"reads_library": true` in `plugin.json` the plugin gets `server.library`, an address with
 its own key that answers `GET` with every movie and episode — `{"sections": [{"id", "name",
 "kind", "paths"}], "items": [...]}`, each item like `library.item.added`'s `item`, a version
-merged into another with `version_of` — so it can look through the whole library. Titles in the
-trash are left out.
+merged into another with `version_of`, plus `added_at`, `last_played` (unix seconds, 0 = never),
+`watched_by` and `in_progress_by` (user names) — and `users` (every user name), so it can look
+through the whole library. Titles in the trash are left out.
 
 The server sends UTF-8 on standard input. On Windows, Python reads standard input in the console's
 code page, so read the bytes (`json.loads(sys.stdin.buffer.read())`) and answer with escaped JSON

@@ -328,6 +328,15 @@ mod tests {
         let gone = item(8, "movie", json!({crate::scanner::MISSING: 1}));
         let show = item(9, "show", json!({}));
         for i in [m, gone, show] { app.db.lock().unwrap().items.insert(i.id, i); }
+        {
+            let mut db = app.db.lock().unwrap();
+            let v = db.view_mut(2, 7);
+            v.view_count = 1;
+            v.last_viewed_at = 500;
+            db.view_mut(1, 7).view_offset_ms = 60_000;
+            db.view_mut(1, 7).last_viewed_at = 900;
+            db.view_mut(99, 7).view_count = 3;
+        }
         let manifest = |id: &str, reads: bool, admins: bool| -> plugins::Manifest { serde_json::from_value(json!({"id": id, "name": id, "version": "1", "command": ["x"],
             "user_panel": true, "panel_admins_only": admins, "reads_library": reads})).unwrap() };
         {
@@ -358,8 +367,41 @@ mod tests {
         assert!(app.server_info_for(&other).get("library").is_none());
         assert_eq!(v["items"].as_array().map(|a| a.len()), Some(1));
         assert_eq!(v["items"][0]["files"][0]["path"], "/media/Heat (1995).mkv");
+        // Who watched it (a person no longer there is left out), for clean-up suggestions.
+        assert_eq!(v["users"], json!(["admin", "kid"]));
+        assert_eq!((&v["items"][0]["watched_by"], &v["items"][0]["in_progress_by"], &v["items"][0]["last_played"]), (&json!(["kid"]), &json!(["admin"]), &json!(900)));
         assert_eq!(codes, [403, 403, 403]);
         assert_eq!((for_admin, for_kid), (2, 1));
+    }
+
+    #[test]
+    fn a_plugin_deletes_files_only_with_the_callers_own_right_to_delete() {
+        let (app, root) = test_app("plugin-delete");
+        let media = root.join("media");
+        std::fs::create_dir_all(&media).unwrap();
+        let video = media.join("Heat (1995).mkv");
+        std::fs::write(&video, b"x").unwrap();
+        let mut m = item(7, "movie", json!({}));
+        m.file = Some(serde_json::from_value(json!({"path": video.to_string_lossy(), "size": 1, "modified": 0, "container": "mkv"})).unwrap());
+        let (admin, kid) = {
+            let mut db = app.db.lock().unwrap();
+            db.sections.push(serde_json::from_value(json!({"id": 1, "name": "Filme", "kind": "movie", "paths": [media.to_string_lossy()], "created_at": 0})).unwrap());
+            db.items.insert(7, m);
+            (db.users[0].clone(), db.users[1].clone())
+        };
+        let by_kid = crate::handlers::delete_media_from_plugin(&app, &kid, &[json!(7)]);
+        let kept = video.exists();
+        app.db.lock().unwrap().settings.allow_media_deletion = false;
+        let switched_off = crate::handlers::delete_media_from_plugin(&app, &admin, &[json!(7)]);
+        app.db.lock().unwrap().settings.allow_media_deletion = true;
+        let by_admin = crate::handlers::delete_media_from_plugin(&app, &admin, &[json!(7), json!(12345)]);
+        let (gone, listed) = (!video.exists(), app.db.lock().unwrap().items.contains_key(&7));
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(by_kid.0, 0);
+        assert!(kept && by_kid.1.len() == 1);
+        assert_eq!(switched_off.0, 0);
+        assert_eq!(by_admin, (1, vec!["Not found".to_string()]));
+        assert!(gone && !listed);
     }
 
     #[test]

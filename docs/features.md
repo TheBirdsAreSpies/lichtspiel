@@ -112,10 +112,10 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Eleven
+  details, react to events (new item, playback, invites …) and add their own API calls. Twelve
   are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list**,
-  **Subtitles**, the **Library doctor**, **Anime details**, **Smart home**, **New on Lichtspiel**,
-  **Telegram / Pushover**, **SIMKL / MyAnimeList** and **Lichtspiel Wrapped**.
+  **Subtitles**, the **Library doctor**, **Clean-up suggestions**, **Anime details**, **Smart home**,
+  **New on Lichtspiel**, **Telegram / Pushover**, **SIMKL / MyAnimeList** and **Lichtspiel Wrapped**.
   **Lichtspiel Wrapped** shows each person their year under **Settings → Account**: hours watched,
   movies and episodes, favourite genres, most watched shows, the longest binge (episodes of one
   show, each within `binge_gap_hours` of the last, default 3), the busiest month and day, and the
@@ -180,6 +180,15 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   without season or number, and titles for which no details were found online. Each entry links
   to its title and can be ignored; `skip_libraries` leaves libraries out by name (an anime
   library in Japanese …).
+  **Clean-up suggestions** helps when the disk fills up: once a day and on **Look through now** it
+  shows admins under **Settings → Account** three lists, each with its total size: titles nobody
+  watched for `unwatched_months` (default 12) that have been there at least as long, titles
+  everyone has seen (the user names in `people`, or everyone) and nobody played in the last 30
+  days, and the 50 biggest titles for their running time (gigabytes per hour). A show counts as
+  one title with all its episodes; versions merged into a title and libraries in `skip_libraries`
+  are left out. Nothing goes by itself: each title links to its page, can be kept off the lists,
+  and has a **Delete** button (after asking) when **Allow media deletion** is on and the admin may
+  delete — the files go as with **Delete** on the title's page.
   The **Wish list** gives everyone a panel under **Settings → Account**: search for a movie or show,
   wish for it, and see how the wishes stand (wished, downloading with its percentage, downloaded,
   here). A wish goes straight to Radarr (movies) or Sonarr (shows), which look for it; a title

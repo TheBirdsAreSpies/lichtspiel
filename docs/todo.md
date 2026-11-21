@@ -42,9 +42,9 @@ bundled plugins.
 - [x] **Subtitle sync** — subtitles from OpenSubtitles are often a few seconds off. The server
   already listened to the sound when an admin asked in the player; now every subtitle file is
   synchronized once by itself (maintenance window, and right after the plugin downloads one).
-- [ ] **Clean-up suggestions (plugin, admins)** — like Maintainerr: titles nobody watched for X
+- [x] **Clean-up suggestions (plugin, admins)** — like Maintainerr: titles nobody watched for X
   months, movies everyone has seen, the biggest files per hour of running time. Deleted only on a
-  click, and only with *Allow media deletion* on. Helps when the NAS fills up.
+  click, and only with *Allow media deletion* on. Helps when the NAS fills up. Built as the `cleanup` plugin.
 
 ### Later
 

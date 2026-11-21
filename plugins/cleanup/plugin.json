@@ -1,0 +1,19 @@
+{
+  "id": "cleanup",
+  "name": "Clean-up suggestions",
+  "version": "1.0",
+  "author": "Lichtspiel",
+  "description": "Once a day, shows admins under Settings what could go when the disk fills up: titles nobody watched for a long time, titles everyone has seen, and the biggest files for their running time. Nothing is deleted by itself: each title has a Delete button, shown only when media deletion is allowed. Settings: months without watching (unwatched_months, default 12), the people who count for \"everyone has seen it\" by user name (people; empty = everyone), libraries to leave out by name (skip_libraries).",
+  "command": ["python3", "main.py"],
+  "hooks": ["api.call", "schedule.daily"],
+  "user_panel": true,
+  "panel_admins_only": true,
+  "reads_library": true,
+  "settings": {
+    "unwatched_months": 12,
+    "people": [],
+    "skip_libraries": []
+  },
+  "timeout_seconds": 120,
+  "enabled_by_default": false
+}

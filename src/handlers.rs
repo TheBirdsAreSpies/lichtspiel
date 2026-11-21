@@ -1162,6 +1162,21 @@ pub fn mark_watched_from_plugin(app: &Arc<App>, user: &User, list: &[Value]) -> 
     (found, marked)
 }
 
+/// Deletes the titles a plugin named (`delete_media`), each as if the caller
+/// had pressed "Delete" on it; gives how many went and why others did not.
+pub fn delete_media_from_plugin(app: &Arc<App>, user: &User, list: &[Value]) -> (usize, Vec<String>) {
+    let (mut deleted, mut errors) = (0, vec![]);
+    for id in list.iter().take(500).filter_map(|v| v.as_u64()) {
+        let r = crate::actions::delete_media(app, user, id);
+        if r.status_code().0 == 200 { deleted += 1; continue; }
+        let mut b = Vec::new();
+        let _ = r.into_reader().read_to_end(&mut b);
+        let why = serde_json::from_slice::<Value>(&b).ok().and_then(|v| v["error"].as_str().map(String::from)).unwrap_or_else(|| "could not be deleted".into());
+        if !errors.contains(&why) { errors.push(why); }
+    }
+    (deleted, errors)
+}
+
 pub fn plugin_call(app: &Arc<App>, ctx: &Ctx, user: &User, pid: &str, action: &str) -> Resp {
     let pl = app.plugins.lock().unwrap().get(pid).cloned();
     let Some(pl) = pl else { return fail(404, "No such plugin") };
@@ -1169,7 +1184,8 @@ pub fn plugin_call(app: &Arc<App>, ctx: &Ctx, user: &User, pid: &str, action: &s
     if !st.enabled {
         return fail(409, "This plugin is switched off");
     }
-    let data = json!({"action": action, "body": ctx.body, "params": ctx.params.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>(), "user": user.username, "user_name": user.display_name(), "admin": user.admin});
+    let data = json!({"action": action, "body": ctx.body, "params": ctx.params.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>(), "user": user.username, "user_name": user.display_name(), "admin": user.admin,
+        "may_delete": crate::actions::may_delete(&app.db.lock().unwrap(), user)});
     match plugins::invoke(&pl, &st.settings, "api.call", &data, &app.server_info_for(&pl)) {
         Ok(mut v) => {
             // {"mark_watched": [...]}: the plugin found these watched elsewhere
@@ -1184,6 +1200,20 @@ pub fn plugin_call(app: &Arc<App>, ctx: &Ctx, user: &User, pid: &str, action: &s
                     o.insert("not_found".into(), json!(list.len().saturating_sub(found)));
                 }
                 detail = format!("{action}: {found} of {} found, {marked} newly watched", list.len());
+            }
+            // {"delete_media": [ids]}: the files go, with the caller's own right to
+            // delete (and only while media deletion is allowed in the settings).
+            if let Some(list) = v.get("delete_media").and_then(|l| l.as_array()).cloned() {
+                let (deleted, errors) = delete_media_from_plugin(app, user, &list);
+                if let Some(o) = v.as_object_mut() {
+                    o.remove("delete_media");
+                    o.insert("deleted".into(), json!(deleted));
+                    if !errors.is_empty() {
+                        o.remove("message");
+                        o.insert("error".into(), json!(errors.join("; ")));
+                    }
+                }
+                detail = format!("{action}: {deleted} of {} deleted", list.len());
             }
             app.plugins.lock().unwrap().note(pid, "api.call", true, detail);
             ok(v)

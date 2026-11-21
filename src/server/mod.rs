@@ -408,12 +408,31 @@ impl App {
         let sections: Vec<Value> = db.sections.iter().map(|s| json!({"id": s.id, "name": s.name, "kind": s.kind.as_str(), "paths": s.paths})).collect();
         let mut ids: Vec<u64> = db.items.values().filter(|i| matches!(i.kind, ItemKind::Movie | ItemKind::Episode) && !i.is_extra() && !i.extra.contains_key(crate::scanner::MISSING)).map(|i| i.id).collect();
         ids.sort_unstable();
+        // Who watched what, from the per-person states ("user:item"): for clean-up suggestions.
+        let names: HashMap<u64, &str> = db.users.iter().map(|u| (u.id, u.username.as_str())).collect();
+        let mut seen: HashMap<u64, (Vec<&str>, Vec<&str>, u64)> = HashMap::new();
+        for (key, v) in db.views.iter() {
+            let Some((uid, iid)) = key.split_once(':').and_then(|(u, i)| Some((u.parse::<u64>().ok()?, i.parse::<u64>().ok()?))) else { continue };
+            let Some(name) = names.get(&uid) else { continue };
+            let e = seen.entry(iid).or_default();
+            if v.view_count > 0 { e.0.push(name); }
+            if v.view_offset_ms > 0 { e.1.push(name); }
+            e.2 = e.2.max(v.last_viewed_at);
+        }
         let items: Vec<Value> = ids.iter().map(|id| {
             let mut o = detail_in(&db, *id);
-            if let Some(v) = db.items.get(id).and_then(|i| i.version_of()) { o["version_of"] = json!(v); }
+            if let Some(it) = db.items.get(id) {
+                if let Some(v) = it.version_of() { o["version_of"] = json!(v); }
+                o["added_at"] = json!(it.added_at);
+            }
+            let (watched, started, last) = seen.remove(id).unwrap_or_default();
+            o["watched_by"] = json!(watched);
+            o["in_progress_by"] = json!(started);
+            o["last_played"] = json!(last);
             o
         }).collect();
-        json!({"sections": sections, "items": items})
+        let users: Vec<&str> = db.users.iter().map(|u| u.username.as_str()).collect();
+        json!({"sections": sections, "users": users, "items": items})
     }
 
     /// Plugins that listen to `event` and are switched on, with their settings.
