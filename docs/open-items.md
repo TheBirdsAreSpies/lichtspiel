@@ -1,6 +1,6 @@
 # Open items after the 2026-11-15/16 review
 
-The review of 2026-11-15 and 2026-11-16 found 126 problems. Almost all are fixed; [review-2026-11-15.md](review-2026-11-15.md) lists every one with its commit. This page lists only what is still open: 2 partly fixed items, and a few known limits that are worth real follow-up work. Every "where" below was checked again against the code at commit `ddb46ee` (2026-11-20).
+The review of 2026-11-15 and 2026-11-16 found 126 problems. Almost all are fixed; [review-2026-11-15.md](review-2026-11-15.md) lists every one with its commit. This page lists only what is still open: 1 partly fixed item, and a few known limits that are worth real follow-up work. Every "where" below was checked again against the code at commit `ddb46ee` (2026-11-20).
 
 Changes since the first version of this page (`2e6689d`):
 
@@ -14,6 +14,7 @@ Changes since the first version of this page (`2e6689d`):
 - **C7** is fixed (`456679e`): on a computer a picture over 3 MB is shrunk in the app before upload (`lib/picture.dart`, with the `image` package): turned upright, at most 3000 px, JPEG at quality 90 to 70 and smaller until it fits; a picture with see-through parts (a logo) stays a PNG. A 24-megapixel photo takes about 2 s, in an isolate.
 - The container runs as non-root on the NAS (confirmed by the owner on 2026-11-21).
 - **D8** is fixed (2026-11-21): `docker-compose.yml` is the only description of the container. `deploy.yml` starts it with `docker compose -p lichtspiel up -d --no-build` (the rollback with `LICHTSPIEL_IMAGE=lichtspiel:previous`) and fills in its Gitea variables; the graphics chip's group goes in as `LICHTSPIEL_GPU_GROUP`. `LICHTSPIEL_DOCKER_ARGS` and `LICHTSPIEL_MEDIA_GROUPS` are gone (a warning while still set). Not yet run on the NAS: the first deploy shows whether the runner has `docker compose`.
+- **W14** is fixed (2026-11-21): a library of more than 2,000 titles has only the cards around the screen (the screen and 1,500 px above and below, whole rows); a block above and below stands in for the other rows, as tall as they are. Scrolling moves the window once the screen comes within 750 px of its edge; loaded cards are kept and put back, empty ones made anew. Measured in headless Edge at 1280 px with 80,000 titles: opening 0.13 s (0.24 s with the CPU slowed 4x), the scroll bar dragged to the end 5 ms (19 ms), never more than about 90 cards on the page. A letter lands on its first title, another window width keeps the title at the top, and coming back to the page finds the same place. Smaller libraries get all their cards as before.
 - Two known limits are fixed: a restore now runs `Db::after_load` like a start does (old default server name, default playlists; test `a_restored_old_backup_gets_the_new_server_name_and_the_default_playlists`), and the app puts brackets around an IPv6 address typed without them (`Api.normalize`, with a test).
 
 ## Getting started
@@ -65,7 +66,6 @@ Commits use Conventional Commits with a scope, and the subject describes what th
 | ID | Area | Title | Status | Size |
 |---|---|---|---|---|
 | C12 | Client | Minor player errors bring up the error screen | partly | M |
-| W14 | Web | A huge library builds one empty card per title up front | partly | M |
 | D11 | Deploy | The Docker image was 616 MB; now 425 MB with Jellyfin's ffmpeg | check on the NAS | S |
 
 Sizes: S is under an hour and a few lines, M is a few hours or needs a decision, L is a day or more. Paths in the client section are relative to `clients/lichtspiel/`.
@@ -80,27 +80,6 @@ Report: [reviews/2026-11-15-client.md](reviews/2026-11-15-client.md).
 - **Where:** `lib/screens/player.dart:466-475` (the error listener), `:873` (the error text replaces the picture).
 - **Problem:** media_kit passes many mpv log lines on as errors, and some are recoverable. With any quality other than "Original", one failed HLS segment request (a `tcp:` line) goes straight to "Wiedergabe fehlgeschlagen", even though mpv would have carried on.
 - **Fix:** ignore an error while playback is still moving, for example when `player.state.playing` is true and the position keeps advancing over the next second or two. The media_kit docs don't say which errors are recoverable, so test it with a real failed segment.
-- **Size:** M.
-
-### Web
-
-Report: [reviews/2026-11-15-web.md](reviews/2026-11-15-web.md). Remember the rebuild: the web files are compiled into the server.
-
-#### W14. A huge library builds one empty card per title up front
-
-- **Status:** partly fixed (2026-11-20). Opening a huge library is fast now; jumping far into it the first time is not yet.
-- **Measured** in Edge (headless, 1280 px wide), building the grid as the library page does (60 cards, the rest empty), with the CPU also slowed down 4× as a rough stand-in for a phone:
-
-  | Titles | Before (normal / 4× slower) | After |
-  |---|---|---|
-  | 5,000 | 0.1 s / 0.5 s | |
-  | 20,000 | 0.4 s / 2.1 s | 0.03 s / 0.18 s |
-  | 80,000 | 1.6 s / 8.4 s (400,590 elements) | 0.04 s / 0.16 s |
-
-  Most of the time was the browser laying out the empty cards, not making them.
-- **What changed:** `pickGrid()` makes empty cards 1,500 at a time (`web/app.js:655`, `grid._reserve`). Below the last one, a single block (`.grid-rest`) stands in for the rest, as tall as their rows (the scroll bar and a saved scroll position stay right: the height is the same before and after the block turns into cards, also after the poster size changes). When it comes near the screen, by scrolling or by dragging the scroll bar into it, it turns into empty cards down to a bit below the screen (`:643`). A letter at the side first makes the cards up to its title (`grid._ensure`, `:1211`). The block is never the browser's scroll anchor (`overflow-anchor: none`); otherwise the browser holds it in place while cards go in above it, and it builds the whole library after all.
-- **Still open:** cards are made in one run from the top, so the first jump far down (the scroll bar dragged to the end, or "Z") still makes all the empty cards before it: about 0.9 s, or 4.3 s with the CPU slowed 4×, at 80,000 titles. It happens once per visit, and the page no longer freezes when it opens.
-- **Fix for the rest:** real windowing: only the cards around the screen exist, with a spacer above and below that start and end on whole rows (they have to be rebuilt when the number of columns changes), and `grid.children[i]` in the library page replaced by a lookup by title number.
 - **Size:** M.
 
 ### Deploy

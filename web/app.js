@@ -559,7 +559,7 @@ function pickGrid(items, cardOpts) {
   const mark = watched => async () => {
     const idx = [...picked];
     // (Also after "Undo": the cards show what the titles have now.)
-    const redraw = () => { for (const i of idx) { const fresh = card(i); cards[i].replaceWith(fresh); cards[i] = fresh; } draw(); };
+    const redraw = () => { for (const i of idx) if (cards[i]) { const fresh = card(i); cards[i].replaceWith(fresh); cards[i] = fresh; } draw(); };
     await markWatched(idx.map(i => items[i]), watched, redraw);
     clear();
   };
@@ -609,7 +609,7 @@ function pickGrid(items, cardOpts) {
       bulkEdit(chosen(), async () => {
         for (const i of [...picked]) {
           try { Object.assign(items[i], meta(await GET('/library/metadata/' + items[i].id))[0]); } catch (err) { /* keep what we have */ }
-          const fresh = card(i); cards[i].replaceWith(fresh); cards[i] = fresh;
+          if (cards[i]) { const fresh = card(i); cards[i].replaceWith(fresh); cards[i] = fresh; }
         }
         clear();
       });
@@ -635,74 +635,109 @@ function pickGrid(items, cardOpts) {
     if (!circle && !touchPicking && !e.ctrlKey && !e.metaKey && !e.shiftKey) return false;
     e.preventDefault(); toggle(i, e); return true;
   } });
-  const card = i => { const c = card0(i); c.dataset.i = i; return c; };
-  const cards = [];
+  const card = i => { const c = card0(i); c.dataset.i = i; c.classList.toggle('picked', picked.has(i)); return c; };
+  const cards = []; // the cards of loaded titles (made when first shown; kept while scrolled away)
+  // The blocks above and below the cards of a big library (see below).
+  const top = h('div', { class: 'grid-rest', 'aria-hidden': 'true' }), bottom = h('div', { class: 'grid-rest', 'aria-hidden': 'true' });
   // More items arrive while scrolling.
-  // (In front of the block that stands for the titles not reserved yet, see below.)
-  const rest = h('div', { class: 'grid-rest', 'aria-hidden': 'true' });
-  const put = el => (rest.isConnected ? rest.before(el) : grid.append(el));
+  const put = el => (bottom.isConnected ? bottom.before(el) : grid.append(el));
   grid._add = list => { for (const it of list) { const i = items.length; items.push(it); cards.push(card(i)); put(cards[i]); } };
   const firstItems = items.splice(0); grid._add(firstItems);
   grid._clear = () => { if (!picked.size) return false; clear(); return true; };
-  // Empty cards for titles that are not loaded yet (items[i] is null until _put fills it). A huge library
-  // gets them a block at a time: below the last one a single block as tall as the remaining rows stands in
-  // for the rest, and turns into empty cards as it comes near the screen. (80,000 empty cards at once froze
-  // the page for seconds, most of it laying them out.) _onNew(cards) learns of each new batch.
-  const CHUNK = 1500;
-  let want = 0; // all titles: loaded, empty cards, and the ones the block stands for
-  const metrics = () => {
-    const cs = getComputedStyle(grid), gap = parseFloat(cs.rowGap) || 0;
-    const ref = cards[cards.length - 1];
-    return { cols: Math.max(1, cs.gridTemplateColumns.split(' ').filter(Boolean).length), gap, rowH: (ref ? ref.getBoundingClientRect().height : 200) + gap };
+  // A library with titles not loaded yet (items[i] is null until _put fills it). A big one (more than ALL titles)
+  // has only the cards around the screen: from lo to hi, whole rows, with a block above and below as tall as the
+  // rows they stand for, so the scroll bar and a saved scroll position are right. Scrolling (or a jump) moves
+  // that window; the cards of loaded titles are kept and put back, empty cards are made anew.
+  // (80,000 empty cards at once froze the page for seconds, most of it laying them out.)
+  // _onNew(cards) learns of each new empty card, _onGone(cards) of each one taken out.
+  const ALL = 2000, MARGIN = 1500;
+  const ph = new Map(); // i -> the empty card shown for it
+  let want = 0, lo = 0, hi = 0, cols = 1, rowH = 200, gap = 0, width = 0;
+  const at = i => cards[i] || ph.get(i);
+  const columns = () => Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length);
+  // A row's height with its gap: from two rows on the screen, else from one card.
+  const measure = () => {
+    gap = parseFloat(getComputedStyle(grid).rowGap) || 0;
+    const a = at(lo), b = hi - lo > cols ? at(lo + cols) : null;
+    if (a && b && b.offsetTop > a.offsetTop) rowH = b.offsetTop - a.offsetTop;
+    else if (a && a.offsetHeight) rowH = a.offsetHeight + gap;
   };
-  const fitRest = () => {
-    if (want <= items.length) { rest.remove(); return; }
-    if (!rest.isConnected) grid.append(rest);
-    const { cols, gap, rowH } = metrics();
-    const rows = Math.ceil(want / cols) - Math.ceil(items.length / cols);
-    const px = Math.max(0, rows * rowH - gap) + 'px';
-    if (rest.style.height !== px) rest.style.height = px;
+  const sizeBlock = (el, rows) => { el.style.display = rows > 0 ? '' : 'none'; el.style.height = rows > 0 ? (rows * rowH - gap) + 'px' : ''; };
+  const sizeBlocks = () => { sizeBlock(top, lo / cols); sizeBlock(bottom, Math.ceil(want / cols) - Math.ceil(hi / cols)); };
+  // The cards for the screen with its top `y` px below the grid's top, and `margin` px more above and below.
+  const range = (y, margin) => {
+    if (want <= ALL) return [0, want];
+    const rows = Math.ceil(want / cols);
+    const r0 = Math.min(rows - 1, Math.max(0, Math.floor((y - margin) / rowH)));
+    const r1 = Math.max(r0 + 1, Math.ceil((y + innerHeight + margin) / rowH));
+    return [r0 * cols, Math.min(want, r1 * cols)];
   };
-  const grow = upTo => {
-    upTo = Math.min(want, upTo);
-    const made = [], music = cards[0] && cards[0].classList.contains('music');
-    while (items.length < upTo) {
-      const i = items.length; items.push(null);
-      const ph = h('div', { class: 'card ph' + (music ? ' music' : ''), 'data-i': i }, h('div', { class: 'poster' }), h('div', { class: 't' }, '\u00a0'), h('div', { class: 's' }, '\u00a0'));
-      cards.push(ph); made.push(ph);
-    }
-    if (made.length) { const f = document.createDocumentFragment(); f.append(...made); put(f); }
-    fitRest();
+  const show = (nlo, nhi) => {
+    const gone = [], made = [];
+    for (let i = lo; i < hi; i++) if (i < nlo || i >= nhi) { const e = at(i); if (!e) continue; e.remove(); if (ph.get(i) === e) { ph.delete(i); gone.push(e); } }
+    const get = i => {
+      if (cards[i]) return cards[i];
+      if (items[i]) return (cards[i] = card(i));
+      const e = h('div', { class: 'card ph' + (music ? ' music' : ''), 'data-i': i }, h('div', { class: 'poster' }), h('div', { class: 't' }, '\u00a0'), h('div', { class: 's' }, '\u00a0'));
+      ph.set(i, e); made.push(e); return e;
+    };
+    const keepLo = Math.max(lo, nlo), keepHi = Math.min(hi, nhi);
+    const front = document.createDocumentFragment(), back = document.createDocumentFragment();
+    if (keepLo < keepHi) { for (let i = nlo; i < keepLo; i++) front.append(get(i)); for (let i = keepHi; i < nhi; i++) back.append(get(i)); }
+    else for (let i = nlo; i < nhi; i++) back.append(get(i));
+    top.after(front); bottom.before(back);
+    lo = nlo; hi = nhi; sizeBlocks();
+    if (gone.length && grid._onGone) grid._onGone(gone);
     if (made.length && grid._onNew) grid._onNew(made);
   };
-  // The block near the screen (scrolled to, or the scroll bar dragged into it): empty cards down to a bit below the screen.
-  // (The block is never the browser's scroll anchor, see .grid-rest: else the browser would keep it in place
-  // while cards go in above it, and it would ask for more again and again.)
-  let near = 0;
+  let music = false;
+  // Move the window when the screen comes near its edge (half the margin), so not every scroll step changes it.
+  const sync = () => {
+    if (!grid.isConnected || !want) return;
+    const y = -grid.getBoundingClientRect().top;
+    const [alo, ahi] = range(y, MARGIN / 2);
+    if (lo <= alo && hi >= ahi) return;
+    show(...range(y, MARGIN));
+  };
+  // Another poster size or window width: other rows. The title at the top of the screen stays there.
+  const relayout = () => {
+    const y = -grid.getBoundingClientRect().top, inside = y > 0;
+    const first = inside ? Math.floor(y / rowH) * cols : 0, into = inside ? Math.min(y - Math.floor(y / rowH) * rowH, rowH) : 0;
+    cols = columns(); width = grid.clientWidth;
+    measure();
+    const ny = Math.floor(first / cols) * rowH + into;
+    show(...range(ny, MARGIN)); measure(); sizeBlocks();
+    if (inside) window.scrollTo(0, window.scrollY + grid.getBoundingClientRect().top + Math.floor(first / cols) * rowH + into);
+    sync();
+  };
+  let ticking = 0;
   const onScroll = () => {
-    if (near) return;
-    near = requestAnimationFrame(() => {
-      near = 0;
-      if (!grid.isConnected) { window.removeEventListener('scroll', onScroll); return; }
-      if (!rest.isConnected) return;
-      const top = rest.getBoundingClientRect().top, reach = innerHeight + 1500;
-      if (top > reach) return;
-      const { cols, rowH } = metrics();
-      grow(Math.ceil((items.length + Math.ceil((reach - top) / rowH) * cols) / CHUNK) * CHUNK);
-    });
+    if (ticking) return;
+    ticking = requestAnimationFrame(() => { ticking = 0; if (!grid.isConnected) { window.removeEventListener('scroll', onScroll); return; } sync(); });
   };
   grid._reserve = n => {
     want = items.length + n;
-    grow(items.length + CHUNK);
+    music = !!(cards[0] && cards[0].classList.contains('music'));
+    grid.prepend(top); grid.append(bottom);
+    lo = 0; hi = items.length; cols = columns(); width = grid.clientWidth; measure();
+    if (want <= ALL) show(0, want); else { sizeBlocks(); sync(); }
     window.addEventListener('scroll', onScroll, { passive: true });
-    // Another poster size or window width: other rows, so another height for the block.
-    new ResizeObserver(() => { if (grid.isConnected) { fitRest(); onScroll(); } }).observe(grid);
+    const ro = new ResizeObserver(() => {
+      if (!grid.isConnected) { ro.disconnect(); return; }
+      if (grid.clientWidth !== width || columns() !== cols) relayout();
+    });
+    ro.observe(grid);
   };
-  // Title i must have its card (a letter at the side jumps to it).
-  grid._ensure = i => grow(Math.ceil((i + 1) / CHUNK) * CHUNK);
+  // Where title i's card is (page coordinates), also while it is not on the page; and its card, if shown.
+  grid._top = i => { const e = i >= lo && i < hi ? at(i) : null; return window.scrollY + (e ? e.getBoundingClientRect().top : grid.getBoundingClientRect().top + Math.floor(i / cols) * rowH); };
+  grid._card = i => (i >= lo && i < hi ? at(i) || null : null);
+  grid._sync = sync;
   grid._put = (start, list) => list.forEach((it, k) => {
     const i = start + k;
-    if (i < items.length && !items[i]) { items[i] = it; const c = card(i); cards[i].replaceWith(c); cards[i] = c; }
+    if (i >= want || items[i]) return;
+    items[i] = it;
+    const old = ph.get(i);
+    if (old) { ph.delete(i); const c = (cards[i] = card(i)); old.replaceWith(c); }
   });
   // The bar sits outside the page, so it goes when the page changes.
   document.querySelectorAll('.pickbar').forEach(b => b.remove());
@@ -1222,6 +1257,7 @@ async function sectionPage(id, qs) {
       if (!grid) {
         grid = pickGrid(r.Metadata.slice(), cardOpts); holder.replaceChildren(grid);
         grid._onNew = els => els.forEach(el => more.observe(el));
+        grid._onGone = els => els.forEach(el => { more.unobserve(el); visible.delete(el); });
         grid._reserve(total - r.Metadata.length);
       } else grid._put(p * PAGE_SIZE, r.Metadata);
       have.add(p);
@@ -1229,7 +1265,7 @@ async function sectionPage(id, qs) {
       if (e.name === 'AbortError') return; // another page was opened
       // Tried again when the page is scrolled to the next time.
       toast(e.message);
-      if (grid) for (let i = p * PAGE_SIZE; i < Math.min(total, (p + 1) * PAGE_SIZE); i++) { const el = grid.children[i]; if (el && el.classList.contains('ph')) more.observe(el); }
+      if (grid) for (let i = p * PAGE_SIZE; i < Math.min(total, (p + 1) * PAGE_SIZE); i++) { const el = grid._card(i); if (el && el.classList.contains('ph')) more.observe(el); }
     } finally { busy.delete(p); }
   };
   // Empty cards that come near the screen load their page, unless they are only passed (dragging the scroll bar).
@@ -1247,17 +1283,17 @@ async function sectionPage(id, qs) {
   // A letter scrolls to its first poster at once; its page is fetched on the spot (nothing before it is).
   let forced = null, forcedAt = 0; // the letter just clicked stays lit for a moment, whatever is under the bar
   const jump = async offset => {
-    if (grid) grid._ensure(Math.min(offset, total - 1));
+    const i = Math.min(offset, total - 1);
     const at = () => {
-      const card = grid && grid.children[Math.min(offset, grid.children.length - 1)];
-      if (!card) return null;
+      if (!grid) return null;
       const head = sticky.getBoundingClientRect().bottom;
-      window.scrollTo({ top: window.scrollY + card.getBoundingClientRect().top - head - 12, behavior: 'auto' });
+      window.scrollTo({ top: grid._top(i) - head - 12, behavior: 'auto' });
+      grid._sync(); // the cards there are made at once, not on the next frame
       return window.scrollY;
     };
     forced = offset; forcedAt = Date.now();
     const y = at();
-    await loadPage(pageOf(Math.min(offset, total - 1)));
+    await loadPage(pageOf(i));
     // The page's real cards may be a little taller than the empty ones: line up again, if nobody scrolled meanwhile.
     if (y !== null && Math.abs(window.scrollY - y) < 3) at();
   };
