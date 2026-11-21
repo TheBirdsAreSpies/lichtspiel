@@ -168,6 +168,8 @@ pub struct App {
     pub stats: crate::admin::stats::Stats,
     /// "Coming soon": episodes and movies still to come (kept in upcoming.json).
     pub upcoming: Mutex<crate::connect::upcoming::Store>,
+    /// The disks of the libraries and the data folder, as found by the last check (the dashboard).
+    pub disks: Mutex<Vec<crate::admin::disk::Disk>>,
 }
 
 /// Counts finished details lookups since the server started, so the web app
@@ -278,6 +280,7 @@ impl App {
             job_items: Mutex::new((String::new(), vec![])),
             stats: Default::default(),
             upcoming: Mutex::new(crate::connect::upcoming::Store::load(data_dir)),
+            disks: Mutex::new(vec![]),
         });
         app.sync_plugin_states();
         match app.try_save() {

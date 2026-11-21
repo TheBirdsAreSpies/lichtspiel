@@ -48,6 +48,7 @@ pub const EVENTS: &[&str] = &[
     "playlist.updated",
     "server.started",
     "schedule.daily",
+    "disk.low",
     "api.call",
 ];
 

@@ -3,9 +3,9 @@
   "name": "Telegram / Pushover",
   "version": "1.0",
   "author": "Lichtspiel",
-  "description": "Sends a message to Telegram and/or Pushover when something happens: new movies and episodes (one message per scan, with the poster when there is one), playback, problems reported, invites and new users. Telegram: the token of a bot made with @BotFather (telegram_bot_token); then connect a chat or group under Settings → Account. Pushover: the app's token (pushover_token) and the user or group keys (pushover_users). \"events\" chooses what is sent: library.item.added, library.scan.finished, playback.started, playback.stopped, playback.watched, item.problem, download.ready, user.invited, user.joined, server.started. \"language\": \"de\" or \"en\" (empty = the language of the admin who opened the panel last).",
+  "description": "Sends a message to Telegram and/or Pushover when something happens: new movies and episodes (one message per scan, with the poster when there is one), playback, problems reported, invites and new users. Telegram: the token of a bot made with @BotFather (telegram_bot_token); then connect a chat or group under Settings → Account. Pushover: the app's token (pushover_token) and the user or group keys (pushover_users). \"events\" chooses what is sent: library.item.added, library.scan.finished, playback.started, playback.stopped, playback.watched, item.problem, download.ready, user.invited, user.joined, server.started. \"disk_warnings\": a message when a library's disk or the data folder's is nearly full (the limit is under Settings → Library; true unless set to false). \"language\": \"de\" or \"en\" (empty = the language of the admin who opened the panel last).",
   "command": ["python3", "main.py"],
-  "hooks": ["library.item.added", "library.scan.finished", "playback.started", "playback.stopped", "playback.watched", "item.problem", "download.ready", "user.invited", "user.joined", "server.started", "api.call"],
+  "hooks": ["library.item.added", "library.scan.finished", "playback.started", "playback.stopped", "playback.watched", "item.problem", "download.ready", "user.invited", "user.joined", "server.started", "disk.low", "api.call"],
   "user_panel": true,
   "panel_admins_only": true,
   "settings": {
@@ -13,7 +13,8 @@
     "pushover_token": "",
     "pushover_users": [],
     "events": ["library.item.added", "playback.started", "item.problem", "user.joined"],
-    "language": ""
+    "language": "",
+    "disk_warnings": true
   },
   "timeout_seconds": 30,
   "enabled_by_default": false

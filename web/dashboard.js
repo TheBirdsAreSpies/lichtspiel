@@ -255,6 +255,18 @@ setInterval(() => {
     const bar = el.parentElement.querySelector('.pbar i'); if (bar) bar.style.width = Math.min(100, off / dur * 100) + '%';
   });
 }, 1000);
+// The fullest disk of the libraries and the data folder; the others in its tooltip.
+function diskTile(d) {
+  const disks = [...(d.disks || [])].sort((a, b) => a.free_percent - b.free_percent);
+  if (!disks.length) return null;
+  const holds = x => x.holds.map(w => w === 'data' ? t('data folder') : w).join(', ');
+  const line = x => t('{free} free of {total}', { free: fmtBytes(x.free_bytes), total: fmtBytes(x.total_bytes) }) + ' · ' + holds(x);
+  const low = d.disk_warn_percent && disks[0].free_percent < d.disk_warn_percent;
+  const el = tile(t('Disk space'), h('span', { style: low ? 'color:var(--red)' : null }, fmtPct(disks[0].free_percent)),
+    line(disks[0]) + (disks.length > 1 ? ' · ' + t('{n} more disks', { n: disks.length - 1 }) : ''));
+  el.title = disks.map(x => fmtPct(x.free_percent) + ' — ' + line(x) + '\n' + x.paths.join('\n')).join('\n\n');
+  return el;
+}
 function tile(label, value, note, spark) {
   return h('div', { class: 'tile' }, h('div', { class: 'dim lbl' }, label), h('div', { class: 'val' }, value), note ? h('div', { class: 'dim note' }, note) : null, spark || null);
 }
@@ -287,7 +299,8 @@ async function dashLive(live, charts) {
       tile(t('Bandwidth'), fmtBits(c.out_bps || 0), c.out_bps ? t('{local} local · {remote} remote', { local: fmtBits(Math.max(0, c.out_bps - (c.out_remote_bps || 0))), remote: fmtBits(c.out_remote_bps || 0) }) : t('sent to players right now')),
       tile(t('Processor'), fmtPct(c.cpu), c.cpu_server !== null && c.cpu_server !== undefined ? t('Lichtspiel: {pct} · {n} cores', { pct: fmtPct(c.cpu_server), n: d.cores }) : t('{n} cores', { n: d.cores })),
       tile(t('Memory'), c.mem_total ? fmtPct((100 * c.mem_used) / c.mem_total) : '–', mem + (c.mem_server ? ' · ' + t('Lichtspiel: {size}', { size: fmtBytes(c.mem_server) }) : '')),
-      tile(t('Active users'), `${active.length}`, t('of {n} · active = seen in the last {m} min', { n: d.users.length, m: Math.round(d.active_seconds / 60) }))),
+      tile(t('Active users'), `${active.length}`, t('of {n} · active = seen in the last {m} min', { n: d.users.length, m: Math.round(d.active_seconds / 60) })),
+      diskTile(d)),
     h('h2', {}, t('Playing now')),
     d.playing.length ? h('div', { class: 'np-list' }, d.playing.map(playingCard)) : h('div', { class: 'empty', style: 'padding:22px' }, t('Nothing is playing right now.')),
     h('h2', {}, t('Users')),

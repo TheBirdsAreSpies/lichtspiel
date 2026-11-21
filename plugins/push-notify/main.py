@@ -34,7 +34,7 @@ CODE_MINUTES = 15
 MAX_LISTED = 25
 MAX_POSTER_BYTES = 2_000_000  # Pushover takes at most 2.5 MB, Telegram 10 MB
 EVENTS = ["library.item.added", "library.scan.finished", "playback.started", "playback.stopped", "playback.watched",
-          "item.problem", "download.ready", "user.invited", "user.joined", "server.started"]
+          "item.problem", "download.ready", "user.invited", "user.joined", "server.started", "disk.low"]
 
 WORDS = {
     "New on {name}": "Neu auf {name}",
@@ -52,6 +52,9 @@ WORDS = {
     "{user} joined {name}": "{user} ist {name} beigetreten",
     "{name} started": "{name} wurde gestartet",
     "Scan finished: {added} added, {removed} removed": "Scan fertig: {added} hinzugefügt, {removed} entfernt",
+    "Disk nearly full: {free} free ({p} %) on the disk of {holds}": "Platte fast voll: {free} frei ({p} %) auf der Platte von {holds}",
+    "the data folder": "dem Datenordner",
+    "warnings about full disks": "Warnungen bei voller Platte",
     "Test message from {name}": "Testnachricht von {name}",
     "Telegram / Pushover": "Telegram / Pushover",
     "Not set up yet: enter a Telegram bot token and/or a Pushover token and user keys in the plugin's settings.": "Noch nicht eingerichtet: Trag einen Telegram-Bot-Token und/oder einen Pushover-Token mit Benutzerschlüsseln in den Einstellungen des Plugins ein.",
@@ -87,7 +90,8 @@ WORDS = {
 
 EVENT_NAMES = {"library.item.added": "new titles", "library.scan.finished": "scans", "playback.started": "playback",
                "playback.stopped": "playback", "playback.watched": "finished titles", "item.problem": "problems",
-               "download.ready": "downloads", "user.invited": "invites", "user.joined": "new users", "server.started": "server starts"}
+               "download.ready": "downloads", "user.invited": "invites", "user.joined": "new users", "server.started": "server starts",
+               "disk.low": "warnings about full disks"}
 
 
 class SendError(Exception):
@@ -203,6 +207,13 @@ def new_titles(lang, items):
     return lines
 
 
+def size(lang, b):
+    """1.5 TB, 230.4 GB, with a decimal comma in German."""
+    n, unit = (b / 1e12, "TB") if b >= 1e12 else (b / 1e9, "GB")
+    text = "%.1f %s" % (n, unit)
+    return text.replace(".", ",") if (lang or "").startswith("de") else text
+
+
 def message(lang, event, data, server):
     """(title, text, the item it is about or None) for an event; None when there is nothing to say."""
     name = server.get("name") or "Lichtspiel"
@@ -232,6 +243,11 @@ def message(lang, event, data, server):
         return name, tr(lang, "{user} joined {name}", user=data.get("user_name") or data.get("username") or "?", name=name), None
     if event == "server.started":
         return name, tr(lang, "{name} started", name=name) + (" (%s)" % server["version"] if server.get("version") else ""), None
+    if event == "disk.low":
+        holds = [tr(lang, "the data folder") if h == "data" else h for h in data.get("holds") or []]
+        p = data.get("free_percent") or 0
+        return name, tr(lang, "Disk nearly full: {free} free ({p} %) on the disk of {holds}", free=size(lang, data.get("free_bytes") or 0),
+                        p=("%.1f" % p).replace(".", ",") if lang.startswith("de") else "%.1f" % p, holds=", ".join(holds) or "?"), None
     if event == "library.scan.finished":
         if not data.get("added") and not data.get("removed"):
             return None
@@ -384,7 +400,8 @@ def on_event(event, data, s, server):
             if m:
                 out["sent"] = send(s, m[0], m[1])[0]
         return out
-    if event not in chosen:
+    # Warnings about full disks go out unless switched off, also with an "events" list saved before they existed.
+    if event == "disk.low" and s.get("disk_warnings", True) is False or event != "disk.low" and event not in chosen:
         return {"skipped": event}
     m = message(lang, event, data, server)
     if not m:
@@ -423,6 +440,8 @@ def panel(lang, s, server):
         w = tr(lang, EVENT_NAMES.get(e, e))
         if w not in names:
             names.append(w)
+    if s.get("disk_warnings", True) is not False and tr(lang, "warnings about full disks") not in names:
+        names.append(tr(lang, "warnings about full disks"))
     out["text"] = tr(lang, "Sends {events} to {where}.", events=", ".join(names) or tr(lang, "nothing yet"),
                      where=", ".join(where) if where else tr(lang, "nowhere yet: connect a Telegram chat"))
     if chats:

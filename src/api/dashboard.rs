@@ -219,6 +219,8 @@ pub fn dashboard(app: &Arc<App>) -> Resp {
         "active_seconds": ACTIVE_SECONDS,
         "bytes_sent": sent,
         "max_transcodes": db.settings.max_transcodes,
+        "disks": app.disks.lock().unwrap().iter().map(|d| d.to_json()).collect::<Vec<_>>(),
+        "disk_warn_percent": db.settings.disk_warn_percent,
         "current": current,
         "samples": samples,
         "playing": playing,

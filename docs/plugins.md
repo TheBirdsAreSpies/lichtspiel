@@ -93,6 +93,12 @@ folder is read-only.
 `poster` only as an `https://` address; `note` e.g. `"in cinemas"`, `"digital release"`, `"on disc"`).
 An episode of a show in the library is linked to it.
 
+`disk.low` is sent when a disk that holds a library or the data folder has less free space than
+**Warn when a disk is nearly full** (Settings → Library, 5 % unless changed): `{"holds": ["Movies",
+"data"], "paths", "free_bytes", "total_bytes", "free_percent", "threshold_percent"}` (`"data"` is the
+data folder). The disks are looked at every 30 minutes; one is reported once, and again only after
+it had 2 points more room in between (or the server restarted).
+
 `schedule.daily` is sent once a day (UTC) with `{"date": "YYYY-MM-DD", "last": "…"}`; a day missed
 while the server was off is sent right after the next start.
 
@@ -126,7 +132,7 @@ code page, so read the bytes (`json.loads(sys.stdin.buffer.read())`) and answer 
 Events: `metadata.lookup`, `library.item.added`, `library.item.removed`,
 `library.scan.finished`, `playback.started`, `playback.progress`, `playback.stopped`,
 `playback.watched`, `item.problem`, `download.ready`, `user.invited`, `user.joined`, `playlist.created`, `playlist.updated`,
-`server.started`, `schedule.daily`, `calendar`, `api.call`.
+`server.started`, `schedule.daily`, `disk.low`, `calendar`, `api.call`.
 
 New plugins start switched off; switch them on in the **Plugins** page (where their settings,
 errors and a log of recent runs are shown too). Any language works — the Docker image includes

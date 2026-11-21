@@ -143,9 +143,21 @@ class PushTest(unittest.TestCase):
         r = self.run_main("user.invited", {"by": "admin", "url": "https://secret", "email": "x@y"}, dict(s, events=["user.invited"]))
         self.assertNotIn(b"secret", b"".join(x[3] for x in SEEN))
 
+    def test_a_full_disk(self):
+        data = {"holds": ["Filme", "data"], "paths": ["/media/filme", "/config"], "free_bytes": 230_400_000_000,
+                "total_bytes": 8_000_000_000_000, "free_percent": 2.9, "threshold_percent": 5}
+        # Not in "events" (saved before the warning existed), still sent.
+        r = self.run_main("disk.low", data, dict(self.settings, language="de"))
+        self.assertEqual(r, {"ok": True, "sent": 2})
+        body = urllib.parse.parse_qs(self.sent("pushover")[0][3].decode())
+        self.assertEqual(body["message"], ["Platte fast voll: 230,4 GB frei (2,9 %) auf der Platte von Filme, dem Datenordner"])
+        SEEN.clear()
+        self.assertEqual(self.run_main("disk.low", data, dict(self.settings, disk_warnings=False)), {"skipped": "disk.low"})
+        self.assertEqual(self.sent("pushover"), [])
+
     def test_the_admin_panel(self):
         p = self.run_main("api.call", {"action": "panel", "user": "admin", "admin": True, "body": {"lang": "de"}})
-        self.assertEqual(p["text"], "Sendet neue Titel, Wiedergaben, Probleme, neue Benutzer an 1 Telegram-Chat, 1 Pushover-Empfänger.")
+        self.assertEqual(p["text"], "Sendet neue Titel, Wiedergaben, Probleme, neue Benutzer, Warnungen bei voller Platte an 1 Telegram-Chat, 1 Pushover-Empfänger.")
         self.assertEqual(p["items"][0]["title"], "Family")
         self.assertIn("error", self.run_main("api.call", {"action": "panel", "user": "bob", "admin": False, "body": {}}))
         r = self.run_main("api.call", {"action": "test", "user": "admin", "admin": True, "body": {"lang": "en"}})

@@ -1201,6 +1201,7 @@ async function settingsPage(tab, qs) {
       chk('continue_watching_include_premieres', t('Include season premieres in Continue Watching'), t('New season premieres always appear no matter how many weeks have passed since watching.')),
       chk('empty_trash_automatically', t('Empty trash automatically after every scan'), t('Files gone from disk leave the library right away. Off: they stay as unavailable (with their watched state and details) until you choose "Empty trash" in the library’s menu. A library folder that cannot be read never empties anything.')),
       chk('allow_media_deletion', t('Allow media deletion'), t('Admins, and people you allow under Users & invites, may delete movie and episode files from disk with "Delete" in the "⋯" menu.')),
+      inp('disk_warn_percent', t('Warn when a disk is nearly full (percent free)'), 'number', t('Checked every 30 minutes for the disks of the libraries and of the data folder. Below this much free space plugins are told once (the Telegram / Pushover plugin sends a message), and the dashboard shows it red. 0 = never.')),
       inp('download_keep_days', t('Keep converted downloads (days)'), 'number', t('Copies converted for “Download…” are kept in the server’s data folder (downloads) and deleted this many days after they were made. 0 = until they are removed from the Downloads page.')),
     ],
     metadata: [

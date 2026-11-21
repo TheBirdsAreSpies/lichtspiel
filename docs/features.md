@@ -76,7 +76,10 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   bandwidth, picture and sound as source → output ("1080p (HEVC Main) → 720p (H.264) —
   Transcode (hw)", "German (AC3 5.1) → AAC Stereo — Transcode") and the position. **Stop** ends
   a playback with an optional message: converted streams end at once, the web player closes and
-  shows the message. Below: tiles and charts for bandwidth (local and remote), processor and
+  shows the message. A tile shows the free space of the fullest disk among the libraries' and the
+  data folder's (red below the limit under **Settings → Library**, the others in its tooltip);
+  every 30 minutes a disk with less free space than that (5 % unless changed, 0 = off) is
+  reported to plugins once as `disk.low`. Below: tiles and charts for bandwidth (local and remote), processor and
   memory (all, Lichtspiel or the system) and streams over real time, the last 12 / 24 hours,
   7 / 30 / 90 days, the last year or everything (minute and hour averages are kept in
   `stats.json` in the data folder), a list of users with who is active (seen in the last
@@ -162,7 +165,8 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   their own message format: new titles (one message per scan, movies by name and episodes by show;
   a single title with its poster and link), playback started, stopped or finished (with the
   player and poster), problems reported, downloads ready, invites, new users, scans and server
-  starts. Telegram needs a bot made with @BotFather (`telegram_bot_token`); an admin connects
+  starts; and, whatever `events` says, a warning when a disk is nearly full (`disk_warnings`:
+  false turns it off). Telegram needs a bot made with @BotFather (`telegram_bot_token`); an admin connects
   chats and groups under **Settings → Account** with a link and a code (in a group: `/start@bot
   <code>`), sees them there, removes them and sends a test message. Pushover needs the app's token
   (`pushover_token`) and the user or group keys (`pushover_users`). Messages are in `language`

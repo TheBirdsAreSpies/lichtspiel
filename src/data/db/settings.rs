@@ -227,6 +227,10 @@ pub struct Settings {
     /// and right after a plugin saved one).
     #[serde(default = "yes")]
     pub sync_subtitles: bool,
+    /// Plugins get `disk.low` when a library's disk (or the data folder's) has less than this many
+    /// percent free; 0 = never.
+    #[serde(default = "disk_warn_percent")]
+    pub disk_warn_percent: u32,
     /// Surround sound converted to stereo: lift the dialogue (the centre channel) so voices stay clear.
     #[serde(default = "yes")]
     pub boost_dialogue: bool,
@@ -290,6 +294,10 @@ fn keep_days() -> u64 {
 
 fn port() -> u16 {
     crate::server::DEFAULT_PORT
+}
+
+fn disk_warn_percent() -> u32 {
+    5
 }
 
 fn smtp_port() -> u16 {
@@ -468,6 +476,7 @@ impl Default for Settings {
             trailers_english: true,
             theme_from_intros: true,
             sync_subtitles: true,
+            disk_warn_percent: disk_warn_percent(),
             trailers_red_band: false,
             group_recent_episodes: false,
             analyze_loudness: false,

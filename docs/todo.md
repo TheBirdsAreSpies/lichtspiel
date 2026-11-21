@@ -62,8 +62,9 @@ bundled plugins.
 - [x] **Letterboxd import** — Letterboxd has no open API, but its CSV export can bring in watched
   state and ratings once. Also it should be possible to import lists and watchlist (as watchlist or as playlist).
   Built as `letterboxd-import`; the app shows the panel, but the file is uploaded in the web page.
-- [ ] **Warning when a disk fills up** — a message through `push-notify` when a library's disk is
-  nearly full.
+- [x] **Warning when a disk fills up** — a message through `push-notify` when a library's disk is
+  nearly full. The server checks every 30 minutes and sends `disk.low` to plugins; the limit is
+  under Settings → Library, and the dashboard shows the free space.
 - [ ] **Chromecast from the web app** — the biggest of these; closes the "smart TV without its own
   app" gap from the README comparison.
 

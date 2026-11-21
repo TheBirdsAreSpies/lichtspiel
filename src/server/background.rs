@@ -117,6 +117,7 @@ pub fn start_background(app: &Arc<App>) {
     // Watched state with a Plex server, both ways (when switched on).
     crate::connect::plexsync::start(app);
     crate::connect::trakt::start(app);
+    crate::admin::disk::start(app);
     let retry = details_retry_list(&app.db.lock().unwrap());
     if !retry.is_empty() {
         app.queue_online_details(&retry, false);

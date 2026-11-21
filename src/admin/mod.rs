@@ -2,6 +2,7 @@
 
 #[macro_use]
 pub(crate) mod log;
+pub(crate) mod disk;
 pub(crate) mod maintenance;
 pub(crate) mod stats;
 #[cfg(feature = "console")]

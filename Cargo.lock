@@ -467,6 +467,7 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "getrandom",
+ "libc",
  "macroquad",
  "qrcode",
  "rusqlite",
