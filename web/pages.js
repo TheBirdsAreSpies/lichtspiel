@@ -2240,7 +2240,13 @@ async function render() {
       case 'plugin': return await pluginPage(parts[1]);
       case 'playlist': return await playlistPage(parts[1], qs);
       case 'libraries': return await librariesPage();
-      case 'link': return linkPage(parts[1] || '');
+      // The QR code on a TV leads here: the home page with the sign-in box over it.
+      case 'link': {
+        history.replaceState({ k }, '', '#/');
+        await homePage();
+        linkDialog(parts[1] || '');
+        return;
+      }
       case 'users': return await usersPage();
       case 'plugins': return await pluginsPage();
       case 'settings': return await settingsPage(parts[1], qs);

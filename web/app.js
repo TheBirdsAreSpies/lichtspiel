@@ -399,7 +399,7 @@ function setupPage() {
     async v => { const r = await api('POST', '/api/setup', v); await signedIn(r.token); });
 }
 // Sign in a TV or app: it shows a short code, you type it here.
-function linkPanel(prefill) {
+function linkForm(prefill, extra) {
   const code = h('input', { type: 'text', maxlength: 9, value: prefill || '', placeholder: 'ABCD', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', style: 'font-size:28px;letter-spacing:6px;text-transform:uppercase;text-align:center;width:9ch' });
   const msg = h('div', { class: 'dim', style: 'margin-top:10px' });
   const go = async () => {
@@ -408,11 +408,17 @@ function linkPanel(prefill) {
     catch (e) { msg.className = 'err'; msg.textContent = e.message; }
   };
   code.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
-  return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Sign in a device')),
-    h('p', { class: 'dim' }, t('Open the app on your TV or phone and choose "Sign in with a code". Type the code it shows here.')),
-    code, h('div', { style: 'margin-top:14px' }, h('button', { class: 'primary', onclick: go }, t('Sign in device'))), msg);
+  return { code, nodes: [h('p', { class: 'dim' }, t('Open the app on your TV or phone and choose "Sign in with a code". Type the code it shows here.')),
+    code, h('div', { class: 'actions', style: 'margin-top:14px' }, h('button', { class: 'primary', onclick: go }, t('Sign in device')), extra), msg] };
 }
-function linkPage(prefill) { set(h('div', { class: 'center' }, h('h1', {}, t('Sign in a device')), linkPanel(prefill))); }
+function linkPanel(prefill) { return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Sign in a device')), linkForm(prefill).nodes); }
+// A box over the page you are on, not a page of its own.
+function linkDialog(prefill) {
+  const f = linkForm(prefill, h('button', { onclick: () => box.remove() }, t('Close')));
+  const box = modal(t('Sign in a device'), f.nodes);
+  f.code.focus();
+  return box;
+}
 async function invitePage(code) {
   let info;
   try { info = await api('GET', '/api/invites/' + code); } catch (e) { return set(h('div', { class: 'center' }, h('h1', {}, t('Invite')), h('p', { class: 'err' }, e.message), h('a', { href: '#/login' }, t('Sign in instead')))); }
@@ -460,7 +466,7 @@ function drawChrome() {
     { label: t('Accent color'), sub: choose('accent', 'rose', [['rose', t('Rose')], ['amber', t('Amber')], ['blue', t('Blue')], ['green', t('Green')], ['red', t('Red')], ['violet', t('Violet')]]) },
     '-',
     { label: t('Switch user'), run: switchUser },
-    { label: t('Sign in a device'), run: () => { location.hash = '#/link'; } },
+    { label: t('Sign in a device'), run: () => linkDialog() },
     { label: t('Sign out'), run: async () => { if (await sure(t('Sign out on this device?'), { ok: t('Sign out') })) switchUser(); } },
   ]);
   who.append(name, gear);
