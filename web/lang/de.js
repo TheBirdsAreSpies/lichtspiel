@@ -1831,6 +1831,11 @@ I18N.add('de', 'Deutsch', {
     'connected': 'verbunden',
     '{found} found in your libraries, {marked} newly marked as watched.': '{found} in deinen Mediatheken gefunden, {marked} neu als gesehen markiert.',
     'Waiting until the code is entered…': 'Warte, bis der Code eingegeben ist …',
+    '{n} ratings set.': '{n} Bewertungen übernommen.',
+    '{n} put on your watchlist.': '{n} auf deine Watchlist gesetzt.',
+    'Playlist with {n} titles saved.': 'Playlist mit {n} Titeln gespeichert.',
+    'Upload': 'Hochladen',
+    'The file is too big (at most 2.5 MB).': 'Die Datei ist zu groß (höchstens 2,5 MB).',
     // ---------- undo, errors, search groups, the bar at the bottom on phones
     'Undo': 'Rückgängig',
     'Something went wrong.': 'Etwas ist schiefgelaufen.',

@@ -5,3 +5,6 @@ data
 __pycache__/
 /clients/lichtspiel/android/build/
 .DS_Store
+plugins/*/state.json
+plugins/*/cache.json
+plugins/letterboxd-import/users/

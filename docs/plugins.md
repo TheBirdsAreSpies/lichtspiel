@@ -50,6 +50,15 @@ that are not listed any more are taken out (an empty list empties it). Collectio
 are left alone, and the plugin's stay when details are downloaded again. The caller of an
 `api.call` gets `collections_added` and `collections_removed` back.
 
+An `api.call` answer may bring things in for whoever called (an import from elsewhere):
+`"set_ratings": [{"id", "rating"}]` (0–10, only where they have no rating yet),
+`"add_to_watchlist": [ids]` and `"save_playlist": {"title", "summary", "ids"}` (their own playlist
+of that title is filled anew, else a new one is made). Titles they cannot see are left out; the
+answer gets `rated`, `watchlisted`, `playlist_id` and `playlist_items` instead. A panel may ask for
+a file — `"upload": {"label", "action", "accept"}` — whose action gets `{"file"}` (base64, at most
+2.5 MB) and `{"name"}` in the body (only in the web page), and a `poll` answer may say what it
+waits for in `"wait"`.
+
 Playback events (`playback.started`, `playback.progress` — sent when a player pauses or plays
 on — `playback.stopped`, `playback.watched`) carry `user`, `time` (ms), `progress` (percent),
 `state`, `player` and `item`: `{"id", "type", "title", "year", "duration_ms", "genres", "poster", "ids": {"imdb", "tmdb", "tvdb" …}}`,

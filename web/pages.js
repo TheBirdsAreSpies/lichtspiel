@@ -838,10 +838,10 @@ function traktPanel() {
 
 // Plugins that give each person a panel of their own.
 // The plugin draws it: api.call "panel" answers {title, text, link, buttons: [{label, action, args, primary, confirm}],
-// input: {placeholder, action, label, value}, items: [{title, subtitle, status, image, buttons}]}. A button's
-// action gets {args} in its body, the input's action {query}. An answer may carry {panel} (drawn at once, e.g.
-// search results), {message, code, link, poll: {action, seconds}} (shown in a box that asks again until the
-// answer says done), {error}, and matched/marked counts after a history import.
+// input: {placeholder, action, label, value}, upload: {label, action, accept}, items: [{title, subtitle, status, image,
+// buttons}]}. A button's action gets {args} in its body, the input's action {query}, the upload's {file (base64), name}.
+// An answer may carry {panel} (drawn at once, e.g. search results), {message, code, link, wait, poll: {action, seconds}}
+// (shown in a box that asks again until the answer says done), {error}, and the counts of what was brought in.
 function pluginPanels() {
   const box = h('div');
   const call = (id, action, extra) => api('POST', `/api/plugins/${id}/call/${action}`, Object.assign({ lang: I18N.lang }, extra || {}));
@@ -850,7 +850,10 @@ function pluginPanels() {
     if (!p) { try { p = await call(id, 'panel'); } catch (e) { p = { title: name, text: e.message, buttons: [] }; } }
     const after = (r, label) => {
       if (r.poll) return pollBox(id, label, r, () => draw(id, name, slot));
-      const counts = r.marked !== undefined ? ' ' + t('{found} found in your libraries, {marked} newly marked as watched.', { found: r.matched, marked: r.marked }) : '';
+      const counts = (r.marked !== undefined ? ' ' + t('{found} found in your libraries, {marked} newly marked as watched.', { found: r.matched, marked: r.marked }) : '')
+        + (r.rated !== undefined ? ' ' + t('{n} ratings set.', { n: r.rated }) : '')
+        + (r.watchlisted !== undefined ? ' ' + t('{n} put on your watchlist.', { n: r.watchlisted }) : '')
+        + (r.playlist_items !== undefined ? ' ' + t('Playlist with {n} titles saved.', { n: r.playlist_items }) : '');
       if (r.error) toast(r.error, 6000); else if (r.message || counts) toast((r.message || '') + counts, 8000);
       draw(id, name, slot, r.panel);
     };
@@ -874,6 +877,24 @@ function pluginPanels() {
         go.disabled = false;
       } }, q, go);
     }
+    // A file (an export from elsewhere) goes to the plugin as base64.
+    let upload = null;
+    if (p.upload && p.upload.action) {
+      const file = h('input', { type: 'file', accept: p.upload.accept || '', style: 'flex:1;min-width:0' });
+      const go = h('button', { class: 'primary', type: 'submit' }, p.upload.label || t('Upload'));
+      upload = h('form', { class: 'pp-search', onsubmit: async e => {
+        e.preventDefault();
+        const f = file.files[0];
+        if (!f) return;
+        if (f.size > 2.5 * 1024 * 1024) return toast(t('The file is too big (at most 2.5 MB).'), 6000);
+        go.disabled = true;
+        try {
+          const data = await new Promise((ok, no) => { const rd = new FileReader(); rd.onload = () => ok(String(rd.result).split(',')[1] || ''); rd.onerror = no; rd.readAsDataURL(f); });
+          after(await call(id, p.upload.action, { file: data, name: f.name }), p.upload.label);
+        } catch (er) { toast(er.message, 6000); }
+        go.disabled = false;
+      } }, file, go);
+    }
     // Pictures only from the web (https) or the server itself.
     const pic = src => typeof src === 'string' && /^(https:\/\/|\/(?!\/))/.test(src) ? h('img', { src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: e => e.target.replaceWith(h('div', { class: 'pp-noimg' })) }) : h('div', { class: 'pp-noimg' });
     // A list where no entry has a picture gets no picture column; a title may link to a page of the app.
@@ -888,7 +909,7 @@ function pluginPanels() {
         p.status === 'on' ? h('span', { class: 'ok', style: 'font-size:14px;margin-left:10px' }, t('connected')) : null),
       p.text ? h('p', {}, p.text) : null,
       p.link ? h('p', {}, h('a', { href: p.link, target: '_blank', rel: 'noopener' }, p.link)) : null,
-      search, items,
+      search, upload, items,
       (p.buttons || []).length ? h('div', { class: 'actions' }, buttons(p.buttons)) : null].filter(Boolean));
   };
   // A code to type in somewhere else (a device login): asks the plugin again until it is done.
@@ -907,7 +928,7 @@ function pluginPanels() {
       show(r);
       if (stopped) return;
       if (!r.poll) { box.remove(); if (r.error) toast(r.error, 6000); else if (r.message) toast(r.message, 5000); return; }
-      wait.textContent = t('Waiting until the code is entered…');
+      wait.textContent = r.wait || t('Waiting until the code is entered…');
       timer = setTimeout(async () => {
         try { next(await call(id, r.poll.action)); } catch (e) { box.remove(); toast(e.message, 6000); }
       }, Math.max(2, r.poll.seconds || 5) * 1000);

@@ -59,8 +59,9 @@ bundled plugins.
   Built as `smart-collections` with IMDb Top 250, Oscar winners, TMDB popular / top rated and
   Letterboxd lists; Trakt lists, Kometa's poster overlays and home rows for collections are
   still open.
-- [ ] **Letterboxd import** — Letterboxd has no open API, but its CSV export can bring in watched
+- [x] **Letterboxd import** — Letterboxd has no open API, but its CSV export can bring in watched
   state and ratings once. Also it should be possible to import lists and watchlist (as watchlist or as playlist).
+  Built as `letterboxd-import`; the app shows the panel, but the file is uploaded in the web page.
 - [ ] **Warning when a disk fills up** — a message through `push-notify` when a library's disk is
   nearly full.
 - [ ] **Chromecast from the web app** — the biggest of these; closes the "smart TV without its own

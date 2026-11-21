@@ -436,6 +436,38 @@ mod tests {
     }
 
     #[test]
+    fn a_plugin_brings_in_ratings_watchlist_and_a_playlist_for_whoever_called() {
+        let (app, root) = test_app("plugin-import");
+        let user = {
+            let mut db = app.db.lock().unwrap();
+            db.sections.push(serde_json::from_value(json!({"id": 1, "name": "Filme", "kind": "movie", "paths": [], "created_at": 0})).unwrap());
+            for id in [1u64, 2, 3] { db.items.insert(id, item(id, "movie", json!({}))); }
+            let u = db.users[0].clone();
+            db.view_mut(u.id, 2).rating = Some(4.0);
+            u
+        };
+        let mut v = json!({"message": "ok", "set_ratings": [{"id": 1, "rating": 8.0}, {"id": 2, "rating": 10.0}, {"id": 3, "rating": 11.0}, {"id": 999, "rating": 5.0}],
+            "add_to_watchlist": [1, 3, 999], "save_playlist": {"title": "Letterboxd: Favoriten", "ids": [3, 1, 3, 999]}});
+        let first = crate::handlers::apply_plugin_user_changes(&app, &user, &mut v);
+        let again = crate::handlers::apply_plugin_user_changes(&app, &user, &mut json!({"save_playlist": {"title": "Letterboxd: Favoriten", "ids": [2]}}));
+        let db = app.db.lock().unwrap();
+        let (r1, r2, r3) = (db.view(user.id, 1).rating, db.view(user.id, 2).rating, db.view(user.id, 3).rating);
+        let watchlist = crate::dashboard::watchlist_ids(&db, &user, "", None);
+        let lists: Vec<(String, Vec<u64>)> = db.playlists.iter().filter(|p| p.owner_id == user.id).map(|p| (p.title.clone(), p.items.clone())).collect();
+        drop(db);
+        let none = crate::handlers::apply_plugin_user_changes(&app, &user, &mut json!({"ok": true}));
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(first.is_some() && again.is_some() && none.is_none());
+        // An own rating stays; one outside 0-10 is ignored.
+        assert_eq!((r1, r2, r3), (Some(8.0), Some(4.0), None));
+        assert_eq!((v["rated"].clone(), v["watchlisted"].clone(), v["playlist_items"].clone()), (json!(1), json!(2), json!(2)));
+        assert!(v.get("set_ratings").is_none() && v["message"] == "ok");
+        assert_eq!(watchlist.len(), 2);
+        // The second import fills the same playlist anew.
+        assert_eq!(lists, vec![("Letterboxd: Favoriten".to_string(), vec![2])]);
+    }
+
+    #[test]
     fn schedule_daily_is_sent_once_a_day_and_after_a_restart_only_if_missed() {
         let (app, root) = test_app("daily");
         let first = app.daily_tick();

@@ -289,7 +289,8 @@ class _SettingsForm {
 }
 
 /// Plugins that give each person a panel of their own (e.g. Connect Trakt). The plugin answers "panel" with
-/// {title, text, link, buttons: [{label, action, primary, confirm}]}; a button's answer may ask again (poll).
+/// {title, text, link, buttons: [{label, action, args, primary, confirm}], items: [{title, subtitle, status, buttons}]};
+/// a button's answer may bring a new panel or ask again (poll). A file upload only goes in the web page.
 class PluginPanels extends StatefulWidget {
   final Api api;
   const PluginPanels({super.key, required this.api});
@@ -329,7 +330,7 @@ class _PluginPanelState extends State<_PluginPanel> {
     load();
   }
 
-  Future<dynamic> call(String action) => widget.api.post('/api/plugins/${widget.id}/call/$action', {'lang': 'de'});
+  Future<dynamic> call(String action, [Map<String, dynamic>? extra]) => widget.api.post('/api/plugins/${widget.id}/call/$action', {'lang': 'de', ...?extra});
 
   Future<void> load() async {
     Map<String, dynamic> p;
@@ -354,7 +355,7 @@ class _PluginPanelState extends State<_PluginPanel> {
     }
     dynamic r;
     try {
-      r = await call('${b['action']}');
+      r = await call('${b['action']}', b['args'] != null ? {'args': b['args']} : null);
     } catch (e) {
       if (mounted) _say(context, '$e');
       return;
@@ -363,11 +364,20 @@ class _PluginPanelState extends State<_PluginPanel> {
     if (r is Map && r['poll'] != null) {
       await showDialog(context: context, barrierDismissible: false, builder: (_) => _PollDialog(api: widget.api, id: widget.id, title: '${b['label']}', first: Map<String, dynamic>.from(r)));
     } else if (r is Map) {
-      final counts = r['marked'] != null ? ' ${r['matched']} in deinen Bibliotheken gefunden, ${r['marked']} neu als gesehen markiert.' : '';
+      final counts = [
+        if (r['marked'] != null) ' ${r['matched']} in deinen Bibliotheken gefunden, ${r['marked']} neu als gesehen markiert.',
+        if (r['rated'] != null) ' ${r['rated']} Bewertungen übernommen.',
+        if (r['watchlisted'] != null) ' ${r['watchlisted']} auf deine Watchlist gesetzt.',
+        if (r['playlist_items'] != null) ' Playlist mit ${r['playlist_items']} Titeln gespeichert.',
+      ].join();
       if (r['error'] != null) {
         _say(context, '${r['error']}');
       } else if (r['message'] != null || counts.isNotEmpty) {
         _say(context, '${r['message'] ?? ''}$counts');
+      }
+      if (r['panel'] is Map) {
+        setState(() => panel = Map<String, dynamic>.from(r['panel']));
+        return;
       }
     }
     load();
@@ -390,6 +400,22 @@ class _PluginPanelState extends State<_PluginPanel> {
                 if (p['text'] != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text('${p['text']}')),
                 if (p['link'] != null)
                   TextButton(onPressed: () => launchUrl(Uri.parse('${p['link']}'), mode: LaunchMode.externalApplication), child: Text('${p['link']}')),
+                if (p['upload'] != null)
+                  Padding(padding: const EdgeInsets.only(top: 8), child: Text('Die Datei dafür lädst du in der Web-Oberfläche hoch (Einstellungen → Konto).', style: TextStyle(color: context.dim))),
+                for (final it in (p['items'] as List? ?? const []))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${it['title'] ?? ''}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                      if (it['status'] != null) Text('${it['status']}', style: TextStyle(color: it['status_kind'] == 'default' ? context.good : context.accent)),
+                      if (it['subtitle'] != null) Text('${it['subtitle']}', style: TextStyle(color: context.dim)),
+                      if ((it['buttons'] as List? ?? const []).isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Wrap(spacing: 8, runSpacing: 4, children: [for (final b in (it['buttons'] as List)) OutlinedButton(onPressed: () => press(b), child: Text('${b['label']}'))]),
+                        ),
+                    ]),
+                  ),
                 if ((p['buttons'] as List? ?? const []).isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
@@ -415,7 +441,7 @@ class _PollDialog extends StatefulWidget {
 }
 
 class _PollDialogState extends State<_PollDialog> {
-  String message = '', code = '', link = '';
+  String message = '', code = '', link = '', wait = '';
   Timer? timer;
   bool stopped = false;
 
@@ -438,6 +464,7 @@ class _PollDialogState extends State<_PollDialog> {
       if (r['message'] != null) message = '${r['message']}';
       if (r['code'] != null) code = '${r['code']}';
       if (r['link'] != null) link = '${r['link']}';
+      if (r['wait'] != null) wait = '${r['wait']}';
     });
     final poll = r['poll'];
     if (poll == null) {
@@ -471,7 +498,7 @@ class _PollDialogState extends State<_PollDialog> {
         if (message.isNotEmpty) Text(message),
         if (code.isNotEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: SelectableText(code, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w700, letterSpacing: 4))),
         if (link.isNotEmpty) TextButton(onPressed: () => launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication), child: Text(link)),
-        Text('Wartet, bis der Code eingegeben wurde…', style: TextStyle(color: context.faint)),
+        Text(wait.isNotEmpty ? wait : 'Wartet, bis der Code eingegeben wurde…', style: TextStyle(color: context.faint)),
       ]),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Abbrechen'))],
     );

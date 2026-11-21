@@ -122,9 +122,9 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Thirteen
+  details, react to events (new item, playback, invites …) and add their own API calls. Fourteen
   are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list**,
-  **Subtitles**, the **Library doctor**, **Clean-up suggestions**, **Smart collections**, **Anime details**, **Smart home**,
+  **Subtitles**, the **Library doctor**, **Clean-up suggestions**, **Smart collections**, **Letterboxd import**, **Anime details**, **Smart home**,
   **New on Lichtspiel**, **Telegram / Pushover**, **SIMKL / MyAnimeList** and **Lichtspiel Wrapped**.
   **Lichtspiel Wrapped** shows each person their year under **Settings → Account**: hours watched,
   movies and episodes, favourite genres, most watched shows, the longest binge (episodes of one
@@ -200,6 +200,14 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   titles you have go in. A collection the plugin filled keeps up with its list (titles that leave
   the list leave it), a title put in it by hand stays, and downloading details again does not
   remove it. A list taken out of the settings empties its collection.
+  **Letterboxd import**: each person downloads their data on letterboxd.com (Settings → Import &
+  Export → Export your data), uploads the ZIP in their panel under **Settings → Account** (in the
+  web page) and brings in, each on a click, what they watched (with the dates from their diary
+  and how often), their ratings (½–5 stars become 1–10; a rating they already gave stays), their
+  watchlist and each of their lists — onto their watchlist or as a playlist "Letterboxd: …" (filled
+  anew when brought in again). A list exported on its own joins the upload. Films are found by
+  their TMDB or IMDb id, looked up once on Letterboxd while the page shows how far it is (a film
+  found by its title and year needs none); each shows how many of it are in the libraries.
   **Clean-up suggestions** helps when the disk fills up: once a day and on **Look through now** it
   shows admins under **Settings → Account** three lists, each with its total size: titles nobody
   watched for `unwatched_months` (default 12) that have been there at least as long, titles

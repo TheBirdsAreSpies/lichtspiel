@@ -1203,6 +1203,73 @@ pub fn set_plugin_collections(app: &Arc<App>, v: &Value) -> Option<(usize, usize
     Some((added, removed))
 }
 
+/// What a plugin brings in for whoever pressed its button (an import from elsewhere):
+/// `set_ratings: [{"id", "rating" 0-10}]` (only where the person has no rating yet),
+/// `add_to_watchlist: [ids]` and `save_playlist: {"title", "summary", "ids"}` (their own
+/// playlist of that title is filled anew, else a new one is made). Titles the person cannot
+/// see are left out. Each is replaced in the answer by its count (`rated`, `watchlisted`,
+/// `playlist_id` and `playlist_items`).
+pub fn apply_plugin_user_changes(app: &Arc<App>, user: &User, v: &mut Value) -> Option<String> {
+    let o = v.as_object_mut()?;
+    let mut done = vec![];
+    let mut changed = false;
+    let mut db = app.db.lock().unwrap();
+    let visible = |db: &Db, id: u64| db.items.get(&id).is_some_and(|it| db.can_see_item(user, it));
+    if let Some(list) = o.remove("set_ratings") {
+        let mut rated = 0;
+        for e in list.as_array().into_iter().flatten().take(20_000) {
+            let (Some(id), Some(r)) = (e["id"].as_u64(), e["rating"].as_f64()) else { continue };
+            if !(0.0..=10.0).contains(&r) || !visible(&db, id) || db.view(user.id, id).rating.is_some() { continue; }
+            db.view_mut(user.id, id).rating = Some(r as f32);
+            rated += 1;
+        }
+        o.insert("rated".into(), json!(rated));
+        done.push(format!("{rated} rated"));
+        changed |= rated > 0;
+    }
+    if let Some(list) = o.remove("add_to_watchlist") {
+        let ids: Vec<u64> = list.as_array().into_iter().flatten().filter_map(|x| x.as_u64()).filter(|id| visible(&db, *id)).take(20_000).collect();
+        let n = crate::dashboard::set_watchlist(&mut db, user, &ids, true).unwrap_or(0);
+        o.insert("watchlisted".into(), json!(n));
+        done.push(format!("{n} on the watchlist"));
+        changed |= n > 0;
+    }
+    let mut fire = None;
+    if let Some(pl) = o.remove("save_playlist") {
+        let title: String = pl["title"].as_str().unwrap_or("").trim().chars().take(200).collect();
+        if !title.is_empty() {
+            let mut items: Vec<u64> = vec![];
+            for i in pl["ids"].as_array().into_iter().flatten().filter_map(|x| x.as_u64()).take(20_000).flat_map(|i| db.leaves(i)) {
+                if visible(&db, i) && !items.contains(&i) { items.push(i); }
+            }
+            let summary = pl["summary"].as_str().unwrap_or("").to_string();
+            let t = now();
+            let n = items.len();
+            let id = if let Some(p) = db.playlists.iter_mut().find(|p| p.owner_id == user.id && p.kind == PlaylistKind::Manual && p.title == title) {
+                p.items = items;
+                if !summary.is_empty() { p.summary = summary; }
+                p.updated_at = t;
+                fire = Some(("playlist.updated", json!({"id": p.id})));
+                p.id
+            } else {
+                let id = db.new_id();
+                db.playlists.push(Playlist { id, owner_id: user.id, title: title.clone(), summary, kind: PlaylistKind::Manual, items, query: None,
+                    default_key: None, shared: false, pinned: false, created_at: t, updated_at: t });
+                fire = Some(("playlist.created", json!({"id": id, "title": title, "smart": false, "user": user.username})));
+                id
+            };
+            o.insert("playlist_id".into(), json!(id));
+            o.insert("playlist_items".into(), json!(n));
+            done.push(format!("playlist {id} with {n}"));
+            changed = true;
+        }
+    }
+    drop(db);
+    if changed { app.save(); }
+    if let Some((ev, data)) = fire { app.fire(ev, data); }
+    (!done.is_empty()).then(|| done.join(", "))
+}
+
 /// Deletes the titles a plugin named (`delete_media`), each as if the caller
 /// had pressed "Delete" on it; gives how many went and why others did not.
 pub fn delete_media_from_plugin(app: &Arc<App>, user: &User, list: &[Value]) -> (usize, Vec<String>) {
@@ -1241,6 +1308,9 @@ pub fn plugin_call(app: &Arc<App>, ctx: &Ctx, user: &User, pid: &str, action: &s
                     o.insert("not_found".into(), json!(list.len().saturating_sub(found)));
                 }
                 detail = format!("{action}: {found} of {} found, {marked} newly watched", list.len());
+            }
+            if let Some(d) = apply_plugin_user_changes(app, user, &mut v) {
+                detail = format!("{action}: {d}");
             }
             if let Some((added, removed)) = set_plugin_collections(app, &v) {
                 if let Some(o) = v.as_object_mut() {

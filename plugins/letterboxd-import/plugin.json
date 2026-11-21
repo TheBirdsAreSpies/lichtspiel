@@ -1,0 +1,14 @@
+{
+  "id": "letterboxd-import",
+  "name": "Letterboxd import",
+  "version": "1.0",
+  "author": "Lichtspiel",
+  "description": "Each person uploads their Letterboxd export (a ZIP from letterboxd.com → Settings → Import & Export) in their panel under Settings and brings in what they watched (with the diary's dates), their ratings, their watchlist and their lists — onto their watchlist or as playlists. Films are found by their TMDB or IMDb id, looked up once on Letterboxd.",
+  "command": ["python3", "main.py"],
+  "hooks": ["api.call"],
+  "user_panel": true,
+  "reads_library": true,
+  "settings": {},
+  "timeout_seconds": 90,
+  "enabled_by_default": false
+}
