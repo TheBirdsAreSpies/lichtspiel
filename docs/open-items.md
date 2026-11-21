@@ -130,7 +130,6 @@ From "Known limits" in the overview, only the ones that are real follow-up work.
 | Limit | Where | Suggested direction |
 |---|---|---|
 | dart:io can't close a socket stuck in a TLS handshake. | `clients/lichtspiel/lib/api.dart:173` (a `shortcut:` comment) | Nothing simple in dart:io today; revisit when it gains a handshake timeout. One leaked socket per failed try. |
-| `?token=` in addresses is still accepted, for older clients and scripts. Since 2026-11-21 each use is written to the server log (once an hour per user and device, with the address but not the token; the web app's sign-in link `/?token=` is not counted). | `src/server.rs` (`note_token_in_address`) | Watch the log for a while; once nothing shows up, drop `?token=`. Keep `?ticket=`. |
 
 ## Testing on real hardware
 

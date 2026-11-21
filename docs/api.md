@@ -20,7 +20,9 @@ POST /api/invites          {"email":"friend@example.com","days":7,"allowed_secti
 POST /api/downloads        {"ids":[42],"quality":"720p-4"}   → then GET /api/downloads/{id}/file
 ```
 
-The token can also go in `Authorization: Bearer <token>` or `?token=<token>`. Lists come
+The token can also go in `Authorization: Bearer <token>`, but not in the address: `?token=` is
+not accepted. A link that has to work on its own (a video for a player, a download) gets a
+`?ticket=` from `GET /api/ticket`. Lists come
 back as `{"MediaContainer": {"size": …, "Metadata": [ … ]}}`. `GET /api/filters` lists every
 field, operator and sort key; `GET /api/docs` lists every call.
 
