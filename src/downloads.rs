@@ -89,7 +89,7 @@ fn json_of(db: &Db, d: &Download, keep_days: u64) -> Value {
         "progress": if d.state == "ready" { 100 } else { progress(d.id).unwrap_or(0) },
         "original": d.original, "size": d.size, "error": d.error, "created_at": d.created_at, "finished_at": d.finished_at,
         "expires_at": expires, "parts": if d.original { parts.max(1) } else { 1 },
-        "user": db.user(d.user_id).map(|u| u.username.clone()), "user_id": d.user_id,
+        "user": db.user(d.user_id).map(|u| u.display_name()), "user_id": d.user_id,
         "url": format!("/api/downloads/{}/file", d.id)})
 }
 

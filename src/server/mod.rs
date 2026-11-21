@@ -499,6 +499,14 @@ impl App {
                 data["item"] = item;
             }
         }
+        // Events name people by user name ("user", "username" when someone joins);
+        // "user_name" is how they are shown to others, for messages.
+        if data.get("user_name").is_none() {
+            if let Some(login) = data["user"].as_str().or(data["username"].as_str()).map(String::from) {
+                let shown = self.db.lock().unwrap().users.iter().find(|u| u.username == login).map(|u| u.display_name());
+                if let Some(n) = shown { data["user_name"] = json!(n); }
+            }
+        }
         for (pl, settings) in listeners {
             let r = plugins::invoke(&pl, &settings, event, &data, &self.server_info_for(&pl));
             // A plugin that saved subtitles for the item: they are looked for again at once.

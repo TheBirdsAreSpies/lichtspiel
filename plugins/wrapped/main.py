@@ -25,6 +25,7 @@ MONTHS = {"en": ["January", "February", "March", "April", "May", "June", "July",
 
 WORDS = {
     "Your {year}": "Dein {year}",
+    "Your {year}, {name}": "Dein {year}, {name}",
     "Nothing finished in {year} yet. What you watch to the end from now on is counted here.": "In {year} noch nichts fertig geschaut. Was du ab jetzt zu Ende schaust, wird hier gezählt.",
     "Counted since {date}.": "Gezählt seit dem {date}.",
     "{h} hours": "{h} Stunden",
@@ -204,17 +205,23 @@ def thumb(ident):
     return "/library/metadata/%s/thumb" % ident if ident else ""
 
 
+def first_name(data):
+    """The first word of the person's full name; empty when they gave none (user_name is then the user name)."""
+    shown = str(data.get("user_name") or "").strip()
+    return shown.split()[0] if shown and shown != data.get("user") else ""
+
+
 def href(ident):
     return "#/item/%s" % ident if ident else ""
 
 
-def panel(lang, s, user, year=None):
+def panel(lang, s, user, year=None, first=""):
     st = (load().get("people") or {}).get(user) or {"seen": []}
     this_year = datetime.date.today().year
     year = int(year or this_year)
     seen = [e for e in st.get("seen") or [] if year_of(e) == year]
     years = sorted({year_of(e) for e in st.get("seen") or []} | {this_year}, reverse=True)
-    out = {"title": tr(lang, "Your {year}", year=year)}
+    out = {"title": tr(lang, "Your {year}, {name}", year=year, name=first) if first else tr(lang, "Your {year}", year=year)}
     buttons = [{"label": str(y), "action": "year", "args": {"year": y}, "primary": y == year} for y in years if len(years) > 1]
     if buttons:
         out["buttons"] = buttons
@@ -275,10 +282,11 @@ def main():
         body = data.get("body") if isinstance(data.get("body"), dict) else {}
         args = body.get("args") if isinstance(body.get("args"), dict) else {}
         lang, user = body.get("lang") or "en", data.get("user") or ""
+        first = first_name(data)
         if data.get("action") == "panel":
-            out = panel(lang, s, user)
+            out = panel(lang, s, user, first=first)
         elif data.get("action") == "year" and isinstance(args.get("year"), int):
-            out = {"panel": panel(lang, s, user, args["year"])}
+            out = {"panel": panel(lang, s, user, args["year"], first)}
         else:
             out = {"error": "Unknown action"}
     else:

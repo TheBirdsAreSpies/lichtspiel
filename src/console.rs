@@ -90,7 +90,7 @@ fn snapshot(app: &Arc<App>) -> View {
     let db = app.db.lock().unwrap();
     let mut playing = vec![];
     for p in app.playing.lock().unwrap().values().chain(app.progressive.lock().unwrap().values()) {
-        let who = db.user(p.user_id).map(|u| u.username.clone()).unwrap_or_default();
+        let who = db.user(p.user_id).map(|u| u.display_name()).unwrap_or_default();
         let what = db.items.get(&p.item_id).map(|i| i.title.clone()).unwrap_or_default();
         playing.push(format!("{who}: {what} ({})", p.method));
     }

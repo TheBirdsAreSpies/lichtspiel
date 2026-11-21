@@ -222,7 +222,8 @@ class _UsersScreenState extends State<UsersScreen> {
         padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Text('${u['username']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Text('${u['display_name'] ?? u['username']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            if ((u['display_name'] ?? u['username']) != u['username']) Padding(padding: const EdgeInsets.only(left: 8), child: Text('${u['username']}', style: TextStyle(color: context.dim))),
             if (self) Padding(padding: EdgeInsets.only(left: 8), child: Text('(du)', style: TextStyle(color: context.dim))),
             if (u['two_factor'] == true) const Padding(padding: EdgeInsets.only(left: 8), child: Icon(Icons.lock_outline, size: 16)),
             const Spacer(),

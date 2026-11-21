@@ -464,6 +464,14 @@ pub struct User {
     pub prefs: std::collections::BTreeMap<String, String>,
 }
 
+impl User {
+    /// The name other people see: the full name, or the user name when none is set.
+    pub fn display_name(&self) -> String {
+        let n = self.full_name.trim();
+        if n.is_empty() { self.username.clone() } else { n.to_string() }
+    }
+}
+
 /// The minimum age an age rating stands for ("FSK 12", "PG-13", "TV-MA", "de/16" …).
 pub fn rating_age(rating: &str) -> Option<u32> {
     let r = rating.trim().to_lowercase();
@@ -1626,5 +1634,20 @@ mod normalize_tests {
         set_articles(false, "the");
         assert_eq!(sort_title("The Matrix"), "the matrix");
         set_articles(true, DEFAULT_ARTICLES);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shown_name_is_the_full_name_or_the_user_name() {
+        let mut u: User = serde_json::from_value(serde_json::json!({"id": 1, "username": "fab92", "admin": false, "password_hash": "", "salt": "", "created_at": 0})).unwrap();
+        assert_eq!(u.display_name(), "fab92");
+        u.full_name = "  ".into();
+        assert_eq!(u.display_name(), "fab92");
+        u.full_name = " Fabian Bauer ".into();
+        assert_eq!(u.display_name(), "Fabian Bauer");
     }
 }

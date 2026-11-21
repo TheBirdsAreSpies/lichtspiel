@@ -207,7 +207,8 @@ def message(lang, event, data, server):
     """(title, text, the item it is about or None) for an event; None when there is nothing to say."""
     name = server.get("name") or "Lichtspiel"
     item = data.get("item") or {}
-    user = data.get("user") or "?"
+    # user_name: the full name when the person gave one, else the user name.
+    user = data.get("user_name") or data.get("user") or "?"
     if event == "playback.started":
         text = tr(lang, "{user} is watching {what}", user=user, what=what(item))
         device = (data.get("player") or {}).get("device")
@@ -228,7 +229,7 @@ def message(lang, event, data, server):
     if event == "user.invited":
         return name, tr(lang, "{by} sent an invite", by=data.get("by") or "?"), None
     if event == "user.joined":
-        return name, tr(lang, "{user} joined {name}", user=data.get("username") or "?", name=name), None
+        return name, tr(lang, "{user} joined {name}", user=data.get("user_name") or data.get("username") or "?", name=name), None
     if event == "server.started":
         return name, tr(lang, "{name} started", name=name) + (" (%s)" % server["version"] if server.get("version") else ""), None
     if event == "library.scan.finished":

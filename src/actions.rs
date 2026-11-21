@@ -42,7 +42,7 @@ pub fn history(app: &Arc<App>, user: &User, iid: u64) -> Resp {
     let list: Vec<Value> = db.history.iter().rev()
         .filter(|e| ids.contains(&e.item_id) && (user.admin || e.user_id == user.id))
         .take(500)
-        .map(|e| json!({"at": e.at, "manual": e.manual, "user": db.user(e.user_id).map(|u| u.username.clone()),
+        .map(|e| json!({"at": e.at, "manual": e.manual, "user": db.user(e.user_id).map(|u| u.display_name()),
             "item": brief(db.items.get(&e.item_id), e.item_id, &db)}))
         .collect();
     ok(json!({"size": list.len(), "history": list}))
@@ -77,7 +77,7 @@ pub fn reports(app: &Arc<App>, ctx: &Ctx) -> Resp {
     let open_only = ctx.param("open") == Some("1");
     let list: Vec<Value> = db.reports.iter().rev().filter(|r| !open_only || !r.resolved).map(|r| json!({
         "id": r.id, "kind": r.kind, "note": r.note, "at": r.at, "resolved": r.resolved,
-        "user": db.user(r.user_id).map(|u| u.username.clone()), "item": brief(db.items.get(&r.item_id), r.item_id, &db)})).collect();
+        "user": db.user(r.user_id).map(|u| u.display_name()), "item": brief(db.items.get(&r.item_id), r.item_id, &db)})).collect();
     let open = db.reports.iter().filter(|r| !r.resolved).count();
     ok(json!({"size": list.len(), "open": open, "reports": list}))
 }
@@ -477,8 +477,8 @@ pub fn together_create(app: &Arc<App>, ctx: &Ctx, user: &User) -> Resp {
         if !map.contains_key(&c) { break c; }
     };
     let mut members = BTreeMap::new();
-    members.insert(user.id, (user.username.clone(), Instant::now()));
-    let room = Room { item_id: iid, host: user.id, members, position_ms, paused: true, since: Instant::now(), seq: 1, by: user.username.clone() };
+    members.insert(user.id, (user.display_name(), Instant::now()));
+    let room = Room { item_id: iid, host: user.id, members, position_ms, paused: true, since: Instant::now(), seq: 1, by: user.display_name() };
     let v = room.json(&code, &db);
     map.insert(code, room);
     js(201, v)
@@ -492,7 +492,7 @@ pub fn together_get(app: &Arc<App>, user: &User, code: &str) -> Resp {
     if db.items.get(&room.item_id).is_none_or(|it| !db.can_see_item(user, it)) {
         return fail(403, "You don't have access to this library");
     }
-    room.members.insert(user.id, (user.username.clone(), Instant::now()));
+    room.members.insert(user.id, (user.display_name(), Instant::now()));
     ok(room.json(code, &db))
 }
 
@@ -510,8 +510,8 @@ pub fn together_update(app: &Arc<App>, ctx: &Ctx, user: &User, code: &str) -> Re
     if let Some(b) = ctx.body.get("paused").and_then(|v| v.as_bool()) { room.paused = b; }
     room.since = Instant::now();
     room.seq += 1;
-    room.by = user.username.clone();
-    room.members.insert(user.id, (user.username.clone(), Instant::now()));
+    room.by = user.display_name();
+    room.members.insert(user.id, (user.display_name(), Instant::now()));
     ok(room.json(code, &db))
 }
 

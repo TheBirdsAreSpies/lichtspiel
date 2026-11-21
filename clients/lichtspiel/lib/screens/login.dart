@@ -78,7 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final got = await showDialog<String>(
         context: context,
         builder: (d) => AlertDialog(
-          title: Text('PIN für ${p['username']}'),
+          title: Text('PIN für ${p['display_name'] ?? p['username']}'),
           content: TextField(controller: c, obscureText: true, autofocus: true, keyboardType: TextInputType.number, onSubmitted: (v) => Navigator.pop(d, v)),
           actions: [TextButton(onPressed: () => Navigator.pop(d), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, c.text), child: const Text('Anmelden'))],
         ),
@@ -186,8 +186,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 Wrap(spacing: 10, runSpacing: 10, alignment: WrapAlignment.center, children: [
                   for (final p in profiles)
                     ActionChip(
-                      avatar: CircleAvatar(child: Text('${p['username']}'.isEmpty ? '?' : '${p['username']}'[0].toUpperCase())),
-                      label: Text('${p['username']}${p['has_pin'] == true ? ' 🔒' : ''}'),
+                      avatar: CircleAvatar(child: Text('${p['display_name'] ?? p['username']}'.isEmpty ? '?' : '${p['display_name'] ?? p['username']}'[0].toUpperCase())),
+                      label: Text('${p['display_name'] ?? p['username']}${p['has_pin'] == true ? ' 🔒' : ''}'),
                       onPressed: busy ? null : () => signInProfile(p),
                     ),
                 ]),

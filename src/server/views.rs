@@ -278,7 +278,7 @@ pub fn page<T: Clone>(ctx: &Ctx, list: &[T]) -> (Vec<T>, usize) {
 pub fn user_json(u: &User) -> Value {
     json!({"id": u.id, "username": u.username, "email": u.email, "admin": u.admin, "created_at": u.created_at,
         "allowed_sections": u.allowed_sections, "allow_transcode": u.allow_transcode.unwrap_or(true), "allow_delete": u.allow_delete, "allow_download": u.admin || u.allow_download.unwrap_or(true), "invited_by": u.invited_by,
-        "home": u.home, "has_pin": !u.pin_hash.is_empty(), "max_age": u.max_age, "block_unrated": u.block_unrated, "full_name": u.full_name, "two_factor": !u.totp_secret.is_empty()})
+        "home": u.home, "has_pin": !u.pin_hash.is_empty(), "max_age": u.max_age, "block_unrated": u.block_unrated, "full_name": u.full_name, "display_name": u.display_name(), "two_factor": !u.totp_secret.is_empty()})
 }
 
 

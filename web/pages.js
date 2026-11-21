@@ -293,7 +293,7 @@ async function plexSyncPanel() {
   const rows = [];
   const addRow = a => {
     const token = h('input', { type: 'password', placeholder: a ? t('Token {hint} (leave empty to keep)', { hint: a.token_hint }) : 'X-Plex-Token', style: 'flex:1;min-width:300px', autocomplete: 'off' });
-    const who = h('select', {}, users.users.map(u => h('option', { value: u.id, selected: a ? u.id === a.user_id : u.id === S.me.id }, u.username)));
+    const who = h('select', {}, users.users.map(u => h('option', { value: u.id, selected: a ? u.id === a.user_id : u.id === S.me.id }, shownName(u))));
     const row = { id: a && a.id, token, who };
     const el = h('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap' },
       h('span', { style: 'min-width:120px' }, a && a.plex_name ? a.plex_name : h('span', { class: 'dim' }, t('Plex account'))), token, '→', who,
@@ -356,7 +356,7 @@ async function plexSyncPanel() {
         })))));
   };
   const lastBox = h('div', {});
-  const name = id => (users.users.find(u => u.id === id) || {}).username || '?';
+  const name = id => shownName(users.users.find(u => u.id === id));
   const counts = c => c ? t('{w} watched, {u} unwatched, {r} resume points, {s} ratings', { w: c.watched, u: c.unwatched, r: c.resume, s: c.ratings }) : '';
   const showLast = (r, running) => lastBox.replaceChildren(running ? h('p', { class: 'dim' }, t('Syncing with Plex…')) : '', !r ? '' : h('div', { class: 'panel', style: 'background:var(--panel2)' },
     h('b', {}, t('Last sync')), ' ', h('span', { class: 'dim' }, fmtDateTime(r.finished_at)), r.error ? h('p', { class: 'err' }, t(r.error)) : null,
@@ -443,7 +443,7 @@ async function importPanel() {
       }) : null));
     const acc = {};
     const accounts = pv.accounts.map(a => {
-      const sel = h('select', {}, h('option', { value: '0' }, t('skip')), users.users.map(u => h('option', { value: u.id, selected: a.owner ? u.id === S.me.id : a.suggested_user === u.id }, u.username)));
+      const sel = h('select', {}, h('option', { value: '0' }, t('skip')), users.users.map(u => h('option', { value: u.id, selected: a.owner ? u.id === S.me.id : a.suggested_user === u.id }, shownName(u))));
       acc[a.id] = sel;
       return h('tr', {}, h('td', {}, a.name, a.owner ? h('span', { class: 'badge' }, t('owner')) : ''), h('td', { class: 'dim' }, t('{n} watched', { n: a.watched })), h('td', {}, '→ ', sel));
     });
@@ -593,7 +593,7 @@ async function usersPage() {
     h('h2', {}, t('People')),
     h('table', {}, h('tr', {}, h('th', {}, t('User')), h('th', {}, t('Libraries')), h('th', {}, t('Admin')), h('th', {}, t('May convert')), h('th', {}, t('May delete files')), h('th', {}, t('May download')), h('th', { title: t('Hides movies and shows rated above this age') }, t('Parental controls')), h('th', { title: t('Shown on the sign-in screen') }, t('Home profile')), h('th', {}, '')),
       users.users.map(u => h('tr', {},
-        h('td', {}, h('b', {}, u.username), h('div', { class: 'dim' }, u.email || ''), u.two_factor ? h('div', { class: 'dim', style: 'font-size:12px' }, '🔐 ', t('Two-step sign-in'), ' ', h('a', { href: '#', onclick: async e => { e.preventDefault(); if (await sure(t('Switch off the two-step sign-in of {name}?', { name: u.username }), { ok: t('Switch off'), danger: true })) { await api('PATCH', '/api/users/' + u.id, { reset_2fa: true }); toast(t('Saved')); usersPage(); } } }, t('Reset'))) : null, h('div', { class: 'dim', style: 'font-size:12px' }, t('joined {date}', { date: fmtDate(u.created_at) }))),
+        h('td', {}, h('b', {}, shownName(u)), shownName(u) !== u.username ? h('div', { class: 'dim' }, u.username) : null, h('div', { class: 'dim' }, u.email || ''), u.two_factor ? h('div', { class: 'dim', style: 'font-size:12px' }, '🔐 ', t('Two-step sign-in'), ' ', h('a', { href: '#', onclick: async e => { e.preventDefault(); if (await sure(t('Switch off the two-step sign-in of {name}?', { name: u.username }), { ok: t('Switch off'), danger: true })) { await api('PATCH', '/api/users/' + u.id, { reset_2fa: true }); toast(t('Saved')); usersPage(); } } }, t('Reset'))) : null, h('div', { class: 'dim', style: 'font-size:12px' }, t('joined {date}', { date: fmtDate(u.created_at) }))),
         h('td', {}, u.admin ? t('all (admin)') : u.allowed_sections === null ? t('all') : u.allowed_sections.map(secName).join(', ') || t('none'), ' ',
           u.admin ? null : h('button', { class: 'small', onclick: () => accessEditor(u) }, t('Change'))),
         h('td', {}, h('input', { type: 'checkbox', checked: u.admin, disabled: u.id === S.me.id, onchange: async e => { try { await api('PATCH', '/api/users/' + u.id, { admin: e.target.checked }); } catch (x) { toast(x.message); } usersPage(); } })),
@@ -747,7 +747,7 @@ function accountPanel(dataDir) {
   return [h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Your account')),
       formRow(t('User name'), h('b', {}, me.username)),
       formRow(t('Full name'), name, ''),
-      h('div', { class: 'actions' }, h('button', { onclick: async () => { await api('POST', '/api/me/profile', { full_name: name.value }); S.me.full_name = name.value.trim(); toast(t('Saved')); } }, t('Save')))),
+      h('div', { class: 'actions' }, h('button', { onclick: async () => { await api('POST', '/api/me/profile', { full_name: name.value }); S.me.full_name = name.value.trim(); S.me.display_name = S.me.full_name || S.me.username; toast(t('Saved')); } }, t('Save')))),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Two-step sign-in')), box),
     linkPanel(),
     accountPasswordPanel(dataDir)];
@@ -1621,7 +1621,7 @@ async function grantSectionAccess(sid, forItem) {
   const box = modal(t('Grant access'), [
     h('p', { class: 'dim' }, forItem ? t('Access is given per library: ticked people may see everything in “{name}”, including this title.', { name: sec.title })
       : t('Ticked people may see everything in “{name}”.', { name: sec.title })),
-    users.length ? h('div', { class: 'checks' }, checks.map(c => h('label', {}, c.el, c.u.username))) : h('p', {}, t('No other users yet. Invite someone under Users & invites.')),
+    users.length ? h('div', { class: 'checks' }, checks.map(c => h('label', {}, c.el, shownName(c.u)))) : h('p', {}, t('No other users yet. Invite someone under Users & invites.')),
     h('div', { class: 'actions' },
       users.length ? h('button', { class: 'primary', onclick: async () => {
         for (const { u, el } of checks) {

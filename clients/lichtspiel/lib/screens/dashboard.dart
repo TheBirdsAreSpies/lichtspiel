@@ -318,7 +318,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         rows: [
           for (final u in users)
             DataRow(cells: [
-              DataCell(Text('${u['username']}${u['admin'] == true ? ' (Admin)' : ''}', style: const TextStyle(fontWeight: FontWeight.bold))),
+              DataCell(Text('${u['display_name'] ?? u['username']}${u['admin'] == true ? ' (Admin)' : ''}', style: const TextStyle(fontWeight: FontWeight.bold))),
               DataCell(Row(children: [
                 Icon(Icons.circle, size: 10, color: u['active'] == true ? context.good : Colors.grey),
                 const SizedBox(width: 6),
@@ -407,7 +407,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       const SizedBox(width: 8),
       DropdownButton<String>(
         value: user,
-        items: [const DropdownMenuItem(value: '', child: Text('Alle')), for (final u in users) DropdownMenuItem(value: '${u['id']}', child: Text('${u['username']}'))],
+        items: [const DropdownMenuItem(value: '', child: Text('Alle')), for (final u in users) DropdownMenuItem(value: '${u['id']}', child: Text('${u['display_name'] ?? u['username']}'))],
         onChanged: (v) {
           user = v ?? '';
           loadHistory();
@@ -496,7 +496,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const Text('Top-Nutzer', style: TextStyle(fontWeight: FontWeight.w600)),
                 if (topUsers.isEmpty) Padding(padding: EdgeInsets.all(8), child: Text('Keine Wiedergaben in dieser Zeit.', style: TextStyle(color: context.faint))),
                 for (final x in topUsers)
-                  ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${x['username'] ?? '?'}'), trailing: Text('${x['plays']} Wiedergaben · ${dur(x['minutes'] ?? 0)}', style: TextStyle(fontSize: 12, color: context.dim))),
+                  ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${x['display_name'] ?? x['username'] ?? '?'}'), trailing: Text('${x['plays']} Wiedergaben · ${dur(x['minutes'] ?? 0)}', style: TextStyle(fontSize: 12, color: context.dim))),
               ]),
             ),
           ),

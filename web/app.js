@@ -21,6 +21,8 @@ function loadToken() { try { return sessionStorage.getItem('token') || localStor
 const S = { token: loadToken(), me: null, sections: [], filters: null, status: null };
 const $ = (s, r = document) => r.querySelector(s);
 const main = () => $('#main');
+// How a person is shown to others: the full name, or the user name when none is set.
+const shownName = u => (u && (u.display_name || u.username)) || '?';
 
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
@@ -309,7 +311,7 @@ async function signedIn(token) {
   const after = S.after; S.after = '';
   location.hash = after || '#/';
   try { await boot(); } finally { S.signingIn = false; }
-  if (S.me) toast(t('Signed in as {name}', { name: S.me.username }));
+  if (S.me) toast(t('Signed in as {name}', { name: shownName(S.me) }));
 }
 async function loginPage() {
   authPage(t('Sign in'), S.status ? S.status.name : '', [['username', t('User name'), 'text', '', 'username'], ['password', t('Password'), 'password', '', 'current-password']], t('Sign in'),
@@ -328,8 +330,8 @@ async function loginPage() {
   try { home = await api('GET', '/api/home'); } catch (e) { return; }
   if (!home.profiles.length || !form.isConnected) return;
   const pick = h('div', { class: 'profiles' }, home.profiles.map(p => h('button', { type: 'button', class: 'profile', title: p.username, onclick: () => pinPage(p) },
-    h('span', { class: 'avatar' }, (p.username[0] || '?').toUpperCase()),
-    h('span', { class: 'pname' }, p.username, p.has_pin ? h('span', { class: 'dim', title: t('Needs a PIN') }, ' 🔒') : null))));
+    h('span', { class: 'avatar' }, (shownName(p)[0] || '?').toUpperCase()),
+    h('span', { class: 'pname' }, shownName(p), p.has_pin ? h('span', { class: 'dim', title: t('Needs a PIN') }, ' 🔒') : null))));
   const or = h('div', { class: 'or dim' }, t('or sign in with a password'));
   const firstLabel = form.querySelector('label');
   form.insertBefore(pick, firstLabel);
@@ -347,7 +349,7 @@ function pinPage(p) {
     e.preventDefault(); err.textContent = '';
     try { await profileLogin(p, pin.value); } catch (x) { err.textContent = x.message; pin.value = ''; pin.focus(); }
   } },
-    h('div', { class: 'profiles' }, h('div', { class: 'profile' }, h('span', { class: 'avatar' }, (p.username[0] || '?').toUpperCase()), h('span', { class: 'pname' }, p.username))),
+    h('div', { class: 'profiles' }, h('div', { class: 'profile' }, h('span', { class: 'avatar' }, (shownName(p)[0] || '?').toUpperCase()), h('span', { class: 'pname' }, shownName(p)))),
     h('label', {}, t('PIN')), pin,
     h('div', { style: 'margin-top:18px' }, h('button', { class: 'primary', type: 'submit', style: 'width:100%' }, t('Sign in'))), err,
     h('div', { style: 'margin-top:14px' }, h('a', { href: '#/login', onclick: e => { e.preventDefault(); loginPage(); } }, t('Back to all profiles'))));
@@ -416,7 +418,7 @@ function drawChrome() {
   if (!signed) return;
   // The gear opens the settings; switching user and signing out sit behind the name.
   const gear = iconBtn('gear', t('Settings'), () => { location.hash = '#/settings'; });
-  const name = h('button', { class: 'link', 'aria-haspopup': 'menu', title: t('Switch user or sign out'), style: 'background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:4px 6px' }, S.me.username + ' ▾');
+  const name = h('button', { class: 'link', 'aria-haspopup': 'menu', title: t('Switch user or sign out'), style: 'background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:4px 6px' }, shownName(S.me) + ' ▾');
   name.onclick = () => openMenu(name, [
     { label: t('Switch user'), run: switchUser },
     { label: t('Sign in a device'), run: () => { location.hash = '#/link'; } },

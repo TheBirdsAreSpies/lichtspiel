@@ -51,6 +51,8 @@ WORDS = {
     "{n} show": "{n} Serie",
     "{n} shows": "{n} Serien",
     "Movies": "Filme",
+    "Hi {name},": "Hallo {name},",
+    "this is what is new:": "das ist neu:",
     "Shows": "Serien",
     "{n} new episode": "{n} neue Folge",
     "{n} new episodes": "{n} neue Folgen",
@@ -316,7 +318,7 @@ def poster_bytes(path):
 
 # ---------- e-mail
 
-def mail_html(lang, server, d, cids):
+def mail_html(lang, server, d, cids, first=""):
     name = html.escape(server.get("name") or "Lichtspiel")
     e = html.escape
 
@@ -343,6 +345,8 @@ def mail_html(lang, server, d, cids):
 
     out = ['<div style="background:#141414;padding:24px;font:15px/1.4 sans-serif;color:#eee">',
            '<h1 style="font-size:22px;margin:0 0 18px">%s</h1>' % e(tr(lang, "New on {name}", name=server.get("name") or "Lichtspiel"))]
+    if first:
+        out.append('<p style="margin:0 0 18px">%s %s</p>' % (e(tr(lang, "Hi {name},", name=first)), e(tr(lang, "this is what is new:"))))
     if d["movies"]:
         out.append('<h2 style="font-size:17px;margin:8px 0 12px">%s</h2>' % e(tr(lang, "Movies")))
         out.append(grid(d["movies"], [""] * len(d["movies"])))
@@ -359,11 +363,13 @@ def mail_html(lang, server, d, cids):
     return "".join(out)
 
 
-def plain_text(lang, server, d, for_telegram=False):
+def plain_text(lang, server, d, for_telegram=False, first=""):
     """The message as text (the e-mail's plain part; Telegram's HTML when for_telegram)."""
     e = html.escape if for_telegram else (lambda x: x)
     name = server.get("name") or "Lichtspiel"
     lines = [("<b>%s</b>" if for_telegram else "%s") % e(tr(lang, "New on {name}", name=name)), ""]
+    if first:
+        lines += [e(tr(lang, "Hi {name},", name=first) + " " + tr(lang, "this is what is new:")), ""]
 
     def entry(x, extra=""):
         t = e(x["title"]) + (" (%s)" % x["year"] if x.get("year") else "")
@@ -388,19 +394,19 @@ def plain_text(lang, server, d, for_telegram=False):
     return "\n".join(lines).strip()
 
 
-def send_mail(s, to, lang, server, d):
+def send_mail(s, to, lang, server, d, first=""):
     msg = EmailMessage()
     msg["Subject"] = tr(lang, "New on {name}: {what}", name=server.get("name") or "Lichtspiel", what=summary(lang, d))
     msg["From"] = str(s.get("smtp_from") or s.get("smtp_user")).strip()
     msg["To"] = to
-    msg.set_content(plain_text(lang, server, d))
+    msg.set_content(plain_text(lang, server, d, first=first))
     pictures, cids = [], {}
     for x in (d["movies"] + d["shows"])[:MAX_MAIL_POSTERS]:
         pic = poster_bytes(x.get("poster"))
         if pic:
             cids[id(x)] = make_msgid()
             pictures.append((cids[id(x)], pic))
-    msg.add_alternative(mail_html(lang, server, d, cids), subtype="html")
+    msg.add_alternative(mail_html(lang, server, d, cids, first), subtype="html")
     body = msg.get_payload()[1]
     for cid, (data, kind) in pictures:
         body.add_related(data, maintype="image", subtype=kind, cid=cid)
@@ -453,8 +459,8 @@ def tg(s, method, params=None, files=None):
     return answer.get("result")
 
 
-def send_telegram(s, chat, lang, server, d):
-    text = plain_text(lang, server, d, for_telegram=True)
+def send_telegram(s, chat, lang, server, d, first=""):
+    text = plain_text(lang, server, d, for_telegram=True, first=first)
     # Telegram takes at most 4096 characters; cut at a line.
     if len(text) > 4000:
         text = text[:4000].rsplit("\n", 1)[0] + "\n…"
@@ -486,13 +492,13 @@ def send_to(s, server, p, d):
     done = []
     if p.get("email") and mail_ready(s):
         try:
-            send_mail(s, p["email"], lang, server, d)
+            send_mail(s, p["email"], lang, server, d, p.get("name") or "")
             done.append("e-mail")
         except SendError as e:
             log(str(e))
     if p.get("telegram") and telegram_ready(s):
         try:
-            send_telegram(s, p["telegram"], lang, server, d)
+            send_telegram(s, p["telegram"], lang, server, d, p.get("name") or "")
             done.append("Telegram")
         except SendError as e:
             log(str(e))
@@ -645,6 +651,21 @@ def set_person(user, **kw):
         save(state)
 
 
+def remember_name(user, data):
+    """Keeps the first word of the person's full name for the greeting (none when they gave no full name)."""
+    shown = str(data.get("user_name") or "").strip()
+    first = shown.split()[0] if shown and shown != user else ""
+    with locked():
+        state = load()
+        p = (state.get("people") or {}).get(user)
+        if p is not None and (p.get("name") or "") != first:
+            if first:
+                p["name"] = first
+            else:
+                p.pop("name", None)
+            save(state)
+
+
 def preview(lang, s, server, user):
     state = load()
     p = dict((state.get("people") or {}).get(user) or {}, lang=lang)
@@ -706,6 +727,8 @@ def main():
         elif event == "api.call":
             body = data.get("body") if isinstance(data.get("body"), dict) else {}
             out = call(data.get("action"), body.get("lang") or "en", s, server, data.get("user") or "", bool(data.get("admin")), body)
+            if data.get("user"):
+                remember_name(data["user"], data)
         else:
             out = {"skipped": event}
     except SendError as e:

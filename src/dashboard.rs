@@ -142,7 +142,7 @@ fn now_playing(app: &Arc<App>, db: &Db) -> Vec<Value> {
             o["thumb"] = json!(format!("/library/metadata/{}/thumb?v={}", e.item, it.map(|i| i.updated_at).unwrap_or(0)));
             o["year"] = json!(it.and_then(|i| i.year));
             o["duration"] = json!(it.map(|i| i.duration_ms));
-            o["user"] = json!(db.user(e.user).map(|u| u.username.clone()));
+            o["user"] = json!(db.user(e.user).map(|u| u.display_name()));
             o["user_id"] = json!(e.user);
             o["offset"] = json!(e.offset);
             o["state"] = json!(e.state);
@@ -200,7 +200,7 @@ pub fn dashboard(app: &Arc<App>) -> Resp {
         .map(|u| {
             let s = seen.get(&u.id);
             let last_play = db.history.iter().rev().find(|e| e.user_id == u.id).map(|e| e.at);
-            json!({"id": u.id, "username": u.username, "admin": u.admin,
+            json!({"id": u.id, "username": u.username, "display_name": u.display_name(), "admin": u.admin,
                 "last_seen": s.map(|s| s.at), "active": s.is_some_and(|s| t.saturating_sub(s.at) <= ACTIVE_SECONDS),
                 "ip": s.map(|s| s.ip.clone()), "client": s.map(|s| s.agent.clone()),
                 "playing": playing.iter().filter(|p| p["user_id"] == json!(u.id)).count(),
@@ -295,7 +295,7 @@ pub fn history(db: &Db, open: &[PlaySession], days: u64, only_user: Option<u64>)
     users.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.total_cmp(&a.2)));
     let users: Vec<Value> = users
         .into_iter()
-        .map(|(id, n, m)| json!({"id": id, "username": db.user(id).map(|u| u.username.clone()), "plays": n, "minutes": round(m)}))
+        .map(|(id, n, m)| json!({"id": id, "username": db.user(id).map(|u| u.username.clone()), "display_name": db.user(id).map(|u| u.display_name()), "plays": n, "minutes": round(m)}))
         .collect();
     let mut titles: Vec<(u64, u64, f64)> = by_title.into_iter().map(|(id, (n, m))| (id, n, m)).collect();
     titles.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.total_cmp(&a.2)));
@@ -313,7 +313,7 @@ pub fn history(db: &Db, open: &[PlaySession], days: u64, only_user: Option<u64>)
         .rev()
         .take(25)
         .map(|e| json!({"at": e.at, "manual": e.manual, "live": e.live, "minutes": round(e.minutes),
-            "user": db.user(e.user).map(|u| u.username.clone()), "item": crate::actions::brief(db.items.get(&e.item), e.item, db)}))
+            "user": db.user(e.user).map(|u| u.display_name()), "item": crate::actions::brief(db.items.get(&e.item), e.item, db)}))
         .collect();
     let total_minutes = events.iter().fold(0.0, |n, e| n + e.minutes);
     ok(json!({"days": days, "from": from, "size": plays.len(), "minutes": round(total_minutes),

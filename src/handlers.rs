@@ -153,7 +153,7 @@ pub fn home_profiles(app: &Arc<App>, ctx: &Ctx) -> Resp {
     let db = app.db.lock().unwrap();
     if !db.settings.home_profiles || !ctx.is_local() { return ok(json!({"local": ctx.is_local(), "profiles": []})); }
     let list: Vec<Value> = db.users.iter().filter(|u| pickable(u))
-        .map(|u| json!({"id": u.id, "username": u.username, "has_pin": !u.pin_hash.is_empty()})).collect();
+        .map(|u| json!({"id": u.id, "username": u.username, "display_name": u.display_name(), "has_pin": !u.pin_hash.is_empty()})).collect();
     ok(json!({"local": true, "profiles": list}))
 }
 
@@ -192,7 +192,7 @@ pub fn invite_info(app: &Arc<App>, code: &str) -> Resp {
     let db = app.db.lock().unwrap();
     match db.invites.iter().find(|i| i.code == code) {
         Some(i) if i.used_by.is_none() && i.expires_at >= now() => ok(json!({"valid": true, "server": crate::server::display_name(&db.settings), "email": i.email, "note": i.note,
-            "invited_by": db.user(i.created_by).map(|u| u.username.clone()), "expires_at": i.expires_at})),
+            "invited_by": db.user(i.created_by).map(|u| u.display_name()), "expires_at": i.expires_at})),
         Some(i) if i.used_by.is_some() => fail(410, "This invite was already used"),
         Some(_) => fail(410, "This invite has expired"),
         None => fail(404, "No such invite"),
@@ -380,7 +380,7 @@ pub fn sessions(app: &Arc<App>, user: &User) -> Resp {
     }
     let list: Vec<Value> = all.iter().filter(|(p, _)| user.admin || p.user_id == user.id).map(|(p, kind)| {
         let it = db.items.get(&p.item_id);
-        json!({"user": db.user(p.user_id).map(|u| u.username.clone()), "item": p.item_id, "title": it.map(|i| i.title.clone()),
+        json!({"user": db.user(p.user_id).map(|u| u.display_name()), "item": p.item_id, "title": it.map(|i| i.title.clone()),
             "type": it.map(|i| i.kind.as_str()), "offset": p.offset_ms, "duration": it.map(|i| i.duration_ms), "state": p.state,
             "method": p.method, "stream": kind, "client": p.client})
     }).collect();
@@ -1169,7 +1169,7 @@ pub fn plugin_call(app: &Arc<App>, ctx: &Ctx, user: &User, pid: &str, action: &s
     if !st.enabled {
         return fail(409, "This plugin is switched off");
     }
-    let data = json!({"action": action, "body": ctx.body, "params": ctx.params.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>(), "user": user.username, "admin": user.admin});
+    let data = json!({"action": action, "body": ctx.body, "params": ctx.params.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>(), "user": user.username, "user_name": user.display_name(), "admin": user.admin});
     match plugins::invoke(&pl, &st.settings, "api.call", &data, &app.server_info_for(&pl)) {
         Ok(mut v) => {
             // {"mark_watched": [...]}: the plugin found these watched elsewhere
