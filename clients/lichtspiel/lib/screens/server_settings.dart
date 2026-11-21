@@ -159,6 +159,7 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
         const _F('analyze_loudness', 'Lautheit der Videos messen', _T.flag, help: 'Braucht ffmpeg.'),
         const _F('deep_analysis', 'Tiefenanalyse', _T.flag, help: 'Liest jede Datei komplett – Platten bleiben lange beschäftigt. Braucht ffprobe.'),
         const _F('generate_thumbnails', 'Vorschaubilder erzeugen', _T.flag, help: 'Braucht ffmpeg.'),
+        const _F('theme_from_intros', 'Titelmusik aus dem Serien-Intro', _T.flag, help: 'Einmal pro Serie im Wartungsfenster. Eine theme.mp3 im Ordner hat Vorrang. Braucht ffmpeg.'),
         const _F('refresh_metadata', 'Alle Bibliotheken alle 3 Tage neu lesen', _T.flag),
       ]),
       'transcoder': ('Transcoder', [

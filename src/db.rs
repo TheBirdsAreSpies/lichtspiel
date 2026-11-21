@@ -888,6 +888,9 @@ pub struct Settings {
     pub deep_analysis: bool,
     #[serde(default)]
     pub generate_thumbnails: bool,
+    /// Theme music for shows cut from the intro of one episode (during maintenance, once per show).
+    #[serde(default = "yes")]
+    pub theme_from_intros: bool,
     /// Surround sound converted to stereo: lift the dialogue (the centre channel) so voices stay clear.
     #[serde(default = "yes")]
     pub boost_dialogue: bool,
@@ -1160,6 +1163,7 @@ impl Default for Settings {
             meta_ratings: true,
             meta_person_details: true,
             trailers_english: true,
+            theme_from_intros: true,
             trailers_red_band: false,
             group_recent_episodes: false,
             analyze_loudness: false,

@@ -82,6 +82,14 @@ pub fn cleanup(app: &App) -> Resp {
             let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
         }
     }
+    if !app.db.lock().unwrap().items.is_empty() {
+        if let Ok(rd) = std::fs::read_dir(app.data_dir.join(THEME_DIR)) {
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if !name.strip_suffix(".m4a").is_some_and(|n| n.parse::<u64>().is_ok() && !gone(n)) { let _ = std::fs::remove_file(e.path()); }
+            }
+        }
+    }
     let after = dir_size(&app.transcode_dir()) + dir_size(&app.data_dir.join("cache"));
     ok(json!({"ok": true, "freed": before.saturating_sub(after), "transcodes_kept": !idle}))
 }
@@ -312,6 +320,66 @@ pub fn make_thumbnails(app: &App, max: usize) -> usize {
     todo.len()
 }
 
+/// Where theme music cut from show intros is kept: data/themes/{show}.m4a.
+pub const THEME_DIR: &str = "themes";
+
+/// The episode whose intro becomes a show's theme music: the first one (specials last) with an
+/// intro of 10 s to 3 min. → (episode id, its file, intro start ms, intro end ms)
+pub fn intro_theme_source(db: &crate::db::Db, show: u64) -> Option<(u64, String, u64, u64)> {
+    let mut eps: Vec<&crate::db::Item> = db.leaves(show).iter().filter_map(|id| db.items.get(id)).collect();
+    let season = |e: &crate::db::Item| e.parent_id.and_then(|p| db.items.get(&p)).and_then(|s| s.index).unwrap_or(0);
+    eps.sort_by_key(|e| (season(e) == 0, season(e), e.index.unwrap_or(0)));
+    eps.into_iter().find_map(|e| {
+        let (s, end) = db.intro_marker(e)?;
+        let f = e.file.as_ref().filter(|_| e.parts.is_empty())?;
+        (10_000..=180_000).contains(&(end - s)).then(|| (e.id, f.path.clone(), s, end))
+    })
+}
+
+/// ffmpeg: the sound from `start_ms` to `end_ms` as stereo AAC in MP4, faded in and out.
+pub fn intro_theme_args(src: &str, start_ms: u64, end_ms: u64, out: &str) -> Vec<String> {
+    let len = end_ms.saturating_sub(start_ms) as f64 / 1000.0;
+    let fade = (len / 4.0).min(2.0);
+    let fades = format!("afade=t=in:d=0.5,afade=t=out:st={:.3}:d={fade:.3}", len - fade);
+    ["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-ss", &format!("{:.3}", start_ms as f64 / 1000.0), "-i", src,
+        "-t", &format!("{len:.3}"), "-map", "0:a:0", "-vn", "-sn", "-dn", "-ac", "2", "-af", &fades, "-c:a", "aac", "-b:a", "160k", "-f", "mp4", out]
+        .iter().map(|x| x.to_string()).collect()
+}
+
+/// Cuts the theme music of up to `max` shows from an episode's intro. A show is done again only when
+/// the intro it was cut from changes (extra.intro_theme = "episode:start:end"). Returns how many were tried.
+pub fn make_intro_themes(app: &App, max: usize) -> usize {
+    let todo: Vec<(u64, String, (u64, String, u64, u64))> = {
+        let db = app.db.lock().unwrap();
+        db.items.values()
+            .filter(|i| i.kind == crate::db::ItemKind::Show && !i.extra.contains_key(crate::scanner::MISSING))
+            .filter_map(|i| {
+                let src = intro_theme_source(&db, i.id)?;
+                let key = format!("{}:{}:{}", src.0, src.2, src.3);
+                (i.extra.get("intro_theme").and_then(|v| v.as_str()) != Some(key.as_str()) && Path::new(&src.1).is_file()).then_some((i.id, key, src))
+            })
+            .take(max).collect()
+    };
+    if todo.is_empty() { return 0; }
+    let ffmpeg = app.settings().ffmpeg;
+    let dir = app.data_dir.join(THEME_DIR);
+    let _ = std::fs::create_dir_all(&dir);
+    for (show, key, (_, path, start, end)) in &todo {
+        let (out, tmp) = (dir.join(format!("{show}.m4a")), dir.join(format!("{show}.part")));
+        let ran = std::process::Command::new(&ffmpeg).args(intro_theme_args(path, *start, *end, &tmp.to_string_lossy()))
+            .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success());
+        let ok = ran && file_size(&tmp) > 1000 && { let _ = std::fs::remove_file(&out); std::fs::rename(&tmp, &out).is_ok() };
+        if !ok {
+            let _ = std::fs::remove_file(&tmp);
+            elog!("theme music: could not cut the intro of {path}");
+        }
+        let mut db = app.db.lock().unwrap();
+        if let Some(it) = db.items.get_mut(show) { it.extra.insert("intro_theme".into(), json!(key)); }
+    }
+    app.save();
+    todo.len()
+}
+
 /// Runs once a minute: starts the tasks that are due, but only inside the maintenance window.
 pub fn tick(app: &std::sync::Arc<App>) {
     let (s, now) = (app.settings(), crate::db::now());
@@ -344,6 +412,7 @@ pub fn tick(app: &std::sync::Arc<App>) {
     if s.analyze_loudness { analyze_loudness(app, 5); }
     if s.deep_analysis { deep_analysis(app, 1); }
     if s.generate_thumbnails { make_thumbnails(app, 2); }
+    if s.theme_from_intros { make_intro_themes(app, 3); }
     if !ran.is_empty() {
         { let mut db = app.db.lock().unwrap(); for k in ran { db.settings.maintenance_last.insert(k.to_string(), now); } }
         app.save();
@@ -575,5 +644,65 @@ mod schedule_tests {
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(last, Some(earlier));
         assert!(job.is_none(), "it ran again after a restart: {job:?}");
+    }
+}
+
+#[cfg(test)]
+mod intro_theme_tests {
+    use serde_json::json;
+
+    /// A show with specials and a first season; `clip` is the file every episode plays.
+    fn app(name: &str, clip: &str) -> (std::sync::Arc<crate::server::App>, std::path::PathBuf) {
+        let (app, root) = crate::server::tests::test_app(name);
+        let mut db = app.db.lock().unwrap();
+        let item = |id: u64, kind: &str, parent: Option<u64>, index: u32, intro: Option<[u64; 2]>| {
+            let mut it: crate::db::Item = serde_json::from_value(json!({"id": id, "section_id": 1, "kind": kind, "title": "x", "sort_title": "x",
+                "added_at": 0, "updated_at": 0, "parent_id": parent, "index": index})).unwrap();
+            if kind == "episode" { it.file = Some(crate::db::MediaFile { path: clip.to_string(), ..Default::default() }); }
+            if let Some(m) = intro { it.extra.insert("intro_ms".into(), json!(m)); }
+            it
+        };
+        for it in [item(10, "show", None, 0, None), item(11, "season", Some(10), 1, None), item(12, "season", Some(10), 0, None),
+            item(13, "episode", Some(12), 1, Some([0, 30_000])), item(14, "episode", Some(11), 1, Some([1000, 5000])),
+            item(15, "episode", Some(11), 2, Some([1000, 13_000]))] {
+            db.items.insert(it.id, it);
+        }
+        drop(db);
+        (app, root)
+    }
+
+    #[test]
+    fn the_first_regular_episode_with_an_intro_long_enough_is_cut() {
+        let (a, root) = app("intro-theme-pick", "none.mkv");
+        let src = super::intro_theme_source(&a.db.lock().unwrap(), 10);
+        let _ = std::fs::remove_dir_all(&root);
+        // 14's intro is only 4 s; 13 is a special.
+        assert_eq!(src, Some((15, "none.mkv".to_string(), 1000, 13_000)));
+        let args = super::intro_theme_args("in.mkv", 1000, 13_000, "out.part").join(" ");
+        assert!(args.contains("-ss 1.000 -i in.mkv -t 12.000") && args.contains("afade=t=out:st=10.000:d=2.000"), "{args}");
+    }
+
+    /// Needs ffmpeg on the PATH; skipped without it.
+    #[test]
+    fn a_show_gets_its_theme_once_and_again_only_when_the_intro_changes() {
+        let dir = std::env::temp_dir().join(format!("lichtspiel-intro-theme-clip-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let clip = dir.join("ep.mkv");
+        let made = std::process::Command::new("ffmpeg").args(["-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=15", "-c:a", "aac"])
+            .arg(&clip).status().is_ok_and(|s| s.success());
+        if !made { let _ = std::fs::remove_dir_all(&dir); eprintln!("ffmpeg not found, skipped"); return; }
+        let (a, root) = app("intro-theme-cut", &clip.to_string_lossy());
+        let first = super::make_intro_themes(&a, 3);
+        let out = a.data_dir.join(super::THEME_DIR).join("10.m4a");
+        let size = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
+        let again = super::make_intro_themes(&a, 3);
+        a.db.lock().unwrap().items.get_mut(&15).unwrap().extra.insert("intro_ms".into(), json!([2000, 14_000]));
+        let changed = super::make_intro_themes(&a, 3);
+        let key = a.db.lock().unwrap().items[&10].extra["intro_theme"].clone();
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!((first, again, changed), (1, 0, 1));
+        assert!(size > 1000, "no theme file was made ({size} bytes)");
+        assert_eq!(key, json!("15:2000:14000"));
     }
 }

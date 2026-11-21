@@ -127,7 +127,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/me/2fa/setup", "Start two-step sign-in → {secret, uri, qr (an SVG picture of the link)} for an authenticator app (not active yet)"),
     ("POST", "/api/me/2fa/enable", "Switch it on with a code from the app {code}"),
     ("POST", "/api/me/2fa/disable", "Switch it off {password, code}"),
-    ("GET", "/library/metadata/{id}/theme", "The theme music of a movie or show: a theme.mp3 or theme-1.mp3 (also .m4a .flac .ogg .wav .aac) in its folder; 404 when there is none"),
+    ("GET", "/library/metadata/{id}/theme", "The theme music of a movie or show: a theme.mp3 or theme-1.mp3 (also .m4a .flac .ogg .wav .aac) in its folder, else for a show the one cut from its intro during maintenance; 404 when there is none"),
     ("GET", "/api/preroll", "A video to play before a movie (from the pre-roll list in the settings) → {url} or {url: null}"),
     ("GET", "/api/preroll/{n}/file", "One of the pre-roll videos, with seeking"),
     ("GET", "/api/rss", "Your watchlist feed {enabled, url}; the address holds a private key, so a feed reader needs no sign-in"),

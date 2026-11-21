@@ -26,8 +26,12 @@ as watched** offers other choices.
 
 A movie's or show's page plays its theme music quietly, once, and fades it out when you leave.
 The music comes from a `theme.mp3` in its folder (also `theme-1.mp3`, or .m4a, .flac, .ogg, .wav,
-.aac) next to the video, or for a show also one folder above a season folder. Turn the playing off
-under **Settings → Web → Play theme music**. Browsers may need one click on the page first.
+.aac) next to the video, or for a show also one folder above a season folder. A show without such a
+file gets its music from its own episodes: inside the maintenance window the server cuts the intro of
+one episode (the first with a found intro of 10 s to 3 min, specials last) and keeps it as
+`data/themes/{show}.m4a`. It is cut again only when that intro changes. Switch this off under
+**Settings → Scheduled tasks → Theme music from show intros**. Turn the playing off under
+**Settings → Web → Play theme music**. Browsers may need one click on the page first.
 
 ## Skip intro (TV shows)
 

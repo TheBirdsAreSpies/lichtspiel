@@ -1378,15 +1378,17 @@ fn theme_path(db: &Db, item: &Item) -> Option<PathBuf> {
     dirs.into_iter().find_map(theme_in)
 }
 
-/// GET /library/metadata/{id}/theme: the theme music of a movie or show (a theme file in its folder), with seeking.
+/// GET /library/metadata/{id}/theme: the theme music of a movie or show, with seeking: a theme file in
+/// its folder, else for a show the one cut from its intro during maintenance.
 pub fn theme(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
-    let local = {
+    let (local, show) = {
         let db = app.db.lock().unwrap();
         let Some(it) = iid.parse::<u64>().ok().and_then(|i| db.items.get(&i)).filter(|i| db.can_see_item(user, i)) else { return fail(404, "Not found") };
         if !matches!(it.kind, ItemKind::Movie | ItemKind::Show) { return fail(404, "No theme music"); }
-        theme_path(&db, it)
+        (theme_path(&db, it), (it.kind == ItemKind::Show && db.settings.theme_from_intros).then_some(it.id))
     };
-    let Some(path) = local.filter(|p| app.may_send(p, false)) else { return fail(404, "No theme music") };
+    let cut = show.map(|id| app.data_dir.join(crate::maintenance::THEME_DIR).join(format!("{id}.m4a"))).filter(|p| p.is_file());
+    let Some(path) = local.filter(|p| app.may_send(p, false)).or(cut) else { return fail(404, "No theme music") };
     let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let ctype = match ext.as_str() { "mp3" => "audio/mpeg", "m4a" | "aac" => "audio/mp4", "flac" => "audio/flac", "ogg" => "audio/ogg", _ => "audio/wav" };
     serve_file_as(&path, ctype, ctx.range.as_deref(), None)

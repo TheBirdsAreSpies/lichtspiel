@@ -109,6 +109,7 @@ browser), and the status window is in `shots/now.png`.
 | `plugins/` | installed plugins |
 | `trakt.json` | the Trakt settings and everyone's Trakt logins |
 | `stats.json` | the dashboard's bandwidth, processor and memory history |
+| `themes/` | show theme music cut from an episode's intro |
 | `downloads/` | copies converted for the Downloads page (deleted after *Keep converted downloads* days) |
 | `cache/`, `transcode/` | thumbnails, seek-bar previews and transcoding work files; safe to delete |
 
