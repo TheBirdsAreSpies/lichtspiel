@@ -1329,14 +1329,16 @@ async function sectionPage(id, qs) {
         const btn = h('button', { title: `${m.key} · ${m.size}`, onclick: () => jump(lo) }, m.key);
         marks.push({ btn, ranges: m.ranges });
         return btn;
-      }), bubble);
+      }));
       showPos();
     }).catch(() => {});
   }
   // On a phone the letters are swiped: the finger runs down the bar and the list follows the letter under it.
-  const bubble = h('div', { class: 'letterbubble' });
+  // The big letter shows in the middle of the screen, a little above the finger: at the edge it was under the thumb.
+  const bubble = h('div', { class: 'letterbubble', 'aria-hidden': 'true' });
   let scrubbing = false, scrubKey = null;
   const scrubAt = y => {
+    bubble.style.top = Math.round(Math.max(70, Math.min(innerHeight - 170, y - 110))) + 'px';
     let best = null, dist = Infinity;
     for (const m of marks) {
       const r = m.btn.getBoundingClientRect(), d = Math.abs(y - (r.top + r.height / 2));
@@ -1351,7 +1353,7 @@ async function sectionPage(id, qs) {
   // (HOLD ms); a finger that moves before that scrolls the page as usual. A tap still jumps to the letter.
   const HOLD = 180;
   let holdTimer = 0, holdY = 0, lastY = 0;
-  const scrubEnd = () => { clearTimeout(holdTimer); holdTimer = 0; scrubbing = false; letters.classList.remove('scrub'); };
+  const scrubEnd = () => { clearTimeout(holdTimer); holdTimer = 0; scrubbing = false; letters.classList.remove('scrub'); bubble.remove(); bubble.textContent = ''; };
   letters.addEventListener('touchstart', e => {
     scrubEnd();
     if (e.touches.length !== 1 || !marks.length) return;
@@ -1359,6 +1361,7 @@ async function sectionPage(id, qs) {
     holdTimer = setTimeout(() => {
       holdTimer = 0; scrubbing = true; scrubKey = null;
       letters.classList.add('scrub');
+      document.body.append(bubble);
       scrubAt(lastY);
     }, HOLD);
   }, { passive: true });
@@ -1436,7 +1439,7 @@ async function sectionPage(id, qs) {
   };
   window.addEventListener('scroll', onScroll, { passive: true });
   if (LIBCLEAN) LIBCLEAN();
-  LIBCLEAN = () => { LIBCLEAN = null; more.disconnect(); headSize.disconnect(); closePanel(); window.removeEventListener('scroll', onScroll); window.removeEventListener('scroll', onPos); saveLibPos(); };
+  LIBCLEAN = () => { LIBCLEAN = null; scrubEnd(); more.disconnect(); headSize.disconnect(); closePanel(); window.removeEventListener('scroll', onScroll); window.removeEventListener('scroll', onPos); saveLibPos(); };
 }
 
 const itemCount = n => n === 1 ? t('1 item') : t('{n} items', { n });
