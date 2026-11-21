@@ -408,7 +408,10 @@ impl App {
 
     pub fn server_info(&self) -> Value {
         let port = *self.port.lock().unwrap();
-        json!({"url": format!("{}://127.0.0.1:{port}", scheme()), "version": VERSION, "data_dir": self.data_dir.to_string_lossy()})
+        let settings = self.settings();
+        // `public_url`: the address people reach the server at (for links in messages; empty when not set).
+        json!({"url": format!("{}://127.0.0.1:{port}", scheme()), "version": VERSION, "data_dir": self.data_dir.to_string_lossy(),
+               "name": display_name(&settings), "public_url": settings.public_url.trim().trim_end_matches('/')})
     }
 
     /// `server_info` for one plugin: one that reads the library also gets the

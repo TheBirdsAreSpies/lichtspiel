@@ -19,8 +19,11 @@ For each event the server starts `command` inside the plugin folder and writes o
 to its standard input:
 
 ```json
-{"event": "metadata.lookup", "data": { …the item… }, "settings": { … }, "server": {"url": "http://127.0.0.1:8484", "version": "…", "data_dir": "…"}}
+{"event": "metadata.lookup", "data": { …the item… }, "settings": { … }, "server": {"url": "http://127.0.0.1:8484", "version": "…", "data_dir": "…", "name": "…", "public_url": "…"}}
 ```
+
+`name` is the server's name and `public_url` the address people reach it at, from the settings (empty
+when not set; for links in messages: `<public_url>/web/#/item/42`).
 
 The plugin may print a JSON answer as its last line of output:
 
