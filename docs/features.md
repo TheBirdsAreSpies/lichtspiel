@@ -109,8 +109,17 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
   details, react to events (new item, playback, invites …) and add their own API calls. Four
-  are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list** and
-  **Subtitles**.
+  are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list**,
+  **Subtitles** and the **Library doctor**.
+  The **Library doctor** looks through the library after each scan that changed something, once
+  a day and on **Check now**, and shows admins under **Settings → Account** what may need a hand:
+  titles that are there twice (versions merged on purpose do not count), videos below a width
+  (`min_width`, default 1280 = HD; 0 = do not check), videos with no audio in the chosen
+  languages (`languages`, default `["de"]`; it notes subtitles in them) or whose audio has no
+  language at all, files whose streams could not be read, movies without a year, episodes
+  without season or number, and titles for which no details were found online. Each entry links
+  to its title and can be ignored; `skip_libraries` leaves libraries out by name (an anime
+  library in Japanese …).
   The **Wish list** gives everyone a panel under **Settings → Account**: search for a movie or show,
   wish for it, and see how the wishes stand (wished, downloading with its percentage, downloaded,
   here). A wish goes straight to Radarr (movies) or Sonarr (shows), which look for it; a title

@@ -1,0 +1,19 @@
+{
+  "id": "library-doctor",
+  "name": "Library doctor",
+  "version": "1.0",
+  "author": "Lichtspiel",
+  "description": "Looks through the library after each scan and once a day, and shows admins under Settings what may need a hand: titles that are there twice, low resolutions, no audio in the chosen languages, files that could not be read, movies without a year, episodes without numbers, titles without details. Settings: the languages the audio should be in (e.g. [\"de\"]), the smallest width that is fine (1280 = HD; 0 = do not check), libraries to leave out by name (e.g. an anime library).",
+  "command": ["python3", "main.py"],
+  "hooks": ["api.call", "library.scan.finished", "schedule.daily"],
+  "user_panel": true,
+  "panel_admins_only": true,
+  "reads_library": true,
+  "settings": {
+    "languages": ["de"],
+    "min_width": 1280,
+    "skip_libraries": []
+  },
+  "timeout_seconds": 120,
+  "enabled_by_default": false
+}

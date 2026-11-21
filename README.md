@@ -14,7 +14,7 @@ Linux/Windows machine).
 - **Users and invites**, each with their own watched state, ratings and playlists; per-person rights to download, convert and delete.
 - **Dashboard** for admins: what is playing, bandwidth, processor and memory, play history.
 - **Trakt** built in, **sync with a running Plex server**, and an **import** of everything from your old server.
-- **Plugins** in any language; an `.nfo` reader, a webhook / Discord notifier, a wish list for Radarr / Sonarr and a subtitle downloader are included.
+- **Plugins** in any language; an `.nfo` reader, a webhook / Discord notifier, a wish list for Radarr / Sonarr, a subtitle downloader and a library check are included.
 - **English and German**, and a **full API**.
 
 Every feature in detail: [docs/features.md](docs/features.md).
