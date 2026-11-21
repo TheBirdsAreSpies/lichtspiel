@@ -945,12 +945,15 @@ async function homePage() {
   }
   // Drawn again in place (new details arrived while a library is scanned, every few seconds): the same
   // titles keep the banner as it is, on the title it shows, instead of starting over at the first one.
-  const picks = spotItems(hubs), key = picks.map(({ it }) => [it.id, it.viewOffset || 0, it.updatedAt || 0].join(':')).join(' ');
+  const lay = homeLayout();
+  const picks = lay.banner ? spotItems(hubs) : [], key = picks.map(({ it }) => [it.id, it.viewOffset || 0, it.updatedAt || 0].join(':')).join(' ');
   const old = !S.offscreen && main().querySelector('.spot:not(.skel)');
   const spot = old && old._key === key ? old : spotlight(picks);
   if (spot) spot._key = key;
   S.hadSpot = !!spot;
-  const rows = hubs.length ? hubs.map(hb => row(hb.title, hb.Metadata)) : h('div', { class: 'empty' }, t('Nothing here yet. Libraries are still being scanned, or they are empty.'));
+  const shown = orderedHubs(hubs, lay).filter(hb => !lay.hidden.includes(hb.hubIdentifier));
+  const rows = [shown.length ? shown.map(hb => row(hb.title, hb.Metadata)) : h('div', { class: 'empty' }, hubs.length ? t('All rows are hidden.') : t('Nothing here yet. Libraries are still being scanned, or they are empty.')),
+    hubs.length ? h('div', { class: 'home-edit' }, h('button', { class: 'small', onclick: () => editHome(hubs) }, t('Customize home'))) : null];
   // The kept banner stays in the page (taken out and put back, its running bar would start over): only the rows change.
   if (spot && spot === old) {
     clearTimeout(S.skel);
@@ -959,6 +962,35 @@ async function homePage() {
     return;
   }
   set(spot || h('h1', {}, t('Home')), rows);
+}
+// ---------- the home page as each person wants it: which rows, in which order, the banner or not
+// (kept with the account, so it is the same in every browser). Rows not known yet come at the end.
+function homeLayout() {
+  let v = {}; try { v = JSON.parse(store.get('homeLayout', '{}')) || {}; } catch (e) { /* none */ }
+  return { order: Array.isArray(v.order) ? v.order : [], hidden: Array.isArray(v.hidden) ? v.hidden : [], banner: v.banner !== false };
+}
+function orderedHubs(hubs, lay) {
+  const at = id => { const i = lay.order.indexOf(id); return i < 0 ? lay.order.length : i; };
+  return hubs.map((hb, i) => [hb, i]).sort((a, b) => at(a[0].hubIdentifier) - at(b[0].hubIdentifier) || a[1] - b[1]).map(x => x[0]);
+}
+function editHome(hubs) {
+  const lay = homeLayout();
+  const list = orderedHubs(hubs, lay).map(hb => ({ id: hb.hubIdentifier, title: t(hb.title), on: !lay.hidden.includes(hb.hubIdentifier) }));
+  let banner = lay.banner;
+  const box = h('div', { class: 'home-rows' });
+  const draw = () => box.replaceChildren(...list.map((r, i) => h('div', { class: 'li' },
+    h('label', { class: 'grow' }, h('input', { type: 'checkbox', checked: r.on, onchange: e => { r.on = e.target.checked; } }), ' ', r.title),
+    h('button', { class: 'small', title: t('Move up'), 'aria-label': t('Move up'), disabled: i === 0, onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; draw(); } }, '▲'),
+    h('button', { class: 'small', title: t('Move down'), 'aria-label': t('Move down'), disabled: i === list.length - 1, onclick: () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; draw(); } }, '▼'))));
+  draw();
+  const save = v => { store.set('homeLayout', JSON.stringify(v)); m.remove(); homePage(); };
+  const m = modal(t('Customize home'), [
+    h('label', { style: 'display:block;margin-bottom:12px' }, h('input', { type: 'checkbox', checked: banner, onchange: e => { banner = e.target.checked; } }), ' ', t('Banner at the top')),
+    h('div', { class: 'dim', style: 'margin-bottom:6px' }, t('Rows')), box,
+    h('div', { class: 'actions', style: 'margin-top:14px' },
+      h('button', { class: 'primary', onclick: () => save({ order: list.map(r => r.id), hidden: list.filter(r => !r.on).map(r => r.id), banner }) }, t('Save')),
+      h('button', { onclick: () => save({}) }, t('Reset')),
+      h('button', { onclick: () => m.remove() }, t('Cancel')))]);
 }
 // Search results by kind (movies, shows, episodes …), the kinds in the order of their best hit.
 const KIND_NAMES = { movie: 'Movies', show: 'Shows', season: 'Seasons', episode: 'Episodes', artist: 'Artists', album: 'Albums', track: 'Songs', clip: 'Videos', photo: 'Photos', collection: 'Collections' };
@@ -2097,7 +2129,7 @@ const CLIENT_CODECS = (() => {
 // Audio, subtitle and watched-mark settings follow the account from browser to browser: they are kept on the
 // server too (POST /api/me/prefs); at start the server's values win, and values only this browser has go up once.
 const SYNCED = ['audioLang', 'subLang', 'subMode', 'subPrefLang', 'subSdh', 'subForced', 'subSize', 'subColor', 'subBg', 'subLift', 'burnSubs', 'watchedMark',
-  'theme', 'accent', 'timeFormat', 'cardSize', 'dlQuality', 'navMore', 'quality', 'directPlay', 'keepSmall', 'levelVolume', 'themeMusic', 'rememberTab', 'autoNext', 'timeLeft', 'speed'];
+  'theme', 'accent', 'timeFormat', 'cardSize', 'dlQuality', 'navMore', 'quality', 'directPlay', 'keepSmall', 'levelVolume', 'themeMusic', 'rememberTab', 'autoNext', 'timeLeft', 'speed', 'homeLayout'];
 let prefQueue = {}, prefTimer = null;
 function syncPref(k, v) {
   if (!S.me) return;

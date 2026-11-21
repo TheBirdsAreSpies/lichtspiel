@@ -348,7 +348,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 for (k, v) in obj {
                     if k.is_empty() || k.len() > 40 || !k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') { continue; }
                     match v.as_str() {
-                        Some(s) => { if u.prefs.len() < 64 || u.prefs.contains_key(k) { u.prefs.insert(k.clone(), s.chars().take(200).collect()); } }
+                        Some(s) => { if u.prefs.len() < 64 || u.prefs.contains_key(k) { u.prefs.insert(k.clone(), s.chars().take(2000).collect()); } }
                         None => { u.prefs.remove(k); }
                     }
                 }
