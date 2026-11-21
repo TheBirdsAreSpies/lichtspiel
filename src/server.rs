@@ -1897,7 +1897,7 @@ pub fn base_headers() -> Vec<Header> {
         header("X-Server", &format!("{APP_NAME}/{VERSION}")),
         header("X-Content-Type-Options", "nosniff"),
         header("X-Frame-Options", "DENY"),
-        // Links to other websites don't take the address along (it can hold ?token=).
+        // Links to other websites don't take the address along (it can hold a ?ticket= or the sign-in link's ?token=).
         header("Referrer-Policy", "no-referrer"),
     ]
 }
@@ -2597,25 +2597,6 @@ fn origin_is_other_site(origin: &str, host: &str, forwarded_hosts: &[String]) ->
     o != host.to_ascii_lowercase() && !forwarded_hosts.iter().any(|h| h == o)
 }
 
-fn is_not_page(path: &str) -> bool { !matches!(path, "/" | "/index.html") }
-
-/// Writes to the server log that someone signed in with ?token= in the address, at most once an hour
-/// for each user and device, so it shows who still has to move to the X-Token header before it is dropped.
-fn note_token_in_address(user: &str, device: &str, peer: &str, path: &str) {
-    static SEEN: std::sync::Mutex<Option<HashMap<String, u64>>> = std::sync::Mutex::new(None);
-    let at = now();
-    let key = format!("{user}
-{device}");
-    {
-        let mut seen = SEEN.lock().unwrap();
-        let seen = seen.get_or_insert_with(HashMap::new);
-        if seen.get(&key).is_some_and(|t| at.saturating_sub(*t) < 3600) { return; }
-        if seen.len() > 1000 { seen.retain(|_, t| at.saturating_sub(*t) < 3600); }
-        seen.insert(key, at);
-    }
-    crate::log::add(format!("Token sent as ?token= in the address by {user} ({device}, {peer}) for {path}; send it as the X-Token header instead, ?token= will be dropped"));
-}
-
 /// Whether an Accept-Encoding header allows gzip (and does not turn it off with q=0).
 fn accepts_gzip(v: &str) -> bool {
     v.split(',').any(|part| {
@@ -2685,15 +2666,8 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
             _ => {}
         }
     }
-    // ?token= in the address is still taken, for older clients and scripts; it is logged (see below),
-    // because addresses end up in proxy logs and browser histories. The header is the way to send it.
-    let token_in_address = token.is_none() && params.iter().any(|(k, _)| k == "token");
-    if token.is_none() {
-        token = params
-            .iter()
-            .find(|(k, _)| k == "token")
-            .map(|(_, v)| v.clone());
-    }
+    // The token comes only in a header (X-Token or Authorization). Addresses end up in proxy logs and
+    // browser histories, so ?token= is not taken; an address that has to work on its own uses ?ticket=.
     let mut body = Value::Null;
     if matches!(method.as_str(), "POST" | "PUT" | "PATCH" | "DELETE") {
         let mut buf = Vec::new();
@@ -2720,10 +2694,6 @@ fn handle(app: Arc<App>, mut req: tiny_http::Request) {
         let uid = tk.user_id;
         db.user(uid).cloned()
     });
-    // The web app's sign-in link (/?token=…) is read by the page itself, so only other addresses count.
-    if token_in_address && is_not_page(&path) {
-        if let Some(u) = user.as_ref() { note_token_in_address(&u.username, &device, &peer, &path); }
-    }
     // A ticket (?ticket=, from /api/ticket) opens only the addresses it was made for, while its sign-in lasts (one made without a token, in a network that needs no sign-in, has an empty id and is bound to its user and expiry only).
     let user = match params.iter().find(|(k, _)| k == "ticket") {
         Some((_, t)) if user.is_none() && matches!(method.as_str(), "GET" | "HEAD") => {
@@ -3713,9 +3683,8 @@ pub(crate) mod tests {
         // The play decision hands out ticket addresses, not the sign-in token.
         let d = get("/library/metadata/1/decision", &format!("X-Token: {tok}\r\n"));
         assert!(d.contains("ticket=") && !d.contains(&tok), "{d}");
-        // The token in the address still works (older apps), and signing out ends the tickets too.
-        assert!(get(&format!("/library/parts/1/file?token={tok}"), "").ends_with("video-a"));
-        assert!(crate::log::lines().iter().any(|(_, l)| l.contains("?token= in the address") && l.contains("/library/parts/1/file") && !l.contains(&tok)), "the token in the address was not logged");
+        // The token in the address is not taken, and signing out ends the tickets too.
+        assert!(status(&get(&format!("/library/parts/1/file?token={tok}"), "")).contains("401"), "?token= in the address was taken");
         let _ = ask(&app, &format!("POST /api/logout HTTP/1.1\r\nHost: x\r\nX-Token: {tok}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
         assert!(status(&get(&format!("/library/parts/1/file?ticket={t1}"), "")).contains("401"), "a ticket outlived its sign-in");
         let _ = std::fs::remove_dir_all(&root);

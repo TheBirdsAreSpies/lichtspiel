@@ -17,7 +17,7 @@ use std::sync::Arc;
 pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/status", "Server name, version and whether first-time setup is needed (no sign-in)"),
     ("POST", "/api/setup", "First start only: create the owner account {username, password}"),
-    ("POST", "/api/login", "Sign in {username, password} → {token}; send the token as the X-Token header, Authorization: Bearer, or ?token="),
+    ("POST", "/api/login", "Sign in {username, password} → {token}; send the token as the X-Token header or Authorization: Bearer"),
     ("POST", "/api/logout", "Forget this token"),
     ("POST", "/api/link", "Ask for a sign-in code {device?} → {id, code, expires_in}; show the code on the device, no sign-in needed"),
     ("GET", "/api/link/{id}", "Poll a sign-in code → {status: pending} or {status: ok, token, user} once somebody confirmed it (410 when it expired)"),
@@ -304,7 +304,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
     }
 
     let Some(user) = ctx.user.clone() else {
-        return fail(401, "Please sign in. Send your token as the X-Token header or ?token=");
+        return fail(401, "Please sign in. Send your token as the X-Token header");
     };
     let admin = user.admin;
     let need_admin = || fail(403, "Only an admin can do this");
@@ -424,7 +424,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             "routes": ROUTES.iter().map(|r| json!({"method": r.0, "path": r.1, "description": r.2, "group": route_group(r.1)})).collect::<Vec<_>>(),
             "groups": GROUPS.iter().map(|g| json!({"name": g, "routes": ROUTES.iter().filter(|r| route_group(r.1) == *g)
                 .map(|r| json!({"method": r.0, "path": r.1, "description": r.2})).collect::<Vec<_>>()})).collect::<Vec<_>>(),
-            "auth": "Send X-Token: <token> (or Authorization: Bearer <token>, or ?token=<token>)",
+            "auth": "Send X-Token: <token> (or Authorization: Bearer <token>)",
         })),
         ("GET", ["api", "filters"]) => ok(json!({
             "fields": query::ITEM_FIELDS.iter().map(|f| json!({"field": f.0, "type": f.1, "label": f.2})).collect::<Vec<_>>(),
