@@ -331,6 +331,8 @@ pub fn timeline(app: &Arc<App>, user: &User, iid: u64, time_ms: u64, state: &str
         }
         if watched_now { db.record_play(user.id, iid, false); }
     }
+    // Which player it is, so a plugin can act per device (dim only the living room).
+    let player = json!({"device": viewer.device, "ip": viewer.ip, "local": viewer.local, "client": client});
     let key = format!("{}:{}", user.id, iid);
     // The play so far (for the statistics): carried from report to report,
     // counting the time between two while it was playing.
@@ -347,7 +349,7 @@ pub fn timeline(app: &Arc<App>, user: &User, iid: u64, time_ms: u64, state: &str
         let ended = app.playing.lock().unwrap().remove(&key);
         app.close_sessions(ended.into_iter().chain([entry]).collect());
         app.save();
-        app.fire("playback.stopped", json!({"id": iid, "user": user.username, "time": time_ms, "by_owner": true}));
+        app.fire("playback.stopped", json!({"id": iid, "user": user.username, "time": time_ms, "by_owner": true, "player": player}));
         return ok(json!({"ok": false, "stopped": true, "message": message, "watched": watched_now}));
     }
     if state == "stopped" {
@@ -356,15 +358,15 @@ pub fn timeline(app: &Arc<App>, user: &User, iid: u64, time_ms: u64, state: &str
     } else {
         app.playing.lock().unwrap().insert(key, entry);
         match before {
-            None => app.fire("playback.started", json!({"id": iid, "user": user.username, "time": time_ms, "state": state})),
+            None => app.fire("playback.started", json!({"id": iid, "user": user.username, "time": time_ms, "state": state, "player": player})),
             // Paused or playing again (not every 10-second report).
-            Some(b) if b != state => app.fire("playback.progress", json!({"id": iid, "user": user.username, "time": time_ms, "state": state})),
+            Some(b) if b != state => app.fire("playback.progress", json!({"id": iid, "user": user.username, "time": time_ms, "state": state, "player": player})),
             _ => {}
         }
     }
     app.save();
-    if state == "stopped" { app.fire("playback.stopped", json!({"id": iid, "user": user.username, "time": time_ms})); }
-    if watched_now { app.fire("playback.watched", json!({"id": iid, "user": user.username, "time": time_ms})); }
+    if state == "stopped" { app.fire("playback.stopped", json!({"id": iid, "user": user.username, "time": time_ms, "player": player})); }
+    if watched_now { app.fire("playback.watched", json!({"id": iid, "user": user.username, "time": time_ms, "player": player})); }
     ok(json!({"ok": true, "watched": watched_now}))
 }
 
@@ -661,7 +663,8 @@ pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
         Err(e) => return fail(500, &format!("ffmpeg could not be started ({e}). Install ffmpeg or set its path in the settings.")),
     };
     app.hls.lock().unwrap().insert(sid.clone(), HlsSession { id: sid.clone(), item_id: it.id, user_id: user.id, dir, child, last_access: Instant::now(), started_at: now(), method: d.method.clone(), height: d.height, audio: req.audio_stream, viewer: ctx.viewer() });
-    app.fire("playback.started", json!({"id": it.id, "user": user.username, "stream": "hls"}));
+    let v = ctx.viewer();
+    app.fire("playback.started", json!({"id": it.id, "user": user.username, "stream": "hls", "player": {"device": v.device, "ip": v.ip, "local": v.local, "client": "hls"}}));
     let playlist = format!("/video/transcode/hls/{sid}/index.m3u8");
     let mut h = base_headers();
     h.push(header("Location", &playlist));

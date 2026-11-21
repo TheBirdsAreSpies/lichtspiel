@@ -39,9 +39,11 @@ The plugin may print a JSON answer as its last line of output:
 
 Playback events (`playback.started`, `playback.progress` — sent when a player pauses or plays
 on — `playback.stopped`, `playback.watched`) carry `user`, `time` (ms), `progress` (percent),
-`state` and `item`: `{"id", "type", "title", "year", "duration_ms", "ids": {"imdb", "tmdb", "tvdb" …}}`,
-for an episode also `"season"`, `"episode"` and `"show": {"title", "year", "ids"}`. A title
-marked as watched by hand sends `playback.watched` with `"manual": true`.
+`state`, `player` and `item`: `{"id", "type", "title", "year", "duration_ms", "genres", "ids": {"imdb", "tmdb", "tvdb" …}}`,
+for an episode also `"season"`, `"episode"` and `"show": {"title", "year", "ids"}`. `player` says
+which device plays: `{"device": "Plex for Samsung — TV 2020" | "Chrome on Windows" …, "ip", "local",
+"client"}`. A title marked as watched by hand sends `playback.watched` with `"manual": true` (and no
+`player`).
 
 `library.item.added` carries `id`, `title`, `section_id` and `item`: the same fields as a playback
 event's item plus `section_id` and `files` — for each file `path`, `size`, `container`,
