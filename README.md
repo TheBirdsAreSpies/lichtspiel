@@ -24,7 +24,7 @@ Every feature in detail: [docs/features.md](docs/features.md).
 | | Lichtspiel | Plex | Jellyfin | Emby |
 |---|---|---|---|---|
 | Price | free | free core; many features need Plex Pass | free | free core; many features need Emby Premiere |
-| Open source | source in this folder | no | yes (GPL) | no (since 2018) |
+| Open source | yes (AGPL-3.0) | no | yes (GPL) | no (since 2018) |
 | Account with an outside service | no, everything stays on your server | yes, a plex.tv sign-in | no | optional |
 | Watching from outside your home | free (reverse proxy or own relay) | needs Plex Pass or Remote Watch Pass | free | free |
 | Hardware conversion (Quick Sync / VAAPI / NVENC) | free | Plex Pass | free | Premiere |
@@ -117,3 +117,10 @@ Older versions kept the library in `library.json`. The first start of this versi
 into `lichtspiel.db` and renames the old file to `library.json.migrated`.
 For a backup, stop the server and copy the folder. While the server is running,
 `lichtspiel.db-wal` belongs to `lichtspiel.db` and must be copied with it.
+
+## License
+
+Lichtspiel is free software under the **GNU Affero General Public License, version 3 or
+later** ([LICENSE](LICENSE)). You may use, change and pass it on; whoever passes on a changed
+version, or runs one for other people over a network, must offer them its source code under
+the same license. The bundled `vendor/tiny_http/` keeps its own MIT / Apache-2.0 license.
