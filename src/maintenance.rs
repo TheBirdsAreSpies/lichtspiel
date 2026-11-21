@@ -346,38 +346,89 @@ pub fn intro_theme_args(src: &str, start_ms: u64, end_ms: u64, out: &str) -> Vec
         .iter().map(|x| x.to_string()).collect()
 }
 
-/// Cuts the theme music of up to `max` shows from an episode's intro. A show is done again only when
-/// the intro it was cut from changes (extra.intro_theme = "episode:start:end"). Returns how many were tried.
-pub fn make_intro_themes(app: &App, max: usize) -> usize {
-    let todo: Vec<(u64, String, (u64, String, u64, u64))> = {
-        let db = app.db.lock().unwrap();
-        db.items.values()
-            .filter(|i| i.kind == crate::db::ItemKind::Show && !i.extra.contains_key(crate::scanner::MISSING))
-            .filter_map(|i| {
-                let src = intro_theme_source(&db, i.id)?;
-                let key = format!("{}:{}:{}", src.0, src.2, src.3);
-                (i.extra.get("intro_theme").and_then(|v| v.as_str()) != Some(key.as_str()) && Path::new(&src.1).is_file()).then_some((i.id, key, src))
-            })
-            .take(max).collect()
-    };
-    if todo.is_empty() { return 0; }
-    let ffmpeg = app.settings().ffmpeg;
+type ThemeTodo = (u64, String, (u64, String, u64, u64));
+
+/// The shows whose theme music is still to be cut, or was cut from an intro that has changed since
+/// (extra.intro_theme = "episode:start:end"): (show, that key, its source).
+fn intro_themes_todo(db: &crate::db::Db, max: usize) -> Vec<ThemeTodo> {
+    db.items.values()
+        .filter(|i| i.kind == crate::db::ItemKind::Show && !i.extra.contains_key(crate::scanner::MISSING))
+        .filter_map(|i| {
+            let src = intro_theme_source(db, i.id)?;
+            let key = format!("{}:{}:{}", src.0, src.2, src.3);
+            (i.extra.get("intro_theme").and_then(|v| v.as_str()) != Some(key.as_str()) && Path::new(&src.1).is_file()).then_some((i.id, key, src))
+        })
+        .take(max).collect()
+}
+
+/// Cuts one show's theme music into data/themes/{show}.m4a and notes the intro it came from (also
+/// when it failed, so it is not tried again and again). Does not save the library.
+fn cut_intro_theme(app: &App, (show, key, (_, path, start, end)): &ThemeTodo) -> bool {
     let dir = app.data_dir.join(THEME_DIR);
     let _ = std::fs::create_dir_all(&dir);
-    for (show, key, (_, path, start, end)) in &todo {
-        let (out, tmp) = (dir.join(format!("{show}.m4a")), dir.join(format!("{show}.part")));
-        let ran = std::process::Command::new(&ffmpeg).args(intro_theme_args(path, *start, *end, &tmp.to_string_lossy()))
-            .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success());
-        let ok = ran && file_size(&tmp) > 1000 && { let _ = std::fs::remove_file(&out); std::fs::rename(&tmp, &out).is_ok() };
-        if !ok {
-            let _ = std::fs::remove_file(&tmp);
-            elog!("theme music: could not cut the intro of {path}");
-        }
-        let mut db = app.db.lock().unwrap();
-        if let Some(it) = db.items.get_mut(show) { it.extra.insert("intro_theme".into(), json!(key)); }
+    let (out, tmp) = (dir.join(format!("{show}.m4a")), dir.join(format!("{show}.part")));
+    let ran = std::process::Command::new(app.settings().ffmpeg).args(intro_theme_args(path, *start, *end, &tmp.to_string_lossy()))
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success());
+    let ok = ran && file_size(&tmp) > 1000 && { let _ = std::fs::remove_file(&out); std::fs::rename(&tmp, &out).is_ok() };
+    if !ok {
+        let _ = std::fs::remove_file(&tmp);
+        elog!("theme music: could not cut the intro of {path}");
     }
+    let mut db = app.db.lock().unwrap();
+    if let Some(it) = db.items.get_mut(show) { it.extra.insert("intro_theme".into(), json!(key)); }
+    ok
+}
+
+/// Cuts the theme music of up to `max` shows from an episode's intro. A show is done again only when
+/// the intro it was cut from changes. Returns how many were tried.
+pub fn make_intro_themes(app: &App, max: usize) -> usize {
+    let todo = intro_themes_todo(&app.db.lock().unwrap(), max);
+    if todo.is_empty() { return 0; }
+    for t in &todo { cut_intro_theme(app, t); }
     app.save();
     todo.len()
+}
+
+static THEMES_RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// "Cut theme music now": every show still waiting for its theme music, in the background, outside the
+/// maintenance window. → how many shows are waiting (0 = nothing to do, nothing started).
+pub fn start_intro_themes(app: &std::sync::Arc<App>) -> Result<usize, String> {
+    use std::sync::atomic::Ordering::SeqCst;
+    if !app.settings().theme_from_intros { return Err("Switch on “Theme music from show intros” under Settings → Scheduled tasks first".into()); }
+    let waiting = intro_themes_todo(&app.db.lock().unwrap(), usize::MAX).len();
+    if waiting == 0 { return Ok(0); }
+    if THEMES_RUNNING.swap(true, SeqCst) { return Err("Theme music is being cut already".into()); }
+    let a = app.clone();
+    std::thread::spawn(move || {
+        let (mut tried, mut made) = (0, 0);
+        loop {
+            let todo = intro_themes_todo(&a.db.lock().unwrap(), 5);
+            if todo.is_empty() { break; }
+            for t in &todo { tried += 1; if cut_intro_theme(&a, t) { made += 1; } }
+            a.save();
+        }
+        THEMES_RUNNING.store(false, SeqCst);
+        let mut p = a.meta_progress.lock().unwrap();
+        p.done += 1;
+        p.last = json!({"id": null, "title": "Theme music", "ok": made == tried, "message": format!("Theme music cut for {made} of {tried} shows"), "at": crate::db::now()});
+    });
+    Ok(waiting)
+}
+
+/// Cuts one show's theme music now, again also when it was cut before (e.g. one that sounds wrong).
+pub fn cut_show_theme(app: &App, show: u64) -> Result<(), String> {
+    if !app.settings().theme_from_intros { return Err("Switch on “Theme music from show intros” under Settings → Scheduled tasks first".into()); }
+    let todo = {
+        let db = app.db.lock().unwrap();
+        if db.items.get(&show).map(|i| i.kind) != Some(crate::db::ItemKind::Show) { return Err("Only shows get theme music from an intro".into()); }
+        let Some(src) = intro_theme_source(&db, show) else { return Err("No episode of this show has a found intro of 10 seconds to 3 minutes".into()) };
+        if !Path::new(&src.1).is_file() { return Err(format!("The episode's file is not there: {}", src.1)); }
+        (show, format!("{}:{}:{}", src.0, src.2, src.3), src)
+    };
+    let ok = cut_intro_theme(app, &todo);
+    app.save();
+    if ok { Ok(()) } else { Err("ffmpeg could not cut the intro (see the log)".into()) }
 }
 
 /// Runs once a minute: starts the tasks that are due, but only inside the maintenance window.
@@ -698,11 +749,32 @@ mod intro_theme_tests {
         let again = super::make_intro_themes(&a, 3);
         a.db.lock().unwrap().items.get_mut(&15).unwrap().extra.insert("intro_ms".into(), json!([2000, 14_000]));
         let changed = super::make_intro_themes(&a, 3);
-        let key = a.db.lock().unwrap().items[&10].extra["intro_theme"].clone();
+        let _ = std::fs::remove_file(&out);
+        let forced = super::cut_show_theme(&a, 10);
+        let remade = out.is_file();
+        let key =a.db.lock().unwrap().items[&10].extra["intro_theme"].clone();
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!((first, again, changed), (1, 0, 1));
+        assert_eq!(forced, Ok(()));
+        assert!(remade, "cutting one show on demand did not make its file again");
         assert!(size > 1000, "no theme file was made ({size} bytes)");
         assert_eq!(key, json!("15:2000:14000"));
+    }
+
+    #[test]
+    fn one_show_is_cut_on_demand_also_when_it_was_cut_before() {
+        let (a, root) = app("intro-theme-one", "none.mkv");
+        let not_show = super::cut_show_theme(&a, 15);
+        let no_file = super::cut_show_theme(&a, 10);
+        a.db.lock().unwrap().items.values_mut().filter(|i| i.id > 12).for_each(|i| { i.extra.remove("intro_ms"); });
+        let no_intro = super::cut_show_theme(&a, 10);
+        a.db.lock().unwrap().settings.theme_from_intros = false;
+        let off = super::cut_show_theme(&a, 10);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(not_show.unwrap_err().contains("Only shows"));
+        assert!(no_file.unwrap_err().contains("not there"));
+        assert!(no_intro.unwrap_err().contains("found intro"));
+        assert!(off.unwrap_err().contains("Switch on"));
     }
 }

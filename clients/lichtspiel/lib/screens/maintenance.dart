@@ -177,6 +177,10 @@ class _ToolsTabState extends State<_ToolsTab> {
             final x = await widget.api.post('/api/maintenance/cleanup');
             return '${fmtSize((x['freed'] ?? 0) as num)} frei${x['transcodes_kept'] != null && x['transcodes_kept'] != 0 ? ' – laufende Umwandlungen blieben' : ''}';
           })),
+      tool('Titelmusik aus dem Serien-Intro', 'Schneidet die Titelmusik aller Serien, die noch keine haben, jetzt statt 3 Serien pro Minute im Wartungsfenster. Eine Serie neu: „Titelmusik schneiden“ in ihrem Menü.', 'Jetzt schneiden', () => run(() async {
+            final x = await widget.api.post('/api/maintenance/themes');
+            return x['started'] == true ? 'Die Titelmusik von ${x['shows']} Serien wird geschnitten – eine Meldung kommt, wenn es fertig ist' : 'Jede Serie mit gefundenem Intro hat ihre Titelmusik schon';
+          })),
       tool('Bericht', 'Version, System, Bibliotheken, Einstellungen (ohne Schlüssel) und Plugin-Meldungen als Textdatei.', 'Speichern', () => saveFile(context, widget.api, '/api/maintenance/report')),
       tool('Bibliotheksdatei', 'Eine Kopie der ganzen Bibliothek: Titel, Seherstand, Nutzer und Einstellungen.', 'Speichern', () => saveFile(context, widget.api, '/api/maintenance/database')),
       const Divider(height: 32),

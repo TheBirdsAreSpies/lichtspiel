@@ -80,6 +80,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/library/metadata/{id}/history", "Play history of a movie, show, season or episode, newest first (the owner sees everyone's, others their own)"),
     ("POST", "/library/metadata/{id}/report", "Report a problem {kind: playback|video|audio|subtitles|metadata|other, note}"),
     ("DELETE", "/library/metadata/{id}", "Delete the files of a movie or episode (or every episode of a season or show) from disk; needs media deletion allowed in the settings and, for others than admins, the right to delete"),
+    ("POST", "/library/metadata/{id}/theme", "Admin: cut a show's theme music from an intro now, again also when it was cut before → {folder_theme: the theme file in its folder that is played instead, or null}"),
     ("POST", "/library/metadata/{id}/analyze", "Admin: read the files again with ffprobe (streams, length; in the background)"),
     ("POST", "/library/metadata/{id}/deepanalyze", "Admin: deep analysis: read every packet to work out the connection speed the files need (in the background)"),
     ("POST", "/library/metadata/{id}/optimize", "Admin: save a version every browser plays directly {quality: original|tv|mobile} (in the background; played instead of converting)"),
@@ -91,6 +92,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("DELETE", "/api/optimized", "Admin: delete all optimized versions → {removed}"),
     ("POST", "/api/maintenance/optimize", "Admin: compact the library file → {before, after} bytes"),
     ("POST", "/api/maintenance/cleanup", "Admin: remove leftover conversions and old cache files → {freed} bytes"),
+    ("POST", "/api/maintenance/themes", "Admin: cut the theme music of every show still waiting for it from an intro, now and in the background → {started, shows}"),
     ("GET", "/api/log/download", "Admin: the whole server log as a text file (?gz=1: compressed)"),
     ("GET", "/api/maintenance/backups", "Admin: the backups in the backup folder → {backups: [{name, size, time}]}, newest first"),
     ("POST", "/api/maintenance/restore", "Admin: put a backup back in place of the library {name}; the current state is backed up first"),
@@ -1325,6 +1327,19 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             ok(json!({"ok": true}))
         }
         ("GET", ["library", "metadata", iid, "theme"]) => crate::handlers::theme(app, ctx, &user, iid),
+        ("POST", ["library", "metadata", iid, "theme"]) => {
+            if !admin { return need_admin(); }
+            let Some(iid) = id(iid) else { return fail(404, "Not found") };
+            match crate::maintenance::cut_show_theme(app, iid) {
+                Ok(()) => {
+                    // A theme file in the show's folder is played instead of the one cut.
+                    let db = app.db.lock().unwrap();
+                    let folder = db.items.get(&iid).and_then(|it| crate::handlers::theme_path(&db, it)).map(|p| p.to_string_lossy().to_string());
+                    ok(json!({"ok": true, "folder_theme": folder}))
+                }
+                Err(e) => fail(400, &e),
+            }
+        }
         ("GET", ["api", "preroll"]) => crate::handlers::preroll(app, ctx),
         ("GET", ["api", "preroll", n, "file"]) => crate::handlers::preroll_file(app, ctx, n),
         ("GET", ["api", "rss"]) | ("POST", ["api", "rss"]) => crate::rss::manage(app, ctx, user.id),
@@ -1391,6 +1406,10 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("DELETE", ["api", "optimized"]) => { if !admin { return need_admin(); } ok(json!({"ok": true, "removed": crate::actions::remove_all_optimized(app)})) }
         ("POST", ["api", "maintenance", "optimize"]) => { if !admin { return need_admin(); } crate::maintenance::optimize(app) }
         ("POST", ["api", "maintenance", "cleanup"]) => { if !admin { return need_admin(); } crate::maintenance::cleanup(app) }
+        ("POST", ["api", "maintenance", "themes"]) => {
+            if !admin { return need_admin(); }
+            match crate::maintenance::start_intro_themes(app) { Ok(n) => js(if n > 0 { 202 } else { 200 }, json!({"ok": true, "started": n > 0, "shows": n})), Err(e) => fail(409, &e) }
+        }
         ("POST", ["api", "maintenance", "backup"]) => { if !admin { return need_admin(); } match crate::maintenance::backup(app) { Ok(p) => ok(json!({"ok": true, "path": p})), Err(e) => fail(500, &e) } }
         ("GET", ["api", "maintenance", "database"]) => { if !admin { return need_admin(); } crate::maintenance::database(app) }
         ("GET", ["api", "maintenance", "report"]) => { if !admin { return need_admin(); } crate::maintenance::report(app) }

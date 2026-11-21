@@ -1046,6 +1046,9 @@ async function settingsPage(tab, qs) {
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Troubleshooting')),
         formRow(t('Optimize library file'), h('button', { onclick: async () => { try { const x = await api('POST', '/api/maintenance/optimize'); toast(t('Optimized: {a} → {b}', { a: size(x.before), b: size(x.after) }), 5000); } catch (e) { toast(e.message, 5000); } } }, t('Optimize')), t('Compacts the library file. Safe to do while the server runs.')),
         formRow(t('Clean up bundles'), h('button', { onclick: async () => { try { const x = await api('POST', '/api/maintenance/cleanup'); toast(t('{n} freed', { n: size(x.freed) }) + (x.transcodes_kept ? ' — ' + t('conversions in use were kept') : ''), 5000); } catch (e) { toast(e.message, 5000); } } }, t('Clean up')), t('Removes leftover conversions and cache files older than a week.')),
+        formRow(t('Theme music from show intros'), h('button', { onclick: async () => {
+          try { const x = await api('POST', '/api/maintenance/themes'); toast(x.started ? t('Cutting the theme music of {n} shows — a message comes when it is done', { n: x.shows }) : t('Every show with a found intro has its theme music already'), 5000); if (x.started) pollActivity(); } catch (e) { toast(t(e.message), 6000); }
+        } }, t('Cut now')), t('Cuts the theme music of every show still waiting for it now, instead of 3 shows a minute in the maintenance window. One show again: “Cut theme music” in its menu.')),
         formRow(t('Report'), link('/api/maintenance/report', 'report'), t('Version, system, libraries, settings (without keys) and plugin messages as a text file.')),
         formRow(t('Library file'), link('/api/maintenance/database', 'library'), t('A copy of the whole library: items, watch states, users and settings.'))));
   }
@@ -1438,6 +1441,10 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
       const r = await api('POST', `/library/metadata/${it.id}/refresh`); toast(t(r.message), 4000); changed();
     } } : null,
     admin ? { label: t('Analyze'), run: async () => { await api('POST', `/library/metadata/${it.id}/analyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
+    admin && it.type === 'show' ? { label: t('Cut theme music'), run: async () => {
+      toast(t('Cutting the theme music…'));
+      try { const r = await api('POST', `/library/metadata/${it.id}/theme`); toast(r.folder_theme ? t('Theme music cut. The theme file in the show’s folder is played instead: {path}', { path: r.folder_theme }) : t('Theme music cut'), r.folder_theme ? 8000 : 3000); stopTheme(); } catch (e) { toast(t(e.message), 6000); }
+    } } : null,
     admin ? { label: t('Deep analysis'), run: async () => { await api('POST', `/library/metadata/${it.id}/deepanalyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
     admin ? { label: t('Edit details'), run: async () => editItem(await fullItem(it)) } : null,
     admin && matchable ? { label: (it.extra || {}).metadata_source ? t('Fix match…') : t('Match…'), run: async () => fixMatch(await fullItem(it), changed) } : null,

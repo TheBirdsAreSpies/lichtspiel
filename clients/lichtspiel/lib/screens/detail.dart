@@ -523,6 +523,11 @@ class _DetailScreenState extends State<DetailScreen> {
             case 'analyze':
               await api.post('/library/metadata/$key/analyze');
               say('Analysiere…');
+            case 'theme':
+              say('Titelmusik wird geschnitten…');
+              final r = await api.post('/library/metadata/$key/theme');
+              final folder = r is Map ? r['folder_theme'] : null;
+              say(folder != null ? 'Titelmusik geschnitten. Gespielt wird aber die Datei im Ordner der Serie: $folder' : 'Titelmusik geschnitten');
             case 'credits':
               await creditsDialog(context, api, item);
               load();
@@ -539,6 +544,7 @@ class _DetailScreenState extends State<DetailScreen> {
       itemBuilder: (_) => [
         if (matchable) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
         if (item['Media'] != null) const PopupMenuItem(value: 'analyze', child: Text('Analysieren')),
+        if (type == 'show') const PopupMenuItem(value: 'theme', child: Text('Titelmusik schneiden')),
         const PopupMenuItem(value: 'edit', child: Text('Details bearbeiten')),
         if (type == 'movie' || type == 'episode') const PopupMenuItem(value: 'credits', child: Text('Abspann…')),
         if (matchable) PopupMenuItem(value: 'match', child: Text(matched ? 'Zuordnung korrigieren…' : 'Zuordnen…')),

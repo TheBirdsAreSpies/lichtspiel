@@ -1367,7 +1367,7 @@ fn theme_in(dir: &Path) -> Option<PathBuf> {
 
 /// A theme file (theme.mp3, theme-1.mp3 …, also .m4a, .flac, .ogg, .wav, .aac) next to the first
 /// file of a movie or show, or one folder above it (a show's season folder).
-fn theme_path(db: &Db, item: &Item) -> Option<PathBuf> {
+pub(crate) fn theme_path(db: &Db, item: &Item) -> Option<PathBuf> {
     let first = db.leaves(item.id).first().and_then(|id| db.items.get(id))?;
     let file = first.file.as_ref().map(|f| f.path.clone()).or_else(|| first.all_files().first().map(|f| f.path.clone()))?;
     let dir = Path::new(&file).parent()?;
