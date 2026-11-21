@@ -2013,8 +2013,8 @@ async function editSection(sec) {
 }
 
 // ---------- router
-// Theme music (Settings -> Web): plays once, at half volume, on a movie's or show's page, and
-// fades out over 2 seconds when leaving the page or near its end.
+// Theme music (Settings -> Web): plays over and over, at half volume, on a movie's or show's page, and
+// fades out over 2 seconds when leaving the page or when the player opens.
 const THEME = { audio: null, id: null };
 const THEME_VOLUME = 0.5, THEME_FADE_MS = 2000;
 function fadeTheme(a) {
@@ -2042,8 +2042,7 @@ async function startTheme(id) {
   // (Left the page, or the player opened, while the ticket was on its way.)
   if (!tk || THEME.id !== id || player.style.display === 'flex' || document.pictureInPictureElement) return;
   const a = new Audio(withTicket(`/library/metadata/${id}/theme`, tk));
-  a.volume = THEME_VOLUME;
-  a.addEventListener('timeupdate', () => { if (a.duration - a.currentTime <= THEME_FADE_MS / 1000) fadeTheme(a); });
+  a.volume = THEME_VOLUME; a.loop = true;
   THEME.audio = a; THEME.id = id;
   a.addEventListener('error', () => { if (THEME.audio === a) { THEME.audio = null; THEME.id = null; } });
   a.play().catch(e => {
