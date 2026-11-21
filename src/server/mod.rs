@@ -353,7 +353,7 @@ impl App {
             .collect();
         let mut db = self.db.lock().unwrap();
         for (id, on) in list {
-            db.plugins.entry(id).or_insert(db::PluginState { enabled: on, settings: Default::default() });
+            db.plugins.entry(id).or_insert(db::PluginState { enabled: on, ..Default::default() });
         }
     }
 

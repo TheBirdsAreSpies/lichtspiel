@@ -1898,6 +1898,15 @@ I18N.add('de', 'Deutsch', {
     'This link does not work any more. Ask for a new one': 'Dieser Link funktioniert nicht mehr. Fordere einen neuen an',
     'That is not an e-mail address': 'Das ist keine E-Mail-Adresse',
     'Enter their e-mail address to send the invite': 'Gib die E-Mail-Adresse ein, um die Einladung zu senden',
+    // ---------- plugin pages
+    'This plugin is switched off or not shown to you.': 'Dieses Plugin ist ausgeschaltet oder für dich nicht sichtbar.',
+    'Shown in': 'Erscheint in',
+    'The left menu (a page of its own)': 'Der linken Leiste (eigene Seite)',
+    'Settings → Account': 'Einstellungen → Konto',
+    'Both': 'Beidem',
+    '(suggested by the plugin)': '(Vorschlag des Plugins)',
+    'Everyone can still unpin it from their own menu.': 'Jede Person kann es trotzdem in ihrer eigenen Leiste ablösen.',
+    'placement must be settings, sidebar or both': 'placement muss settings, sidebar oder both sein',
   },
   patterns: [
     [/^The e-mail could not be sent: (.*)$/, 'Die E-Mail konnte nicht gesendet werden: $1'],

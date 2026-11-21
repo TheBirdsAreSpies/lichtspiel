@@ -702,17 +702,24 @@ function settingField(k, v) {
 async function pluginsPage() {
   markNav('plugins');
   const [r, log] = await Promise.all([GET('/api/plugins'), GET('/api/plugins/log')]);
+  // Drawn again after a change, where it was: switching a plugin on no longer jumps to the top.
+  const again = async () => { const y = window.scrollY; await pluginsPage(); window.scrollTo(0, y); refreshPluginNav(); };
   set(h('h1', {}, t('Plugins')),
     h('p', { class: 'dim' }, t('Plugins add features: fill in movie details, send notifications, react to playback, add their own API actions. Put each plugin in its own folder inside '), h('code', {}, r.folder), t(' with a '), h('code', {}, 'plugin.json'), t(' file, then press Reload. Any language works (Python, shell, Node …).')),
-    h('div', { class: 'actions' }, h('button', { onclick: async () => { const x = await api('POST', '/api/plugins/reload'); toast(t('{n} plugin(s) found', { n: x.count })); pluginsPage(); } }, t('Reload plugins'))),
+    h('div', { class: 'actions' }, h('button', { onclick: async () => { const x = await api('POST', '/api/plugins/reload'); toast(t('{n} plugin(s) found', { n: x.count })); again(); } }, t('Reload plugins'))),
     r.errors.length ? h('div', { class: 'panel', style: 'color:var(--red)' }, r.errors.map(e => h('div', {}, e))) : null,
     r.plugins.length ? r.plugins.map(p => {
       const form = pluginSettingsForm(p.settings);
       return h('div', { class: 'panel' },
         h('div', { style: 'display:flex;gap:12px;align-items:center' }, h('b', { style: 'font-size:17px' }, p.name), h('span', { class: 'dim' }, 'v' + (p.version || '?')), p.author ? h('span', { class: 'dim' }, t('by {name}', { name: p.author })) : null, h('span', { style: 'flex:1' }),
           h('span', { class: p.enabled ? 'ok' : 'dim' }, p.enabled ? t('on') : t('off')),
-          h('button', { class: p.enabled ? '' : 'primary', onclick: async () => { await api('POST', `/api/plugins/${p.id}/${p.enabled ? 'disable' : 'enable'}`); pluginsPage(); } }, p.enabled ? t('Switch off') : t('Switch on'))),
+          h('button', { class: p.enabled ? '' : 'primary', onclick: async () => { await api('POST', `/api/plugins/${p.id}/${p.enabled ? 'disable' : 'enable'}`); again(); } }, p.enabled ? t('Switch off') : t('Switch on'))),
         h('p', {}, p.description), h('div', {}, t('Listens to: '), p.hooks.map(x => h('span', { class: 'tag' }, x))),
+        p.user_panel ? formRow(t('Shown in'), h('select', { onchange: async e => {
+          try { await api('PUT', `/api/plugins/${p.id}/placement`, { placement: e.target.value === p.suggested_placement ? '' : e.target.value }); toast(t('Saved')); refreshPluginNav(); } catch (x) { toast(x.message, 5000); }
+        } }, [['sidebar', t('The left menu (a page of its own)')], ['settings', t('Settings → Account')], ['both', t('Both')]].map(([v, l]) =>
+          h('option', { value: v, selected: p.placement === v }, l + (v === p.suggested_placement ? ' ' + t('(suggested by the plugin)') : '')))),
+          t('Everyone can still unpin it from their own menu.')) : null,
         form.el,
         h('div', { class: 'actions' }, h('button', { onclick: async () => { try { await api('PUT', `/api/plugins/${p.id}/settings`, form.value()); toast(t('Saved')); } catch (e) { toast(e.message); } } }, t('Save settings')), form.toggle));
     }) : h('div', { class: 'empty' }, t('No plugins installed yet.')),
@@ -854,7 +861,8 @@ function traktPanel() {
 // buttons}]}. A button's action gets {args} in its body, the input's action {query}, the upload's {file (base64), name}.
 // An answer may carry {panel} (drawn at once, e.g. search results), {message, code, link, wait, poll: {action, seconds}}
 // (shown in a box that asks again until the answer says done), {error}, and the counts of what was brought in.
-function pluginPanels() {
+// `only`: just this plugin's panel (its page in the left menu); else the ones shown in Settings → Account.
+function pluginPanels(only) {
   const box = h('div');
   const call = (id, action, extra) => api('POST', `/api/plugins/${id}/call/${action}`, Object.assign({ lang: I18N.lang }, extra || {}));
   const draw = async (id, name, slot, given) => {
@@ -948,9 +956,22 @@ function pluginPanels() {
     next(first);
   };
   GET('/api/plugins/panels').then(r => {
-    box.replaceChildren(...r.panels.map(p => { const slot = h('div', { class: 'panel' }, h('p', { class: 'dim' }, t('Loading…'))); draw(p.id, p.name, slot); return slot; }));
+    const list = r.panels.filter(p => only ? p.id === only : p.settings);
+    if (only && !list.length) return box.replaceChildren(h('div', { class: 'empty' }, t('This plugin is switched off or not shown to you.')));
+    box.replaceChildren(...list.map(p => { const slot = h('div', { class: 'panel' }, h('p', { class: 'dim' }, t('Loading…'))); draw(p.id, p.name, slot); return slot; }));
   }).catch(() => {});
   return box;
+}
+
+// A plugin's own page, reached from the left menu.
+function pluginPage(id) {
+  markNav('plugin/' + id);
+  set(h('div', { class: 'pluginpage' }, pluginPanels(id)));
+}
+// The plugin pages in the left menu again (after a plugin was switched on or off, or moved).
+async function refreshPluginNav() {
+  try { S.pluginPages = (await GET('/api/plugins/panels')).panels.filter(p => p.sidebar); } catch (e) { return; }
+  drawNav();
 }
 
 // The settings, in order: your account, the web app, the server's settings, and management.
@@ -1887,12 +1908,13 @@ video.addEventListener('play', () => tgSend());
 video.addEventListener('pause', () => { if (!video.ended) tgSend(); });
 video.addEventListener('seeked', () => { if (P.method === 'direct' && !split()) tgSend(); });
 
-// ---------- the left menu: libraries and Playlists in the order each person chose
+// ---------- the left menu: libraries, Playlists and plugin pages in the order each person chose
 // (kept on the server per person), unpinned ones under "More"; "⋯" edits it.
 const NAV = { edit: false, cur: '', more: false };
 NAV.more = store.get('navMore', '0') === '1';
 function navList() {
-  const all = [...S.sections.map(s => ({ key: 's' + s.id, sec: s, title: s.title })), { key: 'playlists', title: t('Playlists') }];
+  const all = [...S.sections.map(s => ({ key: 's' + s.id, sec: s, title: s.title, nav: 'section/' + s.id })), { key: 'playlists', title: t('Playlists'), nav: 'playlists' },
+    ...(S.pluginPages || []).map(p => ({ key: 'p:' + p.id, title: p.name, nav: 'plugin/' + p.id }))];
   const sb = (S.me && S.me.sidebar) || {};
   const order = sb.order || [], hidden = new Set(sb.hidden || []);
   // New libraries come after the ones already placed, in the server's order.
@@ -1917,7 +1939,7 @@ function setPinned(key, pinned) {
 const moreBtn = (title, onclick) => h('button', { class: 'more', title, 'aria-label': title, onclick: e => { e.preventDefault(); e.stopPropagation(); onclick(e.currentTarget); } }, '⋯');
 function navLink(e) {
   const s = e.sec;
-  return h('a', { href: s ? '#/section/' + s.id : '#/playlists', 'data-nav': s ? 'section/' + s.id : 'playlists' },
+  return h('a', { href: '#/' + e.nav, 'data-nav': e.nav },
     h('span', {}, e.title), s ? h('small', {}, s.type === 'show' ? t('{n} shows', { n: s.count }) : s.videoCount) : null,
     moreBtn(t('More'), b => s ? sectionMenu(s, b) : openMenu(b, [{ label: e.hidden ? t('Pin') : t('Unpin'), run: () => setPinned(e.key, e.hidden) }])));
 }
@@ -1940,7 +1962,7 @@ function drawNav() {
       ...pinned.map(e => editRow(e, list)), off.length ? h('div', { class: 'edit-sep' }, t('NOT PINNED')) : '', ...off.map(e => editRow(e, list)));
   } else {
     // "More" opens by itself while one of its libraries is shown.
-    const open = NAV.more || off.some(e => (e.sec ? 'section/' + e.sec.id : 'playlists') === NAV.cur);
+    const open = NAV.more || off.some(e => e.nav === NAV.cur);
     box.replaceChildren(head, ...pinned.map(navLink),
       off.length ? h('a', { href: '#', class: 'morehead', onclick: ev => {
         ev.preventDefault(); NAV.more = !open;
@@ -2187,6 +2209,7 @@ async function render() {
       case 'person': return await personPage(parts[1], qs);
       case 'search': return await searchPage(decodeURIComponent(parts[1] || ''));
       case 'playlists': return await playlistsPage(qs);
+      case 'plugin': return await pluginPage(parts[1]);
       case 'playlist': return await playlistPage(parts[1], qs);
       case 'libraries': return await librariesPage();
       case 'link': return linkPage(parts[1] || '');

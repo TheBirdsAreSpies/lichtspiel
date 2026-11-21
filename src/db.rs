@@ -701,6 +701,9 @@ pub struct PluginState {
     pub enabled: bool,
     #[serde(default)]
     pub settings: serde_json::Map<String, Value>,
+    /// Where an admin put the plugin's panel: "settings", "sidebar" or "both"; empty = where the plugin suggests.
+    #[serde(default)]
+    pub placement: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

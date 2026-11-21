@@ -86,6 +86,17 @@ pub struct Manifest {
     /// ({host, port, security, user, password, from}), when one is set.
     #[serde(default)]
     pub sends_mail: bool,
+    /// Where the panel is shown: "settings" (Settings → Account, the default), "sidebar" (a page of
+    /// its own with an entry in the left menu) or "both". An admin can choose otherwise.
+    #[serde(default)]
+    pub placement: String,
+}
+
+pub const PLACEMENTS: &[&str] = &["settings", "sidebar", "both"];
+
+/// Where a plugin's panel goes: the admin's choice, else the plugin's, else Settings.
+pub fn placement<'a>(manifest: &'a Manifest, chosen: &'a str) -> &'a str {
+    [chosen, manifest.placement.as_str()].into_iter().find(|p| PLACEMENTS.contains(p)).unwrap_or("settings")
 }
 
 /// At most this many plugin programs run at once; the others wait for their turn.
@@ -312,5 +323,16 @@ mod tests {
         std::thread::spawn(move || { let _ = tx.send(invoke(&p, &serde_json::Map::new(), "api.call", &data, &Value::Null)); });
         let r = rx.recv_timeout(Duration::from_secs(5)).expect("the plugin call did not come back within its timeout");
         assert!(r.unwrap_err().contains("took longer"));
+    }
+
+    #[test]
+    fn the_admins_placement_wins_over_the_plugins() {
+        let m = |place: &str| -> Manifest { serde_json::from_value(json!({"id": "p", "name": "p", "command": ["x"], "placement": place})).unwrap() };
+        assert_eq!(placement(&m(""), ""), "settings");
+        assert_eq!(placement(&m("sidebar"), ""), "sidebar");
+        assert_eq!(placement(&m("nonsense"), ""), "settings");
+        assert_eq!(placement(&m("sidebar"), "both"), "both");
+        assert_eq!(placement(&m("sidebar"), "settings"), "settings");
+        assert_eq!(placement(&m("both"), "nonsense"), "both");
     }
 }

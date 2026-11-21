@@ -192,7 +192,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/plugins/{id}/disable", "Admin: switch a plugin off"),
     ("PUT", "/api/plugins/{id}/settings", "Admin: plugin settings {..}"),
     ("GET", "/api/plugins/log", "Admin: recent plugin runs"),
-    ("GET", "/api/plugins/panels", "Switched-on plugins that give each person a panel in Settings (e.g. Connect Trakt)"),
+    ("PUT", "/api/plugins/{id}/placement", "Admin: where the plugin's panel is shown {placement: settings|sidebar|both, empty = where the plugin suggests}"),
+    ("GET", "/api/plugins/panels", "Switched-on plugins that give each person a panel → {panels: [{id, name, description, settings, sidebar, admins_only}]}: in Settings → Account and/or as a page in the left menu"),
     ("GET", "/api/plugins/{id}/library", "For a plugin with reads_library: every movie and episode with its files (key=… from server.library)"),
     ("POST", "/api/plugins/{id}/call/{action}", "Run a plugin's own action (any JSON body is passed on); an answer with mark_watched marks those items watched for you"),
     ("GET", "/api/settings", "Admin: server settings"),
@@ -423,7 +424,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             ok(json!({"ok": true}))
         }
         ("PUT", ["api", "me", "sidebar"]) => {
-            // {order: [keys], hidden: [keys]}; a key is "s<library id>" or "playlists".
+            // {order: [keys], hidden: [keys]}; a key is "s<library id>", "playlists" or "p:<plugin id>".
             let keys = |k: &str| -> Vec<Value> {
                 ctx.body.get(k).and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str()).filter(|x| x.len() <= 40).take(500).map(|x| json!(x)).collect()).unwrap_or_default()
             };
@@ -1960,6 +1961,15 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             let st = db.plugins.entry(pid.to_string()).or_default();
             for (k, v) in map { st.settings.insert(k, v); }
             drop(db);
+            app.save();
+            ok(json!({"ok": true}))
+        }
+        ("PUT", ["api", "plugins", pid, "placement"]) => {
+            if !admin { return need_admin(); }
+            if app.plugins.lock().unwrap().get(pid).is_none() { return fail(404, "No such plugin"); }
+            let place = ctx.body_or_param("placement").unwrap_or_default();
+            if !place.is_empty() && !plugins::PLACEMENTS.contains(&place.as_str()) { return fail(400, "placement must be settings, sidebar or both"); }
+            app.db.lock().unwrap().plugins.entry(pid.to_string()).or_default().placement = place;
             app.save();
             ok(json!({"ok": true}))
         }

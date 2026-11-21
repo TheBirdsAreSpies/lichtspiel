@@ -425,7 +425,8 @@ async function invitePage(code) {
 async function boot() {
   I18N.applyStatic();
   // The four start-up questions go out together instead of one after the other.
-  const [status, me, secs, filters] = await Promise.all([GET('/api/status'), GET('/api/me'), GET('/library/sections'), GET('/api/filters'), ticket()].map(p => p.catch(() => null)));
+  const [status, me, secs, filters, , panels] = await Promise.all([GET('/api/status'), GET('/api/me'), GET('/library/sections'), GET('/api/filters'), ticket(), GET('/api/plugins/panels')].map(p => p.catch(() => null)));
+  S.pluginPages = panels ? panels.panels.filter(p => p.sidebar) : [];
   S.status = status;
   if (S.status) { $('#ver').textContent = `Lichtspiel ${S.status.version}${S.status.build ? ' · ' + S.status.build : ''}`; $('#ver').title = S.status.built_at ? t('Built {when}', { when: fmtDateTime(S.status.built_at) }) : ''; $('#sname').textContent = S.status.name; document.title = S.status.name === 'Lichtspiel' ? 'Lichtspiel' : `${S.status.name} · Lichtspiel`; }
   S.me = null;

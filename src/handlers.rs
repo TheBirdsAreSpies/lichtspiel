@@ -1194,7 +1194,8 @@ pub fn plugin_list(app: &Arc<App>) -> Resp {
         }
         json!({"id": pl.manifest.id, "name": pl.manifest.name, "version": pl.manifest.version, "description": pl.manifest.description,
             "author": pl.manifest.author, "hooks": pl.manifest.hooks, "command": pl.manifest.command, "enabled": st.enabled,
-            "settings": settings, "folder": pl.dir.to_string_lossy(), "user_panel": pl.manifest.user_panel, "reads_library": pl.manifest.reads_library})
+            "settings": settings, "folder": pl.dir.to_string_lossy(), "user_panel": pl.manifest.user_panel, "reads_library": pl.manifest.reads_library,
+            "placement": plugins::placement(&pl.manifest, &st.placement), "suggested_placement": plugins::placement(&pl.manifest, "")})
     }).collect();
     ok(json!({"folder": p.dir.to_string_lossy(), "plugins": list, "errors": p.errors, "events": plugins::EVENTS}))
 }
@@ -1207,7 +1208,11 @@ pub fn plugin_panels(app: &Arc<App>, user: &User) -> Resp {
     let list: Vec<Value> = p.list.iter()
         .filter(|pl| pl.manifest.user_panel && db.plugins.get(&pl.manifest.id).is_some_and(|s| s.enabled))
         .filter(|pl| user.admin || !pl.manifest.panel_admins_only)
-        .map(|pl| json!({"id": pl.manifest.id, "name": pl.manifest.name, "description": pl.manifest.description}))
+        .map(|pl| {
+            let place = plugins::placement(&pl.manifest, db.plugins.get(&pl.manifest.id).map(|s| s.placement.as_str()).unwrap_or(""));
+            json!({"id": pl.manifest.id, "name": pl.manifest.name, "description": pl.manifest.description,
+                "settings": place != "sidebar", "sidebar": place != "settings", "admins_only": pl.manifest.panel_admins_only})
+        })
         .collect();
     ok(json!({"panels": list}))
 }
