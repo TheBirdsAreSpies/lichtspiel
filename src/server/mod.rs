@@ -2,7 +2,7 @@
 //! starting work. Library, hub, playlist and transcode paths
 //! (/library/sections, /library/metadata/{id}, /hubs/home/…, /playlists, /:/timeline,
 //! /video/…/transcode); admin features live under /api/.
-//! Routes are in routes.rs, the larger handlers in handlers.rs. The rest of the server
+//! Routes are in api/routes.rs, the larger handlers in api/handlers.rs. The rest of the server
 //! lives next to this file, one topic each (all re-exported here as `server::…`):
 //! serve (the request loop), http (building answers), net (who is calling),
 //! views (JSON shapes), background, jobs (intros, credits), matching (online details)
@@ -26,12 +26,12 @@ pub use serve::*;
 pub use views::*;
 
 use std::net::IpAddr;
-use crate::db::{self, now, Db, Invite, Item, ItemKind, Playlist, PlaylistKind, Section, User};
-use crate::plugins::{self, Plugins};
-use crate::query;
-use crate::scanner;
-use crate::store::{self, Changes, Store};
-use crate::transcode::Method;
+use crate::data::db::{self, now, Db, Invite, Item, ItemKind, Playlist, PlaylistKind, Section, User};
+use crate::admin::plugins::{self, Plugins};
+use crate::library::query;
+use crate::library::scanner;
+use crate::data::store::{self, Changes, Store};
+use crate::playback::transcode::Method;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
@@ -165,9 +165,9 @@ pub struct App {
     /// What the running job works through, in order (its label, then the names): for the activity panel.
     pub job_items: Mutex<(String, Vec<String>)>,
     /// Processor, memory and bandwidth samples and who was here lately (the dashboard).
-    pub stats: crate::stats::Stats,
+    pub stats: crate::admin::stats::Stats,
     /// "Coming soon": episodes and movies still to come (kept in upcoming.json).
-    pub upcoming: Mutex<crate::upcoming::Store>,
+    pub upcoming: Mutex<crate::connect::upcoming::Store>,
 }
 
 /// Counts finished details lookups since the server started, so the web app
@@ -222,7 +222,7 @@ impl App {
             let _ = std::fs::create_dir_all(data_dir.join(sub));
         }
         install_bundled_plugins(&data_dir.join("plugins"));
-        let _ = crate::scanner::SUBTITLE_STORE.set(data_dir.join("subtitles"));
+        let _ = crate::library::scanner::SUBTITLE_STORE.set(data_dir.join("subtitles"));
         let (store, mut db, from_json) = open_library(data_dir);
         db.upgrade();
         // Age ratings and genres in one spelling each.
@@ -277,7 +277,7 @@ impl App {
             job_yield: AtomicBool::new(false),
             job_items: Mutex::new((String::new(), vec![])),
             stats: Default::default(),
-            upcoming: Mutex::new(crate::upcoming::Store::load(data_dir)),
+            upcoming: Mutex::new(crate::connect::upcoming::Store::load(data_dir)),
         });
         app.sync_plugin_states();
         match app.try_save() {
@@ -397,7 +397,7 @@ impl App {
             v["history"] = json!(format!("{}/api/plugins/{id}/history?key={}", v["url"].as_str().unwrap_or(""), self.plugin_key(id)));
         }
         let s = self.settings();
-        if pl.manifest.sends_mail && crate::mail::ready(&s) {
+        if pl.manifest.sends_mail && crate::accounts::mail::ready(&s) {
             v["smtp"] = json!({"host": s.smtp_host.trim(), "port": s.smtp_port, "security": s.smtp_security, "user": s.smtp_user.trim(), "password": s.smtp_password, "from": s.smtp_from.trim()});
         }
         v
@@ -406,7 +406,7 @@ impl App {
     /// The key that lets a plugin read the library (from the server's secret, so it stays the same after a restart).
     pub fn plugin_key(&self, id: &str) -> String {
         let secret = self.db.lock().unwrap().ticket_key.clone();
-        crate::auth::token_hash(&format!("plugin-library:{secret}:{id}"))[..32].to_string()
+        crate::accounts::auth::token_hash(&format!("plugin-library:{secret}:{id}"))[..32].to_string()
     }
 
     /// Every movie and episode (versions too, extras not) with its files, and
@@ -414,7 +414,7 @@ impl App {
     pub fn library_listing(&self) -> Value {
         let db = self.db.lock().unwrap();
         let sections: Vec<Value> = db.sections.iter().map(|s| json!({"id": s.id, "name": s.name, "kind": s.kind.as_str(), "paths": s.paths})).collect();
-        let mut ids: Vec<u64> = db.items.values().filter(|i| matches!(i.kind, ItemKind::Movie | ItemKind::Episode) && !i.is_extra() && !i.extra.contains_key(crate::scanner::MISSING)).map(|i| i.id).collect();
+        let mut ids: Vec<u64> = db.items.values().filter(|i| matches!(i.kind, ItemKind::Movie | ItemKind::Episode) && !i.is_extra() && !i.extra.contains_key(crate::library::scanner::MISSING)).map(|i| i.id).collect();
         ids.sort_unstable();
         // Who watched what, from the per-person states ("user:item"): for clean-up suggestions.
         let names: HashMap<u64, &str> = db.users.iter().map(|u| (u.id, u.username.as_str())).collect();
@@ -488,7 +488,7 @@ impl App {
 
     /// Tells plugins about something, in the background.
     pub fn fire(self: &Arc<Self>, event: &str, data: Value) {
-        crate::trakt::on_event(self, event, &data);
+        crate::connect::trakt::on_event(self, event, &data);
         if self.listeners(event).is_empty() {
             return;
         }
@@ -506,20 +506,20 @@ impl App {
             let mut changed = false;
             if let Some(f) = it.file.as_mut() {
                 let old = f.external_subtitles.clone();
-                if crate::scanner::refresh_subtitles(f, &store) {
+                if crate::library::scanner::refresh_subtitles(f, &store) {
                     changed = true;
                     let new = f.external_subtitles.clone();
-                    if let Some(sync) = it.extra.get_mut("subsync") { crate::subsync::renumber_side_files(sync, &old, &new); }
+                    if let Some(sync) = it.extra.get_mut("subsync") { crate::library::subsync::renumber_side_files(sync, &old, &new); }
                 }
             }
-            for f in it.parts.iter_mut() { changed |= crate::scanner::refresh_subtitles(f, &store); }
+            for f in it.parts.iter_mut() { changed |= crate::library::scanner::refresh_subtitles(f, &store); }
             changed
         };
         if changed {
             self.save();
             if self.settings().sync_subtitles {
                 let app = self.clone();
-                std::thread::spawn(move || { crate::maintenance::sync_item_subtitles(&app, id); });
+                std::thread::spawn(move || { crate::admin::maintenance::sync_item_subtitles(&app, id); });
             }
         }
     }
@@ -527,7 +527,7 @@ impl App {
     /// Sends `schedule.daily` if it was not sent yet today (UTC). True if it was sent now.
     pub fn daily_tick(self: &Arc<Self>) -> bool {
         let file = self.data_dir.join("plugins").join(".daily-last");
-        let today = crate::db::today();
+        let today = crate::data::db::today();
         let last = std::fs::read_to_string(&file).unwrap_or_default();
         if last.trim() == today {
             return false;
@@ -571,7 +571,7 @@ impl App {
                 if v["refresh_subtitles"] == json!(true) { self.refresh_subtitles(id); }
             }
             // A plugin that keeps collections (smart collections): they are put in place.
-            if let Ok(v) = &r { crate::handlers::set_plugin_collections(self, v); }
+            if let Ok(v) = &r { crate::api::handlers::set_plugin_collections(self, v); }
             let mut p = self.plugins.lock().unwrap();
             match r {
                 Ok(v) => p.note(&pl.manifest.id, event, true, short(&v.to_string())),
@@ -724,7 +724,7 @@ pub fn short(s: &str) -> String {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::db::MediaFile;
+    use crate::data::db::MediaFile;
 
     #[test]
     fn a_relayed_caller_claiming_a_home_address_is_not_local() {
@@ -740,12 +740,12 @@ pub(crate) mod tests {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let mut c = std::net::TcpStream::connect(server.server_addr().to_ip().unwrap()).unwrap();
         // The relay (or someone pretending to be it) says this caller is at home.
-        crate::relay::RELAYED.lock().unwrap().get_or_insert_with(HashMap::new).insert(c.local_addr().unwrap(), "192.168.1.10".parse().unwrap());
+        crate::connect::relay::RELAYED.lock().unwrap().get_or_insert_with(HashMap::new).insert(c.local_addr().unwrap(), "192.168.1.10".parse().unwrap());
         write!(c, "GET /api/settings HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").unwrap();
         handle(app.clone(), server.recv().unwrap());
         let mut got = String::new();
         let _ = c.read_to_string(&mut got);
-        crate::relay::RELAYED.lock().unwrap().as_mut().unwrap().remove(&c.local_addr().unwrap());
+        crate::connect::relay::RELAYED.lock().unwrap().as_mut().unwrap().remove(&c.local_addr().unwrap());
         assert!(got.starts_with("HTTP/1.1 401"), "a relayed caller got in without signing in: {}", got.lines().next().unwrap_or(""));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -768,9 +768,9 @@ pub(crate) mod tests {
         let (new, old) = {
             let mut db = app.db.lock().unwrap();
             // A token saved by an older version, as it was given out.
-            let old = crate::db::random_hex(20);
-            db.tokens.push(crate::db::Token { token: old.clone(), user_id: 2, created_at: 0, device: String::new(), last_used: 0, last_device: String::new(), last_ip: String::new() });
-            (crate::handlers::new_token(&mut db, 1, "test"), old)
+            let old = crate::data::db::random_hex(20);
+            db.tokens.push(crate::data::db::Token { token: old.clone(), user_id: 2, created_at: 0, device: String::new(), last_used: 0, last_device: String::new(), last_ip: String::new() });
+            (crate::api::handlers::new_token(&mut db, 1, "test"), old)
         };
         app.save();
         drop(app);
@@ -784,7 +784,7 @@ pub(crate) mod tests {
         }
         // The list of devices names the current one, and it can be signed out by its id.
         let list = ask(&app, &format!("GET /api/tokens HTTP/1.1\r\nHost: x\r\nX-Token: {new}\r\nConnection: close\r\n\r\n"));
-        assert!(list.contains(&format!("\"id\":\"{}\"", crate::auth::token_id(&new))) && list.contains("\"current\":true"), "{list}");
+        assert!(list.contains(&format!("\"id\":\"{}\"", crate::accounts::auth::token_id(&new))) && list.contains("\"current\":true"), "{list}");
         let _ = ask(&app, &format!("POST /api/logout HTTP/1.1\r\nHost: x\r\nX-Token: {old}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
         assert_eq!(app.db.lock().unwrap().tokens.len(), 1, "signing out did not end the old token");
         let _ = std::fs::remove_dir_all(&root);
@@ -797,7 +797,7 @@ pub(crate) mod tests {
         assert!(device_label("", "", &[], &long).chars().count() <= 100);
         let (app, root) = test_app("device-name");
         let mut db = app.db.lock().unwrap();
-        crate::handlers::new_token(&mut db, 1, &long);
+        crate::api::handlers::new_token(&mut db, 1, &long);
         assert!(db.tokens[0].device.chars().count() <= 100, "a sign-in kept a {} letter device name", db.tokens[0].device.len());
         drop(db);
         let _ = std::fs::remove_dir_all(&root);
@@ -854,7 +854,7 @@ pub(crate) mod tests {
                 i.file = Some(MediaFile { path: media.join(f).to_string_lossy().to_string(), container: "matroska".into(), external_subtitles: subs, ..Default::default() });
                 db.items.insert(id, i);
             }
-            crate::handlers::new_token(&mut db, 2, "test")
+            crate::api::handlers::new_token(&mut db, 2, "test")
         };
         let get = |path: &str| ask(&app, &format!("GET {path} HTTP/1.1\r\nHost: x\r\nX-Token: {tok}\r\nConnection: close\r\n\r\n"));
         assert!(get("/library/parts/1/subtitles/x0").contains("hallo"), "a subtitle in the library is not sent");
@@ -889,7 +889,7 @@ pub(crate) mod tests {
             let i: Item = serde_json::from_value(json!({"id": 1, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
             db.items.insert(1, i);
         }
-        let r = crate::handlers::set_image(&app, "1", "poster", &json!({"url": format!("http://{addr}/p.png")}));
+        let r = crate::api::handlers::set_image(&app, "1", "poster", &json!({"url": format!("http://{addr}/p.png")}));
         assert_ne!(r.status_code().0, 200);
         assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0, "the server fetched a picture from this computer");
         for blocked in ["127.0.0.1:80", "10.1.2.3:80", "192.168.1.1:80", "172.16.0.1:80", "169.254.169.254:80", "100.64.0.1:80", "0.0.0.0:80", "[::1]:80", "[fe80::1]:80", "[fd00::1]:80", "[::ffff:192.168.1.1]:80"] {
@@ -907,7 +907,7 @@ pub(crate) mod tests {
         let i: Item = serde_json::from_value(json!({"id": 1, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
         db.items.insert(1, i);
         db.users[1].allowed_sections = Some(vec![]);
-        let (a, k) = (crate::handlers::new_token(&mut db, 1, "test"), crate::handlers::new_token(&mut db, 2, "test"));
+        let (a, k) = (crate::api::handlers::new_token(&mut db, 1, "test"), crate::api::handlers::new_token(&mut db, 2, "test"));
         drop(db);
         (app, root, a, k)
     }
@@ -934,7 +934,7 @@ pub(crate) mod tests {
         let (uid, code) = {
             let db = app.db.lock().unwrap();
             let u = &db.users[1];
-            (u.id, crate::auth::reset_code(&db.ticket_key, u.id, &u.password_hash, crate::db::now()))
+            (u.id, crate::accounts::auth::reset_code(&db.ticket_key, u.id, &u.password_hash, crate::data::db::now()))
         };
         assert!(ask(&app, &format!("GET /api/password/reset/{code} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")).starts_with("HTTP/1.1 200"));
         assert!(post(&format!("/api/password/reset/{code}"), r#"{"password":"123"}"#, "").starts_with("HTTP/1.1 400"), "too short");
@@ -1004,7 +1004,7 @@ pub(crate) mod tests {
             ("GET", "/api/plugins/{id}/library"), ("GET", "/api/plugins/{id}/history"),
         ];
         for open in OPEN {
-            assert!(crate::routes::ROUTES.iter().any(|r| (r.0, r.1) == *open), "{open:?} is on the open list but not in ROUTES");
+            assert!(crate::api::routes::ROUTES.iter().any(|r| (r.0, r.1) == *open), "{open:?} is on the open list but not in ROUTES");
         }
         let (app, root, _, kid) = app_with_hidden_movie("every-route");
         let fill = |path: &str| path.replace("{id}", "1").replace("{itemId}", "1").replace("{n}", "0").replace("{key}", "x").replace("{code}", "x").replace("{action}", "x");
@@ -1013,7 +1013,7 @@ pub(crate) mod tests {
             got.lines().next().unwrap_or("").to_string()
         };
         let mut wrong = Vec::new();
-        for &(m, path, what) in crate::routes::ROUTES {
+        for &(m, path, what) in crate::api::routes::ROUTES {
             let at = fill(path);
             if !OPEN.contains(&(m, path)) {
                 let got = call(m, &at, "");
@@ -1054,7 +1054,7 @@ pub(crate) mod tests {
                 i.file = Some(MediaFile { path: media.join(f).to_string_lossy().to_string(), container: "matroska".into(), ..Default::default() });
                 db.items.insert(id, i);
             }
-            (crate::handlers::new_token(&mut db, 1, "test"), crate::handlers::new_token(&mut db, 2, "test"))
+            (crate::api::handlers::new_token(&mut db, 1, "test"), crate::api::handlers::new_token(&mut db, 2, "test"))
         };
         let get = |path: &str, extra: &str| ask(&app, &format!("GET {path} HTTP/1.1\r\nHost: x\r\n{extra}Connection: close\r\n\r\n"));
         let status = |r: &str| r.lines().next().unwrap_or("").to_string();
@@ -1071,19 +1071,19 @@ pub(crate) mod tests {
         // A changed ticket, an expired one and one for another item with item 1's signature are refused.
         let key = app.db.lock().unwrap().ticket_key.clone();
         let tampered = format!("{}{}", &t1[..t1.len() - 1], if t1.ends_with('0') { '1' } else { '0' });
-        let (old, _) = crate::auth::ticket(&key, 1, "1", Some(&tok), now() - 7 * 3600);
+        let (old, _) = crate::accounts::auth::ticket(&key, 1, "1", Some(&tok), now() - 7 * 3600);
         let swapped = t1.replacen(".1.", ".2.", 1);
         for t in [tampered, old, swapped.clone(), "1.2.3".into(), String::new()] {
             assert!(status(&get(&format!("/library/parts/1/file?ticket={t}"), "")).contains("401"), "ticket {t} was let in");
             assert!(status(&get(&format!("/library/parts/2/file?ticket={t}"), "")).contains("401"), "ticket {t} was let in");
         }
         // A ticket made without a token (a network that needs no sign-in) still opens its item.
-        let (nt, _) = crate::auth::ticket(&key, 1, "1", None, now());
+        let (nt, _) = crate::accounts::auth::ticket(&key, 1, "1", None, now());
         assert!(get(&format!("/library/parts/1/file?ticket={nt}"), "").ends_with("video-a"), "a ticket without a sign-in was refused");
         // A profile that may not see the movie gets no ticket, and a made-up one does not show it either.
         app.db.lock().unwrap().users[1].allowed_sections = Some(vec![]);
         assert!(status(&get("/api/ticket?item=1", &format!("X-Token: {kid}\r\n"))).contains("404"));
-        let (kt, _) = crate::auth::ticket(&key, 2, "1", Some(&kid), now());
+        let (kt, _) = crate::accounts::auth::ticket(&key, 2, "1", Some(&kid), now());
         assert!(!get(&format!("/library/parts/1/file?ticket={kt}"), "").ends_with("video-a"), "a hidden movie was sent");
         // The picture ticket opens pictures, not videos; a ticket for any other address is not given.
         let tp = ticket_of(&get("/api/ticket", &format!("X-Token: {tok}\r\n")));

@@ -141,7 +141,7 @@ pub(super) fn detail_in(db: &Db, id: u64) -> Value {
 /// The name the server shows: the
 /// name set in Settings; when that is empty, the computer's description (Windows) or
 /// its network name; and if none can be read, a fixed fallback.
-pub fn display_name(settings: &crate::db::Settings) -> String {
+pub fn display_name(settings: &crate::data::db::Settings) -> String {
     let set = settings.server_name.trim();
     if !set.is_empty() {
         return set.to_string();

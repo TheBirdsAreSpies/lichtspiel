@@ -1,0 +1,874 @@
+//! Keeps watched state, resume points and ratings in step with a running
+//! Plex Media Server (both ways, or one way only: the master side wins), through Plex's own HTTP API.
+//!
+//! Each Plex account (its X-Plex-Token) belongs to one person here. Movies and
+//! episodes are matched by their file path (folder paths can be translated,
+//! like for the import). Every run remembers what both sides agreed on; on the
+//! next run a field that changed on one side only goes to the other side, and
+//! when both changed, the side watched more recently wins. On the very first
+//! run nothing is lost: watched on either side stays watched, a rating set on
+//! either side is kept, and the newer resume point wins.
+//!
+//! The settings live in data/plex-sync.json, what was agreed in
+//! data/plex-sync-state.json and the last run's report in
+//! data/cache/plex-sync-last.json.
+
+use crate::data::db::{now, ItemKind};
+use crate::data::migrate::{map_path, path_key};
+use crate::server::App;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+const CONFIG: &str = "plex-sync.json";
+const STATE: &str = "plex-sync-state.json";
+const IDENT: &str = "com.plexapp.plugins.library";
+/// Resume points this close together count as the same.
+const OFFSET_SLACK_MS: u64 = 5000;
+/// Items asked from Plex per request.
+const PAGE: usize = 1000;
+
+static RUNNING: AtomicBool = AtomicBool::new(false);
+/// Restores going on. A sync and a restore never overlap: the sync's state names item numbers of
+/// the library it read, and writing it after a restore would tie them to the restored one.
+static RESTORING: AtomicUsize = AtomicUsize::new(0);
+
+/// Kept by a restore while it runs; no sync starts meanwhile.
+pub struct RestoreGuard(());
+impl Drop for RestoreGuard {
+    fn drop(&mut self) { RESTORING.fetch_sub(1, Ordering::SeqCst); }
+}
+
+/// Marks a restore as running, or refuses while a sync runs. (Each side sets its own flag first and
+/// then looks at the other's, so a sync and a restore starting together can't both go ahead.)
+pub fn hold_for_restore() -> Result<RestoreGuard, String> {
+    RESTORING.fetch_add(1, Ordering::SeqCst);
+    let guard = RestoreGuard(());
+    if RUNNING.load(Ordering::SeqCst) { return Err("A sync with Plex is running; restore once it is done".into()); }
+    Ok(guard)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Account {
+    pub id: String,
+    pub token: String,
+    pub user_id: u64,
+    /// The Plex account's name, as plex.tv tells it (only shown).
+    #[serde(default)]
+    pub plex_name: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PathRule {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Config {
+    #[serde(default)]
+    pub enabled: bool,
+    /// e.g. http://192.168.1.10:32400
+    #[serde(default)]
+    pub url: String,
+    #[serde(default = "interval")]
+    pub interval_minutes: u64,
+    #[serde(default = "yes")]
+    pub watched: bool,
+    #[serde(default = "yes")]
+    pub resume: bool,
+    #[serde(default = "yes")]
+    pub ratings: bool,
+    /// Takes over the intro and credits markers Plex found, where this server has none (never the other way).
+    #[serde(default = "yes")]
+    pub markers: bool,
+    /// Takes over which online entry (IMDb/TMDB/TVDB) Plex matched a movie or show with, where this server has no match of its own.
+    #[serde(default = "yes")]
+    pub matches: bool,
+    /// "both", "from_plex" (Plex is the master: this server copies it) or "to_plex" (this server is the master).
+    #[serde(default = "both")]
+    pub direction: String,
+    /// Plex's folder → the same folder here.
+    #[serde(default)]
+    pub path_map: Vec<PathRule>,
+    #[serde(default)]
+    pub accounts: Vec<Account>,
+    /// A random id Plex sees as the client's.
+    #[serde(default)]
+    pub client_id: String,
+}
+
+fn interval() -> u64 {
+    15
+}
+fn yes() -> bool {
+    true
+}
+fn both() -> String {
+    "both".into()
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config { enabled: false, url: String::new(), interval_minutes: interval(), watched: true, resume: true, ratings: true, markers: true, matches: true, direction: both(), path_map: vec![], accounts: vec![], client_id: String::new() }
+    }
+}
+
+/// What both sides agreed on for one person and one item.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+struct Snap {
+    #[serde(default)]
+    w: bool,
+    #[serde(default)]
+    o: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    r: Option<f32>,
+    /// When Plex was last asked for this item's intro and credits markers (0 = never).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    m: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct State {
+    /// The server the state belongs to; another address starts over.
+    #[serde(default)]
+    url: String,
+    /// "user id:item id"
+    #[serde(default)]
+    items: BTreeMap<String, Snap>,
+}
+
+fn config_path(app: &App) -> PathBuf {
+    app.data_dir.join(CONFIG)
+}
+fn state_path(app: &App) -> PathBuf {
+    app.data_dir.join(STATE)
+}
+fn last_path(app: &App) -> PathBuf {
+    app.data_dir.join("cache").join("plex-sync-last.json")
+}
+
+pub fn load(app: &App) -> Config {
+    let mut c: Config = std::fs::read(config_path(app)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    if c.client_id.is_empty() {
+        c.client_id = format!("lichtspiel-{}", crate::data::db::random_hex(8));
+    }
+    c
+}
+
+fn write_json<T: Serialize>(path: &PathBuf, v: &T) -> Result<(), String> {
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(v).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
+fn base(url: &str) -> String {
+    let u = url.trim().trim_end_matches('/');
+    if u.starts_with("http://") || u.starts_with("https://") { u.to_string() } else { format!("http://{u}") }
+}
+
+fn hint(token: &str) -> String {
+    let n = token.chars().count();
+    if n <= 4 { "…".into() } else { format!("…{}", token.chars().skip(n - 4).collect::<String>()) }
+}
+
+/// The settings as the web app sees them (tokens only as their last letters).
+pub fn public(app: &App) -> Value {
+    let c = load(app);
+    let db = app.db.lock().unwrap();
+    let last = std::fs::read(last_path(app)).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+    json!({
+        "enabled": c.enabled, "url": c.url, "interval_minutes": c.interval_minutes,
+        "watched": c.watched, "resume": c.resume, "ratings": c.ratings, "markers": c.markers, "matches": c.matches, "direction": c.direction,
+        "path_map": c.path_map,
+        "accounts": c.accounts.iter().map(|a| json!({"id": a.id, "token_hint": hint(&a.token), "user_id": a.user_id, "plex_name": a.plex_name,
+            "username": db.user(a.user_id).map(|u| u.username.clone())})).collect::<Vec<_>>(),
+        "running": RUNNING.load(Ordering::SeqCst),
+        "last": last,
+    })
+}
+
+/// Saves new settings: {enabled, url, interval_minutes, watched, resume, ratings,
+/// path_map: [{from, to}], accounts: [{id?, token?, user_id}]} (a known id
+/// without a token keeps its token).
+pub fn update(app: &App, body: &Value) -> Result<Value, String> {
+    let mut c = load(app);
+    if let Some(v) = body.get("enabled").and_then(Value::as_bool) { c.enabled = v; }
+    if let Some(v) = body.get("url").and_then(Value::as_str) { c.url = v.trim().to_string(); }
+    if let Some(v) = body.get("interval_minutes").and_then(Value::as_u64) { c.interval_minutes = v.clamp(1, 24 * 60); }
+    for (k, f) in [("watched", &mut c.watched), ("resume", &mut c.resume), ("ratings", &mut c.ratings), ("markers", &mut c.markers), ("matches", &mut c.matches)] {
+        if let Some(v) = body.get(k).and_then(Value::as_bool) { *f = v; }
+    }
+    if let Some(v) = body.get("direction").and_then(Value::as_str) {
+        if !["both", "from_plex", "to_plex"].contains(&v) { return Err("Direction must be both, from_plex or to_plex".into()); }
+        c.direction = v.into();
+    }
+    if let Some(list) = body.get("path_map").and_then(Value::as_array) {
+        c.path_map = list.iter().map(|r| PathRule { from: r["from"].as_str().unwrap_or("").trim().into(), to: r["to"].as_str().unwrap_or("").trim().into() })
+            .filter(|r| !r.from.is_empty() && !r.to.is_empty()).collect();
+    }
+    if let Some(list) = body.get("accounts").and_then(Value::as_array) {
+        let users: Vec<u64> = app.db.lock().unwrap().users.iter().map(|u| u.id).collect();
+        let mut out: Vec<Account> = vec![];
+        for a in list {
+            let user_id = a["user_id"].as_u64().ok_or("Pick a person for every Plex account")?;
+            if !users.contains(&user_id) { return Err("That person does not exist".into()); }
+            if out.iter().any(|x| x.user_id == user_id) { return Err("Each person can have only one Plex account".into()); }
+            let old = a["id"].as_str().and_then(|id| c.accounts.iter().find(|x| x.id == id));
+            let token = a["token"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(String::from).or(old.map(|o| o.token.clone()))
+                .ok_or("Enter the Plex token for every new account")?;
+            let plex_name = if old.is_some_and(|o| o.token == token) { old.unwrap().plex_name.clone() } else { plex_account_name(&c.client_id, &token).unwrap_or_default() };
+            out.push(Account { id: old.map(|o| o.id.clone()).unwrap_or_else(|| crate::data::db::random_hex(6)), token, user_id, plex_name });
+        }
+        c.accounts = out;
+    }
+    if c.enabled && c.url.is_empty() { return Err("Enter the Plex server's address".into()); }
+    write_json(&config_path(app), &c)?;
+    Ok(public(app))
+}
+
+// ------------------------------------------------------------------ Plex API
+
+fn agent() -> ureq::Agent {
+    // Only the Plex address set by the admin (or plex.tv) is asked: a redirect could take the Plex token elsewhere.
+    ureq::AgentBuilder::new().timeout(Duration::from_secs(60)).redirects(0).build()
+}
+
+fn plex_err(url: &str, e: ureq::Error) -> String {
+    match e {
+        ureq::Error::Status(401, _) => "Plex did not accept the token (HTTP 401)".into(),
+        ureq::Error::Status(code, _) => format!("Plex answered HTTP {code} for {}", url.split('?').next().unwrap_or(url)),
+        ureq::Error::Transport(t) => format!("Plex is not reachable: {t}"),
+    }
+}
+
+fn request(method: &str, url: &str, client: &str, token: &str) -> Result<Value, String> {
+    let r = agent().request(method, url)
+        .set("X-Plex-Token", token)
+        .set("X-Plex-Client-Identifier", client)
+        .set("X-Plex-Product", crate::server::APP_NAME)
+        .set("Accept", "application/json")
+        .call()
+        .map_err(|e| plex_err(url, e))?;
+    let text = r.into_string().map_err(|e| e.to_string())?;
+    if text.trim().is_empty() { return Ok(Value::Null); }
+    Ok(serde_json::from_str(&text).unwrap_or(Value::Null))
+}
+
+fn plex_account_name(client: &str, token: &str) -> Option<String> {
+    let v = request("GET", "https://plex.tv/api/v2/user", client, token).ok()?;
+    v["username"].as_str().or(v["title"].as_str()).map(String::from).filter(|s| !s.is_empty())
+}
+
+struct PlexItem {
+    rk: String,
+    files: Vec<String>,
+    count: u32,
+    offset: u64,
+    last: u64,
+    rating: Option<f32>,
+    /// Plex's own guid and its external ids ("imdb://tt0133093", "tmdb://603", ...), for a movie; an episode's show.
+    guid: String,
+    ids: Vec<String>,
+    show_rk: Option<String>,
+}
+
+/// An item's markers as Plex tells them: (intro (start, end) ms, credits start ms).
+fn plex_markers(url: &str, client: &str, token: &str, rk: &str) -> Result<(Option<(u64, u64)>, Option<u64>), String> {
+    let v = request("GET", &format!("{url}/library/metadata/{rk}?includeMarkers=1"), client, token)?;
+    let (mut intro, mut credits) = (None, None);
+    for m in v["MediaContainer"]["Metadata"][0]["Marker"].as_array().into_iter().flatten() {
+        let (Some(s), Some(e)) = (num(&m["startTimeOffset"]), num(&m["endTimeOffset"])) else { continue };
+        let (s, e) = (s.max(0.0) as u64, e.max(0.0) as u64);
+        match m["type"].as_str() {
+            Some("intro") if e > s && intro.is_none() => intro = Some((s, e)),
+            Some("credits") if credits.is_none() => credits = Some(s),
+            _ => {}
+        }
+    }
+    Ok((intro, credits))
+}
+
+struct PlexSection {
+    key: String,
+    kind: String,
+    title: String,
+    paths: Vec<String>,
+}
+
+fn sections(url: &str, client: &str, token: &str) -> Result<Vec<PlexSection>, String> {
+    let v = request("GET", &format!("{url}/library/sections"), client, token)?;
+    Ok(v["MediaContainer"]["Directory"].as_array().cloned().unwrap_or_default().iter().map(|d| PlexSection {
+        key: d["key"].as_str().map(String::from).unwrap_or_else(|| d["key"].to_string()),
+        kind: d["type"].as_str().unwrap_or("").into(),
+        title: d["title"].as_str().unwrap_or("").into(),
+        paths: d["Location"].as_array().map(|l| l.iter().filter_map(|x| x["path"].as_str().map(String::from)).collect()).unwrap_or_default(),
+    }).collect())
+}
+
+fn num(v: &Value) -> Option<f64> {
+    v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+}
+
+fn guid_ids(m: &Value) -> Vec<String> {
+    m["Guid"].as_array().into_iter().flatten().filter_map(|g| g["id"].as_str().map(String::from)).collect()
+}
+
+/// The movies, or episodes of a show library. For a show library the shows' external ids are
+/// collected into `shows` too (by Plex's key).
+fn items(url: &str, client: &str, token: &str, s: &PlexSection, shows: &mut HashMap<String, (String, Vec<String>)>) -> Result<Vec<PlexItem>, String> {
+    let kind = match s.kind.as_str() { "movie" => 1, "show" => 4, _ => return Ok(vec![]) };
+    if kind == 4 {
+        let mut start = 0;
+        loop {
+            let v = request("GET", &format!("{url}/library/sections/{}/all?type=2&includeGuids=1&X-Plex-Container-Start={start}&X-Plex-Container-Size={PAGE}", s.key), client, token)?;
+            let mc = &v["MediaContainer"];
+            let list = mc["Metadata"].as_array().cloned().unwrap_or_default();
+            let n = list.len();
+            for m in list {
+                let rk = m["ratingKey"].as_str().map(String::from).unwrap_or_else(|| m["ratingKey"].to_string());
+                shows.insert(rk, (m["guid"].as_str().unwrap_or("").to_string(), guid_ids(&m)));
+            }
+            let total = num(&mc["totalSize"]).map(|t| t as usize).unwrap_or(0);
+            start += n;
+            if n == 0 || n < PAGE || start >= total { break; }
+        }
+    }
+    let mut out = vec![];
+    let mut start = 0;
+    loop {
+        let v = request("GET", &format!("{url}/library/sections/{}/all?type={kind}&includeGuids=1&X-Plex-Container-Start={start}&X-Plex-Container-Size={PAGE}", s.key), client, token)?;
+        let mc = &v["MediaContainer"];
+        let list = mc["Metadata"].as_array().cloned().unwrap_or_default();
+        let n = list.len();
+        for m in list {
+            let rk = m["ratingKey"].as_str().map(String::from).unwrap_or_else(|| m["ratingKey"].to_string());
+            let files = m["Media"].as_array().into_iter().flatten()
+                .flat_map(|md| md["Part"].as_array().cloned().unwrap_or_default())
+                .filter_map(|p| p["file"].as_str().map(String::from)).collect();
+            out.push(PlexItem {
+                rk,
+                files,
+                count: num(&m["viewCount"]).unwrap_or(0.0) as u32,
+                offset: num(&m["viewOffset"]).unwrap_or(0.0) as u64,
+                last: num(&m["lastViewedAt"]).unwrap_or(0.0) as u64,
+                rating: num(&m["userRating"]).map(|r| r as f32).filter(|r| *r > 0.0),
+                guid: m["guid"].as_str().unwrap_or("").to_string(),
+                ids: guid_ids(&m),
+                show_rk: m["grandparentRatingKey"].as_str().map(String::from).or_else(|| num(&m["grandparentRatingKey"]).map(|n| (n as u64).to_string())),
+            });
+        }
+        let total = num(&mc["totalSize"]).map(|t| t as usize).unwrap_or(0);
+        start += n;
+        if n == 0 || n < PAGE || start >= total { break; }
+    }
+    Ok(out)
+}
+
+/// Checks the address and a token: the server's name and its movie and show
+/// libraries, each folder with the folder here it seems to be.
+pub fn test(app: &App, body: &Value) -> Result<Value, String> {
+    let c = load(app);
+    let url = base(body["url"].as_str().filter(|s| !s.trim().is_empty()).unwrap_or(&c.url));
+    if url == "http://" { return Err("Enter the Plex server's address".into()); }
+    let token = body["token"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(String::from)
+        .or_else(|| body["account_id"].as_str().and_then(|id| c.accounts.iter().find(|a| a.id == id)).map(|a| a.token.clone()))
+        .or_else(|| c.accounts.first().map(|a| a.token.clone()))
+        .ok_or("Enter a Plex token")?;
+    let root = request("GET", &format!("{url}/"), &c.client_id, &token)?;
+    let secs = sections(&url, &c.client_id, &token)?;
+    let maps: Vec<(String, String)> = c.path_map.iter().map(|r| (r.from.clone(), r.to.clone())).collect();
+    let ours: Vec<String> = app.db.lock().unwrap().sections.iter().flat_map(|s| s.paths.clone()).collect();
+    Ok(json!({
+        "server": root["MediaContainer"]["friendlyName"].as_str().unwrap_or(""),
+        "version": root["MediaContainer"]["version"].as_str().unwrap_or(""),
+        "plex_name": plex_account_name(&c.client_id, &token),
+        "libraries": secs.iter().filter(|s| s.kind == "movie" || s.kind == "show").map(|s| json!({
+            "title": s.title, "type": s.kind,
+            "folders": s.paths.iter().map(|p| {
+                let mapped = map_path(p, &maps);
+                let known = ours.iter().any(|o| { let (a, b) = (path_key(o), path_key(&mapped)); a == b || b.starts_with(&format!("{a}/")) || a.starts_with(&format!("{b}/")) });
+                json!({"plex": p, "here": mapped, "in_a_library": known, "suggested": if known { String::new() } else { crate::data::migrate::suggest(p, &ours) }})
+            }).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
+    }))
+}
+
+// ------------------------------------------------------------------ sync
+
+enum Push {
+    Scrobble,
+    Unscrobble,
+    Progress(u64),
+    Rate(Option<f32>),
+}
+
+#[derive(Default)]
+struct Counts {
+    watched: usize,
+    unwatched: usize,
+    resume: usize,
+    ratings: usize,
+}
+
+impl Counts {
+    fn json(&self) -> Value {
+        json!({"watched": self.watched, "unwatched": self.unwatched, "resume": self.resume, "ratings": self.ratings})
+    }
+}
+
+fn same_offset(a: u64, b: u64) -> bool {
+    a.abs_diff(b) <= OFFSET_SLACK_MS
+}
+
+/// Picks one side's value: changed on one side → that side; on both → the
+/// newer one; nothing agreed yet → `first`.
+fn pick<T: Clone>(agreed: Option<T>, here: T, plex: T, plex_newer: bool, eq: impl Fn(&T, &T) -> bool, first: impl FnOnce(T, T) -> T) -> T {
+    match agreed {
+        None => first(here, plex),
+        Some(s) => {
+            let here_changed = !eq(&here, &s);
+            let plex_changed = !eq(&plex, &s);
+            match (here_changed, plex_changed) {
+                (false, true) => plex,
+                (true, false) => here,
+                (true, true) if plex_newer => plex,
+                _ => here,
+            }
+        }
+    }
+}
+
+/// One-way sync: the master side's value always wins ("from_plex": Plex, "to_plex": here).
+fn directed<T>(dir: &str, picked: T, here: T, plex: T) -> T {
+    match dir {
+        "from_plex" => plex,
+        "to_plex" => here,
+        _ => picked,
+    }
+}
+
+/// Starts a run on a background thread unless one or a restore is running.
+pub fn start_now(app: &Arc<App>) -> Result<(), &'static str> {
+    if RUNNING.swap(true, Ordering::SeqCst) { return Err("A sync with Plex is already running"); }
+    if RESTORING.load(Ordering::SeqCst) > 0 {
+        RUNNING.store(false, Ordering::SeqCst);
+        return Err("A backup is being restored; try again in a moment");
+    }
+    let a = app.clone();
+    std::thread::spawn(move || {
+        let r = run(&a);
+        RUNNING.store(false, Ordering::SeqCst);
+        if let Err(e) = &r { elog!("Plex sync: {e}"); }
+    });
+    Ok(())
+}
+
+/// Runs every few minutes when switched on.
+pub fn start(app: &Arc<App>) {
+    let a = app.clone();
+    std::thread::spawn(move || {
+        let mut last: Option<Instant> = None;
+        loop {
+            std::thread::sleep(Duration::from_secs(30));
+            let c = load(&a);
+            if !c.enabled || c.url.is_empty() || c.accounts.is_empty() { continue; }
+            if last.is_some_and(|t| t.elapsed() < Duration::from_secs(c.interval_minutes.max(1) * 60)) { continue; }
+            last = Some(Instant::now());
+            let _ = start_now(&a);
+        }
+    });
+}
+
+fn run(app: &Arc<App>) -> Result<Value, String> {
+    let c = load(app);
+    let started = now();
+    let shown = {
+        let mut job = app.job.lock().unwrap();
+        if job.is_none() {
+            *job = Some(("Syncing with Plex".into(), 0, c.accounts.len().max(1)));
+            app.job_cancel.store(false, std::sync::atomic::Ordering::SeqCst);
+            true
+        } else {
+            false
+        }
+    };
+    let r = run_inner(app, &c);
+    if shown {
+        *app.job.lock().unwrap() = None;
+        app.job_cancel.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+    let report = match &r {
+        Ok(accounts) => json!({"at": started, "finished_at": now(), "ok": accounts.iter().all(|a| a["error"].is_null()), "accounts": accounts}),
+        Err(e) => json!({"at": started, "finished_at": now(), "ok": false, "error": e, "accounts": []}),
+    };
+    let _ = write_json(&last_path(app), &report);
+    r.map(|_| report)
+}
+
+/// Shows how far the sync is in the activity bar (only when the sync is the job shown there).
+fn progress(app: &App, step: &str, done: usize, total: usize) {
+    if let Some(j) = app.job.lock().unwrap().as_mut().filter(|j| j.0.starts_with("Syncing with Plex")) {
+        *j = (step.into(), done, total.max(1));
+    }
+}
+
+fn run_inner(app: &Arc<App>, c: &Config) -> Result<Vec<Value>, String> {
+    if c.url.is_empty() { return Err("No Plex server address set".into()); }
+    if c.accounts.is_empty() { return Err("No Plex account added".into()); }
+    let url = base(&c.url);
+    let mut state: State = std::fs::read(state_path(app)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    if state.url != url {
+        state = State { url: url.clone(), items: BTreeMap::new() };
+    }
+    let maps: Vec<(String, String)> = c.path_map.iter().map(|r| (r.from.clone(), r.to.clone())).collect();
+    // Files here → movie or episode.
+    let by_path: HashMap<String, u64> = {
+        let db = app.db.lock().unwrap();
+        db.items.values().filter(|i| matches!(i.kind, ItemKind::Movie | ItemKind::Episode) && !i.is_extra())
+            .flat_map(|i| i.all_files().into_iter().map(move |f| (path_key(&f.path), i.id))).collect()
+    };
+    let mut reports = vec![];
+    for acc in &c.accounts {
+        let mut rep = json!({"user_id": acc.user_id, "plex_name": acc.plex_name});
+        match sync_account(app, c, &url, acc, &maps, &by_path, &mut state) {
+            Ok(v) => { if let Value::Object(m) = v { for (k, x) in m { rep[k] = x; } } }
+            Err(e) => rep["error"] = json!(e),
+        }
+        reports.push(rep);
+        if app.job_cancelled() { break; }
+    }
+    write_json(&state_path(app), &state)?;
+    Ok(reports)
+}
+
+fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(String, String)], by_path: &HashMap<String, u64>, state: &mut State) -> Result<Value, String> {
+    let u = acc.user_id;
+    if app.db.lock().unwrap().user(u).is_none() { return Err("The person for this Plex account no longer exists".into()); }
+    let mut plex: Vec<PlexItem> = vec![];
+    let mut shows: HashMap<String, (String, Vec<String>)> = HashMap::new();
+    let libs = sections(url, &c.client_id, &acc.token)?;
+    for (n, s) in libs.iter().enumerate() {
+        progress(app, "Syncing with Plex: reading the libraries", n, libs.len());
+        plex.extend(items(url, &c.client_id, &acc.token, s, &mut shows)?);
+        if app.job_cancelled() { return Err("Cancelled".into()); }
+    }
+    let mut matched: Vec<(PlexItem, u64)> = vec![];
+    let mut missing: Vec<String> = vec![];
+    for p in plex {
+        match p.files.iter().find_map(|f| by_path.get(&path_key(&map_path(f, maps))).copied()) {
+            Some(id) => matched.push((p, id)),
+            None => missing.push(p.files.first().cloned().unwrap_or_default()),
+        }
+    }
+    let plex_items = matched.len() + missing.len();
+    let (mut here, mut there) = (Counts::default(), Counts::default());
+    let mut pushes: Vec<(String, String, Push)> = vec![];
+    // Two Plex items can point at the same file here (a movie in two Plex libraries); the first counts.
+    let mut done: std::collections::HashSet<u64> = Default::default();
+    {
+        let mut db = app.db.lock().unwrap();
+        for (p, id) in &matched {
+            if !done.insert(*id) { continue; }
+            let key = format!("{u}:{id}");
+            let lv = db.view(u, *id);
+            let agreed = state.items.get(&key).cloned();
+            let plex_newer = p.last > lv.last_viewed_at;
+            let mut res = agreed.clone().unwrap_or_default();
+            let mut scrobbled = false;
+            // Finished in Plex (watched there, not here, no new resume point there): the resume point
+            // here is from before, like Plex clears its own when something is marked watched.
+            let mut finished_in_plex = false;
+            if c.watched {
+                let w = pick(agreed.as_ref().map(|s| s.w), lv.view_count > 0, p.count > 0, plex_newer, |a, b| a == b, |a, b| a || b);
+                let w = directed(&c.direction, w, lv.view_count > 0, p.count > 0);
+                res.w = w;
+                if w != (lv.view_count > 0) {
+                    let v = db.view_mut(u, *id);
+                    if w {
+                        v.view_count = p.count.max(1);
+                        v.last_viewed_at = v.last_viewed_at.max(p.last);
+                        v.finished = false;
+                        if p.count > 0 && p.offset == 0 {
+                            finished_in_plex = true;
+                            v.view_offset_ms = 0; // counted below, with the resume points
+                        }
+                        // Watched in Plex at a known time: a viewing like one here (Wrapped counts it).
+                        // Without a time it is only marked, like ticking it off by hand.
+                        let at = if p.last > 0 { p.last } else { now() };
+                        db.record_play_at(u, *id, p.last == 0, at);
+                        here.watched += 1;
+                    } else {
+                        v.view_count = 0;
+                        v.finished = false;
+                        here.unwatched += 1;
+                    }
+                }
+                if w != (p.count > 0) {
+                    pushes.push((key.clone(), p.rk.clone(), if w { Push::Scrobble } else { Push::Unscrobble }));
+                    scrobbled = w;
+                    if w { there.watched += 1 } else { there.unwatched += 1 }
+                }
+            }
+            if c.resume {
+                let o = pick(agreed.as_ref().map(|s| s.o), lv.view_offset_ms, p.offset, plex_newer, |a, b| same_offset(*a, *b), |a, b| if plex_newer { b } else { a });
+                let o = directed(&c.direction, o, lv.view_offset_ms, p.offset);
+                let o = if finished_in_plex { 0 } else { o };
+                res.o = o;
+                if !same_offset(o, lv.view_offset_ms) {
+                    let v = db.view_mut(u, *id);
+                    v.view_offset_ms = o;
+                    v.last_viewed_at = v.last_viewed_at.max(p.last);
+                    here.resume += 1;
+                }
+                // Plex clears the resume point itself when something is marked watched.
+                if !same_offset(o, p.offset) && !(scrobbled && o == 0) {
+                    pushes.push((key.clone(), p.rk.clone(), Push::Progress(o)));
+                    there.resume += 1;
+                }
+            }
+            if c.ratings {
+                let eq = |a: &Option<f32>, b: &Option<f32>| match (a, b) { (Some(x), Some(y)) => (x - y).abs() < 0.05, (None, None) => true, _ => false };
+                let r = pick(agreed.as_ref().map(|s| s.r), lv.rating, p.rating, plex_newer, eq, |a, b| a.or(b));
+                let r = directed(&c.direction, r, lv.rating, p.rating);
+                res.r = r;
+                if !eq(&r, &lv.rating) {
+                    db.view_mut(u, *id).rating = r;
+                    here.ratings += 1;
+                }
+                if !eq(&r, &p.rating) {
+                    pushes.push((key.clone(), p.rk.clone(), Push::Rate(r)));
+                    there.ratings += 1;
+                }
+            }
+            state.items.insert(key, res);
+        }
+    }
+    app.save();
+    // Which online entry Plex matched a movie or show with: kept as the match here, and the details
+    // (title, poster, plot) are fetched for exactly that entry. Titles that already have a match
+    // here keep it until their details are refreshed (then Plex's entry wins).
+    let mut matches_taken = 0;
+    if c.matches && c.direction != "to_plex" {
+        let mut queue: Vec<u64> = vec![];
+        {
+            let mut db = app.db.lock().unwrap();
+            let mut seen: std::collections::HashSet<u64> = Default::default();
+            for (p, id) in &matched {
+                if !seen.insert(*id) { continue; }
+                let Some(it) = db.items.get(id) else { continue };
+                let (target, guid, ids) = match it.kind {
+                    ItemKind::Movie => (*id, p.guid.clone(), p.ids.clone()),
+                    ItemKind::Episode => {
+                        let Some(top) = crate::server::App::top_level(&db, *id) else { continue };
+                        let Some((g, i)) = p.show_rk.as_ref().and_then(|k| shows.get(k)) else { continue };
+                        (top, g.clone(), i.clone())
+                    }
+                    _ => continue,
+                };
+                let Some((src, eid)) = crate::data::migrate::plex_external_id(&guid, &ids) else { continue };
+                let Some(t) = db.items.get_mut(&target) else { continue };
+                if t.extra.contains_key("plex_id") || t.extra.get("unmatched_by_hand").and_then(Value::as_bool) == Some(true) { continue; }
+                let unmatched = !t.extra.contains_key("metadata_source");
+                t.extra.insert("plex_id".into(), json!({"source": src, "id": eid}));
+                matches_taken += 1;
+                if unmatched { queue.push(target); }
+            }
+        }
+        if matches_taken > 0 {
+            app.save();
+            app.queue_online_details(&queue, false);
+        }
+    }
+    // Intro and credits markers Plex found, where this server has none. Plex is asked once per item
+    // and week; an item with a marker is not asked again.
+    let mut markers_taken = 0;
+    if c.markers && c.direction != "to_plex" {
+        let week = 7 * 86400;
+        let mut seen: std::collections::HashSet<u64> = Default::default();
+        let todo: Vec<(String, u64, String)> = {
+            let db = app.db.lock().unwrap();
+            matched.iter().filter(|(_, id)| seen.insert(*id)).filter_map(|(p, id)| {
+                let it = db.items.get(id)?;
+                let f = it.file.as_ref()?;
+                let need_credits = it.parts.is_empty() && !it.extra.contains_key("credits_ms") && f.credits_ms.is_empty();
+                let need_intro = it.kind == ItemKind::Episode && !it.extra.contains_key("intro_ms") && f.intro_ms.is_empty();
+                let key = format!("{u}:{id}");
+                let asked = state.items.get(&key).map(|s| s.m).unwrap_or(0);
+                ((need_credits || need_intro) && now().saturating_sub(asked) >= week).then(|| (p.rk.clone(), *id, key))
+            }).collect()
+        };
+        let total = todo.len();
+        for (n, (rk, id, key)) in todo.into_iter().enumerate() {
+            if app.job_cancelled() { break; }
+            if n % 10 == 0 { progress(app, "Syncing with Plex: taking intro and credits markers", n, total); }
+            let Ok((intro, credits)) = plex_markers(url, &c.client_id, &acc.token, &rk) else { continue };
+            if let Some(it) = app.db.lock().unwrap().items.get_mut(&id) {
+                let is_episode = it.kind == ItemKind::Episode;
+                let whole = it.parts.is_empty() && !it.extra.contains_key("credits_ms");
+                let intro_free = is_episode && !it.extra.contains_key("intro_ms");
+                if let Some(f) = it.file.as_mut() {
+                    if let Some(c0) = credits.filter(|_| whole && f.credits_ms.is_empty()) {
+                        f.credits_ms = vec![c0];
+                        f.credits_source = "plex".into();
+                        f.credits_checked = crate::data::db::CREDITS_DETECTOR_VERSION;
+                        f.credits_errors = 0;
+                        markers_taken += 1;
+                    }
+                    if let Some((s, e)) = intro.filter(|_| intro_free && f.intro_ms.is_empty()) {
+                        f.intro_ms = vec![s, e];
+                        f.intro_checked = crate::library::intro::DETECTOR_VERSION;
+                        f.intro_errors = 0;
+                        markers_taken += 1;
+                    }
+                }
+            }
+            state.items.entry(key).or_default().m = now();
+        }
+        if markers_taken > 0 { app.save(); }
+    }
+    // Then tell Plex. What could not be sent is agreed again next time.
+    let mut errors: Vec<String> = vec![];
+    let total = pushes.len();
+    let mut pushes = pushes.into_iter().enumerate();
+    while let Some((n, (key, rk, push))) = pushes.next() {
+        if n % 10 == 0 { progress(app, "Syncing with Plex: sending the changes to Plex", n, total); }
+        // Cancelled: what was not sent yet is agreed again next time.
+        if app.job_cancelled() {
+            state.items.remove(&key);
+            for (_, (k, ..)) in pushes { state.items.remove(&k); }
+            errors.push("Cancelled".into());
+            break;
+        }
+        let q = format!("key={rk}&identifier={IDENT}");
+        let r = match push {
+            Push::Scrobble => request("GET", &format!("{url}/:/scrobble?{q}"), &c.client_id, &acc.token),
+            Push::Unscrobble => request("GET", &format!("{url}/:/unscrobble?{q}"), &c.client_id, &acc.token),
+            Push::Progress(ms) => request("GET", &format!("{url}/:/progress?{q}&time={ms}&state=stopped"), &c.client_id, &acc.token),
+            Push::Rate(r) => request("PUT", &format!("{url}/:/rate?{q}&rating={}", r.map(|x| format!("{x}")).unwrap_or_else(|| "-1".into())), &c.client_id, &acc.token),
+        };
+        if let Err(e) = r {
+            state.items.remove(&key);
+            if errors.len() < 5 { errors.push(e); }
+        }
+    }
+    Ok(json!({
+        "plex_items": plex_items, "matched": matched.len(), "not_found": missing.len(),
+        "not_found_examples": missing.iter().take(8).collect::<Vec<_>>(),
+        "to_here": here.json(), "to_plex": there.json(), "markers": markers_taken, "matches": matches_taken,
+        "error": if errors.is_empty() { Value::Null } else { json!(format!("Not everything reached Plex: {}", errors.join("; "))) },
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn no_sync_starts_while_a_backup_is_restored() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-sync-restore-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = std::sync::Arc::new(crate::server::App::open(&root.join("data")));
+        let restore = super::hold_for_restore().unwrap();
+        let r = super::start_now(&app);
+        drop(restore);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(r, Err("A backup is being restored; try again in a moment"));
+    }
+
+    use super::*;
+
+    #[test]
+    fn plex_is_asked_but_its_redirects_are_not_followed() {
+        let (other, hits) = crate::server::tests::local_web(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}");
+        let redirect: &'static [u8] = Box::leak(format!("HTTP/1.1 302 Found\r\nLocation: http://{other}/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").into_bytes().into_boxed_slice());
+        let (plex, plex_hits) = crate::server::tests::local_web(redirect);
+        let _ = request("GET", &format!("http://{plex}/library/sections"), "client", "token");
+        assert_eq!(plex_hits.load(std::sync::atomic::Ordering::SeqCst), 1, "the Plex server on the home network was not asked");
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0, "a redirect from Plex sent the Plex token elsewhere");
+    }
+
+    /// A Plex server with one movie library holding `movie` (its JSON); anything else answers {}.
+    fn fake_plex(movie: Value) -> String {
+        use std::io::{Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap().to_string();
+        std::thread::spawn(move || for mut s in l.incoming().flatten() {
+            let mut buf = [0u8; 4096];
+            let n = s.read(&mut buf).unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+            let path = req.split_whitespace().nth(1).unwrap_or("").to_string();
+            let body = if path == "/library/sections" {
+                json!({"MediaContainer": {"Directory": [{"key": "1", "type": "movie", "title": "Movies"}]}})
+            } else if path.starts_with("/library/sections/1/all") {
+                json!({"MediaContainer": {"totalSize": 1, "Metadata": [movie.clone()]}})
+            } else {
+                json!({})
+            }.to_string();
+            let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes());
+        });
+        format!("http://{addr}")
+    }
+
+    #[test]
+    fn finished_in_plex_leaves_continue_watching_here() {
+        let (app, root) = crate::server::tests::test_app("plexsync-finished");
+        {
+            let mut db = app.db.lock().unwrap();
+            let mut it: crate::data::db::Item = serde_json::from_value(json!({"id": 50, "section_id": 1, "kind": "movie", "title": "Heat", "sort_title": "Heat",
+                "added_at": 0, "updated_at": 0, "duration_ms": 6_000_000})).unwrap();
+            it.file = Some(crate::data::db::MediaFile { path: "/m/Heat.mkv".into(), ..Default::default() });
+            db.items.insert(50, it);
+            // Half watched here, recently.
+            let v = db.view_mut(1, 50);
+            v.view_offset_ms = 3_000_000;
+            v.last_viewed_at = now();
+        }
+        // Finished in Plex: watched, no resume point, and no time it was watched (marked by hand).
+        let url = fake_plex(json!({"ratingKey": "7", "viewCount": 1, "Media": [{"Part": [{"file": "/m/Heat.mkv"}]}]}));
+        let c: Config = serde_json::from_value(json!({"url": url, "markers": false, "matches": false})).unwrap();
+        let acc = Account { id: "a".into(), token: "t".into(), user_id: 1, plex_name: String::new() };
+        let by_path: HashMap<String, u64> = [(path_key("/m/Heat.mkv"), 50)].into();
+        let mut state = State::default();
+        let r = sync_account(&app, &c, &url, &acc, &[], &by_path, &mut state).unwrap();
+        let v = app.db.lock().unwrap().view(1, 50);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!((v.view_count, v.view_offset_ms), (1, 0), "{r}");
+        assert_eq!(r["to_here"]["resume"], json!(1));
+        // Nothing goes back to Plex: it already has it so.
+        assert_eq!(r["to_plex"]["resume"], json!(0));
+    }
+
+    #[test]
+    fn one_way_follows_the_master() {
+        assert!(!directed("from_plex", true, true, false));
+        assert!(directed("to_plex", false, true, false));
+        assert!(directed("both", true, false, false));
+    }
+
+    #[test]
+    fn picks_the_side_that_changed() {
+        let eq = |a: &bool, b: &bool| a == b;
+        // First run: watched anywhere stays watched.
+        assert!(pick(None, false, true, false, eq, |a, b| a || b));
+        assert!(pick(None, true, false, true, eq, |a, b| a || b));
+        // Unwatched on Plex only → unwatched here.
+        assert!(!pick(Some(true), true, false, false, eq, |a, b| a || b));
+        // Unwatched here only → stays unwatched.
+        assert!(!pick(Some(true), false, true, true, eq, |a, b| a || b));
+        // Both changed: the newer side.
+        assert_eq!(pick(Some(10_000u64), 50_000, 90_000, true, |a, b| same_offset(*a, *b), |a, _| a), 90_000);
+        assert_eq!(pick(Some(10_000u64), 50_000, 90_000, false, |a, b| same_offset(*a, *b), |a, _| a), 50_000);
+        // A few seconds apart is the same place.
+        assert_eq!(pick(Some(10_000u64), 12_000, 10_000, true, |a, b| same_offset(*a, *b), |a, _| a), 12_000);
+    }
+}

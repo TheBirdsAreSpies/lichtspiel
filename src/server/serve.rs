@@ -151,12 +151,12 @@ pub fn serve(app: Arc<App>, server: Arc<tiny_http::Server>) {
                     Ok(Some(pair)) => {
                         drop(server.take());
                         server = relisten(&pair).or_else(|| good.as_ref().and_then(relisten));
-                        if server.is_none() { crate::log::add("HTTPS: could not listen again after the certificate changed; restart the server".into()); return; }
+                        if server.is_none() { crate::admin::log::add("HTTPS: could not listen again after the certificate changed; restart the server".into()); return; }
                         good = Some(pair);
-                        crate::log::add("HTTPS: the new certificate is in use".into());
+                        crate::admin::log::add("HTTPS: the new certificate is in use".into());
                     }
                     Ok(None) => {}
-                    Err(e) => crate::log::add(format!("HTTPS: the changed certificate files are not used ({e})")),
+                    Err(e) => crate::admin::log::add(format!("HTTPS: the changed certificate files are not used ({e})")),
                 }
             }
         }
@@ -192,7 +192,7 @@ pub fn device_label(product: &str, device: &str, params: &[(String, String)], ag
         (false, false) => format!("{product} — {device}"),
         (false, true) => product,
         (true, false) => device,
-        (true, true) => crate::stats::short_agent(agent),
+        (true, true) => crate::admin::stats::short_agent(agent),
     };
     // The caller picks these headers; keep only what fits in the list of devices.
     label.chars().take(100).collect()
@@ -296,12 +296,12 @@ pub(super) fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     }
     let device = device_label(&product, &device_name, &params, &agent);
     // A caller that came through the relay: the relay told us who it is (nobody else can).
-    let relayed = req.remote_addr().and_then(|a| crate::relay::real_client(*a));
+    let relayed = req.remote_addr().and_then(|a| crate::connect::relay::real_client(*a));
     let peer = relayed.map(|a| a.to_string()).or_else(|| req.remote_addr().map(|a| a.ip().to_string())).unwrap_or_default();
     let user = token.as_ref().and_then(|t| {
         let mut db = app.db.lock().unwrap();
         let at = now();
-        let hash = crate::auth::token_hash(t);
+        let hash = crate::accounts::auth::token_hash(t);
         let tk = db.tokens.iter_mut().find(|x| x.token == hash)?;
         // The list of devices says when each was used last (written at most once a minute).
         if at.saturating_sub(tk.last_used) > 60 { tk.last_used = at; tk.last_device = device.clone(); tk.last_ip = peer.clone(); }
@@ -312,8 +312,8 @@ pub(super) fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let user = match params.iter().find(|(k, _)| k == "ticket") {
         Some((_, t)) if user.is_none() && matches!(method.as_str(), "GET" | "HEAD") => {
             let db = app.db.lock().unwrap();
-            crate::auth::read_ticket(&db.ticket_key, t, now())
-                .filter(|(uid, tid, scope)| crate::auth::ticket_scope(&path).as_ref() == Some(scope) && (tid.is_empty() || db.tokens.iter().any(|x| x.user_id == *uid && crate::auth::stored_token_id(&x.token) == tid)))
+            crate::accounts::auth::read_ticket(&db.ticket_key, t, now())
+                .filter(|(uid, tid, scope)| crate::accounts::auth::ticket_scope(&path).as_ref() == Some(scope) && (tid.is_empty() || db.tokens.iter().any(|x| x.user_id == *uid && crate::accounts::auth::stored_token_id(&x.token) == tid)))
                 .and_then(|(uid, ..)| db.user(uid).cloned())
         }
         _ => user,
@@ -345,19 +345,19 @@ pub(super) fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let started = Instant::now();
     let mut resp = if method == "OPTIONS" { bytes(204, "text/plain", vec![]) }
         else if other_site && (!matches!(method.as_str(), "GET" | "HEAD") || ctx.path.starts_with("/api/home")) { fail(403, "Requests from other websites are not allowed") }
-        else { crate::routes::route(&app, &ctx) };
+        else { crate::api::routes::route(&app, &ctx) };
     // How long the server needed to answer (not to send): in the browser's network tab as Server-Timing,
     // and in the server log when it was slow (playing and converting go on for long by design).
     let took = started.elapsed().as_millis();
     resp.add_header(header("Server-Timing", &format!("app;dur={took}")));
     if took >= 400 && !["/parts/", "/transcode", "/video/", "/hls", "/stream"].iter().any(|p| ctx.path.contains(p)) {
-        crate::log::add(format!("Slow answer: {} {} took {} ms", method, ctx.path, took));
+        crate::admin::log::add(format!("Slow answer: {} {} took {} ms", method, ctx.path, took));
     }
     if gzip_ok { resp = gzipped(resp); }
     // Count what is sent (bandwidth on the dashboard).
     let (status, headers, len) = (resp.status_code(), resp.headers().to_vec(), resp.data_length());
     let remote = if is_local { None } else { Some(app.stats.bytes_remote.clone()) };
-    let body = crate::stats::Counting { inner: resp.into_reader(), all: app.stats.bytes_out.clone(), user: app.stats.counter_for(uid), remote };
+    let body = crate::admin::stats::Counting { inner: resp.into_reader(), all: app.stats.bytes_out.clone(), user: app.stats.counter_for(uid), remote };
     let resp: Resp = Response::new(status, headers, Box::new(body) as Box<dyn Read + Send>, len, None);
     let _ = req.respond(resp);
 }

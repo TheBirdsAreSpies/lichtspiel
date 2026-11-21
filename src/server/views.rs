@@ -74,7 +74,7 @@ pub fn item_json_ix(db: &Db, user: &User, it: &Item, detail: bool, ix: Option<&I
         if !scores.is_empty() { o["scores"] = Value::Object(scores); }
     }
     if let Some(l) = it.extra.get("loudness_lufs").filter(|v| v.is_number()) { o["loudness"] = l.clone(); }
-    if it.extra.contains_key(crate::scanner::MISSING) { o["missing"] = json!(true); }
+    if it.extra.contains_key(crate::library::scanner::MISSING) { o["missing"] = json!(true); }
     if let Some(r) = it.rating { o["rating"] = json!(r); }
     if let Some(r) = v.rating { o["userRating"] = json!(r); }
     if !it.content_rating.is_empty() { o["contentRating"] = json!(it.content_rating); }
@@ -82,7 +82,7 @@ pub fn item_json_ix(db: &Db, user: &User, it: &Item, detail: bool, ix: Option<&I
     if it.kind == ItemKind::Movie {
         // {edition-Theatrical} in the file name (or set by hand), shown under the poster.
         let e = it.extra.get("edition").and_then(|v| v.as_str()).map(String::from)
-            .unwrap_or_else(|| it.file.as_ref().map(|f| crate::query::edition_of(&f.path)).unwrap_or_default());
+            .unwrap_or_else(|| it.file.as_ref().map(|f| crate::library::query::edition_of(&f.path)).unwrap_or_default());
         if !e.is_empty() { o["editionTitle"] = json!(e); }
     }
     if let Some(i) = it.index { o["index"] = json!(i); }
@@ -143,8 +143,8 @@ pub fn item_json_ix(db: &Db, user: &User, it: &Item, detail: bool, ix: Option<&I
                 "audioCodec": aud.map(|a| a.codec.clone()).unwrap_or_default(),
                 "audioChannels": aud.map(|a| a.channels).unwrap_or(0),
                 "probed": f.probed,
-                "deepAnalysisVersion": if crate::deep::is_current(f) { f.deep_version } else { 0 },
-                "requiredBandwidths": if crate::deep::is_current(f) { f.required_kbps.iter().map(|k| k.to_string()).collect::<Vec<_>>().join(",") } else { String::new() },
+                "deepAnalysisVersion": if crate::playback::deep::is_current(f) { f.deep_version } else { 0 },
+                "requiredBandwidths": if crate::playback::deep::is_current(f) { f.required_kbps.iter().map(|k| k.to_string()).collect::<Vec<_>>().join(",") } else { String::new() },
                 // A split movie has a Part per file; they play one after the other.
                 "Part": m.all_files().iter().enumerate().map(|(n, p)| json!({
                     "key": if n == 0 { format!("/library/parts/{}/file", m.id) } else { format!("/library/parts/{}/file?part={n}", m.id) },
@@ -159,18 +159,18 @@ pub fn item_json_ix(db: &Db, user: &User, it: &Item, detail: bool, ix: Option<&I
                     .filter(|s| s.kind == "subtitle")
                     .enumerate()
                     .map(|(n, s)| json!({"key": format!("/library/parts/{}/subtitles/{}", m.id, n), "language": s.language, "codec": s.codec, "title": s.title, "forced": s.forced, "sdh": s.sdh, "embedded": true,
-                        "offsetMs": crate::handlers::subtitle_timing(m, &n.to_string()).map(|t| t.offset_ms)}))
+                        "offsetMs": crate::api::handlers::subtitle_timing(m, &n.to_string()).map(|t| t.offset_ms)}))
                     .collect();
                 for (n, p) in f.external_subtitles.iter().enumerate() {
                     subs.push(json!({"key": format!("/library/parts/{}/subtitles/x{}", m.id, n), "file": Path::new(p).file_name().map(|s| s.to_string_lossy().to_string()), "embedded": false,
-                        "offsetMs": crate::handlers::subtitle_timing(m, &format!("x{n}")).map(|t| t.offset_ms)}));
+                        "offsetMs": crate::api::handlers::subtitle_timing(m, &format!("x{n}")).map(|t| t.offset_ms)}));
                 }
                 media["subtitles"] = json!(subs);
                 if user.admin {
                     media["file"] = json!(f.path);
                 }
             }
-            media["edition"] = json!(m.extra.get("edition").and_then(|v| v.as_str()).map(String::from).unwrap_or_else(|| crate::query::edition_of(&f.path)));
+            media["edition"] = json!(m.extra.get("edition").and_then(|v| v.as_str()).map(String::from).unwrap_or_else(|| crate::library::query::edition_of(&f.path)));
             list.push(media);
             }
         if !list.is_empty() { o["Media"] = json!(list); }
@@ -225,7 +225,7 @@ pub fn item_json_ix(db: &Db, user: &User, it: &Item, detail: bool, ix: Option<&I
 pub fn section_json(db: &Db, s: &Section) -> Value {
     let top = db.items.values().filter(|i| i.section_id == s.id && i.parent_id.is_none() && i.version_of().is_none()).count();
     let playable = db.items.values().filter(|i| i.section_id == s.id && i.kind.playable() && !i.hidden()).count();
-    let trash = db.items.values().filter(|i| i.section_id == s.id && i.extra.contains_key(crate::scanner::MISSING)).count();
+    let trash = db.items.values().filter(|i| i.section_id == s.id && i.extra.contains_key(crate::library::scanner::MISSING)).count();
     json!({
         "key": s.id.to_string(), "id": s.id, "title": s.name, "type": s.kind.as_str(),
         "Location": s.paths.iter().map(|p| json!({"path": p})).collect::<Vec<_>>(),
@@ -249,14 +249,14 @@ pub fn playlist_json_with(db: &Db, user: &User, p: &Playlist, items: Vec<u64>) -
     let step = (items.len() / 4).max(1);
     for k in 0..items.len().min(4) {
         let top = items.get((k * step + (p.id as usize % step.max(1))).min(items.len() - 1)).and_then(|i| db.items.get(i));
-        let top = top.map(|t| if t.kind == crate::db::ItemKind::Episode { t.parent_id.and_then(|s| db.items.get(&s)).and_then(|s| s.parent_id).and_then(|s| db.items.get(&s)).unwrap_or(t) } else { t });
+        let top = top.map(|t| if t.kind == crate::data::db::ItemKind::Episode { t.parent_id.and_then(|s| db.items.get(&s)).and_then(|s| s.parent_id).and_then(|s| db.items.get(&s)).unwrap_or(t) } else { t });
         if let Some(t) = top { let u = format!("/library/metadata/{}/thumb?v={}", t.id, t.updated_at); if !thumbs.contains(&u) { thumbs.push(u); } }
     }
     let owner = if p.owner_id == 0 { "server".to_string() } else { db.user(p.owner_id).map(|u| u.username.clone()).unwrap_or_default() };
     let kind = if p.is_default() { "default" } else if p.kind == PlaylistKind::Smart { "smart" } else { "manual" };
     let v = json!({
         "ratingKey": p.id.to_string(), "id": p.id, "key": format!("/playlists/{}/items", p.id),
-        "type": "playlist", "playlistType": if !items.is_empty() && items.iter().all(|i| db.items.get(i).is_some_and(|x| x.kind == crate::db::ItemKind::Track)) { "audio" } else { "video" }, "title": p.title, "summary": p.summary,
+        "type": "playlist", "playlistType": if !items.is_empty() && items.iter().all(|i| db.items.get(i).is_some_and(|x| x.kind == crate::data::db::ItemKind::Track)) { "audio" } else { "video" }, "title": p.title, "summary": p.summary,
         "smart": p.kind == PlaylistKind::Smart, "kind": kind,
         "default": p.is_default(), "defaultKey": p.default_key, "query": p.query,
         "leafCount": items.len(), "duration": duration, "thumb": thumb, "composite": thumb, "thumbs": thumbs,

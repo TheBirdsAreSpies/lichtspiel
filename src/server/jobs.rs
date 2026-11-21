@@ -54,12 +54,12 @@ impl App {
         std::thread::spawn(move || {
             let (found, failed) = (std::sync::atomic::AtomicUsize::new(0), std::sync::atomic::AtomicUsize::new(0));
             // The old Plex server's markers first (same file path): no need to search the picture for those.
-            let old_db = crate::migrate::detect();
+            let old_db = crate::data::migrate::detect();
             if old_db.is_none() {
                 elog!("credits detection: no old Plex database found (set OLD_SERVER), so every video is searched");
             }
             let from_plex = old_db
-                .and_then(|p| crate::migrate::credits_by_path(&p, &app.data_dir.join("cache").join("old-markers")).map_err(|e| elog!("old server's credits markers: {e}")).ok())
+                .and_then(|p| crate::data::migrate::credits_by_path(&p, &app.data_dir.join("cache").join("old-markers")).map_err(|e| elog!("old server's credits markers: {e}")).ok())
                 .unwrap_or_default();
             let taken = std::sync::atomic::AtomicUsize::new(0);
             elog!("credits detection: {} files with credits markers in the old server's database; {} videos to check", from_plex.len(), total);
@@ -83,7 +83,7 @@ impl App {
                                 }
                                 Ok((c.clone(), "imported"))
                             }
-                            _ => crate::scanner::find_credits(&ffmpeg, &ffprobe, path, *duration, picture),
+                            _ => crate::library::scanner::find_credits(&ffmpeg, &ffprobe, path, *duration, picture),
                         };
                         if let Some(f) = app.db.lock().unwrap().items.get_mut(&id).and_then(|i| i.last_file_mut()) {
                             match r {
@@ -194,7 +194,7 @@ impl App {
         if force {
             self.auto_paused.store(false, AtomicOrdering::SeqCst);
         }
-        use crate::intro;
+        use crate::library::intro;
         let mut job = self.job.lock().unwrap();
         if job.is_some() {
             return Err("Another job (credits or intro detection, or ratings) is already running; try again in a moment".into());
@@ -247,8 +247,8 @@ impl App {
         std::thread::spawn(move || {
             let (mut done, mut found, mut failed) = (0, 0, 0);
             // The old Plex server's intro markers first (same file path): those episodes are not listened to.
-            let from_plex = crate::migrate::detect()
-                .and_then(|p| crate::migrate::intros_by_path(&p, &app.data_dir.join("cache").join("old-markers")).map_err(|e| elog!("old server's intro markers: {e}")).ok())
+            let from_plex = crate::data::migrate::detect()
+                .and_then(|p| crate::data::migrate::intros_by_path(&p, &app.data_dir.join("cache").join("old-markers")).map_err(|e| elog!("old server's intro markers: {e}")).ok())
                 .unwrap_or_default();
             elog!("intro detection: {} files with intro markers in the old server's database; {total} episodes to check", from_plex.len());
             let mut taken = 0;
@@ -379,7 +379,7 @@ impl App {
             .filter(|i| i.kind == ItemKind::Episode && db.intro_on(i))
             .filter_map(|i| {
                 let f = i.file.as_ref()?;
-                let wanted = crate::intro::is_due(f.intro_checked, !f.intro_ms.is_empty()) && f.intro_errors <= db::CREDITS_MAX_ERRORS;
+                let wanted = crate::library::intro::is_due(f.intro_checked, !f.intro_ms.is_empty()) && f.intro_errors <= db::CREDITS_MAX_ERRORS;
                 wanted.then_some((f.intro_checked == 0, i.added_at, i.parent_id?))
             })
             .collect();
@@ -409,12 +409,12 @@ impl App {
     /// IMDb ratings from IMDb's own ratings file, for every movie and show with
     /// an IMDb id. The file is downloaded again when it is a week old.
     pub fn update_imdb_ratings(self: &Arc<Self>, force: bool) -> Result<String, String> {
-        self.imdb_update(force, crate::metadata::download_imdb_ratings)
+        self.imdb_update(force, crate::library::metadata::download_imdb_ratings)
     }
 
 
     pub(super) fn imdb_update(self: &Arc<Self>, force: bool, download: fn(&Path) -> Result<(), String>) -> Result<String, String> {
-        use crate::metadata;
+        use crate::library::metadata;
         let file = self.data_dir.join("cache").join("imdb-ratings.tsv.gz");
         let age = std::fs::metadata(&file).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
         let stale = age.is_none_or(|a| a > Duration::from_secs(7 * 86400));

@@ -65,7 +65,7 @@ fn copy_bundled_plugins(src: &Path, dest: &Path) {
                     let _ = std::fs::copy(f.path(), to.join(&n));
                 }
             }
-            crate::log::add(format!("Plugin {name} updated to version {}", plugin_version(&to)));
+            crate::admin::log::add(format!("Plugin {name} updated to version {}", plugin_version(&to)));
             continue;
         }
         if seen || to.exists() {
@@ -93,7 +93,7 @@ mod tests {
         for e in std::fs::read_dir(&dir).unwrap().flatten() {
             let mf = e.path().join("plugin.json");
             let Ok(text) = std::fs::read_to_string(&mf) else { continue };
-            if let Err(err) = serde_json::from_str::<crate::plugins::Manifest>(&text) {
+            if let Err(err) = serde_json::from_str::<crate::admin::plugins::Manifest>(&text) {
                 panic!("{}: {err}", mf.display());
             }
         }

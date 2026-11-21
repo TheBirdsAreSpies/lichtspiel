@@ -9,42 +9,14 @@
 //!   lichtspiel --self-test out.json  try every feature end to end, save results, exit
 
 #[macro_use]
-mod log;
-mod mcp;
-mod gdm;
-mod actions;
-mod auth;
-mod dashboard;
-mod deep;
-mod db;
-mod downloads;
-mod handlers;
-mod intro;
-mod mail;
-mod maintenance;
-mod metadata;
-mod migrate;
-mod music;
-mod plexsync;
-mod plugins;
-mod query;
-mod related;
-mod relay;
-mod routes;
-mod rss;
-mod scanner;
-mod store;
-mod selftest;
+mod admin;
+mod accounts;
+mod api;
+mod connect;
+mod data;
+mod library;
+mod playback;
 mod server;
-mod stats;
-mod subsync;
-mod totp;
-mod trakt;
-mod transcode;
-mod unzip;
-mod upcoming;
-#[cfg(feature = "console")]
-mod console;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -86,7 +58,7 @@ fn options(args: &[String]) -> Options {
 /// Opens the library and starts listening. Returns the app and the server.
 pub fn start(opts: &Options) -> Result<(Arc<server::App>, Arc<tiny_http::Server>), String> {
     let app = server::App::open(&opts.data);
-    { let st = app.settings(); db::set_articles(st.sort_ignore_articles, &st.sort_articles); }
+    { let st = app.settings(); data::db::set_articles(st.sort_ignore_articles, &st.sort_articles); }
     let want = opts.port.unwrap_or_else(|| app.db.lock().unwrap().settings.port);
     // Without --bind, the network card chosen in the settings is used.
     let chosen = app.settings().bind_address.trim().to_string();
@@ -114,16 +86,16 @@ pub fn start(opts: &Options) -> Result<(Arc<server::App>, Arc<tiny_http::Server>
     // http:// -> https:// on a second port, when asked for.
     let redirect = app.settings().http_redirect_port;
     if use_tls && redirect != 0 && redirect == port {
-        log::add(format!("port {redirect} is the HTTPS port itself, so http:// is not passed on; choose another port"));
+        admin::log::add(format!("port {redirect} is the HTTPS port itself, so http:// is not passed on; choose another port"));
     } else if use_tls && redirect != 0 {
         match server::redirect_to_https(&bind, redirect, port) {
-            Ok(()) => log::add(format!("http://…:{redirect} is passed on to https://…:{port}")),
-            Err(e) => log::add(format!("could not listen on port {redirect} to pass http:// on to https:// ({e})")),
+            Ok(()) => admin::log::add(format!("http://…:{redirect} is passed on to https://…:{port}")),
+            Err(e) => admin::log::add(format!("could not listen on port {redirect} to pass http:// on to https:// ({e})")),
         }
     }
     server::start_background(&app);
-    relay::start_agent(app.clone());
-    gdm::start(&app);
+    connect::relay::start_agent(app.clone());
+    connect::gdm::start(&app);
     app.fire("server.started", serde_json::json!({"port": port}));
     Ok((app, Arc::new(http)))
 }
@@ -166,7 +138,7 @@ pub fn lan_address() -> String {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--example-plugin") {
-        plugins::example_plugin_main();
+        admin::plugins::example_plugin_main();
         return;
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
@@ -178,11 +150,11 @@ fn main() {
         let public = arg_value(&args, "--relay-public").or_else(|| env("RELAY_PUBLIC")).unwrap_or_else(|| "0.0.0.0:8484".into());
         let tunnel = arg_value(&args, "--relay-tunnel").or_else(|| env("RELAY_TUNNEL")).unwrap_or_else(|| "0.0.0.0:8485".into());
         let secret = arg_value(&args, "--relay-secret").or_else(|| env("RELAY_SECRET")).unwrap_or_default();
-        if let Err(e) = relay::run_relay(&public, &tunnel, &secret) { eprintln!("{e}"); std::process::exit(1); }
+        if let Err(e) = connect::relay::run_relay(&public, &tunnel, &secret) { eprintln!("{e}"); std::process::exit(1); }
         return;
     }
     if let Some(out) = arg_value(&args, "--self-test") {
-        let passed = selftest::run(&PathBuf::from(out));
+        let passed = admin::selftest::run(&PathBuf::from(out));
         std::process::exit(if passed { 0 } else { 1 });
     }
     let opts = options(&args);
@@ -202,7 +174,7 @@ fn main() {
     if let Some(out) = arg_value(&args, "--screenshot") {
         #[cfg(feature = "console")]
         {
-            console::screenshot(PathBuf::from(out), opts);
+            admin::console::screenshot(PathBuf::from(out), opts);
             return;
         }
         #[cfg(not(feature = "console"))]
@@ -212,7 +184,7 @@ fn main() {
         }
     }
     let _ = std::fs::create_dir_all(&opts.data);
-    log::init(&opts.data);
+    admin::log::init(&opts.data);
     let (app, http) = match start(&opts) {
         Ok(x) => x,
         Err(e) => {
@@ -226,7 +198,7 @@ fn main() {
     println!("  Open {scheme}://{}:{port}/ in a browser (or {scheme}://localhost:{port}/ on this computer).", lan_address());
     println!("  Data folder: {}", std::fs::canonicalize(&opts.data).unwrap_or(opts.data.clone()).display());
     println!("  API list: GET /api/docs");
-    log::add(format!("{} {} started", server::APP_NAME, server::VERSION));
+    admin::log::add(format!("{} {} started", server::APP_NAME, server::VERSION));
     // The web app is the interface. The desktop status window is optional:
     // only with --console (the Synology/Docker build has none at all).
     let want_window = args.iter().any(|a| a == "--console");
@@ -239,7 +211,7 @@ fn main() {
     if want_window {
         let a = app.clone();
         std::thread::spawn(move || server::serve(a, http));
-        console::live(app);
+        admin::console::live(app);
         return;
     }
     let _ = want_window;

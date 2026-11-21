@@ -14,7 +14,7 @@ impl App {
     /// real photos. Returns the movies and shows they belonged to.
     pub fn remove_broken_pictures(&self) -> Vec<u64> {
         // Only our own saved pictures: files in the user's media folders are never touched.
-        let bad = |p: &str| Path::new(p).starts_with(&self.data_dir) && Path::new(p).is_file() && crate::metadata::file_image_type(Path::new(p)).is_none();
+        let bad = |p: &str| Path::new(p).starts_with(&self.data_dir) && Path::new(p).is_file() && crate::library::metadata::file_image_type(Path::new(p)).is_none();
         let mut tops = HashSet::new();
         let mut db = self.db.lock().unwrap();
         let ids: Vec<u64> = db.items.values().filter(|it| it.poster.as_deref().is_some_and(bad) || it.extra.get("art").and_then(|v| v.as_str()).is_some_and(bad)).map(|it| it.id).collect();
@@ -244,7 +244,7 @@ impl App {
     /// episodes. `choice` = (source, id) from "Fix match"; otherwise the stored
     /// match is refreshed, or the best confident search result is taken.
     pub fn match_online(self: &Arc<Self>, id: u64, choice: Option<(String, String)>, force: bool) -> Result<String, String> {
-        use crate::metadata;
+        use crate::library::metadata;
         let mut settings = self.settings();
         let (kind, title, year, stored, seasons, status_recent, folder, tag, unmatched_by_hand) = {
             let db = self.db.lock().unwrap();
@@ -815,18 +815,18 @@ fn is_disc_folder(name: &str) -> bool {
 
 /// The same folder, however the path is written (separators, a trailing slash, letter case on Windows).
 fn scanner_same_dir(a: &Path, b: &Path) -> bool {
-    crate::migrate::path_key(&a.to_string_lossy()) == crate::migrate::path_key(&b.to_string_lossy())
+    crate::data::migrate::path_key(&a.to_string_lossy()) == crate::data::migrate::path_key(&b.to_string_lossy())
 }
 
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::MediaFile;
+    use crate::data::db::MediaFile;
 
     #[test]
     fn folder_title_only_for_a_movie_folder_of_its_own() {
-        let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 9, "settings": crate::db::Settings::default(),
+        let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 9, "settings": crate::data::db::Settings::default(),
             "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": ["/m"], "created_at": 0}],
             "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
         let movie = |id: u64, path: &str| -> Item {
@@ -848,7 +848,7 @@ mod tests {
 
     #[test]
     fn folder_title_looks_past_disc_and_release_folders() {
-        let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 9, "settings": crate::db::Settings::default(),
+        let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 9, "settings": crate::data::db::Settings::default(),
             "sections": [{"id": 1, "name": "Filme", "kind": "movie", "paths": ["/m/"], "created_at": 0}],
             "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
         let movie = |id: u64, path: &str| -> Item {
@@ -899,7 +899,7 @@ mod tests {
         // Nothing broken is left: a second run changes no item (no row is rewritten).
         assert!(app.remove_broken_pictures().is_empty());
         let mut db = app.db.lock().unwrap();
-        assert!(matches!(db.items.take_changes(), crate::store::Changed::Keys(k) if k.is_empty()));
+        assert!(matches!(db.items.take_changes(), crate::data::store::Changed::Keys(k) if k.is_empty()));
         drop(db);
         let _ = std::fs::remove_dir_all(&root);
     }

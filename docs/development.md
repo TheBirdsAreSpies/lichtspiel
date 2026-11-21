@@ -6,7 +6,7 @@ For developers: where things are, how to build and test, and the conventions. Wh
 
 | Folder | What it is |
 |---|---|
-| `src/` | The Rust server (one binary, `lichtspiel-server`), including the built-in Trakt sync (`src/trakt.rs`) |
+| `src/` | The Rust server (one binary, `lichtspiel-server`), including the built-in Trakt sync (`src/connect/trakt.rs`) |
 | `vendor/tiny_http/` | The HTTP library, copied in and patched (header limits and a 30 s header deadline; look for `lichtspiel:` comments) |
 | `web/` | The web app, plain JS with no build step, compiled into the binary |
 | `clients/lichtspiel/` | The Flutter app (Windows, Android, macOS, iOS/iPadOS) |
@@ -33,7 +33,7 @@ Some server tests need ffmpeg on the PATH and skip themselves without it.
 - Don't run `cargo fmt` over the tree. The code is not rustfmt-formatted; match the style around you.
 - Lock order: take `store` before `db` (only `save` takes both). Call `app.save()` after a change.
 - Items and watch states live in `Tracked` maps. Change them through that API; going around it does not compile.
-- A new API route needs its match arm in `route()` and a line in `ROUTES` (`src/routes.rs`); `ROUTES` is the API documentation.
+- A new API route needs its match arm in `route()` and a line in `ROUTES` (`src/api/routes.rs`); `ROUTES` is the API documentation.
 - Web text: the English string is the key (`t('Sign in')`). Add the German text to `web/lang/de.js` whenever you add or change UI text.
 - The Flutter client's UI text is German and written directly in the code.
 - `cargo build --release --no-default-features` (the Docker build) must keep compiling. Anything that needs a window goes behind `#[cfg(feature = "console")]`.

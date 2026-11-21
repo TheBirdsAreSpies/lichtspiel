@@ -10,7 +10,7 @@ import '../clock.dart';
 import '../widgets/poster.dart';
 
 const _speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-/// The server's names (QUALITIES in src/transcode.rs); also offered in Settings.
+/// The server's names (QUALITIES in src/playback/transcode.rs); also offered in Settings.
 const playerQualities = {
   'original': 'Originalqualität',
   '1080p-20': '1080p 20 Mbit/s',

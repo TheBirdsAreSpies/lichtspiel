@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lichtspiel/screens/downloads.dart' show dlQualities;
 import 'package:lichtspiel/screens/player.dart';
 
-// A copy of the names in QUALITIES in src/transcode.rs. The server treats any other name as
+// A copy of the names in QUALITIES in src/playback/transcode.rs. The server treats any other name as
 // "convert without a size or bitrate limit", so a name missing there converts every video at full size.
 const serverQualities = ['original', '1080p-20', '1080p-12', '1080p-8', '720p-4', '720p-3', '720p-2', '480p-1.5', '320p-0.7'];
 

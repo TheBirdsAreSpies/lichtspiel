@@ -34,7 +34,7 @@ pub fn start_background(app: &Arc<App>) {
     // Dashboard samples: processor, memory, bytes sent, streams.
     let a = app.clone();
     std::thread::spawn(move || {
-        let mut last_t = crate::stats::times();
+        let mut last_t = crate::admin::stats::times();
         let stats_file = a.data_dir.join("stats.json");
         a.stats.load(&stats_file);
         let mut last_bytes = a.stats.bytes_out.load(std::sync::atomic::Ordering::Relaxed);
@@ -43,13 +43,13 @@ pub fn start_background(app: &Arc<App>) {
         let mut last_user: HashMap<u64, u64> = HashMap::new();
         let mut last_at = Instant::now();
         loop {
-            std::thread::sleep(Duration::from_secs(crate::stats::SAMPLE_SECONDS));
+            std::thread::sleep(Duration::from_secs(crate::admin::stats::SAMPLE_SECONDS));
             let secs = last_at.elapsed().as_secs_f64().max(0.001);
             last_at = Instant::now();
-            let t = crate::stats::times();
-            let cpu = match (last_t, t) { (Some(x), Some(y)) => crate::stats::cpu_between(x, y), _ => None };
+            let t = crate::admin::stats::times();
+            let cpu = match (last_t, t) { (Some(x), Some(y)) => crate::admin::stats::cpu_between(x, y), _ => None };
             last_t = t;
-            let mem = crate::stats::memory();
+            let mem = crate::admin::stats::memory();
             let bytes = a.stats.bytes_out.load(std::sync::atomic::Ordering::Relaxed);
             let out_bps = (bytes.saturating_sub(last_bytes) as f64 / secs) as u64;
             last_bytes = bytes;
@@ -63,7 +63,7 @@ pub fn start_background(app: &Arc<App>) {
                 per_user.insert(*uid, (b.saturating_sub(before) as f64 / secs) as u64);
             }
             *a.stats.user_bps.lock().unwrap() = per_user;
-            a.stats.push(crate::stats::Sample {
+            a.stats.push(crate::admin::stats::Sample {
                 at: now(),
                 cpu: cpu.map(|c| c.0),
                 cpu_server: cpu.map(|c| c.1),
@@ -77,7 +77,7 @@ pub fn start_background(app: &Arc<App>) {
             });
             // The minute and hour averages go to disk every five minutes.
             taken += 1;
-            if taken % (300 / crate::stats::SAMPLE_SECONDS) == 0 {
+            if taken % (300 / crate::admin::stats::SAMPLE_SECONDS) == 0 {
                 a.stats.save(&stats_file);
             }
         }
@@ -113,10 +113,10 @@ pub fn start_background(app: &Arc<App>) {
     let a = app.clone();
     for _ in 0..3 { let a = a.clone(); std::thread::spawn(move || a.metadata_worker()); }
     // Converting downloads, one after the other.
-    crate::downloads::start(app);
+    crate::playback::downloads::start(app);
     // Watched state with a Plex server, both ways (when switched on).
-    crate::plexsync::start(app);
-    crate::trakt::start(app);
+    crate::connect::plexsync::start(app);
+    crate::connect::trakt::start(app);
     let retry = details_retry_list(&app.db.lock().unwrap());
     if !retry.is_empty() {
         app.queue_online_details(&retry, false);
@@ -204,10 +204,10 @@ pub fn start_background(app: &Arc<App>) {
     let a = app.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(60));
-        crate::maintenance::tick(&a);
+        crate::admin::maintenance::tick(&a);
     });
     // "Coming soon": next episodes and the plugins' calendars, looked up in the background.
-    crate::upcoming::start(&app);
+    crate::connect::upcoming::start(&app);
     // Once a day: schedule.daily for plugins. The last date goes in a file, so
     // a restart does not send it twice and a day missed while off is sent at start.
     let a = app.clone();
@@ -279,7 +279,7 @@ mod tests {
         let n = lines();
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(n, 500, "not every event reached the plugin");
-        assert!(most <= crate::plugins::MAX_RUNNING, "{most} plugin programs ran at once");
+        assert!(most <= crate::admin::plugins::MAX_RUNNING, "{most} plugin programs ran at once");
     }
 
     #[test]
@@ -310,7 +310,7 @@ mod tests {
         let mut m = item(9, "movie", json!({}));
         m.file = Some(serde_json::from_value(json!({"path": video.to_string_lossy(), "size": 1, "modified": 0, "container": "mkv"})).unwrap());
         app.db.lock().unwrap().items.insert(9, m);
-        let dir = crate::scanner::store_dir(&app.data_dir.join("subtitles"), &media);
+        let dir = crate::library::scanner::store_dir(&app.data_dir.join("subtitles"), &media);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("Heat (1995).de.srt"), b"1").unwrap();
         app.refresh_subtitles(9);
@@ -327,7 +327,7 @@ mod tests {
         let (app, root) = test_app("plugin-library");
         let mut m = item(7, "movie", json!({}));
         m.file = Some(serde_json::from_value(json!({"path": "/media/Heat (1995).mkv", "size": 5, "modified": 0, "container": "mkv"})).unwrap());
-        let gone = item(8, "movie", json!({crate::scanner::MISSING: 1}));
+        let gone = item(8, "movie", json!({crate::library::scanner::MISSING: 1}));
         let show = item(9, "show", json!({}));
         for i in [m, gone, show] { app.db.lock().unwrap().items.insert(i.id, i); }
         {
@@ -354,7 +354,7 @@ mod tests {
         let ask = |pid: &str, key: &str| {
             let ctx = Ctx { method: "GET".into(), path: format!("/api/plugins/{pid}/library"), params: vec![("key".into(), key.into())], body: Value::Null,
                 user: None, host: String::new(), range: None, token: None, remote: Some([127, 0, 0, 1].into()), remote_trusted: true, lan_extra: false, device: "t".into() };
-            crate::handlers::plugin_library(&app, &ctx, pid)
+            crate::api::handlers::plugin_library(&app, &ctx, pid)
         };
         let listed = ask("doctor", &key);
         // The play history of one person, for Wrapped: what they watched, with what it is.
@@ -363,7 +363,7 @@ mod tests {
         let hist = |pid: &str, key: &str, user: &str, since: &str| {
             let ctx = Ctx { method: "GET".into(), path: format!("/api/plugins/{pid}/history"), params: vec![("key".into(), key.into()), ("user".into(), user.into()), ("since".into(), since.into())], body: Value::Null,
                 user: None, host: String::new(), range: None, token: None, remote: Some([127, 0, 0, 1].into()), remote_trusted: true, lan_extra: false, device: "t".into() };
-            let r = crate::handlers::plugin_history(&app, &ctx, pid);
+            let r = crate::api::handlers::plugin_history(&app, &ctx, pid);
             let code = r.status_code().0;
             let mut b = Vec::new(); r.into_reader().read_to_end(&mut b).unwrap();
             (code, serde_json::from_slice::<Value>(&b).unwrap_or(Value::Null))
@@ -376,7 +376,7 @@ mod tests {
         assert_eq!([hist("doctor", "wrong", "kid", "0").0, hist("other", &key, "kid", "0").0, hist("doctor", &key, "nobody", "0").0], [403, 403, 404]);
         let codes = [ask("doctor", "wrong").status_code().0, ask("other", &key).status_code().0, ask("doctor", "").status_code().0];
         let (admin, kid) = { let db = app.db.lock().unwrap(); (db.users[0].clone(), db.users[1].clone()) };
-        let panels = |u: &User| { let r = crate::handlers::plugin_panels(&app, u); let mut b = Vec::new(); r.into_reader().read_to_end(&mut b).unwrap(); serde_json::from_slice::<Value>(&b).unwrap()["panels"].as_array().map(|a| a.len()).unwrap_or(0) };
+        let panels = |u: &User| { let r = crate::api::handlers::plugin_panels(&app, u); let mut b = Vec::new(); r.into_reader().read_to_end(&mut b).unwrap(); serde_json::from_slice::<Value>(&b).unwrap()["panels"].as_array().map(|a| a.len()).unwrap_or(0) };
         let (for_admin, for_kid) = (panels(&admin), panels(&kid));
         let mut body = Vec::new();
         listed.into_reader().read_to_end(&mut body).unwrap();
@@ -408,12 +408,12 @@ mod tests {
             db.items.insert(7, m);
             (db.users[0].clone(), db.users[1].clone())
         };
-        let by_kid = crate::handlers::delete_media_from_plugin(&app, &kid, &[json!(7)]);
+        let by_kid = crate::api::handlers::delete_media_from_plugin(&app, &kid, &[json!(7)]);
         let kept = video.exists();
         app.db.lock().unwrap().settings.allow_media_deletion = false;
-        let switched_off = crate::handlers::delete_media_from_plugin(&app, &admin, &[json!(7)]);
+        let switched_off = crate::api::handlers::delete_media_from_plugin(&app, &admin, &[json!(7)]);
         app.db.lock().unwrap().settings.allow_media_deletion = true;
-        let by_admin = crate::handlers::delete_media_from_plugin(&app, &admin, &[json!(7), json!(12345)]);
+        let by_admin = crate::api::handlers::delete_media_from_plugin(&app, &admin, &[json!(7), json!(12345)]);
         let (gone, listed) = (!video.exists(), app.db.lock().unwrap().items.contains_key(&7));
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(by_kid.0, 0);
@@ -430,10 +430,10 @@ mod tests {
             app.db.lock().unwrap().items.insert(id, item(id, "movie", json!({"collections": cols})));
         }
         let cols = |id: u64| app.db.lock().unwrap().items.get(&id).unwrap().extra.get("collections").cloned().unwrap_or(json!([]));
-        let first = crate::handlers::set_plugin_collections(&app, &json!({"collections": {"IMDb Top 250": [1, 2], "Oscars": [3]}}));
+        let first = crate::api::handlers::set_plugin_collections(&app, &json!({"collections": {"IMDb Top 250": [1, 2], "Oscars": [3]}}));
         let after_first = (cols(1), cols(2), cols(3));
         // Title 1 leaves the list; title 2 had it by hand before, so it stays.
-        let second = crate::handlers::set_plugin_collections(&app, &json!({"collections": {"IMDb Top 250": [], "Oscars": [3]}}));
+        let second = crate::api::handlers::set_plugin_collections(&app, &json!({"collections": {"IMDb Top 250": [], "Oscars": [3]}}));
         let after_second = (cols(1), cols(2), cols(3));
         // Details downloaded again (TMDB's own collection): the plugin's stays.
         {
@@ -442,7 +442,7 @@ mod tests {
             super::matching::apply_metadata(it, &json!({"extra": {"collections": ["Dune Collection"]}}), false);
         }
         let refreshed = cols(3);
-        let none = crate::handlers::set_plugin_collections(&app, &json!({"ok": true}));
+        let none = crate::api::handlers::set_plugin_collections(&app, &json!({"ok": true}));
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(first, Some((2, 0)));
         assert_eq!(after_first, (json!(["Mine", "IMDb Top 250"]), json!(["IMDb Top 250"]), json!(["Oscars"])));
@@ -465,14 +465,14 @@ mod tests {
         };
         let mut v = json!({"message": "ok", "set_ratings": [{"id": 1, "rating": 8.0}, {"id": 2, "rating": 10.0}, {"id": 3, "rating": 11.0}, {"id": 999, "rating": 5.0}],
             "add_to_watchlist": [1, 3, 999], "save_playlist": {"title": "Letterboxd: Favoriten", "ids": [3, 1, 3, 999]}});
-        let first = crate::handlers::apply_plugin_user_changes(&app, &user, &mut v);
-        let again = crate::handlers::apply_plugin_user_changes(&app, &user, &mut json!({"save_playlist": {"title": "Letterboxd: Favoriten", "ids": [2]}}));
+        let first = crate::api::handlers::apply_plugin_user_changes(&app, &user, &mut v);
+        let again = crate::api::handlers::apply_plugin_user_changes(&app, &user, &mut json!({"save_playlist": {"title": "Letterboxd: Favoriten", "ids": [2]}}));
         let db = app.db.lock().unwrap();
         let (r1, r2, r3) = (db.view(user.id, 1).rating, db.view(user.id, 2).rating, db.view(user.id, 3).rating);
-        let watchlist = crate::dashboard::watchlist_ids(&db, &user, "", None);
+        let watchlist = crate::api::dashboard::watchlist_ids(&db, &user, "", None);
         let lists: Vec<(String, Vec<u64>)> = db.playlists.iter().filter(|p| p.owner_id == user.id).map(|p| (p.title.clone(), p.items.clone())).collect();
         drop(db);
-        let none = crate::handlers::apply_plugin_user_changes(&app, &user, &mut json!({"ok": true}));
+        let none = crate::api::handlers::apply_plugin_user_changes(&app, &user, &mut json!({"ok": true}));
         let _ = std::fs::remove_dir_all(&root);
         assert!(first.is_some() && again.is_some() && none.is_none());
         // An own rating stays; one outside 0-10 is ignored.
@@ -494,7 +494,7 @@ mod tests {
         let missed = app.daily_tick();
         let _ = std::fs::remove_dir_all(&root);
         assert!(first && !again && missed);
-        assert_eq!(stored, crate::db::today());
+        assert_eq!(stored, crate::data::db::today());
     }
 
     #[test]
