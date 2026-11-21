@@ -1285,31 +1285,6 @@ pub fn imdb_score(rating: f32, votes: u64, imdb_id: &str) -> Value {
         "url": format!("https://www.imdb.com/title/{imdb_id}/"), "as_of": crate::db::today()})
 }
 
-/// The online list of show themes, one mp3 per TheTVDB number
-/// (no account needed).
-pub const THEME_URL: &str = "";
-
-/// Downloads a show's theme music to `dest`. Ok(false): the list has none.
-pub fn download_theme(tvdb: u64, dest: &Path) -> Result<bool, String> {
-    let resp = match agent().get(&format!("{THEME_URL}/{tvdb}.mp3")).call() {
-        Ok(r) => r,
-        Err(ureq::Error::Status(404, _)) => return Ok(false),
-        Err(e) => return Err(format!("could not download the theme music: {e}")),
-    };
-    let mut bytes = vec![];
-    resp.into_reader().take(30_000_000).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-    // An mp3 starts with its tags ("ID3") or with a frame (0xff).
-    if bytes.len() < 1000 || !(bytes.starts_with(b"ID3") || bytes[0] == 0xff) {
-        return Err("the theme music download is not an mp3".into());
-    }
-    if let Some(d) = dest.parent() {
-        let _ = std::fs::create_dir_all(d);
-    }
-    let tmp = dest.with_extension("part");
-    std::fs::write(&tmp, &bytes).and_then(|_| std::fs::rename(&tmp, dest)).map_err(|e| e.to_string())?;
-    Ok(true)
-}
-
 /// IMDb publishes its ratings as a free file for personal use, refreshed daily:
 /// tconst, averageRating, numVotes (tab separated, gzip).
 pub const IMDB_RATINGS_URL: &str = "https://datasets.imdbws.com/title.ratings.tsv.gz";

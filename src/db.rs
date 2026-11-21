@@ -859,10 +859,6 @@ pub struct Settings {
     /// Show online trailers (from TMDB / Wikidata) on movie and show pages.
     #[serde(default = "yes")]
     pub trailers_online: bool,
-    /// Download a show's theme music from the online list when its folder has
-    /// none (the theme music helper, by TheTVDB number).
-    #[serde(default = "yes")]
-    pub theme_music_online: bool,
     /// What of the online details is loaded (all on by default): people, pictures, seasons and episodes, and the
     /// biography and filmography on a person's page.
     #[serde(default = "yes")]
@@ -1158,7 +1154,6 @@ impl Default for Settings {
             cleanup_weekly: true,
             refresh_metadata: true,
             trailers_online: true,
-            theme_music_online: true,
             meta_cast: true,
             meta_artwork: true,
             meta_episodes: true,

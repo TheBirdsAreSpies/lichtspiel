@@ -141,7 +141,6 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
         const _F('omdb_api_key', 'OMDb-API-Schlüssel für IMDb-Handlungen (optional)', _T.text),
       ]),
       'extras': ('Extras', [
-        const _F('theme_music_online', 'Serien-Titelmusik laden', _T.flag),
         const _F('trailers_online', 'Online-Trailer zeigen', _T.flag, help: 'Von TMDB oder Wikidata, abgespielt über YouTube.'),
         const _F('trailers_english', 'Auch englische Trailer suchen', _T.flag),
         const _F('trailers_red_band', 'Red-Band-Trailer erlauben', _T.flag),

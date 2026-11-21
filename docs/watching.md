@@ -26,10 +26,8 @@ as watched** offers other choices.
 
 A movie's or show's page plays its theme music quietly, once, and fades it out when you leave.
 The music comes from a `theme.mp3` in its folder (also `theme-1.mp3`, or .m4a, .flac, .ogg, .wav,
-.aac). A show without one gets its theme from an online list, by its TheTVDB number, the first
-time its page opens; it is then kept in `data/themes`. Movies only have music from a file. Turn
-the playing off under **Settings → Web → Play theme music**, and the download off under **Download
-show theme music**. Browsers may need one click on the page first.
+.aac) next to the video, or for a show also one folder above a season folder. Turn the playing off
+under **Settings → Web → Play theme music**. Browsers may need one click on the page first.
 
 ## Skip intro (TV shows)
 
