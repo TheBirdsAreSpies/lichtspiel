@@ -1,0 +1,19 @@
+{
+  "id": "subtitles",
+  "name": "Subtitles",
+  "version": "1.0",
+  "author": "Lichtspiel",
+  "description": "Downloads missing subtitles from OpenSubtitles for new movies and episodes and saves them next to the video (Film.de.srt). Needs a free API key from opensubtitles.com/consumers; with your OpenSubtitles username and password you get more downloads a day. The media folder must be writable.",
+  "command": ["python3", "main.py"],
+  "hooks": ["library.item.added", "api.call"],
+  "settings": {
+    "api_key": "",
+    "username": "",
+    "password": "",
+    "languages": ["de", "en"],
+    "hearing_impaired": false,
+    "allow_machine_translated": false
+  },
+  "timeout_seconds": 90,
+  "enabled_by_default": false
+}

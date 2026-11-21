@@ -22,7 +22,7 @@ ask the server for more (it gets no sign-in). Several plugins below need more, s
 
 | # | Plugin | Hooks | What it does | Status |
 |---|---|---|---|---|
-| 1 | **Subtitles** (`subtitles`) | `library.item.added`, `item.problem`, `api.call` | Downloads `.srt` files in the chosen languages from OpenSubtitles (needs a free API key) and puts them next to the video as `Name.de.srt`. A button on the Plugins page fetches them for the whole library. | [ ] |
+| 1 | **Subtitles** (`subtitles`) | `library.item.added`, `api.call` | Downloads `.srt` files in the chosen languages from OpenSubtitles (needs a free API key) and puts them next to the video as `Name.de.srt`. Later: fetching them for the whole library at once needs a way for a plugin to list the library. | [x] |
 | 2 | **Wish list** (`wishlist`) | `user_panel`, `api.call`, `library.item.added`, `schedule.daily` | Each person searches for a movie or show in their panel and wishes for it; the plugin hands the wish to Radarr / Sonarr and shows its state (wished, downloading, here). When the title arrives the wish is marked as here. | [ ] |
 | 3 | **Library doctor** (`library-doctor`) | `library.scan.finished`, `api.call`, `user_panel` (admins) | Finds duplicates, low resolutions, files without a German (or chosen) audio track or subtitles, and file names the scanner could not read well. The report is a panel. | [ ] |
 | 4 | **Anime details** (`anime-details`) | `metadata.lookup` | Better titles, summaries and episode numbering for anime from AniList (no key needed), for libraries chosen in the settings. | [ ] |

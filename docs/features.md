@@ -102,8 +102,15 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Two
-  are included: an `.nfo` file reader and a webhook / Discord notifier.
+  details, react to events (new item, playback, invites …) and add their own API calls. Three
+  are included: an `.nfo` file reader, a webhook / Discord notifier and **Subtitles**, which
+  downloads missing subtitles for new movies and episodes from OpenSubtitles and saves them
+  next to the video (`Film.de.srt`). Subtitles needs a free API key from
+  <https://www.opensubtitles.com/consumers> in its settings (`api_key`; `username` and
+  `password` of an OpenSubtitles account give more downloads a day), the languages
+  (`languages`, default `["de", "en"]`) and a writable media folder. Languages the video
+  already has are skipped; once the daily download limit is reached it waits until the next
+  day. `POST /api/plugins/subtitles/call/test` checks the key.
 - **Trakt** — built in. An admin creates a Trakt app (<https://trakt.tv/oauth/applications/new>, redirect
   URI `urn:ietf:wg:oauth:2.0:oob`) and enters its Client ID and Client Secret under **Settings → Your
   account → Trakt**. Then everyone connects their own Trakt account there (a code to type in at
