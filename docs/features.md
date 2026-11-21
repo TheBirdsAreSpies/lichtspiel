@@ -108,10 +108,15 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Ten
+  details, react to events (new item, playback, invites …) and add their own API calls. Eleven
   are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list**,
   **Subtitles**, the **Library doctor**, **Anime details**, **Smart home**, **New on Lichtspiel**,
-  **Telegram / Pushover** and **SIMKL / MyAnimeList**.
+  **Telegram / Pushover**, **SIMKL / MyAnimeList** and **Lichtspiel Wrapped**.
+  **Lichtspiel Wrapped** shows each person their year under **Settings → Account**: hours watched,
+  movies and episodes, favourite genres, most watched shows, the longest binge (episodes of one
+  show, each within `binge_gap_hours` of the last, default 3), the busiest month and day, and the
+  first and latest title; earlier years are a click away (kept for four years). It counts what is
+  finished from the moment it is switched on; titles marked as watched by hand do not count.
   **SIMKL / MyAnimeList** puts what someone finished (also when marked as watched by hand) into
   their SIMKL history and, for anime, their MyAnimeList list (episodes watched; completed after the
   last one; a rewatch leaves a finished entry alone). Everyone connects their own accounts under

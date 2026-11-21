@@ -43,7 +43,7 @@ The plugin may print a JSON answer as its last line of output:
 Playback events (`playback.started`, `playback.progress` — sent when a player pauses or plays
 on — `playback.stopped`, `playback.watched`) carry `user`, `time` (ms), `progress` (percent),
 `state`, `player` and `item`: `{"id", "type", "title", "year", "duration_ms", "genres", "poster", "ids": {"imdb", "tmdb", "tvdb" …}}`,
-for an episode also `"season"`, `"episode"` and `"show": {"title", "year", "ids", "poster"}`. `poster` is the
+for an episode also `"season"`, `"episode"` and `"show": {"title", "year", "ids", "poster", "genres"}`. `poster` is the
 picture's file on the server's computer (or `null`). `player` says
 which device plays: `{"device": "Plex for Samsung — TV 2020" | "Chrome on Windows" …, "ip", "local",
 "client"}`. A title marked as watched by hand sends `playback.watched` with `"manual": true` (and no
