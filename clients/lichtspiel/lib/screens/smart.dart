@@ -166,6 +166,7 @@ class _SmartDialogState extends State<_SmartDialog> {
           flex: 3,
           child: type == 'bool'
               ? DropdownButtonFormField<bool>(
+                  isExpanded: true,
                   initialValue: r['value'] == false ? false : true,
                   items: const [DropdownMenuItem(value: true, child: Text('ja')), DropdownMenuItem(value: false, child: Text('nein'))],
                   onChanged: (v) => setState(() {
@@ -241,6 +242,7 @@ class _SmartDialogState extends State<_SmartDialog> {
                   TextField(controller: name, decoration: const InputDecoration(labelText: 'Name', hintText: 'z. B. Ungesehene Sci-Fi aus den 90ern')),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<bool>(
+                    isExpanded: true,
                     initialValue: q['match_all'] != false,
                     decoration: const InputDecoration(labelText: 'Titel aufnehmen, die passen auf'),
                     items: const [DropdownMenuItem(value: true, child: Text('alle diese Regeln')), DropdownMenuItem(value: false, child: Text('eine dieser Regeln'))],
@@ -262,6 +264,7 @@ class _SmartDialogState extends State<_SmartDialog> {
                   Row(children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: _sorts.containsKey(q['sort']) ? '${q['sort']}' : 'title',
                         decoration: const InputDecoration(labelText: 'Sortieren nach'),
                         items: [for (final e in _sorts.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],

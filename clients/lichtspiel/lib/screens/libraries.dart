@@ -106,6 +106,7 @@ class _LibrariesScreenState extends State<LibrariesScreen> {
                 TextField(controller: name, decoration: const InputDecoration(labelText: 'Name', hintText: 'Filme')),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: kind,
                   decoration: const InputDecoration(labelText: 'Art'),
                   items: [for (final e in kinds.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
@@ -113,6 +114,7 @@ class _LibrariesScreenState extends State<LibrariesScreen> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: lang,
                   decoration: const InputDecoration(labelText: 'Sprache der Titel und Handlungen'),
                   items: [DropdownMenuItem(value: '', child: Text('Wie der Server ($serverLang)')), for (final l in langs) DropdownMenuItem(value: '${l['code']}', child: Text('${l['name']}'))],
