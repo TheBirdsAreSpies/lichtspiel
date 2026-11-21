@@ -642,6 +642,55 @@ function accessEditor(u) {
 }
 
 // ---------- admin: plugins
+// A plugin's settings as a form: one field per setting, chosen by its value — a tick box for
+// true/false, a number box, a text box (hidden for passwords, tokens and keys), one line per entry
+// for a list. Anything nested (a list of objects, an object) stays JSON. "Edit as JSON" shows it all as JSON.
+function pluginSettingsForm(settings) {
+  let fields = [], asJson = false;
+  const formEl = h('div', {}), ta = h('textarea', { rows: 10, spellcheck: 'false', style: 'font-family:monospace' });
+  const jsonEl = formRow(t('Settings'), ta, null, true), toggle = h('button', {});
+  const draw = values => {
+    fields = Object.entries(values || {}).map(([k, v]) => settingField(k, v));
+    formEl.replaceChildren(...fields.map(f => f.row));
+  };
+  const fromForm = () => Object.fromEntries(fields.map(f => [f.k, f.get()]));
+  const show = () => { formEl.style.display = asJson ? 'none' : ''; jsonEl.style.display = asJson ? '' : 'none'; toggle.textContent = asJson ? t('Edit as fields') : t('Edit as JSON'); };
+  // The values carry over each way; coming back from JSON the fields are drawn again from it.
+  toggle.onclick = () => {
+    try {
+      if (asJson) { const v = JSON.parse(ta.value); if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error(t('Send the settings as a JSON object')); draw(v); }
+      else ta.value = JSON.stringify(fromForm(), null, 2);
+      asJson = !asJson; show();
+    } catch (e) { toast(e.message); }
+  };
+  draw(settings);
+  ta.value = JSON.stringify(settings || {}, null, 2);
+  asJson = !fields.length; show();
+  return { el: h('div', {}, formEl, jsonEl), toggle, value: () => asJson ? JSON.parse(ta.value) : fromForm() };
+}
+function settingField(k, v) {
+  const label = k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+  let el, get, help = null, top = false;
+  if (typeof v === 'boolean') {
+    el = h('input', { type: 'checkbox', checked: v }); get = () => el.checked;
+  } else if (typeof v === 'number') {
+    el = h('input', { type: 'number', step: 'any', value: v });
+    get = () => { const n = Number(el.value); if (el.value.trim() === '' || !isFinite(n)) throw new Error(t('{name}: enter a number', { name: label })); return n; };
+  } else if (typeof v === 'string') {
+    const secret = /pass|secret|token|key/i.test(k);
+    el = h('input', { type: secret ? 'password' : 'text', value: v, autocomplete: secret ? 'new-password' : 'off', spellcheck: 'false' }); get = () => el.value.trim();
+  } else if (Array.isArray(v) && v.every(x => typeof x === 'string' || typeof x === 'number')) {
+    const numbers = v.length > 0 && v.every(x => typeof x === 'number');
+    el = h('textarea', { rows: Math.max(2, Math.min(8, v.length + 1)), spellcheck: 'false' }, v.join('\n')); top = true; help = t('One per line.');
+    // A line starting with { or [ is read as JSON, so an empty list of rules can be filled too.
+    get = () => el.value.split('\n').map(s => s.trim()).filter(Boolean).map(s => /^[{[]/.test(s) ? JSON.parse(s) : numbers && isFinite(Number(s)) ? Number(s) : s);
+  } else {
+    el = h('textarea', { rows: 4, spellcheck: 'false', style: 'font-family:monospace' }, JSON.stringify(v, null, 2)); top = true; help = t('As JSON.');
+    get = () => { try { return JSON.parse(el.value); } catch (e) { throw new Error(label + ': ' + e.message); } };
+  }
+  return { k, get, row: formRow(label, el, help, top) };
+}
+
 async function pluginsPage() {
   markNav('plugins');
   const [r, log] = await Promise.all([GET('/api/plugins'), GET('/api/plugins/log')]);
@@ -650,14 +699,14 @@ async function pluginsPage() {
     h('div', { class: 'actions' }, h('button', { onclick: async () => { const x = await api('POST', '/api/plugins/reload'); toast(t('{n} plugin(s) found', { n: x.count })); pluginsPage(); } }, t('Reload plugins'))),
     r.errors.length ? h('div', { class: 'panel', style: 'color:var(--red)' }, r.errors.map(e => h('div', {}, e))) : null,
     r.plugins.length ? r.plugins.map(p => {
-      const ta = h('textarea', {}, JSON.stringify(p.settings, null, 2));
+      const form = pluginSettingsForm(p.settings);
       return h('div', { class: 'panel' },
         h('div', { style: 'display:flex;gap:12px;align-items:center' }, h('b', { style: 'font-size:17px' }, p.name), h('span', { class: 'dim' }, 'v' + (p.version || '?')), p.author ? h('span', { class: 'dim' }, t('by {name}', { name: p.author })) : null, h('span', { style: 'flex:1' }),
           h('span', { class: p.enabled ? 'ok' : 'dim' }, p.enabled ? t('on') : t('off')),
           h('button', { class: p.enabled ? '' : 'primary', onclick: async () => { await api('POST', `/api/plugins/${p.id}/${p.enabled ? 'disable' : 'enable'}`); pluginsPage(); } }, p.enabled ? t('Switch off') : t('Switch on'))),
         h('p', {}, p.description), h('div', {}, t('Listens to: '), p.hooks.map(x => h('span', { class: 'tag' }, x))),
-        formRow(t('Settings'), ta, null, true),
-        h('div', { class: 'actions' }, h('button', { onclick: async () => { try { await api('PUT', `/api/plugins/${p.id}/settings`, JSON.parse(ta.value)); toast(t('Saved')); } catch (e) { toast(e.message); } } }, t('Save settings'))));
+        form.el,
+        h('div', { class: 'actions' }, h('button', { onclick: async () => { try { await api('PUT', `/api/plugins/${p.id}/settings`, form.value()); toast(t('Saved')); } catch (e) { toast(e.message); } } }, t('Save settings')), form.toggle));
     }) : h('div', { class: 'empty' }, t('No plugins installed yet.')),
     h('h2', {}, t('Recent plugin activity')),
     log.log.length ? h('table', {}, log.log.slice(0, 40).map(l => h('tr', {}, h('td', { class: 'dim' }, new Date(l.at * 1000).toLocaleTimeString(I18N.lang)), h('td', {}, l.plugin), h('td', {}, l.event), h('td', { class: l.ok ? 'ok' : 'err' }, l.ok ? t('ok') : t('failed')), h('td', { class: 'dim', style: 'word-break:break-all' }, l.detail)))) : h('p', { class: 'dim' }, t('Nothing yet.')),

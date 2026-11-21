@@ -20,7 +20,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
   Map<String, dynamic>? data;
   List<Map<String, dynamic>> log = [];
   String? error;
-  final settings = <String, TextEditingController>{};
+  final forms = <String, _SettingsForm>{};
 
   @override
   void initState() {
@@ -30,8 +30,8 @@ class _PluginsScreenState extends State<PluginsScreen> {
 
   @override
   void dispose() {
-    for (final c in settings.values) {
-      c.dispose();
+    for (final f in forms.values) {
+      f.dispose();
     }
     super.dispose();
   }
@@ -45,7 +45,9 @@ class _PluginsScreenState extends State<PluginsScreen> {
         data = Map<String, dynamic>.from(r);
         log = [for (final x in (l['log'] as List? ?? const [])) Map<String, dynamic>.from(x)];
         for (final p in (r['plugins'] as List? ?? const [])) {
-          settings.putIfAbsent('${p['id']}', () => TextEditingController()).text = const JsonEncoder.withIndent('  ').convert(p['settings'] ?? {});
+          final id = '${p['id']}';
+          forms.remove(id)?.dispose();
+          forms[id] = _SettingsForm(Map<String, dynamic>.from(p['settings'] ?? const {}));
         }
         error = null;
       });
@@ -111,6 +113,34 @@ class _PluginsScreenState extends State<PluginsScreen> {
     );
   }
 
+  List<Widget> _fields(_SettingsForm f) {
+    if (f.asJson) {
+      return [TextField(controller: f.json, minLines: 3, maxLines: 12, style: const TextStyle(fontFamily: 'monospace', fontSize: 12), decoration: const InputDecoration(labelText: 'Einstellungen (JSON)', border: OutlineInputBorder()))];
+    }
+    return [
+      for (final MapEntry(:key, :value) in f.values.entries)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: value is bool
+              ? CheckboxListTile(dense: true, contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, title: Text(_SettingsForm.label(key)), value: value, onChanged: (v) => setState(() => f.values[key] = v == true))
+              : _field(f, key, value),
+        ),
+    ];
+  }
+
+  Widget _field(_SettingsForm f, String key, Object? value) {
+    final list = _SettingsForm.simple(value), plain = value is String || value is num;
+    return TextField(
+      controller: f.text[key],
+      obscureText: value is String && _SettingsForm.secret(key),
+      keyboardType: value is num ? const TextInputType.numberWithOptions(decimal: true, signed: true) : null,
+      minLines: plain ? 1 : 2,
+      maxLines: plain ? 1 : 8,
+      style: plain || list ? null : const TextStyle(fontFamily: 'monospace', fontSize: 12),
+      decoration: InputDecoration(labelText: _SettingsForm.label(key), helperText: list ? 'Eins pro Zeile.' : plain ? null : 'Als JSON.', border: const OutlineInputBorder()),
+    );
+  }
+
   Widget _plugin(Map<String, dynamic> p) {
     final on = p['enabled'] == true;
     final id = '${p['id']}';
@@ -133,27 +163,128 @@ class _PluginsScreenState extends State<PluginsScreen> {
             child: Wrap(spacing: 6, runSpacing: 4, children: [for (final h in (p['hooks'] as List? ?? const [])) Chip(label: Text('$h', style: const TextStyle(fontSize: 11)), visualDensity: VisualDensity.compact)]),
           ),
           const SizedBox(height: 8),
-          TextField(controller: settings[id], minLines: 3, maxLines: 10, style: const TextStyle(fontFamily: 'monospace', fontSize: 12), decoration: const InputDecoration(labelText: 'Einstellungen (JSON)', border: OutlineInputBorder())),
+          ..._fields(forms[id]!),
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton(
+          Wrap(spacing: 8, children: [
+            OutlinedButton(
               onPressed: () {
-                Object? v;
+                final Map<String, dynamic> v;
                 try {
-                  v = jsonDecode(settings[id]!.text);
+                  v = forms[id]!.value();
                 } catch (e) {
-                  _say(context, 'Kein gültiges JSON: $e');
+                  _say(context, '$e');
                   return;
                 }
                 run(() => widget.api.put('/api/plugins/$id/settings', v), ok: 'Gespeichert');
               },
               child: const Text('Einstellungen speichern'),
             ),
-          ),
+            TextButton(
+              onPressed: () {
+                try {
+                  setState(() => forms[id]!.toggle());
+                } catch (e) {
+                  _say(context, '$e');
+                }
+              },
+              child: Text(forms[id]!.asJson ? 'Als Felder bearbeiten' : 'Als JSON bearbeiten'),
+            ),
+          ]),
         ]),
       ),
     );
+  }
+}
+
+/// A plugin's settings as fields: a tick box for true/false, a text field for text and numbers (hidden
+/// for passwords, tokens and keys), one line per entry for a list; anything nested stays JSON. It can
+/// also be shown as JSON as a whole.
+class _SettingsForm {
+  final Map<String, dynamic> values;
+  final text = <String, TextEditingController>{};
+  final json = TextEditingController();
+  bool asJson = false;
+
+  _SettingsForm(Map<String, dynamic> settings) : values = Map.of(settings) {
+    _draw();
+    asJson = values.isEmpty;
+    json.text = const JsonEncoder.withIndent('  ').convert(values);
+  }
+
+  static String label(String k) {
+    final s = k.replaceAll('_', ' ');
+    return s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+  }
+
+  static bool secret(String k) => RegExp('pass|secret|token|key', caseSensitive: false).hasMatch(k);
+  static bool simple(Object? v) => v is List && v.every((x) => x is String || x is num);
+
+  void _draw() {
+    for (final c in text.values) {
+      c.dispose();
+    }
+    text.clear();
+    values.forEach((k, v) {
+      if (v is bool) return;
+      text[k] = TextEditingController(
+          text: v is String || v is num ? '$v' : simple(v) ? (v as List).join('\n') : const JsonEncoder.withIndent('  ').convert(v));
+    });
+  }
+
+  Map<String, dynamic> value() {
+    if (asJson) {
+      final v = jsonDecode(json.text);
+      if (v is! Map) throw 'Die Einstellungen müssen ein JSON-Objekt sein';
+      return Map<String, dynamic>.from(v);
+    }
+    final out = <String, dynamic>{};
+    values.forEach((k, v) {
+      final t = text[k]?.text.trim() ?? '';
+      if (v is bool) {
+        out[k] = v;
+      } else if (v is num) {
+        final n = num.tryParse(t.replaceAll(',', '.'));
+        if (n == null) throw '${label(k)}: bitte eine Zahl eingeben';
+        out[k] = n;
+      } else if (v is String) {
+        out[k] = t;
+      } else if (simple(v)) {
+        final numbers = (v as List).isNotEmpty && v.every((x) => x is num);
+        // A line starting with { or [ is read as JSON, so an empty list of rules can be filled too.
+        out[k] = [
+          for (final l in t.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty))
+            l.startsWith('{') || l.startsWith('[') ? jsonDecode(l) : numbers && num.tryParse(l) != null ? num.parse(l) : l
+        ];
+      } else {
+        try {
+          out[k] = jsonDecode(t);
+        } catch (e) {
+          throw '${label(k)}: $e';
+        }
+      }
+    });
+    return out;
+  }
+
+  /// Fields to JSON or back; the values carry over each way.
+  void toggle() {
+    if (asJson) {
+      final v = value();
+      values
+        ..clear()
+        ..addAll(v);
+      _draw();
+    } else {
+      json.text = const JsonEncoder.withIndent('  ').convert(value());
+    }
+    asJson = !asJson;
+  }
+
+  void dispose() {
+    for (final c in text.values) {
+      c.dispose();
+    }
+    json.dispose();
   }
 }
 
