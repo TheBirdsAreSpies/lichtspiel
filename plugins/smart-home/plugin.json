@@ -1,0 +1,17 @@
+{
+  "id": "smart-home",
+  "name": "Smart home",
+  "version": "1.0",
+  "author": "Lichtspiel",
+  "description": "Switches Home Assistant scenes or calls webhooks when playback starts, pauses and stops: dim the lights for a movie, lights back on afterwards. Enter the Home Assistant address and a long-lived access token (your profile in Home Assistant → Security), then one rule per room under \"rules\": {\"name\": \"Living room\", \"players\": [\"Samsung\"], \"users\": [], \"types\": [\"movie\", \"episode\"], \"play\": \"scene.movie\", \"pause\": \"scene.pause\", \"stop\": \"scene.lights_on\"}. \"players\" are parts of the player's name (empty = every player; the admin's panel under Settings lists the players seen), \"users\" names people (empty = everyone), \"types\" the kinds of title (empty = all). An action is a scene, script or automation (scene.x, script.x, automation.x), a Home Assistant webhook (webhook:id) or any http(s):// address, which gets the event as JSON. Each person can switch it off for themselves under Settings.",
+  "command": ["python3", "main.py"],
+  "hooks": ["playback.started", "playback.progress", "playback.stopped", "api.call"],
+  "user_panel": true,
+  "settings": {
+    "home_assistant_url": "",
+    "home_assistant_token": "",
+    "rules": []
+  },
+  "timeout_seconds": 20,
+  "enabled_by_default": false
+}

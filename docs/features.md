@@ -108,9 +108,21 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Six
+  details, react to events (new item, playback, invites …) and add their own API calls. Seven
   are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list**,
-  **Subtitles**, the **Library doctor** and **Anime details**.
+  **Subtitles**, the **Library doctor**, **Anime details** and **Smart home**.
+  **Smart home** switches Home Assistant scenes when playback starts, pauses and stops (dim the
+  lights, lights back on). It needs the Home Assistant address (`home_assistant_url`) and a
+  long-lived access token (`home_assistant_token`; your profile in Home Assistant → Security), and
+  one rule per room in `rules`: `{"name": "Living room", "players": ["Samsung"], "users": [],
+  "types": ["movie", "episode"], "play": "scene.movie", "pause": "scene.pause", "stop":
+  "scene.lights_on"}`. `players` are parts of the player's name (empty = every player), `users`
+  names people and `types` the kinds of title (empty = all). An action is a scene, script or
+  automation (`scene.…`, `script.…`, `automation.…`), a Home Assistant webhook (`webhook:<id>`) or
+  any `http(s)://` address, which gets the event as JSON (`event`, `user`, `player`, `type`,
+  `title`, `show`, `year`, `progress`). Under **Settings → Account** everyone can switch it off for
+  themselves; admins also see the players seen lately with the rules they fall under, and can try
+  each action.
   **Anime details** finds anime on AniList (no key needed) and adds the AniList score, links to
   AniList and MyAnimeList and the animation studio (`studio`; instead of the TV channel). If the
   settings say so it also takes AniList's title (`title`: `"romaji"`, `"english"` or `"native"`;
