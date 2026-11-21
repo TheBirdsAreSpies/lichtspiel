@@ -1469,7 +1469,8 @@ async function sectionPage(id, qs) {
     else stagger();
   }
   // Where you are: the first poster under the bar gives the number (in the counter) and the letter (lit in the side list).
-  let raf = 0, lastPos = 0;
+  let raf = 0, lastPos = 0, prevY = window.scrollY, dir = 1;
+  const ahead = new Set(); // pages fetched ahead once (a failed one is tried again only when scrolled to)
   const showPos = () => {
     raf = 0;
     if (location.hash !== myHash || !grid) return;
@@ -1483,6 +1484,12 @@ async function sectionPage(id, qs) {
         if (c) { pos = Number(c.dataset.i); break; }
       }
     }
+    // Scrolling through titles already there: the next page that way is fetched ahead, so it is ready on arrival.
+    // Only from a loaded page, so dragging the scroll bar across empty cards still fetches nothing.
+    const y = window.scrollY;
+    if (y !== prevY) { dir = y > prevY ? 1 : -1; prevY = y; }
+    const p = pageOf(pos), next = p + dir;
+    if (have.has(p) && next >= 0 && next * PAGE_SIZE < total && !ahead.has(next)) { ahead.add(next); loadPage(next); }
     if (forced !== null && Date.now() - forcedAt < 1500) pos = forced; else forced = null;
     lastPos = pos;
     countEl.textContent = t('{pos} / {total}', { pos: fmtNum(pos + 1), total: fmtNum(total) });
