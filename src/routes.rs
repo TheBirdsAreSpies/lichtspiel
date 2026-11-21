@@ -188,6 +188,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/password/reset/{code}", "Set the new password {password}; signs out every device (no sign-in)"),
     ("GET", "/api/plugins", "Admin: installed plugins, their hooks, settings and errors"),
     ("POST", "/api/plugins/reload", "Admin: look for new or changed plugins"),
+    ("POST", "/api/plugins/upload", "Admin: install a plugin from a zip {data: base64 (at most 35 MB), replace: true to put it over the one with the same id} → {ok, id, name, version, replaced, enabled, files, count, errors}; 409 with exists when it is there already"),
     ("POST", "/api/plugins/{id}/enable", "Admin: switch a plugin on"),
     ("POST", "/api/plugins/{id}/disable", "Admin: switch a plugin off"),
     ("PUT", "/api/plugins/{id}/settings", "Admin: plugin settings {..}"),
@@ -1940,6 +1941,25 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             app.save();
             let p = app.plugins.lock().unwrap();
             ok(json!({"ok": true, "count": p.list.len(), "errors": p.errors}))
+        }
+        ("POST", ["api", "plugins", "upload"]) => {
+            if !admin { return need_admin(); }
+            let Some(zip) = ctx.body["data"].as_str().and_then(|d| b64_decode(d.split_once(',').map_or(d, |(_, rest)| rest))) else {
+                return fail(400, "Send the zip as {data} (base64)");
+            };
+            let replace = ctx.body["replace"].as_bool().unwrap_or(false);
+            let got = app.plugins.lock().unwrap().install_zip(&zip, replace);
+            match got {
+                Ok(i) => {
+                    app.sync_plugin_states();
+                    app.save();
+                    let enabled = app.db.lock().unwrap().plugins.get(&i.id).is_some_and(|s| s.enabled);
+                    let p = app.plugins.lock().unwrap();
+                    ok(json!({"ok": true, "id": i.id, "name": i.name, "version": i.version, "replaced": i.replaced, "enabled": enabled, "files": i.files, "count": p.list.len(), "errors": p.errors}))
+                }
+                Err(plugins::InstallError::Exists { id, name, version }) => js(409, json!({"error": "A plugin with this id is installed already", "status": 409, "exists": true, "id": id, "name": name, "version": version})),
+                Err(plugins::InstallError::Bad(e)) => fail(400, &e),
+            }
         }
         ("GET", ["api", "plugins", "log"]) => {
             if !admin { return need_admin(); }

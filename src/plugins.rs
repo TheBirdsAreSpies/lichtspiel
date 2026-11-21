@@ -183,6 +183,88 @@ impl Plugins {
     }
 }
 
+/// What `Plugins::install_zip` installed.
+pub struct Installed {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    /// A plugin of that id (or its folder) was there and got the new files.
+    pub replaced: bool,
+    pub files: usize,
+}
+
+pub enum InstallError {
+    /// The plugin is there already and replacing it was not asked for.
+    Exists { id: String, name: String, version: String },
+    Bad(String),
+}
+
+/// A plugin id that can be a folder name everywhere: letters, digits, `-`, `_` and `.`, not starting with a dot.
+fn valid_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && !id.starts_with('.') && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+impl Plugins {
+    /// Installs a plugin from a .zip (uploaded on the Plugins page). The zip holds plugin.json at
+    /// the top or in one folder that holds everything (as GitHub's "Download ZIP" makes it). The
+    /// plugin goes into a folder named after its id. A plugin that is there already is replaced
+    /// only when `replace` is set: the files in the zip are written over its own, and the files
+    /// the zip does not have (its tokens, a cache) stay. Afterwards the plugins are read again.
+    pub fn install_zip(&mut self, zip: &[u8], replace: bool) -> Result<Installed, InstallError> {
+        use InstallError::Bad;
+        let entries: Vec<_> = crate::unzip::read(zip).map_err(Bad)?.into_iter()
+            // What macOS adds to a zip it makes.
+            .filter(|e| !e.name.starts_with("__MACOSX/") && !e.name.ends_with(".DS_Store"))
+            .collect();
+        let prefix = if entries.iter().any(|e| e.name == "plugin.json") {
+            String::new()
+        } else {
+            match entries.first().and_then(|e| e.name.split_once('/')).map(|(top, _)| format!("{top}/")) {
+                Some(top) if entries.iter().all(|e| e.name.starts_with(&top)) && entries.iter().any(|e| e.name == format!("{top}plugin.json")) => top,
+                _ => return Err(Bad("The zip has no plugin.json (at the top, or in one folder that holds everything)".into())),
+            }
+        };
+        let manifest = entries.iter().find(|e| e.name == format!("{prefix}plugin.json")).map(|e| e.data.as_slice()).unwrap_or_default();
+        let mut m: Manifest = serde_json::from_slice(manifest).map_err(|e| Bad(format!("plugin.json: {e}")))?;
+        if m.command.is_empty() {
+            return Err(Bad("plugin.json has no command".into()));
+        }
+        if m.id.is_empty() {
+            m.id = prefix.trim_end_matches('/').to_string();
+        }
+        if !valid_id(&m.id) {
+            return Err(Bad(format!("The plugin id “{}” cannot be a folder name: use letters, digits, - _ and . only", m.id)));
+        }
+        let existing = self.get(&m.id).cloned();
+        let dir = existing.as_ref().map(|p| p.dir.clone()).unwrap_or_else(|| self.dir.join(&m.id));
+        let replaced = existing.is_some() || dir.exists();
+        if replaced && !replace {
+            let (name, version) = existing.map(|p| (p.manifest.name, p.manifest.version)).unwrap_or_default();
+            return Err(InstallError::Exists { id: m.id, name, version });
+        }
+        let _ = std::fs::create_dir_all(&dir);
+        let root = dir.canonicalize().map_err(|e| Bad(format!("The plugin folder could not be made: {e}")))?;
+        for e in &entries {
+            let to = dir.join(&e.name[prefix.len()..]);
+            let parent = to.parent().unwrap_or(&dir);
+            std::fs::create_dir_all(parent).map_err(|x| Bad(format!("{}: {x}", e.name)))?;
+            // A link inside the plugin's folder must not lead the files somewhere else.
+            if !parent.canonicalize().is_ok_and(|p| p.starts_with(&root)) {
+                return Err(Bad(format!("{}: the folder leads outside the plugin's folder", e.name)));
+            }
+            std::fs::write(&to, &e.data).map_err(|x| Bad(format!("{} could not be saved: {x}", e.name)))?;
+            #[cfg(unix)]
+            if e.executable {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o755));
+            }
+        }
+        self.reload();
+        crate::log::add(format!("Plugin {} {} {} from an uploaded zip", m.id, if replaced { "replaced with version" } else { "installed, version" }, m.version));
+        Ok(Installed { id: m.id, name: m.name, version: m.version, replaced, files: entries.len() })
+    }
+}
+
 /// Runs one plugin for one event and returns its JSON answer (or Null).
 pub fn invoke(plugin: &Plugin, settings: &serde_json::Map<String, Value>, event: &str, data: &Value, server: &Value) -> Result<Value, String> {
     let mut merged = plugin.manifest.settings.clone();
@@ -334,5 +416,39 @@ mod tests {
         assert_eq!(placement(&m("sidebar"), "both"), "both");
         assert_eq!(placement(&m("sidebar"), "settings"), "settings");
         assert_eq!(placement(&m("both"), "nonsense"), "both");
+    }
+
+    #[test]
+    fn a_plugin_comes_in_from_a_zip() {
+        let root = std::env::temp_dir().join(format!("lichtspiel-upload-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut p = Plugins::load(&root);
+        let zip = |version: &str, code: &str| crate::unzip::tests::make(&[
+            ("hello-main/plugin.json", format!(r#"{{"id": "hello", "name": "Hello", "version": "{version}", "command": ["python3", "main.py"]}}"#).as_bytes(), true),
+            ("hello-main/main.py", code.as_bytes(), true),
+            ("hello-main/lib/util.py", b"x = 1", false),
+            ("__MACOSX/hello-main/._main.py", b"junk", false),
+        ]);
+        let got = p.install_zip(&zip("1.0", "old"), false).ok().expect("the plugin was not installed");
+        assert_eq!((got.id.as_str(), got.replaced, got.files), ("hello", false, 3));
+        assert_eq!(std::fs::read_to_string(root.join("hello/lib/util.py")).unwrap(), "x = 1");
+        assert!(!root.join("__MACOSX").exists() && !root.join("hello-main").exists());
+        assert_eq!(p.get("hello").map(|x| x.manifest.version.as_str()), Some("1.0"));
+        // Again: only with replace, and the plugin's own files stay.
+        std::fs::write(root.join("hello/tokens.json"), "mine").unwrap();
+        assert!(matches!(p.install_zip(&zip("2.0", "new"), false), Err(InstallError::Exists { ref version, .. }) if version == "1.0"));
+        assert_eq!(std::fs::read_to_string(root.join("hello/main.py")).unwrap(), "old");
+        assert!(p.install_zip(&zip("2.0", "new"), true).ok().is_some_and(|i| i.replaced));
+        assert_eq!(std::fs::read_to_string(root.join("hello/main.py")).unwrap(), "new");
+        assert_eq!(std::fs::read_to_string(root.join("hello/tokens.json")).unwrap(), "mine");
+        assert_eq!(p.get("hello").map(|x| x.manifest.version.as_str()), Some("2.0"));
+        // Without plugin.json, without a command, or with an id that is no folder name: nothing is written.
+        let mut bad = |files: &[(&str, &[u8], bool)]| match p.install_zip(&crate::unzip::tests::make(files), true) { Err(InstallError::Bad(e)) => e, _ => panic!("accepted") };
+        assert!(bad(&[("main.py", b"", false)]).contains("no plugin.json"));
+        assert!(bad(&[("plugin.json", br#"{"id": "x", "name": "x", "command": []}"#, false)]).contains("no command"));
+        assert!(bad(&[("plugin.json", br#"{"id": "../x", "name": "x", "command": ["a"]}"#, false)]).contains("folder name"));
+        assert!(bad(&[("a/plugin.json", b"{}", false), ("b/main.py", b"", false)]).contains("no plugin.json"));
+        assert!(!root.join("x").exists());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

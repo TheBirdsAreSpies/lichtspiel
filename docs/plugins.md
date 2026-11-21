@@ -2,7 +2,15 @@
 
 Back to the [README](../README.md).
 
-A plugin is a folder in `<data>/plugins/<name>/` with a `plugin.json`:
+A plugin is a folder in `<data>/plugins/<name>/` with a `plugin.json`. Put it there and press
+**Reload plugins**, or zip the folder and press **Upload plugin (.zip)** on the Plugins page (admins
+only; `POST /api/plugins/upload` with `{data: base64}`). The zip may hold `plugin.json` at the top
+or in one folder that holds everything (GitHub's "Download ZIP" works). The plugin goes into
+`<data>/plugins/<id>/`, switched off unless it says `enabled_by_default`. Uploading a plugin that is
+installed already asks first, then writes the zip's files over it; its settings and the files the zip
+does not have (tokens, a cache) stay. At most 35 MB zipped and 200 MB unpacked; zip files with a
+password or over 4 GB (ZIP64) are not taken. A plugin runs any program it likes on the server, so only
+upload plugins you trust.
 
 ```json
 {

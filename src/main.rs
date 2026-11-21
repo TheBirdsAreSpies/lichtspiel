@@ -41,6 +41,7 @@ mod subsync;
 mod totp;
 mod trakt;
 mod transcode;
+mod unzip;
 mod upcoming;
 #[cfg(feature = "console")]
 mod console;

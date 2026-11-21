@@ -699,14 +699,40 @@ function settingField(k, v) {
   return { k, get, row: formRow(label, el, help, top) };
 }
 
+// Admin: a plugin as a .zip (plugin.json at the top or in one folder). One that is there already is replaced after asking;
+// its own files that the zip does not have (tokens, a cache) stay.
+function pluginUpload(done) {
+  const busy = h('span', { class: 'dim' });
+  const file = h('input', { type: 'file', accept: '.zip,application/zip', style: 'display:none', onchange: async () => {
+    const f = file.files[0]; file.value = '';
+    if (!f) return;
+    if (f.size > 35 * 1024 * 1024) return toast(t('The zip is too big (at most 35 MB).'), 5000);
+    busy.textContent = t('Installing…'); button.disabled = true;
+    try {
+      const data = await new Promise((ok, no) => { const rd = new FileReader(); rd.onload = () => ok(String(rd.result).split(',')[1] || ''); rd.onerror = no; rd.readAsDataURL(f); });
+      let x;
+      try { x = await api('POST', '/api/plugins/upload', { data }); } catch (e) {
+        if (!(e.data && e.data.exists)) throw e;
+        const was = e.data.name ? `${e.data.name}${e.data.version ? ' v' + e.data.version : ''}` : e.data.id;
+        if (!confirm(t('“{name}” is installed already. Replace it with the uploaded one? Its settings and its own files stay.', { name: was }))) return;
+        x = await api('POST', '/api/plugins/upload', { data, replace: true });
+      }
+      toast(t(x.replaced ? '“{name}” replaced with version {v}.' : x.enabled ? '“{name}” installed.' : '“{name}” installed. Switch it on below.', { name: x.name, v: x.version || '?' }), 5000);
+      done();
+    } catch (e) { toast(e.message, 6000); } finally { busy.textContent = ''; button.disabled = false; }
+  } });
+  const button = h('button', { onclick: () => file.click() }, t('Upload plugin (.zip)'));
+  return h('span', {}, button, file, ' ', busy);
+}
+
 async function pluginsPage() {
   markNav('plugins');
   const [r, log] = await Promise.all([GET('/api/plugins'), GET('/api/plugins/log')]);
   // Drawn again after a change, where it was: switching a plugin on no longer jumps to the top.
   const again = async () => { const y = window.scrollY; await pluginsPage(); window.scrollTo(0, y); refreshPluginNav(); };
   set(h('h1', {}, t('Plugins')),
-    h('p', { class: 'dim' }, t('Plugins add features: fill in movie details, send notifications, react to playback, add their own API actions. Put each plugin in its own folder inside '), h('code', {}, r.folder), t(' with a '), h('code', {}, 'plugin.json'), t(' file, then press Reload. Any language works (Python, shell, Node …).')),
-    h('div', { class: 'actions' }, h('button', { onclick: async () => { const x = await api('POST', '/api/plugins/reload'); toast(t('{n} plugin(s) found', { n: x.count })); again(); } }, t('Reload plugins'))),
+    h('p', { class: 'dim' }, t('Plugins add features: fill in movie details, send notifications, react to playback, add their own API actions. Put each plugin in its own folder inside '), h('code', {}, r.folder), t(' with a '), h('code', {}, 'plugin.json'), t(' file, then press Reload, or upload the folder as a .zip. Any language works (Python, shell, Node …).')),
+    h('div', { class: 'actions' }, h('button', { onclick: async () => { const x = await api('POST', '/api/plugins/reload'); toast(t('{n} plugin(s) found', { n: x.count })); again(); } }, t('Reload plugins')), pluginUpload(again)),
     r.errors.length ? h('div', { class: 'panel', style: 'color:var(--red)' }, r.errors.map(e => h('div', {}, e))) : null,
     r.plugins.length ? r.plugins.map(p => {
       const form = pluginSettingsForm(p.settings);

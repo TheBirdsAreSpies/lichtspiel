@@ -283,7 +283,9 @@ pub(super) fn handle(app: Arc<App>, mut req: tiny_http::Request) {
     let mut body = Value::Null;
     if matches!(method.as_str(), "POST" | "PUT" | "PATCH" | "DELETE") {
         let mut buf = Vec::new();
-        let _ = req.as_reader().take(4 * 1024 * 1024).read_to_end(&mut buf);
+        // A plugin uploaded as a zip (base64) may be bigger than anything else that is sent.
+        let limit = if path == "/api/plugins/upload" { 48 } else { 4 };
+        let _ = req.as_reader().take(limit * 1024 * 1024).read_to_end(&mut buf);
         if !buf.is_empty() {
             body = serde_json::from_slice(&buf).unwrap_or_else(|_| {
                 // Accept form posts too.
