@@ -19,7 +19,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/setup", "First start only: create the owner account {username, password}"),
     ("POST", "/api/login", "Sign in {username, password} → {token}; send the token as the X-Token header or Authorization: Bearer"),
     ("POST", "/api/logout", "Forget this token"),
-    ("POST", "/api/link", "Ask for a sign-in code {device?} → {id, code, expires_in}; show the code on the device, no sign-in needed"),
+    ("POST", "/api/link", "Ask for a sign-in code {device?, link?} → {id, code, expires_in, qr}; show the code on the device, no sign-in needed (with link, the web address of this app, qr is an SVG of link#/link/CODE)"),
     ("GET", "/api/link/{id}", "Poll a sign-in code → {status: pending} or {status: ok, token, user} once somebody confirmed it (410 when it expired)"),
     ("POST", "/api/link/confirm", "Signed in: confirm the code shown on a device {code} so that device signs in as you (eight wrong codes in five minutes lock you out)"),
     ("GET", "/api/home", "Home profiles to pick on the sign-in screen (only answered in the local network; no sign-in)"),

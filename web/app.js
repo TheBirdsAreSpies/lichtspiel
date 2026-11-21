@@ -263,7 +263,7 @@ async function api(method, path, body) {
   let j = null;
   try { j = await r.json(); } catch (e) { if (e.name === 'AbortError') throw e; /* not JSON */ }
   if (r.status === 401 && S.token && !path.startsWith('/api/login')) { logout(); throw new Error(t('Please sign in again')); }
-  if (!r.ok) { const e = new Error((j && j.error) ? t(j.error) : t('The server answered with an error ({n}).', { n: r.status })); e.data = j; e.api = true; throw e; }
+  if (!r.ok) { const e = new Error((j && j.error) ? t(j.error) : t('The server answered with an error ({n}).', { n: r.status })); e.data = j; e.api = true; e.status = r.status; throw e; }
   // What a page was drawn from (render() compares it when going back).
   if (method === 'GET' && S.rec) S.rec.push(path + ' ' + JSON.stringify(j));
   return j;
@@ -325,6 +325,9 @@ async function loginPage() {
       }
     });
   const form = main().querySelector('form.center');
+  // On a TV typing is slow: show a code, and a phone that is signed in already confirms it.
+  if (form) form.querySelector('button[type=submit]').parentNode.after(h('div', { style: 'margin-top:10px' },
+    h('button', { type: 'button', style: 'width:100%', onclick: codeLoginPage }, t('Sign in with your phone'))));
   // A mail server is set up: a link to a new password by e-mail.
   if (S.status && S.status.mail && form) form.querySelector('.err').after(h('div', { style: 'margin-top:12px' }, h('a', { href: '#/login', onclick: e => { e.preventDefault(); forgotPage(); } }, t('Forgot your password?'))));
   // Home profiles (only offered in the local network): a tap, and the PIN if there is one.
@@ -338,6 +341,45 @@ async function loginPage() {
   const firstLabel = form.querySelector('label');
   form.insertBefore(pick, firstLabel);
   form.insertBefore(or, firstLabel);
+}
+// Sign in with a code (a TV browser, say): this page shows a code and a QR code; a phone that is signed in
+// opens #/link/CODE and confirms it, and this page asks every few seconds until it may sign in.
+function deviceName() {
+  const ua = navigator.userAgent;
+  const where = /AFT|Silk/.test(ua) ? 'Fire TV' : /SMART-TV|Tizen|Web0S|webOS|BRAVIA|Android TV|GoogleTV/i.test(ua) ? 'TV'
+    : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : '';
+  const app = /Silk/.test(ua) ? 'Silk' : /Firefox/.test(ua) ? 'Firefox' : /Edg\//.test(ua) ? 'Edge' : /Chrome/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : t('Browser');
+  return where ? `${app} (${where})` : app;
+}
+async function codeLoginPage() {
+  const code = h('div', { style: 'font-size:56px;font-weight:700;letter-spacing:12px;margin:8px 0 4px' }, '…');
+  const qr = h('div', { style: 'width:220px;height:220px;margin:12px auto;border-radius:8px;overflow:hidden;background:#fff' });
+  const msg = h('div', { class: 'dim', style: 'margin-top:10px' });
+  const addr = location.origin + location.pathname + '#/link';
+  const page = h('div', { class: 'center', style: 'text-align:center' }, h('h1', {}, t('Sign in with your phone')),
+    h('p', { class: 'dim' }, t('Scan the picture with a phone that is signed in already, and confirm there.')), qr,
+    h('p', { class: 'dim' }, t('Or open {address} there and type this code:', { address: addr })), code, msg,
+    h('div', { style: 'margin-top:18px' }, h('button', { type: 'button', onclick: () => loginPage() }, t('Sign in with a password instead'))));
+  set(page);
+  page.querySelector('button').focus();
+  let req = null;
+  const fresh = async () => {
+    try { req = await api('POST', '/api/link', { device: deviceName(), link: location.origin + location.pathname }); }
+    catch (e) { req = null; msg.className = 'err'; msg.textContent = e.message; return; }
+    code.textContent = req.code; qr.innerHTML = req.qr || ''; // (an SVG made by the server from the address)
+    qr.style.display = req.qr ? '' : 'none';
+    msg.className = 'dim'; msg.textContent = '';
+  };
+  await fresh();
+  while (page.isConnected) {
+    await new Promise(r => setTimeout(r, 3000));
+    if (!page.isConnected) return;
+    if (!req) { await fresh(); continue; }
+    try {
+      const r = await api('GET', '/api/link/' + req.id);
+      if (r.status === 'ok') { if (page.isConnected) await signedIn(r.token); return; }
+    } catch (e) { if (e.status === 410) await fresh(); /* expired: a new code; otherwise just ask again */ }
+  }
 }
 // "Forgot password": the link goes to the account's e-mail address. The answer is the same whether or not the name exists.
 function forgotPage() {
@@ -408,7 +450,7 @@ function linkForm(prefill, extra) {
     catch (e) { msg.className = 'err'; msg.textContent = e.message; }
   };
   code.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
-  return { code, nodes: [h('p', { class: 'dim' }, t('Open the app on your TV or phone and choose "Sign in with a code". Type the code it shows here.')),
+  return { code, nodes: [h('p', { class: 'dim' }, t('Open the app on your TV or phone and choose "Sign in with a code" (in a browser: "Sign in with your phone"). Type the code it shows here.')),
     code, h('div', { class: 'actions', style: 'margin-top:14px' }, h('button', { class: 'primary', onclick: go }, t('Sign in device')), extra), msg] };
 }
 function linkPanel(prefill) { return h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Sign in a device')), linkForm(prefill).nodes); }

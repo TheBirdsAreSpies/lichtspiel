@@ -1800,7 +1800,12 @@ pub fn link_start(ctx: &Ctx) -> Resp {
     let id = db::random_hex(16);
     let device = ctx.body_or_param("device").filter(|d| !d.trim().is_empty()).unwrap_or_else(|| ctx.device.clone());
     g.push(LinkRequest { id: id.clone(), code: code.clone(), device, expires: now() + LINK_TTL_SECS, approved_by: None });
-    ok(json!({"id": id, "code": code, "expires_in": LINK_TTL_SECS}))
+    drop(g);
+    // A browser sends its own address: a QR code that opens the sign-in box with the code already typed in.
+    let qr = ctx.body_or_param("link")
+        .filter(|l| (l.starts_with("http://") || l.starts_with("https://")) && l.len() <= 300)
+        .map(|l| crate::totp::qr_svg(&format!("{}#/link/{}", l.split('#').next().unwrap_or(""), code)));
+    ok(json!({"id": id, "code": code, "expires_in": LINK_TTL_SECS, "qr": qr}))
 }
 
 /// The device asks whether its code was entered yet. The token is handed over once.

@@ -499,10 +499,13 @@ pub fn run(out: &Path) -> bool {
         let who = tv.get("/api/status").json()["signed_in"].as_str().unwrap_or("").to_string();
         let again = anon.get(&format!("/api/link/{lid}")).status;
         let reuse = friend.post("/api/link/confirm", json!({"code": lcode})).status;
+        // A browser (a TV's Silk, say) also gets a QR code of its own address; nothing else is turned into one.
+        let with_qr = anon.post("/api/link", json!({"device": "Silk (Fire TV)", "link": format!("http://127.0.0.1:{port}/")})).json()["qr"].as_str().unwrap_or("").starts_with("<?xml");
+        let no_qr = anon.post("/api/link", json!({"link": "javascript:alert(1)"})).json()["qr"].is_null();
         steps.add(
             "code sign-in",
-            start.status == 200 && lcode.len() == 4 && pending == "pending" && anon_confirm == 401 && wrong == 404 && confirmed == 200 && who == "friend" && again == 410 && reuse == 404,
-            format!("device got code {} and waited ({pending}); needs a sign-in to confirm (HTTP {anon_confirm}), wrong code refused (HTTP {wrong}), confirmed (HTTP {confirmed}); the device signed in as {who:?}, the code works once (HTTP {again}, {reuse})", "····"),
+            start.status == 200 && lcode.len() == 4 && pending == "pending" && anon_confirm == 401 && wrong == 404 && confirmed == 200 && who == "friend" && again == 410 && reuse == 404 && with_qr && no_qr,
+            format!("device got code {} and waited ({pending}); needs a sign-in to confirm (HTTP {anon_confirm}), wrong code refused (HTTP {wrong}), confirmed (HTTP {confirmed}); the device signed in as {who:?}, the code works once (HTTP {again}, {reuse}); a browser gets a QR code ({with_qr}), only of a web address ({no_qr})", "····"),
         );
     }
 
