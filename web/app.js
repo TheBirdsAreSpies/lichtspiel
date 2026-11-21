@@ -1318,27 +1318,63 @@ async function sectionPage(id, qs) {
         const btn = h('button', { title: `${m.key} · ${m.size}`, onclick: () => jump(lo) }, m.key);
         marks.push({ btn, ranges: m.ranges });
         return btn;
-      }));
+      }), bubble);
       showPos();
     }).catch(() => {});
   }
+  // On a phone the letters are swiped: the finger runs down the bar and the list follows the letter under it.
+  const bubble = h('div', { class: 'letterbubble' });
+  let scrubbing = false, scrubKey = null;
+  const scrubAt = y => {
+    let best = null, dist = Infinity;
+    for (const m of marks) {
+      const r = m.btn.getBoundingClientRect(), d = Math.abs(y - (r.top + r.height / 2));
+      if (d < dist) { dist = d; best = m; }
+    }
+    if (!best || best === scrubKey) return;
+    scrubKey = best;
+    bubble.textContent = best.btn.textContent;
+    jump(Math.min(...best.ranges.map(r => r[0])));
+  };
+  letters.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' || !marks.length) return;
+    e.preventDefault();
+    scrubbing = true; scrubKey = null;
+    try { letters.setPointerCapture(e.pointerId); } catch (err) { /* none */ }
+    letters.classList.add('scrub');
+    scrubAt(e.clientY);
+  });
+  letters.addEventListener('pointermove', e => { if (scrubbing) scrubAt(e.clientY); });
+  const scrubEnd = () => { scrubbing = false; letters.classList.remove('scrub'); };
+  letters.addEventListener('pointerup', scrubEnd);
+  letters.addEventListener('pointercancel', scrubEnd);
   const countEl = h('span', { class: 'count', title: t('{n} shown', { n: total }) }, itemCount(total));
+  // The controls used less often fold away on a phone behind "More", so the row fits the screen.
+  const opt = el => { if (el) el.classList.add('opt'); return el; };
+  const optSet = !!(st.from || st.to || st.container || st.q);
+  const tools = h('div', { class: 'bar-tools' + (optSet ? ' open' : '') },
+    sec.type === 'show' ? pick('type', [['', t('Shows')], ['season', t('Seasons')], ['episode', t('Episodes')]]) : null,
+    sec.type === 'music' ? pick('type', [['', t('Artists')], ['album', t('Albums')], ['track', t('Songs')]]) : null,
+    filterBtn, sortBtn, dirBtn,
+    h('button', { class: 'dd toolsmore' + (optSet ? ' on' : ''), 'aria-expanded': String(optSet), onclick: e => {
+      const open = tools.classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', String(open));
+    } }, t('More'), icon('down')),
+    opt(text('from', t('Year from'), 95)), opt(text('to', t('Year to'), 85)),
+    opt(pick('container', [['', t('Any file type')], ...['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'].map(c => [c, c.toUpperCase()])])),
+    opt(text('q', t('Filter by title'), 150)),
+    countEl,
+    h('span', { class: 'grow' }),
+    sizeSlider(),
+    S.me.admin ? opt(h('button', { onclick: async () => { await api('POST', `/library/sections/${id}/refresh`); toast(t('Scanning {name}', { name: sec.title })); pollActivity(); } }, t('Scan now'))) : null);
   const sticky = h('div', { class: 'libhead' },
     h('h1', {}, sec.title, h('button', { class: 'more', title: t('More'), 'aria-label': t('More'), onclick: e => sectionMenu(sec, e.currentTarget) }, '⋯')),
-    tabs,
-    h('div', { class: 'bar-tools' },
-      sec.type === 'show' ? pick('type', [['', t('Shows')], ['season', t('Seasons')], ['episode', t('Episodes')]]) : null,
-      sec.type === 'music' ? pick('type', [['', t('Artists')], ['album', t('Albums')], ['track', t('Songs')]]) : null,
-      filterBtn, sortBtn, dirBtn,
-      text('from', t('Year from'), 95), text('to', t('Year to'), 85),
-      pick('container', [['', t('Any file type')], ...['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'].map(c => [c, c.toUpperCase()])]),
-      text('q', t('Filter by title'), 150),
-      countEl,
-      h('span', { class: 'grow' }),
-      sizeSlider(),
-      S.me.admin ? h('button', { onclick: async () => { await api('POST', `/library/sections/${id}/refresh`); toast(t('Scanning {name}', { name: sec.title })); pollActivity(); } }, t('Scan now')) : null),
-    chips);
+    tabs, tools, chips);
   set(sticky, total ? holder : h('div', { class: 'empty' }, t('Nothing matches these filters.')), letters);
+  // The letters start below the bar on top (its height changes with the folded tools and the chips).
+  const placeLetters = () => letters.style.setProperty('--top', Math.round(sticky.getBoundingClientRect().bottom + 8) + 'px');
+  const headSize = new ResizeObserver(placeLetters);
+  headSize.observe(sticky);
+  placeLetters();
   if (total) {
     // Back from an item: the scroll position (the page is as long as before at once).
     const want = LIBPOS[myHash];
@@ -1375,7 +1411,7 @@ async function sectionPage(id, qs) {
   };
   window.addEventListener('scroll', onScroll, { passive: true });
   if (LIBCLEAN) LIBCLEAN();
-  LIBCLEAN = () => { LIBCLEAN = null; more.disconnect(); closePanel(); window.removeEventListener('scroll', onScroll); window.removeEventListener('scroll', onPos); saveLibPos(); };
+  LIBCLEAN = () => { LIBCLEAN = null; more.disconnect(); headSize.disconnect(); closePanel(); window.removeEventListener('scroll', onScroll); window.removeEventListener('scroll', onPos); saveLibPos(); };
 }
 
 const itemCount = n => n === 1 ? t('1 item') : t('{n} items', { n });

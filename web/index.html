@@ -495,6 +495,9 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 .letters button{pointer-events:auto;flex:0 1 20px;min-height:0;display:flex;align-items:center;justify-content:center;background:none;border:0;padding:0 5px;font-size:clamp(8px,1.5vh,12px);line-height:1;color:var(--dim);border-radius:3px}
 .letters button:hover{color:var(--accent);background:var(--panel)}
 .letters button.on{color:var(--accent);background:var(--panel);font-weight:700}
+.letterbubble{display:none;position:fixed;right:44px;top:50%;transform:translateY(-50%);width:64px;height:64px;align-items:center;justify-content:center;border-radius:50%;background:var(--accent);color:#000;font-size:30px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.5);pointer-events:none}
+.letters.scrub .letterbubble:not(:empty){display:flex}
+.bar-tools .toolsmore{display:none}
 .sentinel{text-align:center;padding:18px;min-height:40px}
 .chips .chip{display:inline-flex;align-items:center;gap:10px;padding:4px 10px 4px 12px}
 .chips .chip span{margin-left:2px;padding-left:4px}
@@ -638,10 +641,17 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   /* library: the bar that stays on top is one row you can swipe, not a wall of controls */
   .libhead,#main>.libhead{top:56px;margin:-14px -14px 10px;padding:12px 14px 0}
   .libhead h1{margin-bottom:8px}
-  .libhead .bar-tools{flex-wrap:nowrap;overflow-x:auto;padding:8px;margin-bottom:8px;gap:8px;scrollbar-width:none}
-  .libhead .bar-tools::-webkit-scrollbar{display:none}
+  /* one row: filter, sorting, "More" and the count; "More" opens the year, file type, title and scan below it */
+  .libhead .bar-tools{flex-wrap:wrap;padding:8px;margin-bottom:8px;gap:8px}
   .libhead .bar-tools>*{flex:0 0 auto}
-  .libhead .bar-tools>input[type=text],.libhead .bar-tools>input:not([type]){width:130px!important}
+  .libhead .bar-tools .toolsmore{display:flex;align-items:center;gap:4px}
+  .libhead .bar-tools .toolsmore.on{color:var(--accent)}
+  .libhead .bar-tools .toolsmore svg{transition:transform .15s}
+  .libhead .bar-tools.open .toolsmore svg{transform:rotate(180deg)}
+  .libhead .bar-tools:not(.open) .opt{display:none}
+  .libhead .bar-tools .count{position:absolute;right:14px;top:26px;font-size:13px}
+  .libhead .bar-tools>input.opt{width:calc(50% - 4px)!important}
+  .libhead .bar-tools>input.opt:nth-of-type(3){width:auto!important;flex:1 1 140px}
   .libhead .bar-tools .grow,.libhead .bar-tools .size{display:none}
   .libhead .chips{flex-wrap:nowrap;overflow-x:auto;margin-bottom:8px;scrollbar-width:none}
   .libhead .chips>*{flex:0 0 auto}
@@ -653,8 +663,9 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   .tabs input{order:-1;flex:0 0 100%;width:100%!important;margin:0 0 8px!important}
   .grid{grid-template-columns:repeat(auto-fill,minmax(104px,1fr))!important;gap:16px 10px}
   #main:has(.letters) .grid{padding-right:16px}
-  .letters,#main>.letters{right:0;height:calc(100vh - 230px)}
-  #main .letters button{padding:0 4px;font-size:10px;min-height:0}
+  /* the letters run from below the bar on top to above the bar at the bottom, and are swiped with a finger */
+  .letters,#main>.letters{right:0;top:var(--top,120px);bottom:66px;height:auto;max-height:none;transform:none;touch-action:none}
+  #main .letters button{padding:0 6px;font-size:10px;min-height:0;touch-action:none}
   #main table{display:block;max-width:100%;overflow-x:auto;white-space:nowrap}
   .li{flex-wrap:wrap;gap:10px;padding:10px}
   .modal .box{padding:16px;max-height:92vh}
