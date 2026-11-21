@@ -19,6 +19,30 @@ Linux/Windows machine).
 
 Every feature in detail: [docs/features.md](docs/features.md).
 
+## Compared with other media servers
+
+| | Lichtspiel | Plex | Jellyfin | Emby |
+|---|---|---|---|---|
+| Price | free | free core; many features need Plex Pass | free | free core; many features need Emby Premiere |
+| Open source | source in this folder | no | yes (GPL) | no (since 2018) |
+| Account with an outside service | no, everything stays on your server | yes, a plex.tv sign-in | no | optional |
+| Watching from outside your home | free (reverse proxy or own relay) | needs Plex Pass or Remote Watch Pass | free | free |
+| Hardware conversion (Quick Sync / VAAPI / NVENC) | free | Plex Pass | free | Premiere |
+| Skip intro / skip credits | built in | Plex Pass | with a plugin | Premiere |
+| Downloads for offline watching | built in, original or converted | Plex Pass | yes | Premiere |
+| Trakt | built in | via third-party tools | with a plugin | with a plugin |
+| Import from an old server, sync with a running Plex | yes | — | via third-party tools | via third-party tools |
+| Music, photos, live TV / DVR | no | yes | yes | yes |
+| Apps | web app; app for Windows, Android, macOS, iOS | apps for almost every device and smart TV | many apps, incl. smart TVs | many apps, incl. smart TVs |
+| Server written in | Rust, one program | C++ | C# / .NET | C# / .NET |
+| Maturity | young, one small project | large company, many years | large community, many years | company, many years |
+
+In short: Lichtspiel is for **movies and TV shows only**, runs without any outside account,
+and has everything included with no paid tier. Plex, Jellyfin and Emby do more (music,
+photos, live TV) and have native apps for smart TVs, Roku, Apple TV and game consoles; on a
+smart TV, Lichtspiel runs in the TV's browser. The details on Plex and Emby are as of
+late 2026 and their paid tiers change from time to time.
+
 ## The interface
 
 The main interface is a **web app**: open `http://<server>:8484` in any browser (computer,
