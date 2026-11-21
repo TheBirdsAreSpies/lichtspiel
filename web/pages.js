@@ -1351,7 +1351,7 @@ async function apiPage() {
       h('button', { class: 'small', onclick: async () => { const n = await ask(t('Name for the new token (e.g. "backup script")')); if (n === null) return; const r = await api('POST', '/api/tokens', { device: n }); await ask(t('Copy the new token now; it is not shown again:'), { value: r.token, ok: t('Done') }); loadTokens(); } }, t('New token for a script')),
       h('p', { class: 'dim' }, t('Example: '), h('code', {}, `curl -H "X-Token: <token>" ${location.origin}/library/sections`)),
       tokens),
-    h('div', { class: 'panel' }, h('b', {}, t('Filters')), h('p', { class: 'dim' }, t('Browsing, playlist contents and smart playlists share the same fields: '), S.filters.fields.map(f => h('code', { style: 'margin-right:5px' }, f.field)), t('. In addresses: '), Object.entries(S.filters.url_shortcuts).map(([k, v]) => h('span', {}, h('code', {}, k), ` ${v}; `)))),
+    h('div', { class: 'panel' }, h('b', {}, t('Filters')), h('p', { class: 'dim' }, t('Browsing, playlist contents and smart playlists share the same fields: '), S.filters.fields.map((f, i) => [i ? ' ' : '', h('code', {}, f.field)]), t('. In addresses: '), Object.entries(S.filters.url_shortcuts).map(([k, v]) => [h('code', {}, k), ` ${v}; `]))),
     h('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0' }, search,
       h('button', { class: 'small', onclick: () => groups.forEach(g => g.box.open = true) }, t('Open all')),
       h('button', { class: 'small', onclick: () => groups.forEach(g => g.box.open = false) }, t('Close all'))),
