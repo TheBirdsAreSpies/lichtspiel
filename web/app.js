@@ -1678,7 +1678,7 @@ async function itemPage(id) {
         h('div', { class: 'poster' }, h('img', { src: `https://i.ytimg.com/vi/${encodeURIComponent(v.key)}/mqdefault.jpg`, loading: 'lazy', alt: '', referrerpolicy: 'no-referrer' })),
         h('div', { class: 't', title: v.name }, v.name), h('div', { class: 's' }, [t(ONLINE_VIDEO_TYPES[v.type] || 'Extra'), t('online')].join(' · '))))])] : null,
     relatedBox);
-  if (relatedP) relatedP.then(r => relatedBox.replaceChildren(...((r && r.MediaContainer.Hub) || []).map(hb => row(hb.title, hb.Metadata))));
+  if (relatedP) relatedP.then(r => relatedBox.replaceChildren(...((r && r.MediaContainer.Hub) || []).flatMap(hb => row(hb.title, hb.Metadata || []) || [])));
   if (m) {
     try {
       const d = await GET(`/library/metadata/${id}/decision`);
