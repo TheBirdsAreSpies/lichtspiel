@@ -416,3 +416,47 @@ window.addEventListener('resize', () => {
   clearTimeout(dashResize);
   dashResize = setTimeout(() => { if (location.hash.startsWith('#/dashboard') && DB.hist) { const hb = $('#main').lastChild; if (hb) dashHistory(hb); } }, 250);
 });
+
+// ---------- coming soon: next episodes of the shows in the libraries (looked up once a day) and what
+// Radarr and Sonarr expect (through the wish list plugin). A row on the home page and #/calendar.
+const COMING_NOTES = { 'in cinemas': 'In cinemas', 'digital release': 'Digital release', 'on disc': 'On disc' };
+// "2026-11-28" → Today / Tomorrow / the weekday within a week / "Fri, 28.11." later.
+function comingDay(date, long) {
+  const [y, m, d] = date.split('-').map(Number), at = new Date(y, m - 1, d), now = new Date();
+  const days = Math.round((at - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+  const full = at.toLocaleDateString(I18N.lang, long ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'short', day: 'numeric', month: 'numeric' });
+  if (days === 0) return long ? t('Today') + ' · ' + full : t('Today');
+  if (days === 1) return long ? t('Tomorrow') + ' · ' + full : t('Tomorrow');
+  if (days < 7 && !long) return at.toLocaleDateString(I18N.lang, { weekday: 'long' });
+  return full;
+}
+const comingWhat = e => e.kind === 'episode' ? [e.season !== undefined && e.episode !== undefined ? `${t('S{n}', { n: e.season })} ${t('E{n}', { n: e.episode })}` : '', e.name].filter(Boolean).join(' · ')
+  : [e.year, e.note ? t(COMING_NOTES[e.note] || e.note) : ''].filter(Boolean).join(' · ');
+const comingPic = (e, cls) => e.thumb ? posterImg(e.thumb) : e.poster ? h('img', { src: e.poster, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', class: cls || null, onload: ev => ev.target.classList.add('in') }) : null;
+// The home page's row: one card a show (its next episode, "+2" when more follow), every movie.
+function comingRow(hb) {
+  const seen = new Map(), cards = [];
+  for (const e of hb.Metadata) {
+    const k = e.show_id ? 's' + e.show_id : e.kind === 'episode' ? 'e' + e.title : null;
+    if (k && seen.has(k)) { seen.get(k).more++; continue; }
+    const c = { e, more: 0 }; if (k) seen.set(k, c); cards.push(c);
+  }
+  const card = ({ e, more }) => h(e.show_id ? 'a' : 'div', { class: 'card', href: e.show_id ? '#/item/' + e.show_id : null, title: [e.title, comingWhat(e)].filter(Boolean).join(' · ') },
+    h('div', { class: 'poster' }, comingPic(e, 'fade'), more ? h('span', { class: 'badge' }, '+' + more) : null),
+    h('div', { class: 't' }, comingDay(e.date)), h('div', { class: 's' }, e.title + (comingWhat(e) ? ' · ' + comingWhat(e) : '')));
+  return [h('h2', {}, t('Coming Soon'), h('a', { href: '#/calendar', class: 'dim', style: 'font-size:14px;font-weight:400;margin-left:12px' }, t('Calendar') + ' ›')),
+    scroller('row', cards.map(card))];
+}
+async function calendarPage() {
+  markNav('');
+  const head = h('h1', {}, t('Calendar'));
+  const r = await GET('/api/upcoming?days=90');
+  const note = h('p', { class: 'dim' }, t('New episodes of the shows in your libraries, looked up once a day, and what Radarr and Sonarr expect when the wish list plugin is on.'));
+  if (!r.entries.length) return set(head, note, h('div', { class: 'empty' }, t('Nothing is coming in the next {n} days.', { n: 90 })));
+  const days = new Map();
+  for (const e of r.entries) { if (!days.has(e.date)) days.set(e.date, []); days.get(e.date).push(e); }
+  set(head, note, [...days].map(([date, list]) => [h('h2', {}, comingDay(date, true)),
+    h('div', { class: 'pp-items' }, list.map(e => h('div', { class: 'pp-item' }, comingPic(e) || h('div', { class: 'pp-noimg' }),
+      h('div', { class: 'grow' }, e.show_id ? h('a', { href: '#/item/' + e.show_id }, h('b', {}, e.title)) : h('b', {}, e.title),
+        h('div', { class: 'dim' }, comingWhat(e))))))]));
+}

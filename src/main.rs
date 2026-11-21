@@ -40,6 +40,7 @@ mod subsync;
 mod totp;
 mod trakt;
 mod transcode;
+mod upcoming;
 #[cfg(feature = "console")]
 mod console;
 

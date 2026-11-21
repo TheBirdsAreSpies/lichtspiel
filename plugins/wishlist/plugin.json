@@ -1,11 +1,11 @@
 {
   "id": "wishlist",
   "name": "Wish list",
-  "version": "1.0",
+  "version": "1.1",
   "author": "Lichtspiel",
-  "description": "Everyone can search for movies and shows under Settings and wish for them; the wishes go to Radarr and Sonarr, and the list shows how they stand (wished, downloading, downloaded, here). Enter the address (http://…:7878 / :8989) and API key (Settings → General in Radarr / Sonarr) of one or both. Optional: the quality profile and root folder by name (empty = the first), at most this many open wishes per person (0 = no limit), only admins may wish.",
+  "description": "Everyone can search for movies and shows under Settings and wish for them; the wishes go to Radarr and Sonarr, and the list shows how they stand (wished, downloading, downloaded, here). What Radarr and Sonarr expect (release dates, new episodes) shows up under "Coming soon". Enter the address (http://…:7878 / :8989) and API key (Settings → General in Radarr / Sonarr) of one or both. Optional: the quality profile and root folder by name (empty = the first), at most this many open wishes per person (0 = no limit), only admins may wish.",
   "command": ["python3", "main.py"],
-  "hooks": ["api.call", "library.item.added", "schedule.daily"],
+  "hooks": ["api.call", "library.item.added", "schedule.daily", "calendar"],
   "user_panel": true,
   "settings": {
     "radarr_url": "",

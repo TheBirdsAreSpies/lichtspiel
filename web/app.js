@@ -952,7 +952,13 @@ async function homePage() {
   // Answer the click at once; the rows come when the server has them.
   // (Not when the home page is drawn again over itself: the banner there may stay, see below.)
   if (S.sections.length && !main().querySelector('.spot:not(.skel)')) set(S.hadSpot ? h('div', { class: 'spot skel' }) : h('h1', {}, t('Home')), skeletonRows(2));
-  const hubs = (await GET('/hubs')).MediaContainer.Hub;
+  // "Coming soon" comes from its own address (/hubs is also read by Plex apps) and joins the rows after the watchlist.
+  const [home, coming] = await Promise.all([GET('/hubs'), GET('/api/upcoming?days=30').catch(() => ({ entries: [] }))]);
+  const hubs = home.MediaContainer.Hub;
+  if (coming.entries.length) {
+    const at = hubs.findIndex(hb => !['continueWatching', 'watchlist'].includes(hb.hubIdentifier));
+    hubs.splice(at < 0 ? hubs.length : at, 0, { hubIdentifier: 'upcoming', title: 'Coming Soon', Metadata: coming.entries, coming: true });
+  }
   if (!S.sections.length) {
     return set(h('h1', {}, t('Welcome')), h('div', { class: 'empty' },
       S.me.admin ? [h('p', {}, t('No libraries yet. Add your movie and TV show folders to get started.')), h('button', { class: 'primary', onclick: () => (location.hash = '#/libraries') }, t('Add a library'))]
@@ -967,7 +973,7 @@ async function homePage() {
   if (spot) spot._key = key;
   S.hadSpot = !!spot;
   const shown = orderedHubs(hubs, lay).filter(hb => !lay.hidden.includes(hb.hubIdentifier));
-  const rows = [shown.length ? shown.map(hb => row(hb.title, hb.Metadata)) : h('div', { class: 'empty' }, hubs.length ? t('All rows are hidden.') : t('Nothing here yet. Libraries are still being scanned, or they are empty.')),
+  const rows = [shown.length ? shown.map(hb => hb.coming ? comingRow(hb) : row(hb.title, hb.Metadata)) : h('div', { class: 'empty' }, hubs.length ? t('All rows are hidden.') : t('Nothing here yet. Libraries are still being scanned, or they are empty.')),
     hubs.length ? h('div', { class: 'home-edit' }, h('button', { class: 'small', onclick: () => editHome(hubs) }, t('Customize home'))) : null];
   // The kept banner stays in the page (taken out and put back, its running bar would start over): only the rows change.
   if (spot && spot === old) {

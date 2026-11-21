@@ -109,6 +109,14 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   (1–26 Dec), **New Year's Eve** (27 Dec – 1 Jan) and **Valentine's Day** (7–14 Feb). Titles
   that name the day come first, then fitting genres by rating; a show's episode joins when its
   own title fits. `GET /hubs?date=12-24` shows the rows of another day.
+- **Coming soon and calendar** — the web app's home page has a **Coming soon** row (after the
+  watchlist; hide or move it under *Customize home*) with the next episode of each show in the
+  libraries for the next 30 days, and **Calendar ›** lists everything for the next 90 days by day.
+  The server looks a running show up once a day and an ended one once a month, at TMDB when a key
+  is set, else at TVmaze (no key needed); it keeps what it found in `upcoming.json`. With the
+  **Wish list** plugin on, what Radarr expects (cinema, digital and disc releases) and Sonarr's
+  coming episodes join in, every three hours. Everyone sees the shows of their own libraries;
+  titles from Radarr and Sonarr are not shown to people with an age limit. `GET /api/upcoming`.
 - **Users and invites** — create an invite link (valid 7 days by default, single use),
   choose which libraries the person may see and whether the server may convert video for
   them, then send them the link. They pick their own name and password. Each user has their

@@ -166,6 +166,8 @@ pub struct App {
     pub job_items: Mutex<(String, Vec<String>)>,
     /// Processor, memory and bandwidth samples and who was here lately (the dashboard).
     pub stats: crate::stats::Stats,
+    /// "Coming soon": episodes and movies still to come (kept in upcoming.json).
+    pub upcoming: Mutex<crate::upcoming::Store>,
 }
 
 /// Counts finished details lookups since the server started, so the web app
@@ -275,6 +277,7 @@ impl App {
             job_yield: AtomicBool::new(false),
             job_items: Mutex::new((String::new(), vec![])),
             stats: Default::default(),
+            upcoming: Mutex::new(crate::upcoming::Store::load(data_dir)),
         });
         app.sync_plugin_states();
         match app.try_save() {

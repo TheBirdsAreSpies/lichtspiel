@@ -206,6 +206,8 @@ pub fn start_background(app: &Arc<App>) {
         std::thread::sleep(Duration::from_secs(60));
         crate::maintenance::tick(&a);
     });
+    // "Coming soon": next episodes and the plugins' calendars, looked up in the background.
+    crate::upcoming::start(&app);
     // Once a day: schedule.daily for plugins. The last date goes in a file, so
     // a restart does not send it twice and a day missed while off is sent at start.
     let a = app.clone();

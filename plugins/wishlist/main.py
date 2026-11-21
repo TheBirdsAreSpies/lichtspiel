@@ -181,6 +181,35 @@ def poster(found):
     return p if p.startswith("https://") else ""
 
 
+# Radarr's release dates and what they are called in "Coming soon" (the web app translates them).
+RELEASES = (("inCinemas", "in cinemas"), ("digitalRelease", "digital release"), ("physicalRelease", "on disc"))
+
+
+def calendar(settings, start, end):
+    """What Radarr and Sonarr expect from `start` to `end` (YYYY-MM-DD) and do not have yet, for
+    "Coming soon": movies on each of their release dates, episodes on their air date."""
+    entries = []
+    if configured(settings, "movie"):
+        for m in arr(settings, "movie", "GET", "/calendar", {"start": start, "end": end}) or []:
+            if m.get("hasFile"):
+                continue
+            for field, note in RELEASES:
+                date = str(m.get(field) or "")[:10]
+                if start <= date <= end:
+                    entries.append({"type": "movie", "title": m.get("title") or "", "year": m.get("year"), "date": date,
+                                    "poster": poster(m), "note": note})
+    if configured(settings, "show"):
+        for e in arr(settings, "show", "GET", "/calendar", {"start": start, "end": end, "includeSeries": "true"}) or []:
+            date = str(e.get("airDate") or e.get("airDateUtc") or "")[:10]
+            if e.get("hasFile") or not (start <= date <= end):
+                continue
+            series = e.get("series") or {}
+            entries.append({"type": "episode", "title": series.get("title") or "", "year": series.get("year"),
+                            "season": e.get("seasonNumber"), "episode": e.get("episodeNumber"), "name": e.get("title") or "",
+                            "date": date, "poster": poster(series)})
+    return entries
+
+
 def key_of(kind, found):
     return "movie:%s" % found.get("tmdbId") if kind == "movie" else "show:%s" % found.get("tvdbId")
 
@@ -467,6 +496,13 @@ def main():
             if len(kept) != len(wishes):
                 save(kept)
         print(json.dumps({"ok": True, "pruned": len(wishes) - len(kept)}))
+        return
+    if event == "calendar":
+        try:
+            out = {"entries": calendar(settings, str(data.get("start") or ""), str(data.get("end") or ""))}
+        except ArrError as e:
+            out = {"error": str(e)}
+        print(json.dumps(out))
         return
     if event != "api.call":
         print(json.dumps({"skipped": event}))

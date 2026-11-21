@@ -2143,6 +2143,7 @@ async function render() {
       case 'api': return await apiPage();
       case 'reports': return await reportsPage();
       case 'watchlist': return await watchlistPage(qs);
+      case 'calendar': return await calendarPage();
       case 'downloads': return await downloadsPage();
       case 'dashboard': return await dashboardPage();
       case 'together': return await joinTogether(parts[1]);

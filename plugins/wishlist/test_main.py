@@ -61,6 +61,14 @@ class Fake(BaseHTTPRequestHandler):
             return self.reply(404, {"message": "gone in v4"})
         if path in ("/movie", "/series") and self.command == "POST":
             return self.reply(201, dict(body, id=77))
+        if path == "/calendar" and app == "radarr":
+            return self.reply(200, [
+                dict(MATRIX, inCinemas="2026-11-10T00:00:00Z", digitalRelease="2026-12-01T00:00:00Z", physicalRelease="2027-03-01T00:00:00Z"),
+                dict(HEAT, digitalRelease="2026-12-02T00:00:00Z")])
+        if path == "/calendar" and app == "sonarr":
+            return self.reply(200, [
+                {"seasonNumber": 4, "episodeNumber": 1, "title": "Anfang", "airDate": "2026-11-26", "hasFile": False, "series": DARK},
+                {"seasonNumber": 3, "episodeNumber": 9, "title": "Alt", "airDate": "2026-11-21", "hasFile": True, "series": DARK}])
         if path == "/queue":
             return self.reply(200, {"records": st.get("queue", [])})
         if path.startswith("/movie/"):
@@ -227,6 +235,14 @@ class WishTest(unittest.TestCase):
         main.save(w)
         self.assertEqual(self.run_plugin("schedule.daily", {"date": "x"})["pruned"], 1)
         self.assertEqual(self.wishes(), [])
+
+    def test_the_calendar_lists_what_radarr_and_sonarr_still_expect(self):
+        out = self.run_plugin("calendar", {"start": "2026-11-21", "end": "2027-02-19"})
+        self.assertEqual(out["entries"], [
+            {"type": "movie", "title": "The Matrix", "year": 1999, "date": "2026-12-01", "poster": "https://image.tmdb.org/t/p/original/matrix.jpg", "note": "digital release"},
+            {"type": "episode", "title": "Dark", "year": 2017, "season": 4, "episode": 1, "name": "Anfang", "date": "2026-11-26", "poster": ""}])
+        self.assertIn(("sonarr", "GET", "/calendar", {"start": "2026-11-21", "end": "2027-02-19", "includeSeries": "true"}, None, "sk"), SEEN)
+        self.assertEqual(self.run_plugin("calendar", {"start": "2026-11-21", "end": "2027-02-19"}, settings={})["entries"], [])
 
     def test_radarr_down_gives_a_message(self):
         STATE["radarr"]["down"] = True

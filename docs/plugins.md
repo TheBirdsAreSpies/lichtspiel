@@ -64,6 +64,12 @@ server look for that item's subtitle files again at once: next to the video, and
 `C:\Movies\X` → `<data>/subtitles/C/Movies/X`), where a plugin may save subtitles when the media
 folder is read-only.
 
+`calendar` asks for what is coming (for **Coming soon**, every three hours) with `{"start", "end"}`
+(YYYY-MM-DD); the answer `{"entries": [{"type": "movie" | "episode", "title", "year", "season",
+"episode", "name", "date", "poster", "note"}]}` lists them (`title` is the show's for an episode;
+`poster` only as an `https://` address; `note` e.g. `"in cinemas"`, `"digital release"`, `"on disc"`).
+An episode of a show in the library is linked to it.
+
 `schedule.daily` is sent once a day (UTC) with `{"date": "YYYY-MM-DD", "last": "…"}`; a day missed
 while the server was off is sent right after the next start.
 
@@ -97,7 +103,7 @@ code page, so read the bytes (`json.loads(sys.stdin.buffer.read())`) and answer 
 Events: `metadata.lookup`, `library.item.added`, `library.item.removed`,
 `library.scan.finished`, `playback.started`, `playback.progress`, `playback.stopped`,
 `playback.watched`, `item.problem`, `download.ready`, `user.invited`, `user.joined`, `playlist.created`, `playlist.updated`,
-`server.started`, `schedule.daily`, `api.call`.
+`server.started`, `schedule.daily`, `calendar`, `api.call`.
 
 New plugins start switched off; switch them on in the **Plugins** page (where their settings,
 errors and a log of recent runs are shown too). Any language works — the Docker image includes

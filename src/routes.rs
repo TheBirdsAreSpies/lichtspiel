@@ -141,6 +141,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/rss", "{enabled: true|false, regenerate: true} switch your watchlist feed on or off, or make a new address"),
     ("GET", "/rss/watchlist/{key}.xml", "Public: the watchlist as RSS (the key is the private part of the address)"),
     ("GET", "/api/watchlist", "Your watchlist ?sort=added (newest first)|oldest|title|year|rating|added_at &type=movie|show|season|episode, and the filters of a library page (genre=…, year>=…, q=…, rules=…)"),
+    ("GET", "/api/upcoming", "Coming soon: episodes of shows in your libraries and titles from plugins (Radarr / Sonarr through the wish list) still to come ?days=1…90 (default 30) → {today, entries: [{kind, show_id, title, year, season, episode, name, date, poster, thumb, note, source}]}"),
     ("GET", "/api/watchlist/filters", "The filters of the library menu with the values found on your watchlist ?type=movie|show|season|episode &includeAdvanced=1"),
     ("POST", "/api/watchlist", "Put several on your watchlist or take them off {ids: [..], watchlist: true|false}"),
     ("GET", "/api/downloads", "Your downloads, newest first, with state (queued|converting|ready|failed), progress and size ?all=1 (admin: everyone's)"),
@@ -336,6 +337,12 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             drop(db);
             app.save();
             ok(json!({"ok": true}))
+        }
+        ("GET", ["api", "upcoming"]) => {
+            let days = ctx.param("days").and_then(|d| d.parse::<i64>().ok()).unwrap_or(30);
+            let db = app.db.lock().unwrap();
+            let store = app.upcoming.lock().unwrap();
+            ok(crate::upcoming::answer(&db, &store, &user, days))
         }
         ("GET", ["api", "me"]) => {
             let mut v = user_json(&user);
