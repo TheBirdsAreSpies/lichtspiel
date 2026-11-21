@@ -176,6 +176,8 @@ I18N.add('de', 'Deutsch', {
     'Theme music cut. The theme file in the show’s folder is played instead: {path}': 'Titelmusik geschnitten. Gespielt wird aber die Datei im Ordner der Serie: {path}',
     'Switch on “Theme music from show intros” under Settings → Scheduled tasks first': 'Schalte zuerst „Titelmusik aus dem Serien-Intro“ unter Einstellungen → Geplante Aufgaben ein',
     'Theme music is being cut already': 'Die Titelmusik wird schon geschnitten',
+    'Mute theme music': 'Titelmusik stummschalten',
+    'Theme music on': 'Titelmusik wieder an',
     'Only shows get theme music from an intro': 'Nur Serien bekommen Titelmusik aus einem Intro',
     'No episode of this show has a found intro of 10 seconds to 3 minutes': 'Keine Folge dieser Serie hat ein gefundenes Intro von 10 Sekunden bis 3 Minuten',
     'ffmpeg could not cut the intro (see the log)': 'ffmpeg konnte das Intro nicht schneiden (siehe Protokoll)',

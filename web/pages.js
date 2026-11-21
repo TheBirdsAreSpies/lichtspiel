@@ -2027,9 +2027,28 @@ function fadeTheme(a) {
   };
   step();
 }
+// The round speaker button at the bottom right, shown while a page's theme music plays: mutes it and unmutes
+// it again. Muted stays for the next pages too (this browser), until it is unmuted.
+function themeButton(show) {
+  let b = THEME.btn;
+  if (!b && !show) return;
+  if (!b) {
+    b = THEME.btn = h('button', { class: 'themebtn', onclick: () => {
+      const muted = store.get('themeMuted', '0') !== '1';
+      store.set('themeMuted', muted ? '1' : '0');
+      if (THEME.audio) THEME.audio.muted = muted;
+      themeButton(true);
+    } });
+    document.body.append(b);
+  }
+  b.style.display = show ? '' : 'none';
+  const muted = store.get('themeMuted', '0') === '1', label = muted ? t('Theme music on') : t('Mute theme music');
+  b.replaceChildren(icon(muted ? 'mute' : 'vol')); b.title = label; b.setAttribute('aria-label', label);
+}
 // THEME.id stays: the theme has had its turn on this page (a redraw or closing the player does not start it again).
 function stopTheme() {
   const a = THEME.audio; THEME.audio = null;
+  themeButton(false);
   if (a) fadeTheme(a);
 }
 async function startTheme(id) {
@@ -2042,9 +2061,11 @@ async function startTheme(id) {
   // (Left the page, or the player opened, while the ticket was on its way.)
   if (!tk || THEME.id !== id || player.style.display === 'flex' || document.pictureInPictureElement) return;
   const a = new Audio(withTicket(`/library/metadata/${id}/theme`, tk));
-  a.volume = THEME_VOLUME; a.loop = true;
+  a.volume = THEME_VOLUME; a.loop = true; a.muted = store.get('themeMuted', '0') === '1';
   THEME.audio = a; THEME.id = id;
-  a.addEventListener('error', () => { if (THEME.audio === a) { THEME.audio = null; THEME.id = null; } });
+  a.addEventListener('error', () => { if (THEME.audio === a) { THEME.audio = null; THEME.id = null; themeButton(false); } });
+  // The button only once it really plays (not while the browser waits for a click: that click would also mute it).
+  a.addEventListener('playing', () => { if (THEME.audio === a) themeButton(true); });
   a.play().catch(e => {
     // The browser wants a click first (a page opened by a link or reloaded): the first click or key on the page starts it.
     // (Any other failure: there is no theme, see 'error' above.)
