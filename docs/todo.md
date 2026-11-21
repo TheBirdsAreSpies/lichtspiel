@@ -1,8 +1,8 @@
 # To do
 
-What is still open: checks on real hardware, two known problems, and feature ideas for later.
-Tick an entry off with its commit when it is done. Build, test and conventions are in
-[development.md](development.md).
+What is still open: checks on real hardware, two known problems, and ideas for later. When
+something is done, take it off this list (the commit and [features.md](features.md) say what was
+built). Build, test and conventions are in [development.md](development.md).
 
 ## Checks on real hardware
 
@@ -31,45 +31,15 @@ Tick an entry off with its commit when it is done. Build, test and conventions a
   `shortcut:` comment). One leaked socket per failed try; nothing simple in dart:io today, revisit
   when it gains a handshake timeout.
 
-## Feature ideas
+## Ideas
 
-Collected on 2026-11-21. Already there, so not on this list: age limits per person, TOTP, home
-profiles, TMDB collections, skip intro / credits, watch together, downloads, Trakt, the eleven
-bundled plugins.
+The feature ideas collected on 2026-11-21 are all built (sleep timer, subtitle sync, clean-up
+suggestions, night mode, coming soon, smart collections, Letterboxd import, disk warning,
+Chromecast). What is left of them:
 
-### First
-
-- [x] **Sleep timer in the player** — "stop after this episode", or after 30 / 60 / 90 minutes.
-  Small, in the web app and the app; useful with shows that play the next episode by themselves.
-- [x] **Subtitle sync** — subtitles from OpenSubtitles are often a few seconds off. The server
-  already listened to the sound when an admin asked in the player; now every subtitle file is
-  synchronized once by itself (maintenance window, and right after the plugin downloads one).
-- [x] **Clean-up suggestions (plugin, admins)** — like Maintainerr: titles nobody watched for X
-  months, movies everyone has seen, the biggest files per hour of running time. Deleted only on a
-  click, and only with *Allow media deletion* on. Helps when the NAS fills up. Built as the `cleanup` plugin.
-
-### Later
-
-- [x] **Night mode / louder dialogue** — even out the sound so speech is clear and explosions don't
-  boom. Built in the players instead of the converter (WebAudio in the browser, an mpv filter in
-  the app), so it works with direct play too; *Lift dialogue* for 5.1 → stereo was already there.
-- [x] **"Coming soon" row and calendar** — new episodes of shows in the library (Sonarr or TMDB)
-  and movies waiting in Radarr. Goes with the wish list. Built in the web app (TMDB or TVmaze,
-  and Radarr / Sonarr through the wish list's `calendar`), in the web app and the app.
-- [x] **Smart collections like Kometa (plugin)** — "IMDb Top 250", "Oscar winners", Trakt lists,
-  filled from the library automatically (`reads_library`). Maybe other things that Kometa does as well.
-  Built as `smart-collections` with IMDb Top 250, Oscar winners, TMDB popular / top rated and
-  Letterboxd lists; Trakt lists, Kometa's poster overlays and home rows for collections are
-  still open.
-- [x] **Letterboxd import** — Letterboxd has no open API, but its CSV export can bring in watched
-  state and ratings once. Also it should be possible to import lists and watchlist (as watchlist or as playlist).
-  Built as `letterboxd-import`; the app shows the panel, but the file is uploaded in the web page.
-- [x] **Warning when a disk fills up** — a message through `push-notify` when a library's disk is
-  nearly full. The server checks every 30 minutes and sends `disk.low` to plugins; the limit is
-  under Settings → Library, and the dashboard shows the free space.
-- [x] **Chromecast from the web app** — the biggest of these; closes the "smart TV without its own
-  app" gap from the README comparison. A cast button in the player (Chrome and Edge, https:// or
-  localhost), Google's Default Media Receiver, the browser as remote control.
+- **Smart collections:** Trakt lists, Kometa's poster overlays, and home rows for collections.
+- **Letterboxd import in the app:** the app shows the panel, but the export file can only be
+  uploaded in the web page.
 
 ### Parked
 
