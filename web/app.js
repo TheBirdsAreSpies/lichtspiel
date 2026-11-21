@@ -840,7 +840,10 @@ function seasonTabs(showId, seasons, at, firstEps, changed) {
       if (!calm()) [...box.querySelectorAll('.card')].slice(0, 12).forEach((c, i) => fadeIn(c, i * 35, 'translateY(10px)'));
     } }, seasonTitle(s.title), left && left < s.leafCount ? h('small', {}, left) : null);
   })) : null;
-  return [h('h2', {}, seasons.length > 1 ? t('Seasons') : seasonTitle(seasons[0].title)), h('div', { class: 'stabs-row' }, tabs, more), box];
+  // Only one season on disk: no tabs and no second "⋯" (the show's own does the same); the heading says these are the
+  // show's episodes, so the page is not taken for that season's.
+  if (!tabs) return [h('h2', {}, t('Episodes'), ' ', h('span', { class: 'dim', style: 'font-weight:normal' }, '· ' + seasonTitle(seasons[0].title))), box];
+  return [h('h2', {}, t('Seasons')), h('div', { class: 'stabs-row' }, tabs, more), box];
 }
 // A show or season: the first episode not watched yet (else the first), the rest of them queued after it.
 async function playNextEpisode(id) {
