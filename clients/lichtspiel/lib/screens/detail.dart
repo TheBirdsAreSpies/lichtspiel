@@ -544,12 +544,12 @@ class _DetailScreenState extends State<DetailScreen> {
       itemBuilder: (_) => [
         if (matchable) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
         if (item['Media'] != null) const PopupMenuItem(value: 'analyze', child: Text('Analysieren')),
-        if (type == 'show') const PopupMenuItem(value: 'theme', child: Text('Titelmusik schneiden')),
         const PopupMenuItem(value: 'edit', child: Text('Details bearbeiten')),
         if (type == 'movie' || type == 'episode') const PopupMenuItem(value: 'credits', child: Text('Abspann…')),
         if (matchable) PopupMenuItem(value: 'match', child: Text(matched ? 'Zuordnung korrigieren…' : 'Zuordnen…')),
         if (matchable && matched) const PopupMenuItem(value: 'unmatch', child: Text('Zuordnung aufheben')),
         if (item['Media'] is List && (item['Media'] as List).length > 1) const PopupMenuItem(value: 'split', child: Text('Zusammengeführte Versionen trennen')),
+        if (type == 'show') const PopupMenuItem(value: 'theme', child: Text('Titelmusik schneiden')),
       ],
     );
   }

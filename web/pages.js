@@ -1441,14 +1441,6 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
       const r = await api('POST', `/library/metadata/${it.id}/refresh`); toast(t(r.message), 4000); changed();
     } } : null,
     admin ? { label: t('Analyze'), run: async () => { await api('POST', `/library/metadata/${it.id}/analyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
-    admin && it.type === 'show' ? { label: t('Cut theme music'), run: async () => {
-      toast(t('Cutting the theme music…'));
-      try { const r = await api('POST', `/library/metadata/${it.id}/theme`); toast(r.folder_theme ? t('Theme music cut. The theme file in the show’s folder is played instead: {path}', { path: r.folder_theme }) : t('Theme music cut'), r.folder_theme ? 8000 : 3000);
-        // On the show's page: play what was just cut (or the folder's theme) at once.
-        stopTheme(); THEME.id = null;
-        if (location.hash.slice(1).split('?')[0] === `/item/${it.id}`) startTheme(String(it.id));
-      } catch (e) { toast(t(e.message), 6000); }
-    } } : null,
     admin ? { label: t('Deep analysis'), run: async () => { await api('POST', `/library/metadata/${it.id}/deepanalyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
     admin ? { label: t('Edit details'), run: async () => editItem(await fullItem(it)) } : null,
     admin && matchable ? { label: (it.extra || {}).metadata_source ? t('Fix match…') : t('Match…'), run: async () => fixMatch(await fullItem(it), changed) } : null,
@@ -1457,6 +1449,14 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
       const r = await api('DELETE', `/library/metadata/${it.id}/match`); toast(t(r.message), 4000); changed();
     } } : null,
     admin ? { label: t('Optimize…'), run: () => optimizeDialog(it) } : null,
+    admin && it.type === 'show' ? { label: t('Cut theme music'), run: async () => {
+      toast(t('Cutting the theme music…'));
+      try { const r = await api('POST', `/library/metadata/${it.id}/theme`); toast(r.folder_theme ? t('Theme music cut. The theme file in the show’s folder is played instead: {path}', { path: r.folder_theme }) : t('Theme music cut'), r.folder_theme ? 8000 : 3000);
+        // On the show's page: play what was just cut (or the folder's theme) at once.
+        stopTheme(); THEME.id = null;
+        if (location.hash.slice(1).split('?')[0] === `/item/${it.id}`) startTheme(String(it.id));
+      } catch (e) { toast(t(e.message), 6000); }
+    } } : null,
     admin && opts.detail && (it.Media || []).length > 1 ? { label: t('Split the merged versions'), run: async () => {
       const r = await api('POST', `/library/metadata/${it.id}/split`); toast(t('{n} versions are separate titles again', { n: r.split })); changed();
     } } : null,
