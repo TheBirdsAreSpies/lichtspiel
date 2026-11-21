@@ -15,7 +15,7 @@ Linux/Windows machine).
 - **Dashboard** for admins: what is playing, bandwidth, processor and memory, play history.
 - **Trakt** built in, **sync with a running Plex server**, and an **import** of everything from your old server.
 - **Plugins** in any language; an `.nfo` reader, a webhook / Discord notifier, a wish list for Radarr / Sonarr, a subtitle downloader, a library check and anime details from AniList are included.
-- **English and German**, and a **full API**.
+- **English and German**, a **full API**, and an **MCP server** for AI assistants such as Claude.
 
 Every feature in detail: [docs/features.md](docs/features.md).
 

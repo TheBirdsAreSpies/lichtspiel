@@ -212,3 +212,6 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   (`WEB_LANGS`) and `web/index.html`.
 - **A full API** — every feature in the web page is an HTTP + JSON call. The list is built
   in: open `http://<server>:8484/api/docs` or the **API** page in the web app.
+- **AI assistants (MCP)** — `/mcp` is an MCP server, so Claude or another assistant can search
+  the libraries, read details, mark things watched, keep the watchlist and build playlists,
+  always with the rights of the person whose token it uses. Setup: [api.md](api.md#ai-assistants-mcp).

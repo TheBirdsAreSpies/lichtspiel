@@ -33,6 +33,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/me/password", "Change your password {old, new}"),
     ("GET", "/api/docs", "This list"),
     ("GET", "/api/filters", "Fields, operators and sort keys for filters and smart playlists"),
+    ("POST", "/mcp", "MCP server (Model Context Protocol, Streamable HTTP) for AI assistants: search, details, watched state, watchlist, playlists, and the whole API, with your rights; sign in with Authorization: Bearer <token>"),
     ("GET", "/identity", "Server id and version (no sign-in)"),
     ("GET", "/library/sections", "Libraries you may see (movies and TV shows are separate libraries)"),
     ("POST", "/library/sections", "Admin: add a library {name, type: movie|show|other, paths: [..], language}"),
@@ -315,6 +316,9 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
 
     match (m, segs.as_slice()) {
         ("POST", ["api", "link", "confirm"]) => return link_confirm(ctx, &user),
+        ("POST", ["mcp"]) => return crate::mcp::handle(app, ctx),
+        // No event stream and no sessions: everything is answered on the POST.
+        ("GET", ["mcp"]) | ("DELETE", ["mcp"]) => return fail(405, "POST JSON-RPC messages to /mcp"),
         ("POST", ["api", "logout"]) => {
             let mut db = app.db.lock().unwrap();
             match &ctx.token {

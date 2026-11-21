@@ -10,6 +10,7 @@
 
 #[macro_use]
 mod log;
+mod mcp;
 mod gdm;
 mod actions;
 mod auth;
