@@ -411,6 +411,38 @@ impl App {
         json!({"url": format!("{}://127.0.0.1:{port}", scheme()), "version": VERSION, "data_dir": self.data_dir.to_string_lossy()})
     }
 
+    /// `server_info` for one plugin: one that reads the library also gets the
+    /// address of the library listing, with its own key.
+    pub fn server_info_for(&self, pl: &plugins::Plugin) -> Value {
+        let mut v = self.server_info();
+        if pl.manifest.reads_library {
+            let id = &pl.manifest.id;
+            v["library"] = json!(format!("{}/api/plugins/{id}/library?key={}", v["url"].as_str().unwrap_or(""), self.plugin_key(id)));
+        }
+        v
+    }
+
+    /// The key that lets a plugin read the library (from the server's secret, so it stays the same after a restart).
+    pub fn plugin_key(&self, id: &str) -> String {
+        let secret = self.db.lock().unwrap().ticket_key.clone();
+        crate::auth::token_hash(&format!("plugin-library:{secret}:{id}"))[..32].to_string()
+    }
+
+    /// Every movie and episode (versions too, extras not) with its files, and
+    /// the libraries: what `GET /api/plugins/{id}/library` answers.
+    pub fn library_listing(&self) -> Value {
+        let db = self.db.lock().unwrap();
+        let sections: Vec<Value> = db.sections.iter().map(|s| json!({"id": s.id, "name": s.name, "kind": s.kind.as_str(), "paths": s.paths})).collect();
+        let mut ids: Vec<u64> = db.items.values().filter(|i| matches!(i.kind, ItemKind::Movie | ItemKind::Episode) && !i.is_extra() && !i.extra.contains_key(crate::scanner::MISSING)).map(|i| i.id).collect();
+        ids.sort_unstable();
+        let items: Vec<Value> = ids.iter().map(|id| {
+            let mut o = detail_in(&db, *id);
+            if let Some(v) = db.items.get(id).and_then(|i| i.version_of()) { o["version_of"] = json!(v); }
+            o
+        }).collect();
+        json!({"sections": sections, "items": items})
+    }
+
     /// Plugins that listen to `event` and are switched on, with their settings.
     pub fn listeners(&self, event: &str) -> Vec<(plugins::Plugin, serde_json::Map<String, Value>)> {
         let p = self.plugins.lock().unwrap();
@@ -429,27 +461,7 @@ impl App {
     /// title, year, the ids from the details download (imdb, tmdb, tvdb …) and,
     /// for an episode or season, the show with its ids and the numbers.
     pub fn item_brief(&self, id: u64) -> Value {
-        let db = self.db.lock().unwrap();
-        let Some(it) = db.items.get(&id) else { return Value::Null };
-        let ids = |i: &Item| i.extra.get("ids").cloned().unwrap_or_else(|| json!({}));
-        let show_of = |s: &Item| json!({"id": s.id, "title": s.title, "year": s.year, "ids": ids(s)});
-        let mut o = json!({"id": it.id, "type": it.kind.as_str(), "title": it.title, "year": it.year, "duration_ms": it.duration_ms, "ids": ids(it)});
-        let parent = it.parent_id.and_then(|p| db.items.get(&p));
-        match it.kind {
-            ItemKind::Episode => {
-                o["episode"] = json!(it.index);
-                if let Some(season) = parent {
-                    o["season"] = json!(season.index);
-                    if let Some(show) = season.parent_id.and_then(|g| db.items.get(&g)) { o["show"] = show_of(show); }
-                }
-            }
-            ItemKind::Season => {
-                o["season"] = json!(it.index);
-                if let Some(show) = parent { o["show"] = show_of(show); }
-            }
-            _ => {}
-        }
-        o
+        brief_in(&self.db.lock().unwrap(), id)
     }
 
     /// `item_brief` plus the item's files: path, size, container, length, the
@@ -457,20 +469,7 @@ impl App {
     /// subtitle files next to it. For plugins that work with the files
     /// themselves (subtitles, library checks).
     pub fn item_detail(&self, id: u64) -> Value {
-        let mut o = self.item_brief(id);
-        if o.is_null() {
-            return o;
-        }
-        let db = self.db.lock().unwrap();
-        let Some(it) = db.items.get(&id) else { return Value::Null };
-        let files: Vec<Value> = it.file.iter().chain(it.parts.iter()).map(|f| {
-            let streams: Vec<Value> = f.streams.iter().map(|s| json!({"kind": s.kind, "codec": s.codec, "language": s.language, "channels": s.channels,
-                "width": s.width, "height": s.height, "forced": s.forced, "sdh": s.sdh})).collect();
-            json!({"path": f.path, "size": f.size, "container": f.container, "duration_ms": f.duration_ms, "streams": streams, "external_subtitles": f.external_subtitles})
-        }).collect();
-        o["section_id"] = json!(it.section_id);
-        o["files"] = json!(files);
-        o
+        detail_in(&self.db.lock().unwrap(), id)
     }
 
     /// Tells plugins about something, in the background.
@@ -529,9 +528,8 @@ impl App {
                 data["item"] = item;
             }
         }
-        let server = self.server_info();
         for (pl, settings) in listeners {
-            let r = plugins::invoke(&pl, &settings, event, &data, &server);
+            let r = plugins::invoke(&pl, &settings, event, &data, &self.server_info_for(&pl));
             // A plugin that saved subtitles for the item: they are looked for again at once.
             if let (Ok(v), Some(id)) = (&r, data["id"].as_u64()) {
                 if v["refresh_subtitles"] == json!(true) { self.refresh_subtitles(id); }
@@ -550,7 +548,6 @@ impl App {
         if listeners.is_empty() {
             return;
         }
-        let server = self.server_info();
         for id in ids {
             let data = {
                 let db = self.db.lock().unwrap();
@@ -565,7 +562,7 @@ impl App {
                 v
             };
             for (pl, settings) in &listeners {
-                match plugins::invoke(pl, settings, "metadata.lookup", &data, &server) {
+                match plugins::invoke(pl, settings, "metadata.lookup", &data, &self.server_info_for(pl)) {
                     Ok(answer) => {
                         if let Some(meta) = answer.get("metadata") {
                             let mut db = self.db.lock().unwrap();
@@ -2026,6 +2023,44 @@ pub fn js(status: u16, v: Value) -> Resp {
     r.add_header(header("Cache-Control", "no-cache"));
     r
 }
+/// What a plugin needs to know about an item (see `App::item_brief`).
+fn brief_in(db: &Db, id: u64) -> Value {
+    let Some(it) = db.items.get(&id) else { return Value::Null };
+    let ids = |i: &Item| i.extra.get("ids").cloned().unwrap_or_else(|| json!({}));
+    let show_of = |s: &Item| json!({"id": s.id, "title": s.title, "year": s.year, "ids": ids(s)});
+    let mut o = json!({"id": it.id, "type": it.kind.as_str(), "title": it.title, "year": it.year, "duration_ms": it.duration_ms, "ids": ids(it)});
+    let parent = it.parent_id.and_then(|p| db.items.get(&p));
+    match it.kind {
+        ItemKind::Episode => {
+            o["episode"] = json!(it.index);
+            if let Some(season) = parent {
+                o["season"] = json!(season.index);
+                if let Some(show) = season.parent_id.and_then(|g| db.items.get(&g)) { o["show"] = show_of(show); }
+            }
+        }
+        ItemKind::Season => {
+            o["season"] = json!(it.index);
+            if let Some(show) = parent { o["show"] = show_of(show); }
+        }
+        _ => {}
+    }
+    o
+}
+
+/// `brief_in` plus the item's files (see `App::item_detail`).
+fn detail_in(db: &Db, id: u64) -> Value {
+    let mut o = brief_in(db, id);
+    let Some(it) = db.items.get(&id) else { return Value::Null };
+    let files: Vec<Value> = it.file.iter().chain(it.parts.iter()).map(|f| {
+        let streams: Vec<Value> = f.streams.iter().map(|s| json!({"kind": s.kind, "codec": s.codec, "language": s.language, "channels": s.channels,
+            "width": s.width, "height": s.height, "forced": s.forced, "sdh": s.sdh})).collect();
+        json!({"path": f.path, "size": f.size, "container": f.container, "duration_ms": f.duration_ms, "streams": streams, "external_subtitles": f.external_subtitles})
+    }).collect();
+    o["section_id"] = json!(it.section_id);
+    o["files"] = json!(files);
+    o
+}
+
 
 /// The name the server shows: the
 /// name set in Settings; when that is empty, the computer's description (Windows) or
@@ -3655,6 +3690,8 @@ pub(crate) mod tests {
             ("GET", "/api/status"), ("POST", "/api/setup"), ("POST", "/api/login"), ("POST", "/api/link"), ("GET", "/api/link/{id}"),
             ("GET", "/api/home"), ("POST", "/api/home/{id}/login"), ("GET", "/identity"),
             ("GET", "/api/invites/{code}"), ("POST", "/api/invites/{code}/accept"), ("GET", "/rss/watchlist/{key}.xml"),
+            // A plugin's own key instead of a sign-in (it is refused without it, see the test of reads_library).
+            ("GET", "/api/plugins/{id}/library"),
         ];
         for open in OPEN {
             assert!(crate::routes::ROUTES.iter().any(|r| (r.0, r.1) == *open), "{open:?} is on the open list but not in ROUTES");
@@ -3985,6 +4022,48 @@ mod background_tests {
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(subs, vec![dir.join("Heat (1995).de.srt").to_string_lossy().to_string()]);
         assert!(sendable && !elsewhere);
+    }
+
+    #[test]
+    fn a_plugin_that_reads_the_library_gets_every_title_with_its_key_and_no_other_does() {
+        let (app, root) = test_app("plugin-library");
+        let mut m = item(7, "movie", json!({}));
+        m.file = Some(serde_json::from_value(json!({"path": "/media/Heat (1995).mkv", "size": 5, "modified": 0, "container": "mkv"})).unwrap());
+        let gone = item(8, "movie", json!({crate::scanner::MISSING: 1}));
+        let show = item(9, "show", json!({}));
+        for i in [m, gone, show] { app.db.lock().unwrap().items.insert(i.id, i); }
+        let manifest = |id: &str, reads: bool, admins: bool| -> plugins::Manifest { serde_json::from_value(json!({"id": id, "name": id, "version": "1", "command": ["x"],
+            "user_panel": true, "panel_admins_only": admins, "reads_library": reads})).unwrap() };
+        {
+            let mut p = app.plugins.lock().unwrap();
+            p.list.push(plugins::Plugin { manifest: manifest("doctor", true, true), dir: root.clone() });
+            p.list.push(plugins::Plugin { manifest: manifest("other", false, false), dir: root.clone() });
+            let mut db = app.db.lock().unwrap();
+            for id in ["doctor", "other"] { db.plugins.entry(id.into()).or_default().enabled = true; }
+        }
+        let (doctor, other) = { let p = app.plugins.lock().unwrap(); (p.get("doctor").cloned().unwrap(), p.get("other").cloned().unwrap()) };
+        let address = app.server_info_for(&doctor)["library"].as_str().unwrap_or("").to_string();
+        let key = address.split("key=").nth(1).unwrap_or("").to_string();
+        let ask = |pid: &str, key: &str| {
+            let ctx = Ctx { method: "GET".into(), path: format!("/api/plugins/{pid}/library"), params: vec![("key".into(), key.into())], body: Value::Null,
+                user: None, host: String::new(), range: None, token: None, remote: Some([127, 0, 0, 1].into()), remote_trusted: true, lan_extra: false, device: "t".into() };
+            crate::handlers::plugin_library(&app, &ctx, pid)
+        };
+        let listed = ask("doctor", &key);
+        let codes = [ask("doctor", "wrong").status_code().0, ask("other", &key).status_code().0, ask("doctor", "").status_code().0];
+        let (admin, kid) = { let db = app.db.lock().unwrap(); (db.users[0].clone(), db.users[1].clone()) };
+        let panels = |u: &User| { let r = crate::handlers::plugin_panels(&app, u); let mut b = Vec::new(); r.into_reader().read_to_end(&mut b).unwrap(); serde_json::from_slice::<Value>(&b).unwrap()["panels"].as_array().map(|a| a.len()).unwrap_or(0) };
+        let (for_admin, for_kid) = (panels(&admin), panels(&kid));
+        let mut body = Vec::new();
+        listed.into_reader().read_to_end(&mut body).unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(address.contains("/api/plugins/doctor/library?key=") && !key.is_empty());
+        assert!(app.server_info_for(&other).get("library").is_none());
+        assert_eq!(v["items"].as_array().map(|a| a.len()), Some(1));
+        assert_eq!(v["items"][0]["files"][0]["path"], "/media/Heat (1995).mkv");
+        assert_eq!(codes, [403, 403, 403]);
+        assert_eq!((for_admin, for_kid), (2, 1));
     }
 
     #[test]

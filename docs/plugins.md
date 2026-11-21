@@ -63,7 +63,15 @@ address or one on the server). An answer may say `{"message"}` or `{"error"}`, b
 show at once (`{"panel": {…}}`, e.g. search results), or show a code to type in elsewhere —
 `{"message", "code", "link", "poll": {"action": "poll", "seconds": 5}}` — in which case the page
 calls the `poll` action every few seconds until an answer comes without `poll`. The body of these
-calls includes `lang` (the page's language).
+calls includes `lang` (the page's language). An entry may link to a page of the app with
+`"href": "#/item/42"`; a list where no entry has an `image` gets no picture column. With
+`"panel_admins_only": true` only admins see the panel (the plugin still checks `data.admin`).
+
+With `"reads_library": true` in `plugin.json` the plugin gets `server.library`, an address with
+its own key that answers `GET` with every movie and episode — `{"sections": [{"id", "name",
+"kind", "paths"}], "items": [...]}`, each item like `library.item.added`'s `item`, a version
+merged into another with `version_of` — so it can look through the whole library. Titles in the
+trash are left out.
 
 The server sends UTF-8 on standard input. On Windows, Python reads standard input in the console's
 code page, so read the bytes (`json.loads(sys.stdin.buffer.read())`) and answer with escaped JSON

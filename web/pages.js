@@ -827,8 +827,11 @@ function pluginPanels() {
     }
     // Pictures only from the web (https) or the server itself.
     const pic = src => typeof src === 'string' && /^(https:\/\/|\/(?!\/))/.test(src) ? h('img', { src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: e => e.target.replaceWith(h('div', { class: 'pp-noimg' })) }) : h('div', { class: 'pp-noimg' });
-    const items = (p.items || []).length ? h('div', { class: 'pp-items' }, p.items.map(it => h('div', { class: 'pp-item' }, pic(it.image),
-      h('div', { class: 'grow' }, h('b', {}, it.title || ''), it.status ? h('span', { class: 'tag' + (it.status_kind ? ' ' + it.status_kind : '') }, it.status) : null,
+    // A list where no entry has a picture gets no picture column; a title may link to a page of the app.
+    const pics = (p.items || []).some(it => 'image' in it);
+    const name_ = it => typeof it.href === 'string' && /^#\/[\w\/-]+$/.test(it.href) ? h('a', { href: it.href }, h('b', {}, it.title || '')) : h('b', {}, it.title || '');
+    const items = (p.items || []).length ? h('div', { class: 'pp-items' }, p.items.map(it => h('div', { class: 'pp-item' }, pics ? pic(it.image) : null,
+      h('div', { class: 'grow' }, name_(it), it.status ? h('span', { class: 'tag' + (it.status_kind ? ' ' + it.status_kind : '') }, it.status) : null,
         it.subtitle ? h('div', { class: 'dim' }, it.subtitle) : null),
       (it.buttons || []).length ? h('div', { class: 'actions' }, buttons(it.buttons, true)) : null))) : null;
     // (replaceChildren would write a missing part as the word "null")

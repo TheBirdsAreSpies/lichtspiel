@@ -1058,21 +1058,34 @@ pub fn plugin_list(app: &Arc<App>) -> Resp {
         }
         json!({"id": pl.manifest.id, "name": pl.manifest.name, "version": pl.manifest.version, "description": pl.manifest.description,
             "author": pl.manifest.author, "hooks": pl.manifest.hooks, "command": pl.manifest.command, "enabled": st.enabled,
-            "settings": settings, "folder": pl.dir.to_string_lossy(), "user_panel": pl.manifest.user_panel})
+            "settings": settings, "folder": pl.dir.to_string_lossy(), "user_panel": pl.manifest.user_panel, "reads_library": pl.manifest.reads_library})
     }).collect();
     ok(json!({"folder": p.dir.to_string_lossy(), "plugins": list, "errors": p.errors, "events": plugins::EVENTS}))
 }
 
 /// The switched-on plugins that offer each person a panel of their own in
 /// Settings (e.g. "Connect Trakt"); the plugin draws it through api.call "panel".
-pub fn plugin_panels(app: &Arc<App>) -> Resp {
+pub fn plugin_panels(app: &Arc<App>, user: &User) -> Resp {
     let p = app.plugins.lock().unwrap();
     let db = app.db.lock().unwrap();
     let list: Vec<Value> = p.list.iter()
         .filter(|pl| pl.manifest.user_panel && db.plugins.get(&pl.manifest.id).is_some_and(|s| s.enabled))
+        .filter(|pl| user.admin || !pl.manifest.panel_admins_only)
         .map(|pl| json!({"id": pl.manifest.id, "name": pl.manifest.name, "description": pl.manifest.description}))
         .collect();
     ok(json!({"panels": list}))
+}
+
+/// The whole library for a plugin that reads it (`reads_library`), with the
+/// key the server gave it in `server.library`; no sign-in needed.
+pub fn plugin_library(app: &Arc<App>, ctx: &Ctx, pid: &str) -> Resp {
+    let pl = app.plugins.lock().unwrap().get(pid).cloned();
+    let enabled = app.db.lock().unwrap().plugins.get(pid).is_some_and(|s| s.enabled);
+    let given = ctx.param("key").unwrap_or("");
+    match pl {
+        Some(pl) if pl.manifest.reads_library && enabled && !given.is_empty() && given == app.plugin_key(pid) => ok(app.library_listing()),
+        _ => fail(403, "This plugin may not read the library"),
+    }
 }
 
 /// Same id in two spellings (Trakt sends numbers, the details download may keep strings).
@@ -1154,7 +1167,7 @@ pub fn plugin_call(app: &Arc<App>, ctx: &Ctx, user: &User, pid: &str, action: &s
         return fail(409, "This plugin is switched off");
     }
     let data = json!({"action": action, "body": ctx.body, "params": ctx.params.iter().map(|(k, v)| json!([k, v])).collect::<Vec<_>>(), "user": user.username, "admin": user.admin});
-    match plugins::invoke(&pl, &st.settings, "api.call", &data, &app.server_info()) {
+    match plugins::invoke(&pl, &st.settings, "api.call", &data, &app.server_info_for(&pl)) {
         Ok(mut v) => {
             // {"mark_watched": [...]}: the plugin found these watched elsewhere
             // (Trakt's history …); they become watched for whoever called.

@@ -181,6 +181,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("PUT", "/api/plugins/{id}/settings", "Admin: plugin settings {..}"),
     ("GET", "/api/plugins/log", "Admin: recent plugin runs"),
     ("GET", "/api/plugins/panels", "Switched-on plugins that give each person a panel in Settings (e.g. Connect Trakt)"),
+    ("GET", "/api/plugins/{id}/library", "For a plugin with reads_library: every movie and episode with its files (key=… from server.library)"),
     ("POST", "/api/plugins/{id}/call/{action}", "Run a plugin's own action (any JSON body is passed on); an answer with mark_watched marks those items watched for you"),
     ("GET", "/api/settings", "Admin: server settings"),
     ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, hdr_tone_mapping, relay_server, relay_secret, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, meta_cast, meta_artwork, meta_episodes, meta_ratings, meta_person_details, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, home_profiles, trusted_proxies, ffmpeg, ffprobe, transcoding_enabled, group_recent_episodes, preroll_paths, max_gpu_transcodes, max_cpu_transcodes, transcode_dir, downloads_dir, remote_max_mbps (0 = no limit for people outside the home network), max_remote_plays, paused_stop_minutes, no_auth_networks, maintenance_start_hour, maintenance_end_hour, utc_offset_minutes, backup_enabled, backup_dir, backups_keep, optimize_weekly, cleanup_weekly, deep_analysis}"),
@@ -299,6 +300,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("POST", ["api", "invites", code, "accept"]) => return invite_accept(app, ctx, code),
         ("GET", ["video", "transcode", "hls", sid, file]) => return hls_file(app, sid, file),
         ("GET", ["rss", "watchlist", key]) => return crate::rss::feed(app, ctx, key),
+        ("GET", ["api", "plugins", pid, "library"]) => return plugin_library(app, ctx, pid),
         ("GET", ["favicon.ico"]) => return bytes(200, "image/svg+xml", FAVICON.as_bytes().to_vec()),
         _ => {}
     }
@@ -1881,7 +1883,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             app.save();
             ok(json!({"ok": true}))
         }
-        ("GET", ["api", "plugins", "panels"]) => plugin_panels(app),
+        ("GET", ["api", "plugins", "panels"]) => plugin_panels(app, &user),
         ("POST", ["api", "plugins", pid, "call", action]) => plugin_call(app, ctx, &user, pid, action),
 
         // ---------------- settings

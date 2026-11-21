@@ -75,6 +75,13 @@ pub struct Manifest {
     /// account …); the plugin draws it when asked with api.call "panel".
     #[serde(default)]
     pub user_panel: bool,
+    /// The panel is shown to admins only (a report about the library …).
+    #[serde(default)]
+    pub panel_admins_only: bool,
+    /// The plugin may read the whole library: it gets `server.library`, an
+    /// address that lists every movie and episode with its files.
+    #[serde(default)]
+    pub reads_library: bool,
 }
 
 /// At most this many plugin programs run at once; the others wait for their turn.
