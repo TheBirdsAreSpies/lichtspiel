@@ -3326,7 +3326,8 @@ pub fn continue_watching(db: &Db, user: &User) -> Vec<u64> {
     started.into_iter().map(|s| s.0).collect()
 }
 
-pub const FAVICON: &str = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='#14181c'/><path d='M11 8l14 8-14 8z' fill='#f2a516'/></svg>";
+/// A projector lamp, its beam and the screen it falls on.
+pub const FAVICON: &str = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='b'><stop offset='0' stop-color='#ff5e7e' stop-opacity='.95'/><stop offset='1' stop-color='#ff5e7e' stop-opacity='.15'/></linearGradient></defs><rect width='32' height='32' rx='7' fill='#14181c'/><path d='M7 16 24 6.5v19z' fill='url(#b)'/><circle cx='7' cy='16' r='3.2' fill='#ff5e7e'/><rect x='24.5' y='5.5' width='2.8' height='21' rx='1.4' fill='#ff5e7e'/></svg>";
 
 /// A gradient poster with the title, for items without a picture.
 pub fn placeholder_svg(title: &str, kind: &str, id: u64) -> String {

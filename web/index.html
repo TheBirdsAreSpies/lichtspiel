@@ -12,7 +12,7 @@
   var apply = function () {
     var c = 'system'; try { c = localStorage.getItem('theme') || 'system'; } catch (e) { /* storage blocked */ }
     d.setAttribute('data-theme', c === 'oled' ? 'oled' : c === 'light' || (c !== 'dark' && mq && mq.matches) ? 'light' : 'dark');
-    var a = 'amber'; try { a = localStorage.getItem('accent') || 'amber'; } catch (e) { /* storage blocked */ }
+    var a = 'rose'; try { a = localStorage.getItem('accent') || 'rose'; } catch (e) { /* storage blocked */ }
     d.setAttribute('data-accent', a);
   };
   apply(); window.applyTheme = apply;
@@ -20,15 +20,17 @@
 })();
 </script>
 <style>
-:root{--s1:#3987e5;--s2:#d95926;--s3:#199e70;--bg:#13161a;--panel:#1c2025;--panel2:#252a30;--line:#2e343b;--text:#eceef1;--dim:#9aa1aa;--accent:#f2a516;--accent2:#ffbf3f;--red:#e5534b;--green:#55c773;--r:8px;
+:root{--s1:#3987e5;--s2:#d95926;--s3:#199e70;--bg:#13161a;--panel:#1c2025;--panel2:#252a30;--line:#2e343b;--text:#eceef1;--dim:#9aa1aa;--accent:#ff5e7e;--accent2:#ff8aa0;--red:#e5534b;--green:#55c773;--r:8px;
   --line2:#4a525b;--input:#101317;--topline:#0c0e10;--faint:#6f7780;--scroll:#3a414a;--axis:#3a4148;--menu:#22272d;--menu-line:#353c44;--hover:#2f363e;
-  --on-accent:#16120a;--tint:color-mix(in srgb,var(--accent) 16%,var(--panel));--tintg:#1d2a22;--code:#0e1013;--get:#6cb6ff;--hovfill:rgba(255,255,255,.05)}
+  --on-accent:#1f0a10;--tint:color-mix(in srgb,var(--accent) 16%,var(--panel));--tintg:#1d2a22;--code:#0e1013;--get:#6cb6ff;--hovfill:rgba(255,255,255,.05)}
 /* The light theme: the script in <head> sets data-theme to "light" or "dark" (the choice, or the system's when it is "system"). */
-:root[data-theme=light]{--s1:#2a6fcf;--s2:#c24a14;--s3:#12805a;--bg:#f4f5f7;--panel:#ffffff;--panel2:#eceef2;--line:#d9dde3;--text:#1b1f24;--dim:#5b646f;--accent:#d98e04;--accent2:#e8a21f;--red:#c9362e;--green:#1f8a3d;
+:root[data-theme=light]{--s1:#2a6fcf;--s2:#c24a14;--s3:#12805a;--bg:#f4f5f7;--panel:#ffffff;--panel2:#eceef2;--line:#d9dde3;--text:#1b1f24;--dim:#5b646f;--accent:#d12c55;--accent2:#e0486e;--red:#c9362e;--green:#1f8a3d;
   --line2:#aab1ba;--input:#ffffff;--topline:#d9dde3;--faint:#7a838d;--scroll:#c3c9d0;--axis:#c3c9d0;--menu:#ffffff;--menu-line:#d3d8de;--hover:#e6e9ee;
-  --on-accent:#16120a;--tint:color-mix(in srgb,var(--accent) 18%,var(--panel));--tintg:#dff3e5;--code:#eceef2;--get:#1f66c2;--hovfill:rgba(0,0,0,.05)}
-/* OLED: pure black instead of dark grey. Accent colours: amber is the default above. */
+  --on-accent:#ffffff;--tint:color-mix(in srgb,var(--accent) 18%,var(--panel));--tintg:#dff3e5;--code:#eceef2;--get:#1f66c2;--hovfill:rgba(0,0,0,.05)}
+/* OLED: pure black instead of dark grey. Accent colours: rose is the default above. */
 :root[data-theme=oled]{--bg:#000;--panel:#0b0c0d;--panel2:#17191b;--line:#25282c;--input:#000;--topline:#000;--menu:#0b0c0d;--menu-line:#2a2e33;--hover:#1c1f22}
+:root[data-accent=amber]{--accent:#f2a516;--accent2:#ffbf3f;--on-accent:#16120a}
+:root[data-theme=light][data-accent=amber]{--accent:#d98e04;--accent2:#e8a21f;--on-accent:#16120a}
 :root[data-accent=blue]{--accent:#4c9aff;--accent2:#7ab5ff;--on-accent:#08141f}
 :root[data-theme=light][data-accent=blue]{--accent:#1f66c2;--accent2:#3a80d9;--on-accent:#ffffff}
 :root[data-accent=green]{--accent:#3ecf75;--accent2:#6fe09a;--on-accent:#07170d}
@@ -726,7 +728,7 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 <body>
 <div id="top">
   <button id="navbtn" aria-label="Menu" data-t-aria-label="Menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
-  <a class="logo" href="#/"><svg viewBox="0 0 32 32"><path d="M8 5l20 11-20 11z" style="fill:var(--accent)"/></svg><span id="sname">Lichtspiel</span></a>
+  <a class="logo" href="#/"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="beam"><stop offset="0" style="stop-color:var(--accent)" stop-opacity=".95"/><stop offset="1" style="stop-color:var(--accent)" stop-opacity=".15"/></linearGradient></defs><path d="M4.5 16 27 4.5v23z" fill="url(#beam)"/><circle cx="4.5" cy="16" r="3.5" style="fill:var(--accent)"/><rect x="27.5" y="3.5" width="3.2" height="25" rx="1.6" style="fill:var(--accent)"/></svg><span id="sname">Lichtspiel</span></a>
   <div id="search"><input id="q" placeholder="Search movies and shows" data-t-placeholder="Search movies and shows" autocomplete="off"></div>
   <div id="activity" title="Background work on the server" data-t-title="Background work on the server"></div>
   <a id="npbtn" href="#/dashboard" style="display:none" title="Dashboard" data-t-title="Dashboard" aria-label="Dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-8 6 16 3-8h4"/></svg><b></b></a>

@@ -284,6 +284,7 @@ I18N.add('de', 'Deutsch', {
     'Dark': 'Dunkel',
     'OLED (pure black)': 'OLED (reines Schwarz)',
     'Accent color': 'Akzentfarbe',
+    'Rose': 'Rosé',
     'Amber': 'Bernstein',
     'Blue': 'Blau',
     'Green': 'Grün',

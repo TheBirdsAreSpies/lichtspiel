@@ -354,7 +354,7 @@ def mail_html(lang, server, d, cids):
         if d["more_shows"]:
             out.append('<p style="color:#aaa">%s</p>' % e(tr(lang, "and {n} more", n=d["more_shows"])))
     if server.get("public_url"):
-        out.append('<p><a href="%s/web/" style="color:#e5a00d">%s</a></p>' % (e(server["public_url"]), e(tr(lang, "Open {name}", name=server.get("name") or "Lichtspiel"))))
+        out.append('<p><a href="%s/web/" style="color:#d12c55">%s</a></p>' % (e(server["public_url"]), e(tr(lang, "Open {name}", name=server.get("name") or "Lichtspiel"))))
     out.append('<p style="color:#777;font-size:12px">%s</p></div>' % e(tr(lang, "You get this because you asked for it under Settings in {name}.", name=name)))
     return "".join(out)
 

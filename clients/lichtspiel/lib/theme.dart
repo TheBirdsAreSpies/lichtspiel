@@ -12,7 +12,8 @@ class AppTheme {
 
   /// Accent colours: [on dark, on light]. The first one is the default.
   static const accents = <String, List<Color>>{
-    'amber': [Color(0xFFE5A00D), Color(0xFFD98E04)],
+    'rose': [Color(0xFFFF5E7E), Color(0xFFD12C55)],
+    'amber': [Color(0xFFF2A516), Color(0xFFD98E04)],
     'blue': [Color(0xFF4C9AFF), Color(0xFF1F66C2)],
     'green': [Color(0xFF3ECF75), Color(0xFF1B8A45)],
     'red': [Color(0xFFFF6B61), Color(0xFFC9362E)],
@@ -20,11 +21,11 @@ class AppTheme {
   };
 
   static final choice = ValueNotifier<String>('system');
-  static final accent = ValueNotifier<String>('amber');
+  static final accent = ValueNotifier<String>('rose');
   static Listenable get changes => Listenable.merge([choice, accent]);
 
   static String _theme(Object? s) => choices.contains('$s') ? '$s' : 'system';
-  static String _accent(Object? s) => accents.containsKey('$s') ? '$s' : 'amber';
+  static String _accent(Object? s) => accents.containsKey('$s') ? '$s' : 'rose';
 
   static ThemeMode get mode => switch (choice.value) { 'light' => ThemeMode.light, 'dark' || 'oled' => ThemeMode.dark, _ => ThemeMode.system };
 
