@@ -93,6 +93,10 @@ pub fn short_agent(ua: &str) -> String {
     if ua.is_empty() {
         return String::new();
     }
+    // A Chromecast fetching what a browser sent it (its own name comes as X-Plex-Device-Name).
+    if ua.contains("CrKey/") {
+        return "Chromecast".into();
+    }
     let browser = if ua.contains("Edg/") {
         "Edge"
     } else if ua.contains("OPR/") {
@@ -499,5 +503,6 @@ mod tests {
         assert_eq!(short_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 Edg/130.0"), "Edge · Windows");
         assert_eq!(short_agent("Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0"), "Firefox · Linux");
         assert_eq!(short_agent("curl/8.4.0"), "curl");
+        assert_eq!(short_agent("Mozilla/5.0 (X11; Linux armv7l) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 CrKey/1.56.500000 DeviceType/Chromecast"), "Chromecast");
     }
 }

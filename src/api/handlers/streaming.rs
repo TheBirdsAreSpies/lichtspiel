@@ -431,14 +431,21 @@ pub fn subtitle_timing(it: &Item, n: &str) -> Option<crate::library::subsync::Ti
     it.extra.get("subsync").and_then(|s| s.get(n)).and_then(crate::library::subsync::Timing::from_json).filter(|t| !t.is_none())
 }
 
-pub fn subtitles(app: &Arc<App>, user: &User, iid: &str, n: &str) -> Resp {
+/// A subtitle track as WebVTT, with its timing set by hand or by listening. `?from=<seconds>`: for a
+/// converted stream that starts there (a Chromecast can't move the lines itself), the lines are moved
+/// back by that much. Any page may read it (a Chromecast's player is a page of Google's): the address
+/// only opens with a ticket, never with a cookie.
+pub fn subtitles(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str, n: &str) -> Resp {
     let (it, f) = match playable_file(app, user, iid, 0) { Ok(x) => x, Err(r) => return r };
     let n = n.trim_end_matches(".vtt");
     let vtt = match subtitle_vtt(app, &f, n) { Ok(v) => v, Err(r) => return r };
-    match subtitle_timing(&it, n) {
-        Some(t) => bytes(200, "text/vtt; charset=utf-8", crate::library::subsync::shift_vtt(&String::from_utf8_lossy(&vtt), t).into_bytes()),
-        None => bytes(200, "text/vtt; charset=utf-8", vtt),
-    }
+    let from_ms = ctx.param("from").and_then(|s| s.parse::<f64>().ok()).filter(|s| s.is_finite() && *s > 0.0).map(|s| (s * 1000.0).round() as i64).unwrap_or(0);
+    let timing = subtitle_timing(&it, n).unwrap_or(crate::library::subsync::Timing { offset_ms: 0, scale: 1.0 });
+    let timing = crate::library::subsync::Timing { offset_ms: timing.offset_ms - from_ms, ..timing };
+    let body = if timing.is_none() { vtt } else { crate::library::subsync::shift_vtt(&String::from_utf8_lossy(&vtt), timing).into_bytes() };
+    let mut r = bytes(200, "text/vtt; charset=utf-8", body);
+    r.add_header(header("Access-Control-Allow-Origin", "*"));
+    r
 }
 
 /// Listens to the sound of the video and moves the subtitle track so its lines fall on the speech.

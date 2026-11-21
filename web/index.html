@@ -320,6 +320,10 @@ button.profile:hover .avatar,button.profile:focus-visible .avatar{border-color:v
 #player video{position:absolute;inset:0;width:100%;height:100%;background:#000}
 #player video::cue{font-size:var(--cue);color:var(--cue-color,#fff);background:var(--cue-bg,rgba(0,0,0,.55))}
 #player video{--cue-lift:0%}
+#player .pcastinfo{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;font-size:20px;color:#ddd;pointer-events:none}
+#player .pcastinfo svg{width:72px;height:72px;fill:currentColor;opacity:.7}
+#player.casting video{visibility:hidden}
+#player.casting .pcastinfo{display:flex}
 #player .plyrics{position:absolute;inset:0;z-index:1;display:none;overflow-y:auto;padding:30vh 8vw;background:rgba(0,0,0,.85);text-align:center;scroll-behavior:smooth;-webkit-mask-image:linear-gradient(transparent,#000 14%,#000 80%,transparent);mask-image:linear-gradient(transparent,#000 14%,#000 80%,transparent)}
 #player .plyrics p{margin:0 0 .5em;font-size:clamp(18px,3.2vw,34px);font-weight:600;line-height:1.35;color:rgba(255,255,255,.4);transition:color .25s,transform .25s;min-height:1em}
 #player .plyrics.sync p{cursor:pointer}
@@ -762,6 +766,7 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   <video id="video" playsinline crossorigin="anonymous"></video>
   <div class="pspin" id="pspin"></div>
   <div class="pflash" id="pflash"></div>
+  <div class="pcastinfo" id="pcastinfo"></div>
   <div class="plyrics" id="plyrics"></div>
   <div class="ptop">
     <button id="pclose" class="pbtn"></button>
@@ -783,6 +788,7 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
       <span class="ptime" id="ptime"></span>
       <span class="grow"></span>
       <button class="pbtn" id="plyricsbtn" hidden></button>
+      <button class="pbtn" id="pcast" hidden></button>
       <button class="pbtn" id="psubs"></button>
       <button class="pbtn" id="psettings"></button>
       <button class="pbtn hide-s" id="ppip"></button>
@@ -821,6 +827,7 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 <script src="/web/app.js"></script>
 <script src="/web/library.js"></script>
 <script src="/web/player.js"></script>
+<script src="/web/cast.js"></script>
 <script src="/web/pages.js"></script>
 <script src="/web/dashboard.js"></script>
 <script src="/web/downloads.js"></script>

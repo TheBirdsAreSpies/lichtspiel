@@ -41,7 +41,7 @@ pub(super) fn routes(app: &Arc<App>, ctx: &Ctx, user: &db::User, m: &str, segs: 
                 "allowed": allowed || d.method == Method::Direct, "resume": db.view(user.id, iid).view_offset_ms, "duration": it.duration_ms}))
         }
         ("GET", ["library", "parts", iid, "file"]) | ("GET", ["library", "parts", iid, _, "file"]) | ("GET", ["library", "parts", iid, "file", _]) => direct_file(app, ctx, &user, iid),
-        ("GET", ["library", "parts", iid, "subtitles", n]) => subtitles(app, &user, iid, n),
+        ("GET", ["library", "parts", iid, "subtitles", n]) => subtitles(app, ctx, &user, iid, n),
         ("POST", ["library", "parts", iid, "subtitles", n, "sync"]) => {
             if !admin { return need_admin(); }
             crate::api::handlers::subtitle_sync(app, &user, iid, n)

@@ -15,6 +15,8 @@ Tick an entry off with its commit when it is done. Build, test and conventions a
 - [ ] **macOS Release build:** no `get-task-allow` any more:
   `codesign -d --entitlements :- Lichtspiel.app`.
 - [ ] **Browser:** ticket renewal during a playback of more than 6 hours.
+- [ ] **Chromecast:** a movie played as it is and a converted one with a seek, subtitles on the TV
+  (moved for the converted stream), pause / volume from the browser, and the next episode at the end.
 - [ ] **App player (see below):** a failed HLS segment does not bring up the error screen.
 
 ## Known problems
@@ -65,8 +67,9 @@ bundled plugins.
 - [x] **Warning when a disk fills up** — a message through `push-notify` when a library's disk is
   nearly full. The server checks every 30 minutes and sends `disk.low` to plugins; the limit is
   under Settings → Library, and the dashboard shows the free space.
-- [ ] **Chromecast from the web app** — the biggest of these; closes the "smart TV without its own
-  app" gap from the README comparison.
+- [x] **Chromecast from the web app** — the biggest of these; closes the "smart TV without its own
+  app" gap from the README comparison. A cast button in the player (Chrome and Edge, https:// or
+  localhost), Google's Default Media Receiver, the browser as remote control.
 
 ### Parked
 

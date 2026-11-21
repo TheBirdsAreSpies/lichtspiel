@@ -112,6 +112,32 @@ fn the_web_app_page_cannot_be_framed_and_runs_only_its_own_scripts() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// For a Chromecast: the lines of a converted stream that starts later are moved back, and Google's
+/// player page may read them.
+#[test]
+fn subtitles_for_a_stream_that_starts_later() {
+    let (app, root) = test_app("cast-subs");
+    let media = root.join("media");
+    std::fs::create_dir_all(&media).unwrap();
+    std::fs::write(media.join("Film.mkv"), "video").unwrap();
+    std::fs::write(media.join("Film.de.vtt"), "WEBVTT\n\n00:00:10.000 --> 00:00:12.000\nhallo\n").unwrap();
+    let tok = {
+        let mut db = app.db.lock().unwrap();
+        db.sections.push(serde_json::from_value(json!({"id": 1, "name": "Filme", "kind": "movie", "paths": [media.to_string_lossy()], "created_at": 0})).unwrap());
+        let mut i: Item = serde_json::from_value(json!({"id": 1, "section_id": 1, "kind": "movie", "title": "x", "sort_title": "x", "added_at": 0, "updated_at": 0})).unwrap();
+        i.file = Some(MediaFile { path: media.join("Film.mkv").to_string_lossy().to_string(), container: "matroska".into(),
+            external_subtitles: vec![media.join("Film.de.vtt").to_string_lossy().to_string()], ..Default::default() });
+        db.items.insert(1, i);
+        crate::api::handlers::new_token(&mut db, 2, "test")
+    };
+    let get = |path: &str| ask(&app, &format!("GET {path} HTTP/1.1\r\nHost: x\r\nX-Token: {tok}\r\nConnection: close\r\n\r\n"));
+    assert!(get("/library/parts/1/subtitles/x0").contains("00:00:10.000 --> 00:00:12.000"));
+    let moved = get("/library/parts/1/subtitles/x0?from=4.5");
+    assert!(moved.contains("00:00:05.500 --> 00:00:07.500\nhallo"), "{moved}");
+    assert!(moved.to_ascii_lowercase().contains("access-control-allow-origin: *"), "{moved}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 #[cfg(unix)]
 #[test]
 fn files_outside_the_library_folders_are_never_sent() {

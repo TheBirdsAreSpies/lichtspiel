@@ -66,7 +66,7 @@ $('#ptime').title = t('Click: show time left');
 $('#ppip').hidden = !document.pictureInPictureEnabled;
 
 const duration = () => (P.it && P.it.duration ? P.it.duration / 1000 : 0) || (P.method === 'direct' && !split() && isFinite(video.duration) ? video.duration : 0);
-const position = () => (P.base || 0) + P.offset + (video.currentTime || 0);
+const position = () => (P.base || 0) + P.offset + ((castOn() ? CAST.rp.currentTime : video.currentTime) || 0);
 // A converted stream also "ends" when the server stops sending (ffmpeg failed, the conversion was stopped):
 // only within a minute of the title's length (from the server, dur) is that the real end.
 const reallyEnded = (pos, dur) => !dur || dur - pos <= 60;
@@ -123,7 +123,7 @@ async function play(it, startAt, queue, together, small) {
   mediaSession(it);
   loadLyrics(it);
   // Settings -> Extras -> pre-roll: a short video before a movie that starts from the beginning.
-  if (it.type === 'movie' && !(startAt > 0) && !together) await playPreroll(it);
+  if (it.type === 'movie' && !(startAt > 0) && !together && !castOn()) await playPreroll(it);
   if (P.it !== it) return;
   await load(startAt || 0);
   if (TG.code && !together) { TG.quiet = 0; tgSend({ item: it.id, position: Math.round((startAt || 0) * 1000) }); }
@@ -256,7 +256,7 @@ function playNext() {
 async function seekTo(s) {
   s = Math.max(0, Math.min(s, Math.max(0, duration() - 0.5)));
   P.pending = null;
-  if (P.method === 'direct' && !split()) video.currentTime = s; else await load(s);
+  if (P.method === 'direct' && !split()) { if (castOn()) castSeek(s); else video.currentTime = s; } else await load(s);
   hideNext();
   drawBar();
 }
@@ -323,17 +323,28 @@ async function load(at) {
   // Settings → Web → quality: a video that is not bigger than the chosen quality plays as it is.
   const want = Number((/^(\d+)p/.exec(q) || [])[1]) || 0, have = Number(it.Media && it.Media[0] && it.Media[0].height) || 0;
   if (want && have && have <= want && store.get('keepSmall', '1') === '1') q = 'original';
+  // A Chromecast plays H.264 up to 1080p for sure (the codecs the browser plays don't count there).
+  const cast = castOn();
+  if (cast && q === 'original' && have > 1080) q = '1080p-20';
   // Which part the position is in; `at` becomes the time inside that part.
   P.part = 0;
   if (split()) while (P.part < P.parts.length - 1 && at >= partStart(P.part + 1)) P.part++;
   P.base = split() ? partStart(P.part) : 0;
   at = Math.max(0, at - P.base);
-  const extra = (CLIENT_CODECS ? `&videoCodecs=${CLIENT_CODECS}` : '') + (P.audio ? `&audio=${P.audio}` : '') + (P.part ? `&part=${P.part}` : '') + (P.burn !== null && P.burn !== undefined ? `&subtitle=${P.burn}` : '');
+  const extra = (CLIENT_CODECS && !cast ? `&videoCodecs=${CLIENT_CODECS}` : '') + (P.audio ? `&audio=${P.audio}` : '') + (P.part ? `&part=${P.part}` : '') + (P.burn !== null && P.burn !== undefined ? `&subtitle=${P.burn}` : '');
   const d = await GET(`/library/metadata/${it.id}/decision?quality=${q}${extra}`);
   P.tk = await ticket('item=' + it.id);
   if (P.it !== it || seq !== P.loadSeq) return; // a newer load (another quick seek) wins
   P.method = P.audio && d.method === 'direct' ? 'remux' : d.method;
   if (!d.allowed) toast(t('Converting is switched off for your account, so this file may not play here.'), 5000);
+  if (cast && castOn()) {
+    if (store.get('directPlay', '1') === '0' && P.method === 'direct' && d.allowed) P.method = 'transcode';
+    await castLoad(it, at, q, extra);
+    clearInterval(P.timer);
+    P.timer = setInterval(() => { if (!isPaused() && CAST.media) report('playing'); }, 10000);
+    drawBar();
+    return;
+  }
   video.querySelectorAll('track').forEach(tr => tr.remove());
   spin(true);
   const noDirect = store.get('directPlay', '1') === '0' && P.method === 'direct' && d.allowed;
@@ -353,7 +364,7 @@ async function load(at) {
   // (The browser may refuse to start by itself; then the play button is there.)
   video.play().catch(() => { spin(false); drawButtons(); });
   clearInterval(P.timer);
-  P.timer = setInterval(() => { if (!video.paused) report('playing'); }, 10000);
+  P.timer = setInterval(() => { if (!isPaused()) report('playing'); }, 10000);
   drawBar();
 }
 // Subtitles belong to the first file (a later part would show them at the wrong time). A converted
@@ -441,7 +452,8 @@ function setSub(i) {
   P.sub = i;
   if (i >= 0) { P.lastSub = i; store.set('subLang', P.subs[i].language || P.subs[i].file || ''); } else store.set('subLang', '');
   showSub();
-  if (before !== null) load(position()); // the burned-in picture has to go
+  // The burned-in picture has to go; a TV gets the media again with the new subtitle.
+  if (before !== null || castOn()) load(position());
 }
 function setSubSize(v) { P.subSize = v; store.set('subSize', v); player.style.setProperty('--cue', v + '%'); }
 setSubSize(P.subSize);
@@ -484,7 +496,7 @@ function drawBar() {
   $('.buf', bar).style.width = Math.max(0, pct(to) - pct(from)) + '%';
   const d = duration();
   $('#ptime').textContent = P.remaining && d ? `−${fmtTime(d - now)}` : `${fmtTime(now)} / ${fmtTime(d)}`;
-  const ends = d && !video.paused ? new Date(Date.now() + (d - now) / (video.playbackRate || 1) * 1000) : null;
+  const ends = d && !isPaused() ? new Date(Date.now() + (d - now) / (castOn() ? 1 : video.playbackRate || 1) * 1000) : null;
   const sleep = !P.sleep ? '' : P.sleep.end ? t('stops after this title') : t('sleep timer {time}', { time: fmtTime(sleepLeft()) });
   $('#psub').textContent = [P.subLine, ends ? t('ends at {time}', { time: ends.toLocaleTimeString(I18N.lang, { hour: '2-digit', minute: '2-digit', hour12: hour12() }) }) : '', sleep].filter(Boolean).join(' · ');
   // "Skip credits" while the credits run.
@@ -521,12 +533,14 @@ function drawMarks() {
   if (P.intro) marks.append(h('div', { class: 'mark intro', style: `left:${pct(P.intro[0])}%;width:${Math.max(0.3, pct(P.intro[1]) - pct(P.intro[0]))}%`, title: t('Intro') }));
 }
 function drawButtons() {
-  const pb = $('#pplay'), playing = !video.paused;
+  const pb = $('#pplay'), playing = !isPaused();
   pb.replaceChildren(icon(playing ? 'pause' : 'play'));
   pb.title = (playing ? t('Pause') : t('Play')) + ' (K)';
-  $('#pmute').replaceChildren(icon(video.muted || video.volume === 0 ? 'mute' : video.volume < 0.5 ? 'low' : 'vol'));
-  $('#pmute').title = (video.muted ? t('Sound on') : t('Mute')) + ' (M)';
-  $('#pvolume').value = video.muted ? 0 : video.volume;
+  // While casting: the TV's volume.
+  const muted = castOn() ? CAST.rp.isMuted : video.muted, volume = castOn() ? CAST.rp.volumeLevel : video.volume;
+  $('#pmute').replaceChildren(icon(muted || volume === 0 ? 'mute' : volume < 0.5 ? 'low' : 'vol'));
+  $('#pmute').title = (muted ? t('Sound on') : t('Mute')) + ' (M)';
+  $('#pvolume').value = muted ? 0 : volume;
   const fs = !!document.fullscreenElement;
   btn('pfull', fs ? 'exitfull' : 'full', (fs ? t('Leave full screen') : t('Full screen')) + ' (F)');
 }
@@ -541,7 +555,7 @@ let idleTimer = null;
 function wake() {
   player.classList.remove('idle');
   clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => { if (!video.paused && !P.menu && !bar.classList.contains('drag') && $('#pkeys').style.display !== 'block') player.classList.add('idle'); }, 3000);
+  idleTimer = setTimeout(() => { if (!isPaused() && !P.menu && !bar.classList.contains('drag') && $('#pkeys').style.display !== 'block') player.classList.add('idle'); }, 3000);
 }
 player.addEventListener('mousemove', wake);
 player.addEventListener('touchstart', wake, { passive: true });
@@ -551,7 +565,7 @@ player.addEventListener('touchstart', wake, { passive: true });
 video.addEventListener('play', () => { if (LEVEL.ctx && LEVEL.ctx.state === 'suspended') LEVEL.ctx.resume(); drawButtons(); wake(); });
 // A new source (another quality, or a jump in a converted video) pauses the old one
 // on its way: that is no pause (readyState is 0 then). Playing again is told at once.
-video.addEventListener('pause', () => { drawButtons(); wake(); if (!video.ended && video.readyState > 0) report('paused'); });
+video.addEventListener('pause', () => { if (castOn()) return; drawButtons(); wake(); if (!video.ended && video.readyState > 0) report('paused'); });
 video.addEventListener('playing', () => { if (P.reported !== 'playing') report('playing'); });
 video.addEventListener('volumechange', () => { drawButtons(); if (P.sleepVol !== undefined) return; store.set('volume', video.volume); store.set('muted', video.muted ? '1' : '0'); });
 video.addEventListener('timeupdate', () => { if (!bar.classList.contains('drag')) drawBar(); drawLyrics(); });
@@ -570,17 +584,20 @@ video.addEventListener('error', () => {
   // Stopped by the owner? Then the report says so (and shows why).
   report('playing').then(r => { if (!(r && r.stopped)) toast(t('This video could not be played. Try a lower quality in ⚙.'), 6000); });
 });
-video.addEventListener('ended', () => {
-  if (P.preroll) return;
+video.addEventListener('ended', () => { if (!castOn()) videoEnded(); });
+// The end of the video, in the browser or on the TV.
+function videoEnded() {
+  if (P.preroll || !P.it) return;
   // The next part of a split movie.
   if (split() && P.part < P.parts.length - 1) { load(partStart(P.part + 1)); return; }
-  if (!reallyEnded(position(), P.it && P.it.duration / 1000)) {
+  // (A finished Chromecast no longer says where it was.)
+  if (!castOn() && !reallyEnded(position(), P.it && P.it.duration / 1000)) {
     report('paused').then(r => { if (!(r && r.stopped)) toast(t('The video stopped before its end. Your place was saved.'), 6000); });
     return;
   }
   report('stopped', Math.floor(duration() * 1000));
   upNext();
-});
+}
 // The end, or "Skip credits": the next one after a countdown, or close.
 function upNext() {
   if (sleepAtEnd()) return;
@@ -656,7 +673,7 @@ function sleepFade(f) {
 }
 function sleepNow() {
   P.sleep = null;
-  video.pause();
+  if (castOn()) { if (!isPaused()) castTogglePlay(); } else video.pause();
   sleepFade(1);
   hideNext(); closePlayerMenu();
   drawBar();
@@ -675,7 +692,7 @@ setInterval(() => {
   if (P.sleep.end) {
     // The credits count as the end, like "Skip credits".
     const now = position(), d = duration();
-    if (P.credits.length && P.credits.some(c => now >= c) && now < d - 3 && !video.paused) {
+    if (P.credits.length && P.credits.some(c => now >= c) && now < d - 3 && !isPaused()) {
       report('stopped', Math.floor(d * 1000));
       sleepAtEnd();
     }
@@ -745,12 +762,12 @@ bar.addEventListener('pointerup', async e => {
 });
 
 // ---- buttons
-const togglePlay = () => { if (video.paused) { video.play().catch(() => {}); flash('play'); } else { video.pause(); flash('pause'); } };
+const togglePlay = () => { if (castOn()) castTogglePlay(); else if (video.paused) { video.play().catch(() => {}); flash('play'); } else { video.pause(); flash('pause'); } };
 $('#pplay').addEventListener('click', togglePlay);
 $('#pback').addEventListener('click', () => nudge(-10));
 $('#pfwd').addEventListener('click', () => nudge(30));
 $('#pnextbtn').addEventListener('click', () => { report('stopped'); playNext(); });
-$('#pmute').addEventListener('click', () => { video.muted = !video.muted; if (!video.muted && video.volume === 0) video.volume = 0.5; });
+$('#pmute').addEventListener('click', () => { if (castOn()) { CAST.rpc.muteOrUnmute(); return; } video.muted = !video.muted; if (!video.muted && video.volume === 0) video.volume = 0.5; });
 // The last and first bit of the track count as full and silent (the thumb's travel is shorter than the track).
 // Dragging works from the pointer's position on the track, also past either end (so 100 % and 0 % are easy to hit),
 // and keeps the controls awake meanwhile.
@@ -760,14 +777,16 @@ $('#pmute').addEventListener('click', () => { video.muted = !video.muted; if (!v
     const r = vol.getBoundingClientRect(), pad = 8; // the thumb's half width
     let v = Math.max(0, Math.min(1, (e.clientX - r.left - pad) / Math.max(1, r.width - 2 * pad)));
     if (v > 0.96) v = 1; if (v < 0.03) v = 0;
-    vol.value = v; video.volume = v; video.muted = v === 0;
+    vol.value = v;
+    if (castOn()) { castVolume(v); return; }
+    video.volume = v; video.muted = v === 0;
   };
   vol.addEventListener('pointerdown', e => { if (e.button) return; e.preventDefault(); vol.focus(); vol.setPointerCapture(e.pointerId); vol.dataset.drag = '1'; setFrom(e); wake(); });
   vol.addEventListener('pointermove', e => { if (vol.dataset.drag) { setFrom(e); wake(); } });
   const done = e => { delete vol.dataset.drag; wake(); };
   vol.addEventListener('pointerup', done); vol.addEventListener('pointercancel', done);
 }
-$('#pvolume').addEventListener('input', e => { let v = Number(e.target.value); if (v > 0.96) v = 1; if (v < 0.03) v = 0; video.volume = v; video.muted = v === 0; });
+$('#pvolume').addEventListener('input', e => { let v = Number(e.target.value); if (v > 0.96) v = 1; if (v < 0.03) v = 0; if (castOn()) return castVolume(v); video.volume = v; video.muted = v === 0; });
 $('#ptime').addEventListener('click', () => { P.remaining = !P.remaining; store.set('timeLeft', P.remaining ? '1' : '0'); drawBar(); });
 $('#pfull').addEventListener('click', toggleFull);
 $('#ppip').addEventListener('click', togglePip);
@@ -868,6 +887,7 @@ function mediaSession(it) {
 
 function closePlayer(send) {
   if (send) report('stopped');
+  castStop();
   tgLeave();
   clearInterval(P.timer); clearTimeout(P.pendingTimer); hideNext(); closePlayerMenu();
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});

@@ -11,6 +11,7 @@ pub(super) fn routes(app: &Arc<App>, ctx: &Ctx, m: &str, segs: &[&str]) -> Optio
         ("GET", ["web", "pages.js"]) => return web_script(WEB_PAGES_JS, &ctx.params),
         ("GET", ["web", "dashboard.js"]) => return web_script(WEB_DASHBOARD_JS, &ctx.params),
         ("GET", ["web", "downloads.js"]) => return web_script(WEB_DOWNLOADS_JS, &ctx.params),
+        ("GET", ["web", "cast.js"]) => return web_script(WEB_CAST_JS, &ctx.params),
         ("GET", ["web", "i18n.js"]) => return web_script(WEB_I18N_JS, &ctx.params),
         ("GET", ["web", "lang", file]) => {
             return match WEB_LANGS.iter().find(|l| l.0 == *file) {
@@ -41,7 +42,9 @@ pub(super) fn routes(app: &Arc<App>, ctx: &Ctx, m: &str, segs: &[&str]) -> Optio
         ("GET", ["api", "status"]) => {
             let db = app.db.lock().unwrap();
             return ok(json!({"name": crate::server::display_name(&db.settings), "version": VERSION, "build": BUILD, "built_at": BUILT_AT.parse::<u64>().unwrap_or(0), "setup_needed": db.users.is_empty(), "machine_id": db.machine_id, "mail": crate::accounts::mail::ready(&db.settings),
-                "started_at": app.started_at, "signed_in": ctx.user.as_ref().map(|u| u.username.clone())}));
+                "started_at": app.started_at, "signed_in": ctx.user.as_ref().map(|u| u.username.clone()),
+                // For a Chromecast, when the page was opened as localhost: the address it reaches the server at.
+                "lan_url": ctx.user.as_ref().map(|_| format!("{}://{}:{}", crate::server::scheme(), crate::lan_address(), *app.port.lock().unwrap()))}));
         }
         ("POST", ["api", "setup"]) => return setup(app, ctx),
         ("POST", ["api", "login"]) => return login(app, ctx),

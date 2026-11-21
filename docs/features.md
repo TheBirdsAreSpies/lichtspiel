@@ -27,6 +27,17 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   after a 10-second countdown. Keyboard: Space/K, ←/→ (Shift: 1 min), ↑/↓, M, F, P, C, N, 0–9,
   < > — **?** lists them all. Media keys and the lock screen work too. `#/play/<id>?t=90` is a
   link that starts playing.
+- **Chromecast** — in Chrome and Edge the player has a cast button when a Chromecast (or a TV
+  with Chromecast built in) is on the network. The TV goes on from the same place with Google's
+  standard player; the browser becomes its remote control: play / pause, the seek bar, ±10 / 30 s,
+  volume, subtitles (text ones; picture-based ones are burned in), audio track, quality, skip
+  intro / credits and the next episode. The TV gets the file as it is when it plays it (MP4 or
+  WebM with H.264, VP8/VP9 or AV1 and AAC, MP3, Opus, Vorbis or FLAC), otherwise the converted
+  stream, at most 1080p with "Original". Stopping the cast continues in the browser; closing the
+  player stops the TV. Needs the page on an **https://** address with a certificate the TV
+  trusts (or opened as localhost on the server, then the TV gets the home network address), as
+  Chrome only offers casting there. The speed, night mode and volume levelling stay in the
+  browser. The dashboard shows the TV as "Chromecast — <its name>".
 - **Playlists** — your own (hand-picked, drag order), **smart playlists** (rules such as
   "genre is Comedy AND year ≥ 2000 AND not watched, newest first, max 50") and six **default
   playlists** the server keeps up to date (Continue Watching, Recently Added Movies, Recently

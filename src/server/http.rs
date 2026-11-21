@@ -37,7 +37,8 @@ pub fn web_csp() -> &'static str {
     CSP.get_or_init(|| {
         let hashes: Vec<String> = WEB_APP.split("<script>").skip(1).filter_map(|s| s.split("</script>").next())
             .map(inline_script_hash).collect();
-        format!("default-src 'self'; script-src 'self' {}; style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src 'self' blob: data:; \
+        // gstatic: Google's Cast library, loaded only in Chrome and Edge to send a video to a Chromecast.
+        format!("default-src 'self'; script-src 'self' https://www.gstatic.com {}; style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src 'self' blob: data:; \
             frame-src https://www.youtube-nocookie.com; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'", hashes.join(" "))
     })
 }
@@ -50,7 +51,7 @@ pub fn web_version() -> &'static str {
     V.get_or_init(|| {
         use sha2::Digest;
         let mut h = sha2::Sha256::new();
-        for s in [WEB_JS, WEB_LIBRARY_JS, WEB_PLAYER_JS, WEB_PAGES_JS, WEB_DASHBOARD_JS, WEB_DOWNLOADS_JS, WEB_I18N_JS] { h.update(s.as_bytes()); }
+        for s in [WEB_JS, WEB_LIBRARY_JS, WEB_PLAYER_JS, WEB_PAGES_JS, WEB_DASHBOARD_JS, WEB_DOWNLOADS_JS, WEB_CAST_JS, WEB_I18N_JS] { h.update(s.as_bytes()); }
         for (name, s) in WEB_LANGS { h.update(name.as_bytes()); h.update(s.as_bytes()); }
         h.finalize().iter().take(6).map(|b| format!("{b:02x}")).collect()
     })

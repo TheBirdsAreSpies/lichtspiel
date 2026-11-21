@@ -70,6 +70,7 @@ pub const WEB_PLAYER_JS: &str = include_str!("../../web/player.js");
 pub const WEB_PAGES_JS: &str = include_str!("../../web/pages.js");
 pub const WEB_DASHBOARD_JS: &str = include_str!("../../web/dashboard.js");
 pub const WEB_DOWNLOADS_JS: &str = include_str!("../../web/downloads.js");
+pub const WEB_CAST_JS: &str = include_str!("../../web/cast.js");
 pub const WEB_I18N_JS: &str = include_str!("../../web/i18n.js");
 /// Language packs for the web app (web/lang/<code>.js); English needs none.
 /// To add a language: put its file in web/lang, list it here and add a

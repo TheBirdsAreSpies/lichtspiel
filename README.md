@@ -33,14 +33,14 @@ Every feature in detail: [docs/features.md](docs/features.md).
 | Trakt | built in | via third-party tools | with a plugin | with a plugin |
 | Import from an old server, sync with a running Plex | yes | — | via third-party tools | via third-party tools |
 | Music, photos, live TV / DVR | no | yes | yes | yes |
-| Apps | web app; app for Windows, Android, macOS, iOS | apps for almost every device and smart TV | many apps, incl. smart TVs | many apps, incl. smart TVs |
+| Apps | web app (casts to Chromecast); app for Windows, Android, macOS, iOS | apps for almost every device and smart TV | many apps, incl. smart TVs | many apps, incl. smart TVs |
 | Server written in | Rust, one program | C++ | C# / .NET | C# / .NET |
 | Maturity | young, one small project | large company, many years | large community, many years | company, many years |
 
 In short: Lichtspiel is for **movies and TV shows only**, runs without any outside account,
 and has everything included with no paid tier. Plex, Jellyfin and Emby do more (music,
 photos, live TV) and have native apps for smart TVs, Roku, Apple TV and game consoles; on a
-smart TV, Lichtspiel runs in the TV's browser. The details on Plex and Emby are as of
+smart TV, Lichtspiel runs in the TV's browser, or the web app casts to a Chromecast. The details on Plex and Emby are as of
 late 2026 and their paid tiers change from time to time.
 
 ## The interface
