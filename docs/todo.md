@@ -53,11 +53,11 @@ bundled plugins.
   the app), so it works with direct play too; *Lift dialogue* for 5.1 → stereo was already there.
 - [x] **"Coming soon" row and calendar** — new episodes of shows in the library (Sonarr or TMDB)
   and movies waiting in Radarr. Goes with the wish list. Built in the web app (TMDB or TVmaze,
-  and Radarr / Sonarr through the wish list's `calendar`); not yet in the Flutter app.
+  and Radarr / Sonarr through the wish list's `calendar`), in the web app and the app.
 - [ ] **Smart collections like Kometa (plugin)** — "IMDb Top 250", "Oscar winners", Trakt lists,
-  filled from the library automatically (`reads_library`).
+  filled from the library automatically (`reads_library`). Maybe other things that Kometa does as well.
 - [ ] **Letterboxd import** — Letterboxd has no open API, but its CSV export can bring in watched
-  state and ratings once.
+  state and ratings once. Also it should be possible to import lists and watchlist (as watchlist or as playlist).
 - [ ] **Warning when a disk fills up** — a message through `push-notify` when a library's disk is
   nearly full.
 - [ ] **Chromecast from the web app** — the biggest of these; closes the "smart TV without its own

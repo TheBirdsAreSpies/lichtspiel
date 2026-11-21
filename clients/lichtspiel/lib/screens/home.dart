@@ -4,6 +4,7 @@ import '../api.dart';
 import '../widgets/bar.dart';
 import '../widgets/poster.dart';
 import '../widgets/states.dart';
+import 'calendar.dart';
 import 'detail.dart';
 import 'library.dart';
 import 'shell.dart' show sectionIcon;
@@ -21,7 +22,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late Future<List<dynamic>> data = Future.wait([widget.api.hubs(), widget.api.sections()]);
+  late Future<List<dynamic>> data = load();
   final search = TextEditingController();
   List<Map<String, dynamic>>? results;
   bool searching = false;
@@ -36,8 +37,15 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // "Coming soon" from its own address; an older server without it gives an empty row.
+  Future<List<dynamic>> load() => Future.wait([
+        widget.api.hubs(),
+        widget.api.sections(),
+        widget.api.upcoming().catchError((_) => <Map<String, dynamic>>[]),
+      ]);
+
   Future<void> reload() async {
-    setState(() => data = Future.wait([widget.api.hubs(), widget.api.sections()]));
+    setState(() => data = load());
     await data;
   }
 
@@ -124,6 +132,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (!snap.hasData) return const RowsSkeleton();
                 final hubs = snap.data![0] as List<Map<String, dynamic>>;
                 final sections = snap.data![1] as List<Map<String, dynamic>>;
+                final coming = snap.data![2] as List<Map<String, dynamic>>;
+                // After continue watching and the watchlist, like in the web app.
+                final comingAt = hubs.indexWhere((h) => !['continueWatching', 'watchlist'].contains(h['hubIdentifier']));
+                final before = comingAt < 0 ? hubs : hubs.sublist(0, comingAt), after = comingAt < 0 ? const <Map<String, dynamic>>[] : hubs.sublist(comingAt);
                 return RefreshIndicator(
                   onRefresh: reload,
                   child: ListView(padding: const EdgeInsets.symmetric(vertical: 12), children: [
@@ -138,7 +150,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                       ]),
                     ),
-                    for (final hub in hubs) _row(context, api, hub),
+                    for (final hub in before) _row(context, api, hub),
+                    if (coming.isNotEmpty) ComingRow(api: api, entries: coming),
+                    for (final hub in after) _row(context, api, hub),
                     if (hubs.isEmpty) const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Noch nichts da. Die Bibliotheken werden evtl. noch gescannt.'))),
                   ]),
                 );

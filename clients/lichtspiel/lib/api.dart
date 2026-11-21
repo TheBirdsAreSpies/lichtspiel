@@ -272,6 +272,10 @@ class Api {
   Future<List<Map<String, dynamic>>> hubs() async =>
       ((await get('/hubs'))['MediaContainer']?['Hub'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e)).toList();
 
+  /// "Coming soon": next episodes and what Radarr / Sonarr expect, in date order (none on an older server).
+  Future<List<Map<String, dynamic>>> upcoming({int days = 30}) async =>
+      (((await get('/api/upcoming?days=$days')) as Map?)?['entries'] as List? ?? const []).map((e) => Map<String, dynamic>.from(e)).toList();
+
   Future<List<Map<String, dynamic>>> items(String sectionId, {String sort = 'title', int offset = 0, int limit = 60}) async =>
       metadata(await get('/library/sections/$sectionId/all?sort=$sort&offset=$offset&limit=$limit'));
 
