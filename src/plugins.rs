@@ -16,7 +16,7 @@
 //! library.item.added, library.item.removed, library.scan.finished,
 //! playback.started, playback.progress, playback.stopped, playback.watched,
 //! item.problem, download.ready, user.invited, user.joined, playlist.created, playlist.updated,
-//! server.started, api.call (answer any JSON; reached through
+//! server.started, schedule.daily (once a day), api.call (answer any JSON; reached through
 //! POST /api/plugins/{id}/call/{action}). An api.call answer with
 //! {"mark_watched": [...]} marks those items watched for the caller.
 //!
@@ -47,6 +47,7 @@ pub const EVENTS: &[&str] = &[
     "playlist.created",
     "playlist.updated",
     "server.started",
+    "schedule.daily",
     "api.call",
 ];
 

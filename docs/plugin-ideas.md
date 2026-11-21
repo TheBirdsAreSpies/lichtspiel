@@ -11,10 +11,11 @@ is described in [features.md](features.md) once it is done. Tick an entry off wi
 Today `library.item.added` carries only `id`, `title` and `section_id`, and a plugin has no way to
 ask the server for more (it gets no sign-in). Several plugins below need more, so these come first:
 
-- [ ] **Item details in library events.** `library.item.added` (and `library.item.removed`) carry
-  `item` like the playback events do (type, title, year, ids, show/season/episode) plus the
-  item's `files` (paths on the server). Needed by 1, 3, 4.
-- [ ] **A daily event.** `schedule.daily` once a day (and once after a start if the last one was
+- [x] **Item details in library events.** `library.item.added` carries `item` like the playback
+  events do (type, title, year, ids, show/season/episode) plus the item's `files` (paths,
+  streams, subtitle files next to it). Needed by 1, 3, 4. (`library.item.removed` stays as it
+  is: the item is gone by then.)
+- [x] **A daily event.** `schedule.daily` once a day (and once after a start if the last one was
   missed), so a plugin can do periodic work without waiting for a scan. Needed by 2, 6.
 
 ## The plugins

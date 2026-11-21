@@ -449,6 +449,27 @@ impl App {
         o
     }
 
+    /// `item_brief` plus the item's files: path, size, container, length, the
+    /// streams (kind, codec, language, channels, size, forced, SDH) and the
+    /// subtitle files next to it. For plugins that work with the files
+    /// themselves (subtitles, library checks).
+    pub fn item_detail(&self, id: u64) -> Value {
+        let mut o = self.item_brief(id);
+        if o.is_null() {
+            return o;
+        }
+        let db = self.db.lock().unwrap();
+        let Some(it) = db.items.get(&id) else { return Value::Null };
+        let files: Vec<Value> = it.file.iter().chain(it.parts.iter()).map(|f| {
+            let streams: Vec<Value> = f.streams.iter().map(|s| json!({"kind": s.kind, "codec": s.codec, "language": s.language, "channels": s.channels,
+                "width": s.width, "height": s.height, "forced": s.forced, "sdh": s.sdh})).collect();
+            json!({"path": f.path, "size": f.size, "container": f.container, "duration_ms": f.duration_ms, "streams": streams, "external_subtitles": f.external_subtitles})
+        }).collect();
+        o["section_id"] = json!(it.section_id);
+        o["files"] = json!(files);
+        o
+    }
+
     /// Tells plugins about something, in the background.
     pub fn fire(self: &Arc<Self>, event: &str, data: Value) {
         crate::trakt::on_event(self, event, &data);
@@ -457,6 +478,20 @@ impl App {
         }
         let (app, event) = (self.clone(), event.to_string());
         std::thread::spawn(move || app.fire_now(&event, data));
+    }
+
+    /// Sends `schedule.daily` if it was not sent yet today (UTC). True if it was sent now.
+    pub fn daily_tick(self: &Arc<Self>) -> bool {
+        let file = self.data_dir.join("plugins").join(".daily-last");
+        let today = crate::db::today();
+        let last = std::fs::read_to_string(&file).unwrap_or_default();
+        if last.trim() == today {
+            return false;
+        }
+        let _ = std::fs::create_dir_all(file.parent().unwrap());
+        let _ = std::fs::write(&file, &today);
+        self.fire("schedule.daily", json!({"date": today, "last": last.trim()}));
+        true
     }
 
     /// Tells plugins about something, on this thread.
@@ -554,7 +589,7 @@ impl App {
             std::thread::spawn(move || {
                 for id in &added {
                     let title = app.db.lock().unwrap().items.get(id).map(|i| i.title.clone()).unwrap_or_default();
-                    app.fire_now("library.item.added", json!({"id": id, "title": title, "section_id": section_id}));
+                    app.fire_now("library.item.added", json!({"id": id, "title": title, "section_id": section_id, "item": app.item_detail(*id)}));
                 }
                 for id in &removed {
                     app.fire_now("library.item.removed", json!({"id": id, "section_id": section_id}));
@@ -2537,6 +2572,13 @@ pub fn start_background(app: &Arc<App>) {
         std::thread::sleep(Duration::from_secs(60));
         crate::maintenance::tick(&a);
     });
+    // Once a day: schedule.daily for plugins. The last date goes in a file, so
+    // a restart does not send it twice and a day missed while off is sent at start.
+    let a = app.clone();
+    std::thread::spawn(move || loop {
+        a.daily_tick();
+        std::thread::sleep(Duration::from_secs(60));
+    });
     // Plays that stay paused too long are ended.
     let a = app.clone();
     std::thread::spawn(move || loop {
@@ -3882,6 +3924,37 @@ mod background_tests {
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(n, 500, "not every event reached the plugin");
         assert!(most <= crate::plugins::MAX_RUNNING, "{most} plugin programs ran at once");
+    }
+
+    #[test]
+    fn a_new_title_tells_plugins_its_files_and_streams() {
+        let (app, root) = test_app("item-detail");
+        let mut m = item(7, "movie", json!({"ids": {"imdb": "tt0133093"}}));
+        m.year = Some(1999);
+        m.file = Some(serde_json::from_value(json!({"path": "/media/Matrix (1999).mkv", "size": 5, "modified": 0, "container": "mkv",
+            "streams": [{"kind": "audio", "index": 1, "codec": "ac3", "language": "ger", "channels": 6}], "external_subtitles": ["/media/Matrix (1999).en.srt"]})).unwrap());
+        app.db.lock().unwrap().items.insert(7, m);
+        let d = app.item_detail(7);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(d["type"], "movie");
+        assert_eq!(d["ids"]["imdb"], "tt0133093");
+        assert_eq!(d["files"][0]["path"], "/media/Matrix (1999).mkv");
+        assert_eq!(d["files"][0]["streams"][0]["language"], "ger");
+        assert_eq!(d["files"][0]["external_subtitles"][0], "/media/Matrix (1999).en.srt");
+        assert!(app.item_detail(99).is_null());
+    }
+
+    #[test]
+    fn schedule_daily_is_sent_once_a_day_and_after_a_restart_only_if_missed() {
+        let (app, root) = test_app("daily");
+        let first = app.daily_tick();
+        let again = app.daily_tick();
+        let stored = std::fs::read_to_string(root.join("plugins").join(".daily-last")).unwrap_or_default();
+        std::fs::write(root.join("plugins").join(".daily-last"), "2000-01-01").unwrap();
+        let missed = app.daily_tick();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(first && !again && missed);
+        assert_eq!(stored, crate::db::today());
     }
 
     #[test]

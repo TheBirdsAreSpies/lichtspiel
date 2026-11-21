@@ -38,6 +38,14 @@ on — `playback.stopped`, `playback.watched`) carry `user`, `time` (ms), `progr
 for an episode also `"season"`, `"episode"` and `"show": {"title", "year", "ids"}`. A title
 marked as watched by hand sends `playback.watched` with `"manual": true`.
 
+`library.item.added` carries `id`, `title`, `section_id` and `item`: the same fields as a playback
+event's item plus `section_id` and `files` — for each file `path`, `size`, `container`,
+`duration_ms`, `streams` (`kind`, `codec`, `language`, `channels`, `width`, `height`, `forced`,
+`sdh`) and `external_subtitles` (the subtitle files next to it). A show or season has no files.
+
+`schedule.daily` is sent once a day (UTC) with `{"date": "YYYY-MM-DD", "last": "…"}`; a day missed
+while the server was off is sent right after the next start.
+
 With `"user_panel": true` in `plugin.json` each person gets a panel of the plugin under
 **Settings**. The page asks the plugin with `api.call` action `panel` and shows
 `{"title", "text", "link", "buttons": [{"label", "action", "primary", "confirm"}]}`; a button
@@ -49,7 +57,7 @@ The body of these calls includes `lang` (the page's language).
 Events: `metadata.lookup`, `library.item.added`, `library.item.removed`,
 `library.scan.finished`, `playback.started`, `playback.progress`, `playback.stopped`,
 `playback.watched`, `item.problem`, `download.ready`, `user.invited`, `user.joined`, `playlist.created`, `playlist.updated`,
-`server.started`, `api.call`.
+`server.started`, `schedule.daily`, `api.call`.
 
 New plugins start switched off; switch them on in the **Plugins** page (where their settings,
 errors and a log of recent runs are shown too). Any language works — the Docker image includes
