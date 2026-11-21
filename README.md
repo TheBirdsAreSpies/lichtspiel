@@ -84,7 +84,8 @@ browser), and the status window is in `shots/now.png`.
 | [docs/libraries.md](docs/libraries.md) | Automatic scanning, keeping in step with a Plex server, importing from your old server (on Docker: `OLD_SERVER`) |
 | [docs/api.md](docs/api.md) | The API in short |
 | [docs/plugins.md](docs/plugins.md) | Writing a plugin: `plugin.json`, events, answers, user panels |
-| [docs/open-items.md](docs/open-items.md) | For developers: build and test commands, conventions, and what is still open from the last review |
+| [docs/development.md](docs/development.md) | For developers: layout, build and test commands, conventions |
+| [docs/todo.md](docs/todo.md) | What is still open: checks on real hardware, known problems, feature ideas |
 
 ## What's in this folder
 
@@ -97,7 +98,7 @@ browser), and the status window is in `shots/now.png`.
 | `vendor/tiny_http/` | the HTTP library, copied in and patched |
 | `Dockerfile`, `docker-compose.yml` | Synology / Docker install |
 | `.gitea/workflows/deploy.yml` | automatic build and deploy to the Synology after a push to `main` |
-| `docs/` | the documentation above, and the review reports |
+| `docs/` | the documentation above |
 | `shots/` | status-window picture, web app pictures and the last self-test report |
 
 ## The data folder
