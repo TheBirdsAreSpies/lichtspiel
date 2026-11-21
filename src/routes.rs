@@ -147,6 +147,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/dashboard/stop", "Admin: stop what a user is playing {user, item, message}: converted streams end at once, the player shows the message on its next report, and the same video can't start again for 30 s unless the player heard it"),
     ("GET", "/api/dashboard/history", "Admin: viewings of the last days ?days=30 &user=id as [[at, user, kind, minutes], …] to count per day, plus most played titles, top users and the latest viewings"),
     ("GET", "/hubs", "Home rows: continue watching, rows for the time of year (Halloween, Christmas, New Year's Eve, Valentine's Day; ?date=MM-DD tries a day), recently added movies and TV, pinned playlists"),
+    ("GET", "/hubs/sections/{id}", "A library's Recommended rows: continue watching, recently released and added, today's genre, person or network, unwatched picks, the time of year, recently watched; ?date=MM-DD tries a day, ?count= titles per row (20)"),
     ("GET", "/hubs/home/continueWatching", "Started but not finished, plus next episodes"),
     ("GET", "/hubs/home/onDeck", "Next episode of shows you are watching"),
     ("GET", "/hubs/home/recentlyAdded", "Newest items ?type=movie|episode &limit="),
@@ -1444,6 +1445,22 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             }
             hubs.retain(|h| h["size"].as_u64().unwrap_or(0) > 0);
             ok(json!({"MediaContainer": {"size": hubs.len(), "Hub": hubs}}))
+        }
+        ("GET", ["hubs", "sections", sid]) => {
+            let Some(sid) = id(sid) else { return fail(404, "No such library") };
+            let db = app.db.lock().unwrap();
+            if !db.sections.iter().any(|s| s.id == sid) { return fail(404, "No such library") }
+            if !db.can_see_section(&user, sid) { return fail(403, "You don't have access to this library"); }
+            let day = ctx.param("date").and_then(related::month_day).or_else(|| related::month_day(&db::today())).unwrap_or((1, 1));
+            let count = ctx.param("count").and_then(|c| c.parse().ok()).filter(|c: &usize| *c > 0).unwrap_or(related::SECTION_ROW_COUNT);
+            let ix = Index::build(&db);
+            let hubs: Vec<Value> = related::section_rows(&db, &user, sid, day, db::now() / 86400, count).into_iter().map(|hb| {
+                let mut v = hub_ix(&db, &user, &hb.identifier, &hb.title, hb.ids, &ix);
+                v["context"] = json!(hb.context);
+                v["more"] = json!(hb.more);
+                v
+            }).collect();
+            ok(json!({"MediaContainer": {"size": hubs.len(), "librarySectionID": sid, "Hub": hubs}}))
         }
         ("GET", ["hubs", "home", "continueWatching"]) | ("GET", ["hubs", "continueWatching"]) | ("GET", ["hubs", "continueWatching", "items"]) => {
             let db = app.db.lock().unwrap();

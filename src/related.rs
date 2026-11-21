@@ -291,6 +291,221 @@ pub fn occasion_rows(db: &Db, user: &User, day: (u32, u32), count: usize) -> Vec
     hubs
 }
 
+// ---------------------------------------------------------------- a library's Recommended page
+
+/// Items per row on a library's Recommended page (like the home rows).
+pub const SECTION_ROW_COUNT: usize = 20;
+/// A genre, person or network gets a row of its own only with at least this many titles (estimated).
+pub const PICK_MIN_TITLES: usize = 3;
+/// The row's genre, person or network is one of the this many biggest, a different one each day (estimated).
+pub const PICK_FROM: usize = 5;
+/// "Rediscover": shows last watched more than this many days ago (estimated).
+pub const REDISCOVER_DAYS: u64 = 365;
+
+/// The release date as "YYYY-MM-DD" (or the year alone), for sorting by it.
+fn released(it: &Item) -> String {
+    match it.extra.get("originally_available").and_then(|v| v.as_str()).filter(|s| s.len() >= 4) {
+        Some(d) => d.to_string(),
+        None => it.year.map(|y| format!("{y:04}")).unwrap_or_default(),
+    }
+}
+
+fn by_rating(a: &&Item, b: &&Item) -> std::cmp::Ordering {
+    b.rating.partial_cmp(&a.rating).unwrap_or(std::cmp::Ordering::Equal).then(a.sort_title.cmp(&b.sort_title))
+}
+
+/// The name for today's row: one of the biggest names (at least [`PICK_MIN_TITLES`] titles), a different
+/// one each day. Returns the name as written and its items.
+fn pick<'a>(names: &[(String, Vec<&'a Item>)], seed: u64) -> Option<(String, Vec<&'a Item>)> {
+    let mut big: Vec<&(String, Vec<&Item>)> = names.iter().filter(|(_, v)| v.len() >= PICK_MIN_TITLES).collect();
+    big.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
+    big.truncate(PICK_FROM);
+    if big.is_empty() {
+        return None;
+    }
+    let (n, v) = big[(seed % big.len() as u64) as usize];
+    Some((n.clone(), v.clone()))
+}
+
+/// Groups `items` by the names `of` gives (case does not matter; the first spelling is kept).
+fn group_by<'a>(items: &[&'a Item], of: impl Fn(&Item) -> Vec<String>) -> Vec<(String, Vec<&'a Item>)> {
+    let mut map: BTreeMap<String, (String, Vec<&Item>)> = BTreeMap::new();
+    for it in items {
+        for n in of(it) {
+            let e = map.entry(n.to_lowercase()).or_insert_with(|| (n.clone(), vec![]));
+            if !e.1.iter().any(|x| x.id == it.id) {
+                e.1.push(it);
+            }
+        }
+    }
+    map.into_values().collect()
+}
+
+/// The show an episode or season belongs to.
+fn show_of<'a>(db: &'a Db, it: &'a Item) -> Option<&'a Item> {
+    let mut cur = it;
+    for _ in 0..3 {
+        if cur.kind == ItemKind::Show {
+            return Some(cur);
+        }
+        cur = db.items.get(&cur.parent_id?)?;
+    }
+    None
+}
+
+/// Adds a row unless it is empty; at most `count` titles, `more` when there are further ones.
+fn add(hubs: &mut Vec<Hub>, count: usize, title: String, identifier: &str, list: Vec<&Item>) {
+    if list.is_empty() {
+        return;
+    }
+    let more = list.len() > count;
+    hubs.push(Hub { title, identifier: identifier.into(), context: format!("hub.{identifier}"), ids: list.iter().take(count).map(|i| i.id).collect(), more });
+}
+
+/// The rows of a library's Recommended page. `day` picks the time-of-year rows, `seed` (the day number)
+/// which genre, person or network gets a row today.
+pub fn section_rows(db: &Db, user: &User, sid: u64, day: (u32, u32), seed: u64, count: usize) -> Vec<Hub> {
+    let Some(sec) = db.sections.iter().find(|s| s.id == sid) else { return vec![] };
+    let top = top_kind(sec.kind);
+    let mine = |i: &&Item| i.section_id == sid && !i.hidden() && db.can_see_item(user, i);
+    let mut pool: Vec<&Item> = db.items.values().filter(|i| i.kind == top).filter(mine).collect();
+    pool.sort_by(|a, b| a.sort_title.cmp(&b.sort_title));
+    let today = crate::db::today();
+    let mut hubs: Vec<Hub> = vec![];
+    let prefix = match sec.kind {
+        SectionKind::Movie => "movie",
+        SectionKind::Show => "tv",
+        SectionKind::Music => "music",
+        SectionKind::Other => "video",
+    };
+
+    // Continue Watching, only from this library.
+    let cw: Vec<&Item> = crate::server::continue_watching(db, user).iter().filter_map(|i| db.items.get(i)).filter(|i| i.section_id == sid).collect();
+    add(&mut hubs, count, "Continue Watching".into(), &format!("{prefix}.inprogress"), cw);
+
+    // What this person watched here last (episodes for TV), newest first.
+    let recently_viewed = || -> Vec<&Item> {
+        let mut seen: Vec<(u64, &Item)> = db
+            .views
+            .range(format!("{}:", user.id)..format!("{};", user.id))
+            .filter(|(_, v)| v.view_count > 0 && v.last_viewed_at > 0)
+            .filter_map(|(k, v)| Some((v.last_viewed_at, db.items.get(&k.split_once(':')?.1.parse::<u64>().ok()?)?)))
+            .filter(|(_, i)| i.kind.playable() && mine(i))
+            .collect();
+        seen.sort_by(|a, b| b.0.cmp(&a.0));
+        seen.into_iter().map(|x| x.1).collect()
+    };
+    let recently_added = |kind: ItemKind| -> Vec<&Item> {
+        let mut v: Vec<&Item> = db.items.values().filter(|i| i.kind == kind).filter(mine).collect();
+        v.sort_by(|a, b| b.added_at.cmp(&a.added_at).then(b.id.cmp(&a.id)));
+        v
+    };
+    // Out already (not announced for later), newest first.
+    let recently_released = |kind: ItemKind| -> Vec<&Item> {
+        let mut v: Vec<(String, &Item)> = db.items.values().filter(|i| i.kind == kind).filter(mine).map(|i| (released(i), i)).filter(|(d, _)| !d.is_empty() && d.as_str() <= today.as_str()).collect();
+        v.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.sort_title.cmp(&b.1.sort_title)));
+        v.into_iter().map(|x| x.1).collect()
+    };
+    let genres = group_by(&pool, |i| i.genres.iter().map(|g| g.trim().to_string()).filter(|g| !g.is_empty()).collect());
+    let seasonal = || -> Vec<Hub> {
+        occasion_rows(db, user, day, usize::MAX)
+            .into_iter()
+            .filter_map(|mut o| {
+                o.ids.retain(|i| db.items.get(i).is_some_and(|i| i.section_id == sid && (i.kind == top || i.kind == ItemKind::Episode)));
+                let more = o.ids.len() > count;
+                o.ids.truncate(count);
+                (!o.ids.is_empty()).then_some(Hub { more, ..o })
+            })
+            .collect()
+    };
+
+    match sec.kind {
+        SectionKind::Movie => {
+            add(&mut hubs, count, "Recently Released Movies".into(), "movie.recentlyreleased", recently_released(ItemKind::Movie));
+            add(&mut hubs, count, "Recently Added Movies".into(), "movie.recentlyadded", recently_added(ItemKind::Movie));
+            if let Some((g, mut list)) = pick(&genres, seed) {
+                list.sort_by(by_rating);
+                add(&mut hubs, count, format!("Top Movies in {g}"), "movie.genre", list);
+            }
+            // Actors (the first 10 of each film) and directors together; a different one each day.
+            let mut people = group_by(&pool, |i| texts(db, user.id, i, "actor").into_iter().take(10).collect());
+            let directors = group_by(&pool, |i| texts(db, user.id, i, "director"));
+            let director_names: Vec<String> = directors.iter().map(|d| d.0.to_lowercase()).collect();
+            people.extend(directors);
+            if let Some((p, mut list)) = pick(&people, seed / 2 + 1) {
+                list.sort_by(by_rating);
+                let title = if director_names.contains(&p.to_lowercase()) { format!("Top Movies by {p}") } else { format!("Top Movies with {p}") };
+                add(&mut hubs, count, title, "movie.person", list);
+            }
+            let mut unwatched: Vec<&Item> = pool.iter().copied().filter(|i| db.view(user.id, i.id).view_count == 0 && i.rating.is_some()).collect();
+            unwatched.sort_by(by_rating);
+            add(&mut hubs, count, "Top Unwatched Picks".into(), "movie.unwatched", unwatched);
+            for o in seasonal() {
+                hubs.push(o);
+            }
+            add(&mut hubs, count, "Recently Watched Movies".into(), "movie.recentlyviewed", recently_viewed());
+        }
+        SectionKind::Show => {
+            add(&mut hubs, count, "Recently Released Episodes".into(), "tv.recentlyreleased", recently_released(ItemKind::Episode));
+            if db.settings.group_recent_episodes {
+                let eps: Vec<u64> = recently_added(ItemKind::Episode).iter().map(|i| i.id).collect();
+                add(&mut hubs, count, "Recently Added TV".into(), "tv.recentlyadded", crate::server::shows_of(db, &eps, count + 1).iter().filter_map(|i| db.items.get(i)).collect());
+            } else {
+                add(&mut hubs, count, "Recently Added Episodes".into(), "tv.recentlyadded", recently_added(ItemKind::Episode));
+            }
+            // When this person last watched an episode of each show.
+            let mut last: std::collections::HashMap<u64, u64> = Default::default();
+            for (k, v) in db.views.range(format!("{}:", user.id)..format!("{};", user.id)) {
+                if v.view_count == 0 && v.view_offset_ms == 0 {
+                    continue;
+                }
+                let Some(ep) = k.split_once(':').and_then(|x| x.1.parse::<u64>().ok()).and_then(|i| db.items.get(&i)) else { continue };
+                if ep.section_id != sid {
+                    continue;
+                }
+                if let Some(show) = show_of(db, ep) {
+                    let e = last.entry(show.id).or_default();
+                    *e = (*e).max(v.last_viewed_at);
+                }
+            }
+            // Start Watching: shows not begun yet, the newest first.
+            let mut fresh: Vec<&Item> = pool.iter().copied().filter(|s| !last.contains_key(&s.id)).collect();
+            fresh.sort_by(|a, b| b.added_at.cmp(&a.added_at).then(a.sort_title.cmp(&b.sort_title)));
+            add(&mut hubs, count, "Start Watching".into(), "tv.startwatching", fresh);
+            // Rediscover: shows watched long ago, the longest ago first.
+            let cutoff = crate::db::now().saturating_sub(REDISCOVER_DAYS * 86400);
+            let mut old: Vec<(u64, &Item)> = pool.iter().filter_map(|s| last.get(&s.id).filter(|t| **t > 0 && **t < cutoff).map(|t| (*t, *s))).collect();
+            old.sort_by(|a, b| a.0.cmp(&b.0));
+            add(&mut hubs, count, "Rediscover".into(), "tv.rediscover", old.into_iter().map(|x| x.1).collect());
+            let networks = group_by(&pool, |i| vec![i.studio.trim().to_string()].into_iter().filter(|s| !s.is_empty()).collect());
+            if let Some((n, mut list)) = pick(&networks, seed / 2 + 1) {
+                list.sort_by(by_rating);
+                add(&mut hubs, count, format!("More from {n}"), "tv.network", list);
+            }
+            if let Some((g, mut list)) = pick(&genres, seed) {
+                list.sort_by(by_rating);
+                add(&mut hubs, count, format!("More in {g}"), "tv.genre", list);
+            }
+            let mut rated: Vec<&Item> = pool.iter().copied().filter(|i| i.rating.is_some_and(|r| r > 0.0)).collect();
+            rated.sort_by(by_rating);
+            add(&mut hubs, count, "Top Rated Shows".into(), "tv.toprated", rated);
+            for o in seasonal() {
+                hubs.push(o);
+            }
+            add(&mut hubs, count, "Recently Watched Episodes".into(), "tv.recentlyviewed", recently_viewed());
+        }
+        SectionKind::Music => {
+            add(&mut hubs, count, "Recently Added Music".into(), "music.recentlyadded", recently_added(ItemKind::Album));
+            add(&mut hubs, count, "Recently Played".into(), "music.recentlyviewed", recently_viewed());
+        }
+        SectionKind::Other => {
+            add(&mut hubs, count, "Recently Added".into(), "video.recentlyadded", recently_added(ItemKind::Video));
+            add(&mut hubs, count, "Recently Watched".into(), "video.recentlyviewed", recently_viewed());
+        }
+    }
+    hubs
+}
+
 /// "MM-DD" or "YYYY-MM-DD" to (month, day).
 pub fn month_day(s: &str) -> Option<(u32, u32)> {
     let mut parts = s.trim().rsplitn(3, '-');
@@ -343,6 +558,62 @@ mod tests {
         let cats = categories(&db, &user, 1);
         assert!(occasion_rows(&db, &user, (10, 31), 20).is_empty(), "no horror, no Halloween row");
         assert_eq!(cats.iter().map(|c| c["title"].as_str().unwrap().to_string()).collect::<Vec<_>>(), vec!["Comedy", "Drama", "Sci-Fi"]);
+    }
+
+    #[test]
+    fn recommended_rows_of_a_library() {
+        let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 99, "settings": crate::db::Settings::default(),
+            "sections": [], "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        for (id, kind) in [(1, SectionKind::Movie), (2, SectionKind::Show)] {
+            db.sections.push(Section { id, name: "L".into(), kind, paths: vec![], created_at: 0, scanned_at: 0, credits_detection: true, intro_detection: true, language: String::new(), scan_interval_minutes: None });
+        }
+        let mk = |id: u64, sid: u64, kind: &str, parent: Option<u64>, genres: &[&str], rating: f32, extra: Value| -> Item {
+            serde_json::from_value(json!({"id": id, "section_id": sid, "kind": kind, "parent_id": parent, "title": format!("T{id}"), "sort_title": format!("t{id:03}"),
+                "genres": genres, "rating": rating, "added_at": id, "updated_at": 0, "extra": extra})).unwrap()
+        };
+        let cast = |a: &[&str]| a.iter().map(|n| json!({"name": n})).collect::<Vec<_>>();
+        for it in [
+            mk(1, 1, "movie", None, &["Drama"], 6.0, json!({"originally_available": "2020-05-01", "cast": cast(&["Ann"])})),
+            mk(2, 1, "movie", None, &["Drama"], 8.0, json!({"originally_available": "2024-01-01", "cast": cast(&["Ann"])})),
+            mk(3, 1, "movie", None, &["Drama", "Horror"], 7.0, json!({"originally_available": "1999-01-01", "cast": cast(&["Ann", "Bob"])})),
+            mk(4, 1, "movie", None, &["Comedy"], 9.0, json!({"originally_available": "2999-01-01"})),
+            // A show with one season and two episodes, and a second show nobody started.
+            mk(10, 2, "show", None, &["Crime"], 8.5, json!({})),
+            mk(11, 2, "season", Some(10), &[], 0.0, json!({})),
+            mk(12, 2, "episode", Some(11), &[], 0.0, json!({"originally_available": "2023-03-01"})),
+            mk(13, 2, "episode", Some(11), &[], 0.0, json!({"originally_available": "2023-03-08"})),
+            mk(20, 2, "show", None, &["Crime"], 7.5, json!({})),
+        ] {
+            db.items.insert(it.id, it);
+        }
+        let user: User = serde_json::from_value(json!({"id": 1, "username": "o", "admin": true, "password_hash": "", "salt": "", "created_at": 0})).unwrap();
+        db.views.insert("1:2".into(), crate::db::ViewState { view_count: 1, last_viewed_at: crate::db::now(), ..Default::default() });
+        db.views.insert("1:12".into(), crate::db::ViewState { view_count: 1, last_viewed_at: 1000, ..Default::default() });
+
+        let rows = section_rows(&db, &user, 1, (6, 1), 0, 20);
+        let by = |rows: &[Hub], id: &str| rows.iter().find(|h| h.identifier == id).map(|h| h.ids.clone()).unwrap_or_default();
+        // Not yet out (2999) is left out; newest release first.
+        assert_eq!(by(&rows, "movie.recentlyreleased"), vec![2, 1, 3]);
+        assert_eq!(by(&rows, "movie.recentlyadded"), vec![4, 3, 2, 1]);
+        // Drama has 3 films (Comedy and Horror too few): best rated first.
+        let g = rows.iter().find(|h| h.identifier == "movie.genre").unwrap();
+        assert_eq!((g.title.as_str(), g.ids.clone()), ("Top Movies in Drama", vec![2, 3, 1]));
+        assert_eq!(rows.iter().find(|h| h.identifier == "movie.person").unwrap().title, "Top Movies with Ann");
+        assert_eq!(by(&rows, "movie.unwatched"), vec![4, 3, 1]);
+        assert_eq!(by(&rows, "movie.recentlyviewed"), vec![2]);
+        assert!(rows.iter().all(|h| h.ids.iter().all(|i| db.items[i].section_id == 1)), "only this library");
+
+        let rows = section_rows(&db, &user, 2, (6, 1), 0, 20);
+        assert_eq!(by(&rows, "tv.recentlyreleased"), vec![13, 12]);
+        assert_eq!(by(&rows, "tv.startwatching"), vec![20]);
+        assert_eq!(by(&rows, "tv.rediscover"), vec![10], "watched long ago");
+        assert_eq!(by(&rows, "tv.toprated"), vec![10, 20]);
+        assert_eq!(by(&rows, "tv.recentlyviewed"), vec![12]);
+        assert!(by(&rows, "tv.genre").is_empty(), "two shows are too few for a genre row");
+        // Only one row per kind, at most `count` titles, `more` when cut.
+        let short = section_rows(&db, &user, 1, (6, 1), 0, 2);
+        let added = short.iter().find(|h| h.identifier == "movie.recentlyadded").unwrap();
+        assert!(added.more && added.ids == vec![4, 3]);
     }
 
     #[test]

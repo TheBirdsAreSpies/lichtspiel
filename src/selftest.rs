@@ -655,6 +655,11 @@ pub fn run(out: &Path) -> bool {
     let search = c.get("/hubs/search?query=test").json()["MediaContainer"]["size"].as_u64().unwrap_or(0);
     let hubs = c.get("/hubs").json()["MediaContainer"]["size"].as_u64().unwrap_or(0);
     let browse = c.get(&format!("/library/sections/{mid}/all?year>=2000&sort=title")).json()["MediaContainer"]["size"].as_u64().unwrap_or(0);
+    // The movie library's Recommended page: at least "Recently Added Movies", and only its own titles.
+    let rec = c.get(&format!("/hubs/sections/{mid}")).json();
+    let rec_hubs = rec["MediaContainer"]["Hub"].as_array().cloned().unwrap_or_default();
+    let rec_ok = rec_hubs.iter().any(|h| h["hubIdentifier"] == "movie.recentlyadded" && h["size"].as_u64().unwrap_or(0) >= 1)
+        && rec_hubs.iter().flat_map(|h| h["Metadata"].as_array().cloned().unwrap_or_default()).all(|m| m["librarySectionID"].as_u64().is_none_or(|s| s == mid));
     let unauth = anon.get("/library/sections").status;
     // A new episode copied into the TV folder shows up by itself (folder watching).
     crate::server::WATCH_SECONDS.store(1, std::sync::atomic::Ordering::Relaxed);
@@ -672,9 +677,9 @@ pub fn run(out: &Path) -> bool {
     }
     steps.add(
         "api",
-        nf >= 20 && search >= 1 && hubs >= 1 && browse == 2 && unauth == 401 && seen_new,
-        format!("{nf} filter fields; search 'test' → {search}; {hubs} home rows; movies with year>=2000 → {browse}; without a token → HTTP {unauth}; new episode copied into the folder found by itself: {} (after {:.1} s)",
-            if seen_new { "yes" } else { "no" }, t0.elapsed().as_secs_f32()),
+        nf >= 20 && search >= 1 && hubs >= 1 && rec_ok && browse == 2 && unauth == 401 && seen_new,
+        format!("{nf} filter fields; search 'test' → {search}; {hubs} home rows; {} Recommended rows in the movie library (as expected: {rec_ok}); movies with year>=2000 → {browse}; without a token → HTTP {unauth}; new episode copied into the folder found by itself: {} (after {:.1} s)",
+            rec_hubs.len(), if seen_new { "yes" } else { "no" }, t0.elapsed().as_secs_f32()),
     );
 
     // ---- import: a small database in the old server's format, with Windows

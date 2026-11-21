@@ -1245,9 +1245,9 @@ async function sectionPage(id, qs) {
   let p = new URLSearchParams(qs || '');
   // Opened without a choice: the filters and sorting of the last visit come back.
   if (!qs) { try { const last = localStorage.getItem('libstate:' + id); if (last) p = new URLSearchParams(last); } catch (e) { /* none */ } }
-  // The library's own pages: Library, Collections, Playlists, Categories.
+  // The library's own pages: Recommended, Library, Collections, Playlists, Categories.
   const tab = p.get('tab') || '';
-  const tabs = h('div', { class: 'tabs' }, [['', t('Library')], ['collections', t('Collections')], ['playlists', t('Playlists')], ['categories', t('Categories')]]
+  const tabs = h('div', { class: 'tabs' }, [['recommended', t('Recommended')], ['', t('Library')], ['collections', t('Collections')], ['playlists', t('Playlists')], ['categories', t('Categories')]]
     .map(([k, l]) => h('a', { href: `#/section/${id}${k ? '?tab=' + k : ''}`, class: tab === k ? 'on' : '' }, l)));
   if (tab) return sectionSubPage(sec, tab, tabs);
   const st = {}; for (const k of ['type', 'sort', 'from', 'to', 'q', 'container', 'rules', 'rmatch']) st[k] = p.get(k) || '';
@@ -1487,9 +1487,16 @@ async function sectionPage(id, qs) {
 
 const itemCount = n => n === 1 ? t('1 item') : t('{n} items', { n });
 
-// Collections, Playlists and Categories of one library.
+// Recommended, Collections, Playlists and Categories of one library.
 async function sectionSubPage(sec, tab, tabs) {
   const head = h('h1', {}, sec.title);
+  if (tab === 'recommended') {
+    const wait = skeletonSoon(() => set(head, tabs, skeletonRows(3)));
+    const hubs = (await GET(`/hubs/sections/${sec.id}`)).MediaContainer.Hub || [];
+    wait();
+    return set(head, tabs, hubs.length ? hubs.map(hb => row(hb.title, hb.Metadata))
+      : h('div', { class: 'empty' }, t('Nothing to recommend yet. Rows appear once the library has titles.')));
+  }
   const tile = (d, onclick) => h('div', { class: 'card', onclick },
     h('div', { class: 'poster' }, d.thumb ? h('img', { src: withTok(d.thumb), loading: 'lazy', alt: '' }) : null, h('span', { class: 'badge' }, d.childCount)),
     h('div', { class: 't', title: d.title }, d.title), h('div', { class: 's' }, itemCount(d.childCount)));
