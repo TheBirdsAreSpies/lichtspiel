@@ -195,6 +195,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("PUT", "/api/plugins/{id}/placement", "Admin: where the plugin's panel is shown {placement: settings|sidebar|both, empty = where the plugin suggests}"),
     ("GET", "/api/plugins/panels", "Switched-on plugins that give each person a panel → {panels: [{id, name, description, settings, sidebar, admins_only}]}: in Settings → Account and/or as a page in the left menu"),
     ("GET", "/api/plugins/{id}/library", "For a plugin with reads_library: every movie and episode with its files (key=… from server.library)"),
+    ("GET", "/api/plugins/{id}/history", "For a plugin with reads_library: one person's play history ?user=name&since=unix seconds (key=… from server.history) → {plays: [{at, manual, item}]}"),
     ("POST", "/api/plugins/{id}/call/{action}", "Run a plugin's own action (any JSON body is passed on); an answer with mark_watched marks those items watched for you"),
     ("GET", "/api/settings", "Admin: server settings"),
     ("POST", "/api/settings/mail-test", "Admin: send a test mail with the mail server from the settings {to (empty = your own address), lang}"),
@@ -320,6 +321,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("GET", ["video", "transcode", "hls", sid, file]) => return hls_file(app, sid, file),
         ("GET", ["rss", "watchlist", key]) => return crate::rss::feed(app, ctx, key),
         ("GET", ["api", "plugins", pid, "library"]) => return plugin_library(app, ctx, pid),
+        ("GET", ["api", "plugins", pid, "history"]) => return plugin_history(app, ctx, pid),
         ("GET", ["favicon.ico"]) => return bytes(200, "image/svg+xml", FAVICON.as_bytes().to_vec()),
         _ => {}
     }

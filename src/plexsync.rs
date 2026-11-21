@@ -604,8 +604,10 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
                             finished_in_plex = true;
                             v.view_offset_ms = 0; // counted below, with the resume points
                         }
+                        // Watched in Plex at a known time: a viewing like one here (Wrapped counts it).
+                        // Without a time it is only marked, like ticking it off by hand.
                         let at = if p.last > 0 { p.last } else { now() };
-                        db.record_play_at(u, *id, true, at);
+                        db.record_play_at(u, *id, p.last == 0, at);
                         here.watched += 1;
                     } else {
                         v.view_count = 0;

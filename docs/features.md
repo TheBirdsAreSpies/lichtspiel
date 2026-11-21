@@ -141,8 +141,11 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   **Lichtspiel Wrapped** shows each person their year on its page in the left menu: hours watched,
   movies and episodes, favourite genres, most watched shows, the longest binge (episodes of one
   show, each within `binge_gap_hours` of the last, default 3), the busiest month and day, and the
-  first and latest title; earlier years are a click away (kept for four years). It counts what is
-  finished from the moment it is switched on; titles marked as watched by hand do not count.
+  first and latest title; earlier years are a click away (four years). It counts every movie and
+  episode in the server's play history, also those brought in from Plex (the import, and Plex sync
+  when Plex knows when it was watched) and those from before it was switched on; titles marked as
+  watched by hand do not count. Plugins that read the library get that history per person from
+  `server.history` (`?user=name&since=unix seconds`).
   **SIMKL / MyAnimeList** puts what someone finished (also when marked as watched by hand) into
   their SIMKL history and, for anime, their MyAnimeList list (episodes watched; completed after the
   last one; a rewatch leaves a finished entry alone). Everyone connects their own accounts under
@@ -193,7 +196,7 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   named in `libraries`; with none named, titles whose original title is Japanese and that are
   animated.
   The **Library doctor** looks through the library after each scan that changed something, once
-  a day and on **Check now**, and shows admins on its page in the left menu what may need a hand:
+  a day and on **Check now** (the button turns while it checks, and then says what it found), and shows admins on its page in the left menu what may need a hand:
   titles that are there twice (versions merged on purpose do not count), videos below a width
   (`min_width`, default 1280 = HD; 0 = do not check), videos with no audio in the chosen
   languages (`languages`, default `["de"]`; it notes subtitles in them) or whose audio has no

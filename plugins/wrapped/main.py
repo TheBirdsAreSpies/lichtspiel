@@ -1,19 +1,24 @@
 """Lichtspiel Wrapped: a look back at the year for each person.
 
-playback.watched notes each finished movie and episode (not those marked as watched by hand: a whole
-show ticked off at once is not a binge). The panel under Settings shows the person's own year: hours
-watched, movies and episodes, favourite genres, most watched shows, longest binge, busiest month, and
-the first and last title; earlier years stay one click away.
+The year comes from the server's play history (server.history): every movie and episode watched to
+the end, here or brought in from Plex, also from before the plugin was switched on. Titles marked as
+watched by hand do not count (a whole show ticked off at once is not a binge). The panel shows the
+person's own year: hours watched, movies and episodes, favourite genres, most watched shows, longest
+binge, busiest month, and the first and last title; earlier years stay one click away.
 
-The notes are kept in state.json in the plugin's folder, for this year and the three before it.
+A server without that history: playback.watched notes each finished title in state.json in the
+plugin's folder, for this year and the three before it, and those notes are used.
 """
 import collections
 import contextlib
 import datetime
 import json
 import os
+import ssl
 import sys
 import time
+import urllib.parse
+import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(HERE, "state.json")
@@ -28,6 +33,7 @@ WORDS = {
     "Your {year}, {name}": "Dein {year}, {name}",
     "Nothing finished in {year} yet. What you watch to the end from now on is counted here.": "In {year} noch nichts fertig geschaut. Was du ab jetzt zu Ende schaust, wird hier gezählt.",
     "Counted since {date}.": "Gezählt seit dem {date}.",
+    "Nothing watched to the end in {year} yet.": "In {year} noch nichts zu Ende geschaut.",
     "{h} hours": "{h} Stunden",
     "1 hour": "1 Stunde",
     "{m} minutes": "{m} Minuten",
@@ -116,19 +122,27 @@ def save(state):
 
 # ---------- noting what was finished
 
-def note(data, now=None):
-    item = data.get("item") or {}
-    user = data.get("user")
-    if data.get("manual") or not user or item.get("type") not in ("movie", "episode"):
-        return False
-    now = int(now or time.time())
-    entry = {"at": now, "id": item.get("id"), "type": item["type"], "title": item.get("title") or "?",
+def entry_of(item, at):
+    """What is kept of a finished movie or episode; None for anything else."""
+    if item.get("type") not in ("movie", "episode"):
+        return None
+    entry = {"at": int(at), "id": item.get("id"), "type": item["type"], "title": item.get("title") or "?",
              "year": item.get("year"), "min": round((item.get("duration_ms") or 0) / 60000), "genres": item.get("genres") or []}
     if item["type"] == "episode":
         show = item.get("show") or {}
         entry.update(show=show.get("title") or "?", show_id=show.get("id"), season=item.get("season"), episode=item.get("episode"))
         # An episode's genres are the show's (episodes have none of their own).
         entry["genres"] = entry["genres"] or show.get("genres") or []
+    return entry
+
+
+def note(data, now=None):
+    item = data.get("item") or {}
+    user = data.get("user")
+    now = int(now or time.time())
+    entry = entry_of(item, now)
+    if data.get("manual") or not user or not entry:
+        return False
     cut = datetime.date.fromtimestamp(now).year - KEEP_YEARS + 1
     with locked():
         state = load()
@@ -140,6 +154,35 @@ def note(data, now=None):
         st["seen"] = seen
         save(state)
     return True
+
+
+# ---------- the server's play history
+
+def server_seen(server, user):
+    """Everything the person watched to the end in the years kept, from the server; None when it cannot say."""
+    address = (server or {}).get("history")
+    if not address or not user:
+        return None
+    since = int(time.mktime(datetime.date(datetime.date.today().year - KEEP_YEARS + 1, 1, 1).timetuple()))
+    url = address + ("&" if "?" in address else "?") + urllib.parse.urlencode({"user": user, "since": since})
+    ctx = None
+    if url.startswith("https://") and urllib.parse.urlparse(url).hostname in ("127.0.0.1", "localhost", "::1"):
+        # The server's own certificate may be made for its public name, not for 127.0.0.1.
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"Accept": "application/json"}), timeout=15, context=ctx) as r:
+            plays = json.loads(r.read().decode("utf-8")).get("plays") or []
+    except (OSError, ValueError, AttributeError):
+        return None
+    seen = []
+    for p in sorted(plays, key=lambda p: p.get("at") or 0):
+        e = None if p.get("manual") or not p.get("at") else entry_of(p.get("item") or {}, p["at"])
+        # The same title finished twice within a few minutes (two players reporting it) counts once.
+        if e and not any(x["id"] == e["id"] and e["at"] - x["at"] < 600 for x in seen[-5:]):
+            seen.append(e)
+    return seen
 
 
 # ---------- the year
@@ -215,8 +258,9 @@ def href(ident):
     return "#/item/%s" % ident if ident else ""
 
 
-def panel(lang, s, user, year=None, first=""):
-    st = (load().get("people") or {}).get(user) or {"seen": []}
+def panel(lang, s, user, year=None, first="", server=None):
+    from_server = server_seen(server, user)
+    st = {"seen": from_server} if from_server is not None else (load().get("people") or {}).get(user) or {"seen": []}
     this_year = datetime.date.today().year
     year = int(year or this_year)
     seen = [e for e in st.get("seen") or [] if year_of(e) == year]
@@ -226,7 +270,8 @@ def panel(lang, s, user, year=None, first=""):
     if buttons:
         out["buttons"] = buttons
     if not seen:
-        out["text"] = tr(lang, "Nothing finished in {year} yet. What you watch to the end from now on is counted here.", year=year)
+        out["text"] = tr(lang, "Nothing watched to the end in {year} yet.", year=year) if from_server is not None else \
+            tr(lang, "Nothing finished in {year} yet. What you watch to the end from now on is counted here.", year=year)
         return out
     sm = summary(seen, float(s.get("binge_gap_hours") or 3))
     if st.get("since") and year_of({"at": st["since"]}) == year:
@@ -276,6 +321,7 @@ def main():
     event = msg.get("event", "")
     data = msg.get("data") or {}
     s = msg.get("settings") or {}
+    server = msg.get("server") or {}
     if event == "playback.watched":
         out = {"ok": True, "noted": note(data)}
     elif event == "api.call":
@@ -284,9 +330,9 @@ def main():
         lang, user = body.get("lang") or "en", data.get("user") or ""
         first = first_name(data)
         if data.get("action") == "panel":
-            out = panel(lang, s, user, first=first)
+            out = panel(lang, s, user, first=first, server=server)
         elif data.get("action") == "year" and isinstance(args.get("year"), int):
-            out = {"panel": panel(lang, s, user, args["year"], first)}
+            out = {"panel": panel(lang, s, user, args["year"], first, server)}
         else:
             out = {"error": "Unknown action"}
     else:

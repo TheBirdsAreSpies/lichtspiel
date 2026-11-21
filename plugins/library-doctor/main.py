@@ -42,6 +42,9 @@ WORDS = {
     "Checked {when}: {n} titles, nothing to report.": "Geprüft am {when}: {n} Titel, alles in Ordnung.",
     "Checked {when}: {n} titles.": "Geprüft am {when}: {n} Titel.",
     "Check now": "Jetzt prüfen",
+    "Checking the library…": "Prüfe die Bibliothek…",
+    "Checked {n} titles: {m} to look at.": "{n} Titel geprüft: {m} zum Ansehen.",
+    "Checked {n} titles: nothing to report.": "{n} Titel geprüft: nichts zu melden.",
     "Show": "Anzeigen",
     "Back": "Zurück",
     "Ignore": "Ignorieren",
@@ -379,7 +382,7 @@ def visible(report, ignored):
 def overview(lang, settings, message=None):
     report = read_json(REPORT, None)
     ignored = set(read_json(IGNORED, []))
-    buttons = [{"label": tr(lang, "Check now"), "action": "check", "primary": True}]
+    buttons = [{"label": tr(lang, "Check now"), "action": "check", "primary": True, "working": tr(lang, "Checking the library…")}]
     if ignored:
         buttons.append({"label": tr(lang, "Show ignored again ({n})", n=len(ignored)), "action": "unignore",
                         "confirm": tr(lang, "Show all ignored entries again?")})
@@ -453,12 +456,14 @@ def answer_call(data, settings, server):
         return overview(lang, settings)
     if action == "check":
         try:
-            run_check(server, settings)
+            report = run_check(server, settings)
         except LookupError:
             return {"error": tr(lang, "This plugin needs a server that lets plugins read the library.")}
         except Exception as e:  # noqa: BLE001 — shown to the admin
             return {"error": tr(lang, "The library could not be read: {e}", e=e)}
-        return {"panel": overview(lang, settings)}
+        n = sum(len(v) for v in visible(report, set(read_json(IGNORED, []))).values())
+        done = tr(lang, "Checked {n} titles: {m} to look at.", n=report.get("total", 0), m=n) if n else             tr(lang, "Checked {n} titles: nothing to report.", n=report.get("total", 0))
+        return {"message": done, "panel": overview(lang, settings)}
     if action == "show":
         return {"panel": show_check(lang, settings, str(args.get("check") or ""))}
     if action == "ignore":

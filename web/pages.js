@@ -859,6 +859,7 @@ function traktPanel() {
 // The plugin draws it: api.call "panel" answers {title, text, link, buttons: [{label, action, args, primary, confirm}],
 // input: {placeholder, action, label, value}, upload: {label, action, accept}, items: [{title, subtitle, status, image,
 // buttons}]}. A button's action gets {args} in its body, the input's action {query}, the upload's {file (base64), name}.
+// While a button's action runs it turns and says so ({working}: its own words for that, e.g. "Checking the library…").
 // An answer may carry {panel} (drawn at once, e.g. search results), {message, code, link, wait, poll: {action, seconds}}
 // (shown in a box that asks again until the answer says done), {error}, and the counts of what was brought in.
 // `only`: just this plugin's panel (its page in the left menu); else the ones shown in Settings → Account.
@@ -880,8 +881,9 @@ function pluginPanels(only) {
     const run = async (b, btn) => {
       if (b.confirm && !(await sure(b.confirm, { danger: b.action === 'disconnect' || b.danger }))) return;
       let r;
-      if (btn) btn.disabled = true;
-      try { r = await call(id, b.action, b.args ? { args: b.args } : null); } catch (e) { if (btn) btn.disabled = false; return toast(e.message, 6000); }
+      const label = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.replaceChildren(h('span', { class: 'bspin', 'aria-hidden': 'true' }), b.working || t('Working…')); }
+      try { r = await call(id, b.action, b.args ? { args: b.args } : null); } catch (e) { if (btn) { btn.disabled = false; btn.textContent = label; } return toast(e.message, 6000); }
       after(r, b.label);
     };
     const buttons = (list, small) => (list || []).map(b => { const el = h('button', { class: (b.primary ? 'primary' : '') + (small ? ' small' : ''), onclick: () => run(b, el) }, b.label); return el; });

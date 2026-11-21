@@ -115,5 +115,41 @@ class WrappedTest(unittest.TestCase):
         self.assertNotIn("Old", [e["title"] for e in main.load()["people"]["anna"]["seen"]])
 
 
+    def test_from_the_servers_history(self):
+        # What the server knows: a Plex import from last year, a play here, one marked by hand, and one
+        # reported twice. Notes of the plugin itself are not used then.
+        self.watch(movie(9, "Only in notes", []), at(1, 1, 20))
+        plays = [{"at": at(5, 1, 20, year=YEAR - 1), "manual": False, "item": movie(1, "Heat", ["Crime"])},
+                 {"at": at(2, 3, 20), "manual": False, "item": episode(10, "Lost", 7, 1, 1)},
+                 {"at": at(2, 3, 20, 3), "manual": False, "item": episode(10, "Lost", 7, 1, 1)},
+                 {"at": at(2, 4, 20), "manual": True, "item": movie(2, "Up", [])},
+                 {"at": at(2, 5, 20), "manual": False, "item": {"id": 3, "type": "track", "title": "Song"}}]
+        asked = []
+
+        class Answer(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def urlopen(req, timeout=None, context=None):
+            asked.append(req.full_url)
+            return Answer(json.dumps({"plays": plays}).encode())
+        with mock.patch.object(main.urllib.request, "urlopen", urlopen):
+            p = main.panel("en", {}, "anna", server={"history": "http://127.0.0.1:1/api/plugins/wrapped/history?key=k"})
+            last = main.panel("en", {}, "anna", YEAR - 1, server={"history": "http://127.0.0.1:1/api/plugins/wrapped/history?key=k"})
+        self.assertIn("key=k&user=anna&since=", asked[0])
+        self.assertEqual(p["items"][0]["subtitle"], "watched · 1 episode of 1 show")
+        self.assertEqual([b["label"] for b in p["buttons"]], [str(YEAR), str(YEAR - 1)])
+        self.assertEqual(last["items"][0]["subtitle"], "watched · 1 movie")
+        # The server cannot be asked: the plugin's own notes.
+        def down(*a, **k):
+            raise OSError("refused")
+        with mock.patch.object(main.urllib.request, "urlopen", down):
+            p = main.panel("en", {}, "anna", server={"history": "http://127.0.0.1:1/x?key=k"})
+        self.assertEqual(p["items"][0]["subtitle"], "watched · 1 movie")
+
+
 if __name__ == "__main__":
     unittest.main()

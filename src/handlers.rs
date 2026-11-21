@@ -1229,6 +1229,21 @@ pub fn plugin_library(app: &Arc<App>, ctx: &Ctx, pid: &str) -> Resp {
     }
 }
 
+/// One person's play history for a plugin that reads the library (`?key=…&user=name&since=unix seconds`).
+pub fn plugin_history(app: &Arc<App>, ctx: &Ctx, pid: &str) -> Resp {
+    let pl = app.plugins.lock().unwrap().get(pid).cloned();
+    let enabled = app.db.lock().unwrap().plugins.get(pid).is_some_and(|s| s.enabled);
+    let given = ctx.param("key").unwrap_or("");
+    if !matches!(pl, Some(pl) if pl.manifest.reads_library && enabled && !given.is_empty() && auth::same(given, &app.plugin_key(pid))) {
+        return fail(403, "This plugin may not read the library");
+    }
+    let since = ctx.param("since").and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+    match app.play_history(ctx.param("user").unwrap_or(""), since) {
+        Some(v) => ok(v),
+        None => fail(404, "No such user"),
+    }
+}
+
 /// Same id in two spellings (Trakt sends numbers, the details download may keep strings).
 fn id_key(source: &str, v: &Value) -> Option<String> {
     let s = match v { Value::String(s) => s.trim().to_string(), Value::Number(n) => n.to_string(), _ => return None };

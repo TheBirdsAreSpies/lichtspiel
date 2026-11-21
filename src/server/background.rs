@@ -357,6 +357,23 @@ mod tests {
             crate::handlers::plugin_library(&app, &ctx, pid)
         };
         let listed = ask("doctor", &key);
+        // The play history of one person, for Wrapped: what they watched, with what it is.
+        app.db.lock().unwrap().record_play_at(2, 7, false, 1000);
+        app.db.lock().unwrap().record_play_at(1, 7, false, 2000);
+        let hist = |pid: &str, key: &str, user: &str, since: &str| {
+            let ctx = Ctx { method: "GET".into(), path: format!("/api/plugins/{pid}/history"), params: vec![("key".into(), key.into()), ("user".into(), user.into()), ("since".into(), since.into())], body: Value::Null,
+                user: None, host: String::new(), range: None, token: None, remote: Some([127, 0, 0, 1].into()), remote_trusted: true, lan_extra: false, device: "t".into() };
+            let r = crate::handlers::plugin_history(&app, &ctx, pid);
+            let code = r.status_code().0;
+            let mut b = Vec::new(); r.into_reader().read_to_end(&mut b).unwrap();
+            (code, serde_json::from_slice::<Value>(&b).unwrap_or(Value::Null))
+        };
+        let (code, kid_plays) = hist("doctor", &key, "kid", "0");
+        assert_eq!(code, 200);
+        assert_eq!(kid_plays["plays"].as_array().map(|a| a.len()), Some(1), "only the kid's own: {kid_plays}");
+        assert_eq!((&kid_plays["plays"][0]["at"], &kid_plays["plays"][0]["item"]["type"]), (&json!(1000), &json!("movie")));
+        assert_eq!(hist("doctor", &key, "kid", "1001").1["plays"].as_array().map(|a| a.len()), Some(0), "since");
+        assert_eq!([hist("doctor", "wrong", "kid", "0").0, hist("other", &key, "kid", "0").0, hist("doctor", &key, "nobody", "0").0], [403, 403, 404]);
         let codes = [ask("doctor", "wrong").status_code().0, ask("other", &key).status_code().0, ask("doctor", "").status_code().0];
         let (admin, kid) = { let db = app.db.lock().unwrap(); (db.users[0].clone(), db.users[1].clone()) };
         let panels = |u: &User| { let r = crate::handlers::plugin_panels(&app, u); let mut b = Vec::new(); r.into_reader().read_to_end(&mut b).unwrap(); serde_json::from_slice::<Value>(&b).unwrap()["panels"].as_array().map(|a| a.len()).unwrap_or(0) };

@@ -1899,6 +1899,7 @@ I18N.add('de', 'Deutsch', {
     'That is not an e-mail address': 'Das ist keine E-Mail-Adresse',
     'Enter their e-mail address to send the invite': 'Gib die E-Mail-Adresse ein, um die Einladung zu senden',
     // ---------- plugin pages
+    'Working…': 'Läuft…',
     'This plugin is switched off or not shown to you.': 'Dieses Plugin ist ausgeschaltet oder für dich nicht sichtbar.',
     'Shown in': 'Erscheint in',
     'The left menu (a page of its own)': 'Der linken Leiste (eigene Seite)',

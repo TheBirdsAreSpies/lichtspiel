@@ -394,6 +394,7 @@ impl App {
         if pl.manifest.reads_library {
             let id = &pl.manifest.id;
             v["library"] = json!(format!("{}/api/plugins/{id}/library?key={}", v["url"].as_str().unwrap_or(""), self.plugin_key(id)));
+            v["history"] = json!(format!("{}/api/plugins/{id}/history?key={}", v["url"].as_str().unwrap_or(""), self.plugin_key(id)));
         }
         let s = self.settings();
         if pl.manifest.sends_mail && crate::mail::ready(&s) {
@@ -440,6 +441,20 @@ impl App {
         }).collect();
         let users: Vec<&str> = db.users.iter().map(|u| u.username.as_str()).collect();
         json!({"sections": sections, "users": users, "items": items})
+    }
+
+    /// One person's play history from `since` (unix seconds), oldest first: what `GET /api/plugins/{id}/history`
+    /// answers. Every viewing of a movie or episode, here or brought in from Plex, with what the item is;
+    /// `manual`: marked as watched (by hand, or by Plex without a time).
+    pub fn play_history(&self, user: &str, since: u64) -> Option<Value> {
+        let db = self.db.lock().unwrap();
+        let uid = db.users.iter().find(|u| u.username.eq_ignore_ascii_case(user))?.id;
+        let mut items: HashMap<u64, Value> = HashMap::new();
+        let plays: Vec<Value> = db.history.iter().filter(|e| e.user_id == uid && e.at >= since)
+            .filter(|e| db.items.get(&e.item_id).is_some_and(|i| matches!(i.kind, ItemKind::Movie | ItemKind::Episode)))
+            .map(|e| json!({"at": e.at, "manual": e.manual, "item": items.entry(e.item_id).or_insert_with(|| brief_in(&db, e.item_id)).clone()}))
+            .collect();
+        Some(json!({"user": user, "plays": plays}))
     }
 
     /// Plugins that listen to `event` and are switched on, with their settings.
@@ -986,7 +1001,7 @@ pub(crate) mod tests {
             // "Forgot password": the link in the mail is the proof (see auth::reset_code).
             ("POST", "/api/password/forgot"), ("GET", "/api/password/reset/{code}"), ("POST", "/api/password/reset/{code}"),
             // A plugin's own key instead of a sign-in (it is refused without it, see the test of reads_library).
-            ("GET", "/api/plugins/{id}/library"),
+            ("GET", "/api/plugins/{id}/library"), ("GET", "/api/plugins/{id}/history"),
         ];
         for open in OPEN {
             assert!(crate::routes::ROUTES.iter().any(|r| (r.0, r.1) == *open), "{open:?} is on the open list but not in ROUTES");
