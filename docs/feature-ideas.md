@@ -8,7 +8,7 @@ skip intro / credits, watch together, downloads, Trakt, the eleven bundled plugi
 
 ## First
 
-- [ ] **Sleep timer in the player** — "stop after this episode", or after 30 / 60 / 90 minutes.
+- [x] **Sleep timer in the player** — "stop after this episode", or after 30 / 60 / 90 minutes.
   Small, in the web app and the app; useful with shows that play the next episode by themselves.
 - [ ] **Subtitle sync (plugin)** — subtitles from OpenSubtitles are often a few seconds off. A
   plugin shifts them to fit the sound (`ffsubsync` or `alass`). Goes with the `subtitles` plugin.

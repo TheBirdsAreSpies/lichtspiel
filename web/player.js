@@ -460,7 +460,8 @@ function drawBar() {
   const d = duration();
   $('#ptime').textContent = P.remaining && d ? `−${fmtTime(d - now)}` : `${fmtTime(now)} / ${fmtTime(d)}`;
   const ends = d && !video.paused ? new Date(Date.now() + (d - now) / (video.playbackRate || 1) * 1000) : null;
-  $('#psub').textContent = [P.subLine, ends ? t('ends at {time}', { time: ends.toLocaleTimeString(I18N.lang, { hour: '2-digit', minute: '2-digit', hour12: hour12() }) }) : ''].filter(Boolean).join(' · ');
+  const sleep = !P.sleep ? '' : P.sleep.end ? t('stops after this title') : t('sleep timer {time}', { time: fmtTime(sleepLeft()) });
+  $('#psub').textContent = [P.subLine, ends ? t('ends at {time}', { time: ends.toLocaleTimeString(I18N.lang, { hour: '2-digit', minute: '2-digit', hour12: hour12() }) }) : '', sleep].filter(Boolean).join(' · ');
   // "Skip credits" while the credits run.
   const inCredits = P.credits.some(c => now >= c) && now < d - 3;
   const skip = $('#pskip');
@@ -515,7 +516,7 @@ video.addEventListener('play', () => { if (LEVEL.ctx && LEVEL.ctx.state === 'sus
 // on its way: that is no pause (readyState is 0 then). Playing again is told at once.
 video.addEventListener('pause', () => { drawButtons(); wake(); if (!video.ended && video.readyState > 0) report('paused'); });
 video.addEventListener('playing', () => { if (P.reported !== 'playing') report('playing'); });
-video.addEventListener('volumechange', () => { drawButtons(); store.set('volume', video.volume); store.set('muted', video.muted ? '1' : '0'); });
+video.addEventListener('volumechange', () => { drawButtons(); if (P.sleepVol !== undefined) return; store.set('volume', video.volume); store.set('muted', video.muted ? '1' : '0'); });
 video.addEventListener('timeupdate', () => { if (!bar.classList.contains('drag')) drawBar(); drawLyrics(); });
 video.addEventListener('progress', drawBar);
 video.addEventListener('durationchange', drawMarks);
@@ -545,6 +546,7 @@ video.addEventListener('ended', () => {
 });
 // The end, or "Skip credits": the next one after a countdown, or close.
 function upNext() {
+  if (sleepAtEnd()) return;
   const next = P.queue[0] || Q.list[0] || P.next;
   if (!next) return closePlayer(false);
   if (!P.autoNext || (P.suggest && next === P.next)) return showNext(next, null);
@@ -592,6 +594,64 @@ function showNext(next, secs) {
   playNow.focus();
 }
 function hideNext() { clearInterval(P.countdown); P.countdown = null; $('#pnext').style.display = 'none'; }
+
+// ---- sleep timer: pauses after a number of minutes (clock time, the sound fading out over the
+// last 20 s), or stops at the end of this episode or movie (at its credits when they are known,
+// which then counts it as watched). It lasts over episodes until it fires or the player closes.
+// Any input while the sound fades switches it off again.
+const SLEEP_MINUTES = [15, 30, 45, 60, 90, 120], SLEEP_FADE = 20;
+function setSleep(v) {
+  sleepFade(1);
+  P.sleep = v === null ? null : v === 'end' ? { end: true } : { at: Date.now() + v * 60000 };
+  drawBar();
+}
+function sleepLeft() { return P.sleep && P.sleep.at ? Math.max(0, (P.sleep.at - Date.now()) / 1000) : null; }
+function sleepLabel() {
+  if (!P.sleep) return t('Off');
+  if (P.sleep.end) return t('End of this title');
+  return t('{n} min left', { n: Math.ceil(sleepLeft() / 60) });
+}
+// The fade turns the volume down without keeping it as the chosen volume; 1 puts it back.
+function sleepFade(f) {
+  if (f >= 1) { if (P.sleepVol === undefined) return; const v = P.sleepVol; delete P.sleepVol; video.volume = v; return; }
+  if (P.sleepVol === undefined) P.sleepVol = video.volume;
+  video.volume = P.sleepVol * Math.max(0, f);
+}
+function sleepNow() {
+  P.sleep = null;
+  video.pause();
+  sleepFade(1);
+  hideNext(); closePlayerMenu();
+  drawBar();
+  toast(t('Sleep timer: paused. Good night!'), 8000);
+}
+// At the end of the title, instead of the next one: stop (the end was already reported).
+function sleepAtEnd() {
+  if (!P.sleep || !P.sleep.end) return false;
+  P.sleep = null;
+  closePlayer(false);
+  toast(t('Sleep timer: stopped after this title. Good night!'), 8000);
+  return true;
+}
+setInterval(() => {
+  if (!P.it || !P.sleep || P.preroll) return;
+  if (P.sleep.end) {
+    // The credits count as the end, like "Skip credits".
+    const now = position(), d = duration();
+    if (P.credits.length && P.credits.some(c => now >= c) && now < d - 3 && !video.paused) {
+      report('stopped', Math.floor(d * 1000));
+      sleepAtEnd();
+    }
+    return;
+  }
+  const left = sleepLeft();
+  if (left <= 0) return sleepNow();
+  if (left <= SLEEP_FADE && !video.paused) sleepFade(left / SLEEP_FADE);
+  if (player.style.display === 'flex') drawBar();
+}, 1000);
+for (const ev of ['pointerdown', 'keydown', 'touchstart', 'wheel']) document.addEventListener(ev, () => {
+  if (P.sleepVol !== undefined && P.sleep) { setSleep(null); toast(t('Sleep timer off')); }
+}, { passive: true, capture: true });
 $('#pskipintro').addEventListener('click', () => {
   $('#pskipintro').style.display = 'none';
   if (P.intro) seekTo(P.intro[1]).then(() => tgSend());
@@ -600,6 +660,7 @@ $('#pskip').addEventListener('click', () => {
   $('#pskip').style.display = 'none';
   // Counts as watched to the end, like letting the credits run.
   report('stopped', Math.floor(duration() * 1000));
+  if (sleepAtEnd()) return;
   if (P.queue.length || Q.list.length || P.next) playNext(); else closePlayer(false);
 });
 
@@ -721,11 +782,17 @@ function playerMenu(name, page) {
       P.audios.length > 1 ? entry(t('Audio track'), a ? audioName(a) : t('Default audio'), () => playerMenu('settings', 'audio')) : null,
       // Makes no sense for a single movie: only where something follows (episodes, a playlist or queue).
       P.it && (P.it.type === 'episode' || P.queue.length || Q.list.length) ? choice(t('Play the next episode by itself'), P.autoNext, () => { P.autoNext = !P.autoNext; store.set('autoNext', P.autoNext ? '1' : '0'); playerMenu('settings', 'main'); }) : null,
+      entry(t('Sleep timer'), sleepLabel(), () => playerMenu('settings', 'sleep')),
       h('div', { class: 'mi', tabindex: 0, onclick: e => { e.stopPropagation(); closePlayerMenu(); showKeys(); } }, h('span', { class: 'ck' }), t('Keyboard shortcuts'), h('span', { class: 'v' }, '?'))];
   } else if (page === 'quality') {
     kids = [back(t('Quality')), ...QUALITIES.map(([v, l]) => choice(l, P.quality === v, () => { P.quality = v; store.set('quality', v); closePlayerMenu(); load(position()); }))];
   } else if (page === 'speed') {
     kids = [back(t('Playback speed')), ...SPEEDS.map(v => choice(v === 1 ? t('Normal speed') : fmtNum(v) + '×', P.speed === v, () => { setSpeed(v); playerMenu('settings', 'speed'); }))];
+  } else if (page === 'sleep') {
+    const pick = v => { setSleep(v); closePlayerMenu(); if (v !== null) toast(t('Sleep timer: {when}', { when: sleepLabel() })); };
+    kids = [back(t('Sleep timer')), choice(t('Off'), !P.sleep, () => pick(null)),
+      choice(P.it && P.it.type === 'episode' ? t('End of this episode') : t('End of this movie'), !!(P.sleep && P.sleep.end), () => pick('end')),
+      ...SLEEP_MINUTES.map(n => choice(t('{n} minutes', { n }), false, () => pick(n)))];
   } else if (page === 'audio') {
     kids = [back(t('Audio track')), choice(t('Default audio'), P.audio === '', () => { P.audio = ''; closePlayerMenu(); load(position()); }),
       ...P.audios.map(a => choice(audioName(a), String(P.audio) === String(a.index), () => { P.audio = a.index; closePlayerMenu(); load(position()); }))];
@@ -771,7 +838,7 @@ function closePlayer(send) {
   P.lyrics = null; $('#plyrics').style.display = 'none'; $('#plyricsbtn').hidden = true;
   player.style.display = 'none';
   player.classList.remove('idle');
-  P.it = null; P.next = null; P.pending = null; P.autoRun = 0;
+  P.it = null; P.next = null; P.pending = null; P.autoRun = 0; P.sleep = null; sleepFade(1);
   if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
   render();
 }

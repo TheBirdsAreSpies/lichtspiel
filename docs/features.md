@@ -17,7 +17,10 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   and a **picture preview** when you point at it; back 10 s / forward 30 s, volume, the time
   played or left and when it ends; a **subtitle menu** (with sizes; the language picked last
   comes back by itself) and **⚙** for quality, speed, audio track and *Play the next episode by
-  itself*; picture in picture and full screen (double click). During the credits it offers
+  itself* and a **sleep timer** (pause after 15 to 120 minutes, the sound fading out over the last
+  20 s, or stop at the end of this episode or movie, at its credits when they are known; any input
+  while it fades switches it off; it lasts over the episodes that follow, in the app too); picture
+  in picture and full screen (double click). During the credits it offers
   **Skip credits** / **Next episode**; at the end the next episode (or what is queued) starts
   after a 10-second countdown. Keyboard: Space/K, ←/→ (Shift: 1 min), ↑/↓, M, F, P, C, N, 0–9,
   < > — **?** lists them all. Media keys and the lock screen work too. `#/play/<id>?t=90` is a

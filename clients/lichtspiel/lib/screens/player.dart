@@ -55,6 +55,10 @@ Future<void> savePlayerPref(Api api, String k, Object v) async {
 class PlayerScreen extends StatefulWidget {
   /// "Zur Warteschlange": plays before anything else that would follow (kept while the app runs).
   static final List<Map<String, dynamic>> userQueue = [];
+  /// The sleep timer, kept over the episodes that follow until it fires or the player closes:
+  /// pause at [sleepAt], or stop at the end of the title ([sleepEnd]).
+  static DateTime? sleepAt;
+  static bool sleepEnd = false;
   final Api api;
   final Map<String, dynamic> item;
   final List<Map<String, dynamic>> queue; // what follows (a playlist, the rest of a season, ...)
@@ -79,7 +83,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final player = Player();
   late final VideoController controller = VideoController(player);
   final subs = <StreamSubscription>[];
-  Timer? ticker, countdown;
+  Timer? ticker, countdown, sleepTimer;
+  double? sleepVol; // the volume before the sleep timer began to fade it out
+  bool goingOn = false; // the next title replaces this player (the sleep timer stays)
 
   Map<String, dynamic> it = {};
   String? error;
@@ -105,6 +111,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final hoverPos = ValueNotifier<Offset?>(null); // the mouse over the video (for the seek bar's time, chapter and still)
 
   void mouseMoved() {
+    // Somebody is there: the sleep timer that is fading the sound out is switched off.
+    if (sleepVol != null && PlayerScreen.sleepAt != null) {
+      setSleep(null);
+      tell('Sleep-Timer aus');
+    }
     if (!ticksOn.value) ticksOn.value = true;
     ticksTimer?.cancel();
     ticksTimer = Timer(const Duration(seconds: 3), () => ticksOn.value = false);
@@ -496,6 +507,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         }
       }));
       ticker = Timer.periodic(const Duration(seconds: 10), (_) => report(player.state.playing ? 'playing' : 'paused'));
+      sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) => sleepTick());
       if (widget.together != null) tgStart();
     } catch (e) {
       if (mounted) setState(() => error = '$e');
@@ -576,7 +588,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     ended = true;
     widget.api.scrobble(id);
     widget.api.timeline(id, 0, 'stopped');
-    if (next == null) {
+    if (next == null || sleepAtEnd()) {
       if (mounted) Navigator.pop(context);
       return;
     }
@@ -586,6 +598,67 @@ class _PlayerScreenState extends State<PlayerScreen> {
       askStillWatching();
     } else {
       startCountdown(10, () => playNext(auto: true));
+    }
+  }
+
+  // ---------------------------------------------------------------- sleep timer
+
+  static const sleepMinutes = [15, 30, 45, 60, 90, 120];
+  static const sleepFadeSecs = 20;
+
+  /// null: off; 0: at the end of this title; else minutes from now.
+  void setSleep(int? minutes) {
+    sleepRestore();
+    PlayerScreen.sleepEnd = minutes == 0;
+    PlayerScreen.sleepAt = minutes == null || minutes == 0 ? null : DateTime.now().add(Duration(minutes: minutes));
+  }
+
+  String sleepLabel() {
+    if (PlayerScreen.sleepEnd) return 'Ende des Titels';
+    final at = PlayerScreen.sleepAt;
+    if (at == null) return 'Aus';
+    return 'noch ${(at.difference(DateTime.now()).inSeconds / 60).ceil()} Min.';
+  }
+
+  void sleepRestore() {
+    final v = sleepVol;
+    sleepVol = null;
+    if (v != null) player.setVolume(v);
+  }
+
+  /// At the end of the title: stop instead of going on, when the sleep timer says so.
+  bool sleepAtEnd() {
+    if (!PlayerScreen.sleepEnd) return false;
+    PlayerScreen.sleepEnd = false;
+    tell('Sleep-Timer: nach diesem Titel beendet. Gute Nacht!');
+    return true;
+  }
+
+  void sleepTick() {
+    if (!mounted || error != null) return;
+    if (PlayerScreen.sleepEnd) {
+      // The credits count as the end, like "Abspann überspringen".
+      final pos = player.state.position.inMilliseconds / 1000, d = player.state.duration.inMilliseconds / 1000;
+      if (!ended && player.state.playing && credits.isNotEmpty && pos >= credits.first && pos < d - 3) {
+        ended = true;
+        widget.api.scrobble(id);
+        widget.api.timeline(id, 0, 'stopped');
+        sleepAtEnd();
+        Navigator.pop(context);
+      }
+      return;
+    }
+    final at = PlayerScreen.sleepAt;
+    if (at == null) return;
+    final left = at.difference(DateTime.now()).inMilliseconds / 1000;
+    if (left <= 0) {
+      PlayerScreen.sleepAt = null;
+      player.pause().then((_) => sleepRestore());
+      report('paused');
+      tell('Sleep-Timer: angehalten. Gute Nacht!');
+    } else if (left <= sleepFadeSecs && player.state.playing) {
+      sleepVol ??= player.state.volume;
+      player.setVolume(sleepVol! * left / sleepFadeSecs);
     }
   }
 
@@ -622,6 +695,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       widget.api.timeline(id, 0, 'stopped');
     }
     ended = true;
+    goingOn = true;
     if (widget.together != null) {
       tgSwitching = true;
       tgQuiet = DateTime.now();
@@ -640,6 +714,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (widget.together != null && !tgSwitching) widget.api.delete('/api/together/${widget.together}').catchError((_) {});
     ticker?.cancel();
     countdown?.cancel();
+    sleepTimer?.cancel();
+    if (!goingOn) {
+      PlayerScreen.sleepAt = null;
+      PlayerScreen.sleepEnd = false;
+    }
     ticksTimer?.cancel();
     lyricScroll.dispose();
     ticksOn.dispose();
@@ -1028,6 +1107,18 @@ class _SettingsMenuState extends State<_SettingsMenu> {
               Navigator.pop(context);
             }),
         ]);
+      case 'sleep':
+        void pick(int? m) {
+          s.setSleep(m);
+          Navigator.pop(context);
+          if (m != null) s.tell('Sleep-Timer: ${s.sleepLabel()}');
+        }
+        children.addAll([
+          back('Sleep-Timer'),
+          choice('Aus', PlayerScreen.sleepAt == null && !PlayerScreen.sleepEnd, () => pick(null)),
+          choice(s.it['type'] == 'episode' ? 'Ende dieser Folge' : 'Ende dieses Films', PlayerScreen.sleepEnd, () => pick(0)),
+          for (final m in _PlayerScreenState.sleepMinutes) choice('$m Minuten', false, () => pick(m)),
+        ]);
       case 'chapters':
         children.addAll([
           back('Kapitel'),
@@ -1050,6 +1141,7 @@ class _SettingsMenuState extends State<_SettingsMenu> {
           if (serverPick || audios.length > 1) entry('Tonspur', serverPick ? 'wählen' : audios.where((t) => t.id == curAudio.id).map(s.trackName).firstOrNull ?? 'Standard', 'audio'),
           entry('Untertitel', curSub.id == 'no' ? 'Aus' : s.trackName(curSub), 'subs'),
           if (s.chapters.isNotEmpty) entry('Kapitel', '${s.chapters.length}', 'chapters'),
+          entry('Sleep-Timer', s.sleepLabel(), 'sleep'),
           if (s.it['type'] == 'episode' || s.queue.isNotEmpty)
             choice('Nächste Folge automatisch abspielen', s.autoNext, () {
               s.autoNext = !s.autoNext;
