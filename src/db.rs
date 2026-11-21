@@ -723,6 +723,21 @@ pub struct Settings {
     /// Address shown in invite links (empty = use the request's Host).
     #[serde(default)]
     pub public_url: String,
+    /// The mail server for invites, "Forgot password" and plugins that send mail (empty = no e-mail).
+    #[serde(default)]
+    pub smtp_host: String,
+    #[serde(default = "smtp_port")]
+    pub smtp_port: u16,
+    /// "starttls", "ssl" (encrypted from the start, usually port 465) or "none".
+    #[serde(default = "starttls")]
+    pub smtp_security: String,
+    #[serde(default)]
+    pub smtp_user: String,
+    #[serde(default)]
+    pub smtp_password: String,
+    /// "kino@example.com" or "Kino <kino@example.com>"; empty = the user name.
+    #[serde(default)]
+    pub smtp_from: String,
     /// "automatic", "speed", "quality" or "max".
     #[serde(default = "auto_quality")]
     pub transcoder_quality: String,
@@ -968,6 +983,14 @@ fn port() -> u16 {
     crate::server::DEFAULT_PORT
 }
 
+fn smtp_port() -> u16 {
+    587
+}
+
+fn starttls() -> String {
+    "starttls".into()
+}
+
 fn cast_photos() -> usize {
     20
 }
@@ -1122,6 +1145,12 @@ impl Default for Settings {
             max_transcodes: 0,
             invite_default_days: 7,
             public_url: String::new(),
+            smtp_host: String::new(),
+            smtp_port: smtp_port(),
+            smtp_security: starttls(),
+            smtp_user: String::new(),
+            smtp_password: String::new(),
+            smtp_from: String::new(),
             transcoder_quality: auto_quality(),
             continue_watching_weeks: cw_weeks(),
             continue_watching_limit: cw_limit(),

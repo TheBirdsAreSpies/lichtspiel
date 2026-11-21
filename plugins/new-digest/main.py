@@ -66,7 +66,7 @@ WORDS = {
     "Every day you get a message with what was added to {name} (when something was).": "Jeden Tag bekommst du eine Nachricht mit dem, was zu {name} dazugekommen ist (wenn etwas dazugekommen ist).",
     "So far: {what}.": "Bisher: {what}.",
     "Nothing new so far.": "Bisher nichts Neues.",
-    "Not set up yet: an admin enters an SMTP server or a Telegram bot in the plugin's settings.": "Noch nicht eingerichtet: Ein Admin trägt einen SMTP-Server oder einen Telegram-Bot in den Einstellungen des Plugins ein.",
+    "Not set up yet: an admin enters an SMTP server or a Telegram bot in the plugin's settings.": "Noch nicht eingerichtet: Ein Admin trägt einen Mailserver unter Einstellungen → Allgemein oder einen Telegram-Bot in den Einstellungen des Plugins ein.",
     "It goes to {where}.": "Es geht an {where}.",
     "You get nothing yet: enter your e-mail address or connect Telegram.": "Du bekommst noch nichts: Trag deine E-Mail-Adresse ein oder verbinde Telegram.",
     "You get nothing yet: enter your e-mail address.": "Du bekommst noch nichts: Trag deine E-Mail-Adresse ein.",
@@ -167,6 +167,17 @@ def person(state, user):
 
 
 # ---------- the settings
+
+def with_server_mail(s, server):
+    """Without a mail server of its own the plugin uses the server's (Settings → General → E-mail)."""
+    smtp = server.get("smtp")
+    if str(s.get("smtp_host") or "").strip() or not isinstance(smtp, dict) or not smtp.get("host"):
+        return s
+    s = dict(s)
+    for k in ("host", "port", "security", "user", "password", "from"):
+        s["smtp_" + k] = smtp.get(k)
+    return s
+
 
 def mail_ready(s):
     return bool(str(s.get("smtp_host") or "").strip() and str(s.get("smtp_from") or s.get("smtp_user") or "").strip())
@@ -715,6 +726,7 @@ def main():
     data = msg.get("data") or {}
     s = msg.get("settings") or {}
     server = msg.get("server") or {}
+    s = with_server_mail(s, server)
     try:
         if event == "library.item.added":
             out = {"ok": True, "noted": note(data.get("item"))}

@@ -82,6 +82,10 @@ pub struct Manifest {
     /// address that lists every movie and episode with its files.
     #[serde(default)]
     pub reads_library: bool,
+    /// The plugin sends e-mail: it gets `server.smtp`, the mail server from Settings → General
+    /// ({host, port, security, user, password, from}), when one is set.
+    #[serde(default)]
+    pub sends_mail: bool,
 }
 
 /// At most this many plugin programs run at once; the others wait for their turn.

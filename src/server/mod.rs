@@ -395,6 +395,10 @@ impl App {
             let id = &pl.manifest.id;
             v["library"] = json!(format!("{}/api/plugins/{id}/library?key={}", v["url"].as_str().unwrap_or(""), self.plugin_key(id)));
         }
+        let s = self.settings();
+        if pl.manifest.sends_mail && crate::mail::ready(&s) {
+            v["smtp"] = json!({"host": s.smtp_host.trim(), "port": s.smtp_port, "security": s.smtp_security, "user": s.smtp_user.trim(), "password": s.smtp_password, "from": s.smtp_from.trim()});
+        }
         v
     }
 
@@ -893,6 +897,42 @@ pub(crate) mod tests {
         (app, root, a, k)
     }
 
+    /// "Forgot password": the link from the mail sets a new password once, signs out every device,
+    /// and the request answers the same for a name that does not exist.
+    #[test]
+    fn a_reset_link_sets_the_password_once_and_signs_out_everywhere() {
+        let (app, root, _, kid) = app_with_hidden_movie("reset");
+        let post = |path: &str, body: &str, tok: &str| ask(&app, &format!("POST {path} HTTP/1.1\r\nHost: evil.example\r\nX-Token: {tok}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()));
+        // Without a mail server nothing can be sent, and the server says so.
+        assert!(post("/api/password/forgot", r#"{"name":"x"}"#, "").starts_with("HTTP/1.1 503"));
+        {
+            let mut db = app.db.lock().unwrap();
+            db.settings.smtp_host = "127.0.0.1".into();
+            db.settings.smtp_port = 9; // nobody answers: the mail fails in the background
+            db.settings.smtp_from = "kino@example.com".into();
+            db.users[1].email = "kid@example.com".into();
+        }
+        let known = post("/api/password/forgot", r#"{"name":"KID@example.com"}"#, "");
+        let unknown = post("/api/password/forgot", r#"{"name":"nobody"}"#, "");
+        assert!(known.starts_with("HTTP/1.1 200") && unknown.starts_with("HTTP/1.1 200"), "{known}\n{unknown}");
+        assert_eq!(known.rsplit("\r\n\r\n").next(), unknown.rsplit("\r\n\r\n").next(), "the answer tells nothing");
+        let (uid, code) = {
+            let db = app.db.lock().unwrap();
+            let u = &db.users[1];
+            (u.id, crate::auth::reset_code(&db.ticket_key, u.id, &u.password_hash, crate::db::now()))
+        };
+        assert!(ask(&app, &format!("GET /api/password/reset/{code} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")).starts_with("HTTP/1.1 200"));
+        assert!(post(&format!("/api/password/reset/{code}"), r#"{"password":"123"}"#, "").starts_with("HTTP/1.1 400"), "too short");
+        assert!(post(&format!("/api/password/reset/{code}x"), r#"{"password":"neues-passwort"}"#, "").starts_with("HTTP/1.1 410"));
+        let got = post(&format!("/api/password/reset/{code}"), r#"{"password":"neues-passwort"}"#, "");
+        assert!(got.starts_with("HTTP/1.1 200"), "{got}");
+        assert!(post(&format!("/api/password/reset/{code}"), r#"{"password":"noch-eins"}"#, "").starts_with("HTTP/1.1 410"), "the link works once");
+        assert!(ask(&app, &format!("GET /api/me HTTP/1.1\r\nHost: x\r\nX-Token: {kid}\r\nConnection: close\r\n\r\n")).starts_with("HTTP/1.1 401"), "old sign-ins end");
+        let name = app.db.lock().unwrap().user(uid).unwrap().username.clone();
+        assert!(post("/api/login", &format!(r#"{{"username":"{name}","password":"neues-passwort"}}"#), "").starts_with("HTTP/1.1 200"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn a_profile_cannot_mark_rate_or_favourite_what_it_may_not_see() {
         let (app, root, _, kid) = app_with_hidden_movie("can-see");
@@ -943,6 +983,8 @@ pub(crate) mod tests {
             ("GET", "/api/status"), ("POST", "/api/setup"), ("POST", "/api/login"), ("POST", "/api/link"), ("GET", "/api/link/{id}"),
             ("GET", "/api/home"), ("POST", "/api/home/{id}/login"), ("GET", "/identity"),
             ("GET", "/api/invites/{code}"), ("POST", "/api/invites/{code}/accept"), ("GET", "/rss/watchlist/{key}.xml"),
+            // "Forgot password": the link in the mail is the proof (see auth::reset_code).
+            ("POST", "/api/password/forgot"), ("GET", "/api/password/reset/{code}"), ("POST", "/api/password/reset/{code}"),
             // A plugin's own key instead of a sign-in (it is refused without it, see the test of reads_library).
             ("GET", "/api/plugins/{id}/library"),
         ];

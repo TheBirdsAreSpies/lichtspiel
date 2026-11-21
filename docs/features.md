@@ -121,6 +121,15 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   choose which libraries the person may see and whether the server may convert video for
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
+- **E-mail** — with a mail server under **Settings → General → E-mail** (`smtp_host`,
+  `smtp_port`, `smtp_security`: `"starttls"`, `"ssl"` or `"none"`, `smtp_user`, `smtp_password`,
+  `smtp_from`; **Save and send a test mail** checks it) the server mails invites itself (*Send by
+  e-mail*; if the mail does not go out the link is still shown), and the sign-in page offers
+  **Forgot your password?**: a link to the e-mail address of the account (set under
+  **Settings → Account**) that works for one hour and once, and signs out every device. The answer
+  is the same whether or not the name exists, and the link always uses the address set for invite
+  links (or the home network address), never the one the request came with. Plugins with
+  `"sends_mail": true` in their plugin.json get the same server as `server.smtp`.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
   details, react to events (new item, playback, invites …) and add their own API calls. Fourteen
   are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list**,
@@ -158,10 +167,9 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   titles link to their page when the address used in invite links is set, and `skip_libraries`
   leaves libraries out by name. Under **Settings → Account** each person enters their e-mail
   address, connects Telegram (a link to the bot and a code, sent there with Start) and can ask for
-  a preview; admins can also send it to everyone at once. E-mail needs an SMTP server
-  (`smtp_host`, `smtp_port`, `smtp_security`: `"starttls"`, `"ssl"` or `"none"`, `smtp_user`,
-  `smtp_password`, `smtp_from`), Telegram the token of a bot made with @BotFather
-  (`telegram_bot_token`).
+  a preview; admins can also send it to everyone at once. E-mail goes through the server's mail
+  server (Settings → General); the plugin's own `smtp_…` settings are only for a different one.
+  Telegram needs the token of a bot made with @BotFather (`telegram_bot_token`).
   **Smart home** switches Home Assistant scenes when playback starts, pauses and stops (dim the
   lights, lights back on). It needs the Home Assistant address (`home_assistant_url`) and a
   long-lived access token (`home_assistant_token`; your profile in Home Assistant → Security), and

@@ -20,6 +20,7 @@ mod db;
 mod downloads;
 mod handlers;
 mod intro;
+mod mail;
 mod maintenance;
 mod metadata;
 mod migrate;

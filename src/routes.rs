@@ -130,7 +130,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/continue/remove", "Take titles off your Continue Watching row without marking them watched {ids: [..]}; they come back once watched again"),
     ("PUT", "/api/items/{id}/watchlist", "Put a movie, show, season or episode on your watchlist or take it off {watchlist: true|false}; watching it takes it off by itself (a show once every episode is watched)"),
     ("POST", "/api/me/prefs", "Settings that follow you from browser to browser {key: text, …}; null removes a key (GET /api/me returns them as prefs)"),
-    ("POST", "/api/me/profile", "Your full name {full_name}"),
+    ("POST", "/api/me/profile", "Your full name and e-mail address {full_name, email} (each only when sent)"),
     ("POST", "/api/me/2fa/setup", "Start two-step sign-in → {secret, uri, qr (an SVG picture of the link)} for an authenticator app (not active yet)"),
     ("POST", "/api/me/2fa/enable", "Switch it on with a code from the app {code}"),
     ("POST", "/api/me/2fa/disable", "Switch it off {password, code}"),
@@ -179,10 +179,13 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("DELETE", "/api/users/{id}", "Admin: remove a user"),
     ("DELETE", "/api/users/{id}/tokens", "Admin: sign a user out everywhere"),
     ("GET", "/api/invites", "Admin: open and used invites"),
-    ("POST", "/api/invites", "Admin: invite someone {email, note, days, allowed_sections, admin} → link to send"),
+    ("POST", "/api/invites", "Admin: invite someone {email, note, days, allowed_sections, admin, send_mail, lang} → link to send; with send_mail the server mails it (mailed: true, or mail_error)"),
     ("DELETE", "/api/invites/{code}", "Admin: cancel an invite"),
     ("GET", "/api/invites/{code}", "Check an invite (no sign-in)"),
     ("POST", "/api/invites/{code}/accept", "Join with an invite {username, password, email} → token (no sign-in)"),
+    ("POST", "/api/password/forgot", "Forgot password {name: user name or e-mail address, lang}: a link to set a new one goes to the account's e-mail address (no sign-in; needs the mail server in the settings)"),
+    ("GET", "/api/password/reset/{code}", "Check a link from the forgot-password mail → {valid, username} (no sign-in)"),
+    ("POST", "/api/password/reset/{code}", "Set the new password {password}; signs out every device (no sign-in)"),
     ("GET", "/api/plugins", "Admin: installed plugins, their hooks, settings and errors"),
     ("POST", "/api/plugins/reload", "Admin: look for new or changed plugins"),
     ("POST", "/api/plugins/{id}/enable", "Admin: switch a plugin on"),
@@ -193,7 +196,8 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/plugins/{id}/library", "For a plugin with reads_library: every movie and episode with its files (key=… from server.library)"),
     ("POST", "/api/plugins/{id}/call/{action}", "Run a plugin's own action (any JSON body is passed on); an answer with mark_watched marks those items watched for you"),
     ("GET", "/api/settings", "Admin: server settings"),
-    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, hdr_tone_mapping, relay_server, relay_secret, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, meta_cast, meta_artwork, meta_episodes, meta_ratings, meta_person_details, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, home_profiles, trusted_proxies, ffmpeg, ffprobe, transcoding_enabled, group_recent_episodes, preroll_paths, max_gpu_transcodes, max_cpu_transcodes, transcode_dir, downloads_dir, remote_max_mbps (0 = no limit for people outside the home network), max_remote_plays, paused_stop_minutes, no_auth_networks, maintenance_start_hour, maintenance_end_hour, utc_offset_minutes, backup_enabled, backup_dir, backups_keep, optimize_weekly, cleanup_weekly, deep_analysis}"),
+    ("POST", "/api/settings/mail-test", "Admin: send a test mail with the mail server from the settings {to (empty = your own address), lang}"),
+    ("PUT", "/api/settings", "Admin: change {server_name, hw_accel: auto|none|vaapi|qsv|nvenc, transcoder_quality: automatic|speed|quality|max, h264_preset, h264_minimum_crf, hw_constant_quality, hdr_tone_mapping, relay_server, relay_secret, scheduled_scans_enabled, scan_interval_minutes, watched_threshold_percent, played_at_behaviour: 0-3, credits_markers_behaviour: never|scheduled|asap, max_transcodes, continue_watching_weeks, continue_watching_limit, continue_watching_include_premieres, metadata_enabled, meta_cast, meta_artwork, meta_episodes, meta_ratings, meta_person_details, metadata_language (see languages), cast_photos_limit, tmdb_api_key, imdb_ratings_file, watch_folders, credits_from_picture, port (after a restart), public_url, smtp_host, smtp_port, smtp_security: starttls|ssl|none, smtp_user, smtp_password, smtp_from, home_profiles, trusted_proxies, ffmpeg, ffprobe, transcoding_enabled, group_recent_episodes, preroll_paths, max_gpu_transcodes, max_cpu_transcodes, transcode_dir, downloads_dir, remote_max_mbps (0 = no limit for people outside the home network), max_remote_plays, paused_stop_minutes, no_auth_networks, maintenance_start_hour, maintenance_end_hour, utc_offset_minutes, backup_enabled, backup_dir, backups_keep, optimize_weekly, cleanup_weekly, deep_analysis}"),
     ("GET", "/api/transcoder", "Admin: is ffmpeg there, which hardware encoders"),
     ("GET", "/api/browse", "Admin: list folders on the server ?path= (to pick library folders)"),
     ("POST", "/api/imdb-ratings/refresh", "Admin: download IMDb's ratings file now and update every rating (in the background; progress in /api/metadata/status)"),
@@ -298,7 +302,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         }
         ("GET", ["api", "status"]) => {
             let db = app.db.lock().unwrap();
-            return ok(json!({"name": crate::server::display_name(&db.settings), "version": VERSION, "build": BUILD, "built_at": BUILT_AT.parse::<u64>().unwrap_or(0), "setup_needed": db.users.is_empty(), "machine_id": db.machine_id,
+            return ok(json!({"name": crate::server::display_name(&db.settings), "version": VERSION, "build": BUILD, "built_at": BUILT_AT.parse::<u64>().unwrap_or(0), "setup_needed": db.users.is_empty(), "machine_id": db.machine_id, "mail": crate::mail::ready(&db.settings),
                 "started_at": app.started_at, "signed_in": ctx.user.as_ref().map(|u| u.username.clone())}));
         }
         ("POST", ["api", "setup"]) => return setup(app, ctx),
@@ -309,6 +313,9 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
         ("POST", ["api", "home", uid, "login"]) => return home_login(app, ctx, uid),
         ("GET", ["api", "invites", code]) => return invite_info(app, code),
         ("POST", ["api", "invites", code, "accept"]) => return invite_accept(app, ctx, code),
+        ("POST", ["api", "password", "forgot"]) => return password_forgot(app, ctx),
+        ("GET", ["api", "password", "reset", code]) => return password_reset_info(app, code),
+        ("POST", ["api", "password", "reset", code]) => return password_reset(app, ctx, code),
         ("GET", ["video", "transcode", "hls", sid, file]) => return hls_file(app, sid, file),
         ("GET", ["rss", "watchlist", key]) => return crate::rss::feed(app, ctx, key),
         ("GET", ["api", "plugins", pid, "library"]) => return plugin_library(app, ctx, pid),
@@ -353,12 +360,16 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             ok(v)
         }
         ("POST", ["api", "me", "profile"]) => {
-            let name: String = ctx.body.get("full_name").and_then(|v| v.as_str()).unwrap_or("").trim().chars().take(80).collect();
+            let email = ctx.body.get("email").and_then(|v| v.as_str()).map(|e| e.trim().to_string());
+            if let Some(e) = &email { if !e.is_empty() && !crate::mail::valid_address(e) { return fail(400, "That is not an e-mail address"); } }
             let mut db = app.db.lock().unwrap();
-            if let Some(u) = db.users.iter_mut().find(|u| u.id == user.id) { u.full_name = name.clone(); }
+            let Some(u) = db.users.iter_mut().find(|u| u.id == user.id) else { return fail(404, "No such user") };
+            if let Some(n) = ctx.body.get("full_name").and_then(|v| v.as_str()) { u.full_name = n.trim().chars().take(80).collect(); }
+            if let Some(e) = email { u.email = e; }
+            let v = json!({"ok": true, "full_name": u.full_name, "email": u.email});
             drop(db);
             app.save();
-            ok(json!({"ok": true, "full_name": name}))
+            ok(v)
         }
         ("POST", ["api", "me", "prefs"]) => {
             // {key: text, …}: merged into this person's settings; null/"" removes a key.
@@ -1885,12 +1896,24 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 used_by: None,
                 used_at: None,
             };
+            let send = ctx.body.get("send_mail").and_then(|v| v.as_bool()).unwrap_or(false);
+            if send && !crate::mail::valid_address(&inv.email) { return fail(400, "Enter their e-mail address to send the invite"); }
             let base = base_url(&db, ctx);
-            let v = invite_json(&db, &inv, &base);
+            let mut v = invite_json(&db, &inv, &base);
+            let settings = db.settings.clone();
             db.invites.push(inv);
             drop(db);
             app.save();
             app.fire("user.invited", json!({"email": v["email"], "url": v["url"], "note": v["note"], "expires_at": v["expires_at"], "by": user.username}));
+            if send {
+                // The link is made either way; a mail that does not go out is said, and the link can still be copied.
+                let lang = ctx.body_or_param("lang").unwrap_or_else(|| settings.metadata_language.clone());
+                let (to, note, url) = (v["email"].as_str().unwrap_or("").to_string(), v["note"].as_str().unwrap_or("").to_string(), v["url"].as_str().unwrap_or("").to_string());
+                match invite_mail(&settings, &lang, &user.display_name(), &to, &note, &url, days) {
+                    Ok(()) => v["mailed"] = json!(true),
+                    Err(e) => v["mail_error"] = json!(e),
+                }
+            }
             js(201, v)
         }
         ("DELETE", ["api", "invites", code]) => {
@@ -1987,6 +2010,7 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                         return fail(400, "graphics device must be empty, a card number or a path like /dev/dri/renderD128");
                     }
                     if let Err(e) = crate::server::check_open_networks(&s.no_auth_networks) { return fail(400, &e); }
+                    if let Err(e) = crate::mail::check_settings(&s) { return fail(400, &e); }
                     let port_changed = s.port != db.settings.port;
                     let cache_mb = s.db_cache_mb;
                     let language_changed = s.metadata_language != db.settings.metadata_language;
@@ -2017,6 +2041,10 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
                 }
                 Err(e) => fail(400, &format!("Those settings could not be read: {e}")),
             }
+        }
+        ("POST", ["api", "settings", "mail-test"]) => {
+            if !admin { return need_admin(); }
+            mail_test(app, ctx, &user)
         }
         ("GET", ["api", "transcoder"]) => {
             if !admin { return need_admin(); }

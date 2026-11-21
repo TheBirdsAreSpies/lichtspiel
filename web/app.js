@@ -324,8 +324,10 @@ async function loginPage() {
           async w => { const r = await api('POST', '/api/login', { username: v.username, password: v.password, code: w.code, device: 'web' }); await signedIn(r.token); });
       }
     });
-  // Home profiles (only offered in the local network): a tap, and the PIN if there is one.
   const form = main().querySelector('form.center');
+  // A mail server is set up: a link to a new password by e-mail.
+  if (S.status && S.status.mail && form) form.querySelector('.err').after(h('div', { style: 'margin-top:12px' }, h('a', { href: '#/login', onclick: e => { e.preventDefault(); forgotPage(); } }, t('Forgot your password?'))));
+  // Home profiles (only offered in the local network): a tap, and the PIN if there is one.
   let home;
   try { home = await api('GET', '/api/home'); } catch (e) { return; }
   if (!home.profiles.length || !form.isConnected) return;
@@ -336,6 +338,36 @@ async function loginPage() {
   const firstLabel = form.querySelector('label');
   form.insertBefore(pick, firstLabel);
   form.insertBefore(or, firstLabel);
+}
+// "Forgot password": the link goes to the account's e-mail address. The answer is the same whether or not the name exists.
+function forgotPage() {
+  authPage(t('Forgot your password?'), t('Enter your user name or e-mail address. If your account has an e-mail address, a link to set a new password is sent to it.'),
+    [['name', t('User name or e-mail address'), 'text', '', 'username']], t('Send link'),
+    async v => {
+      await api('POST', '/api/password/forgot', { name: v.name, lang: I18N.lang });
+      set(h('div', { class: 'center' }, h('h1', {}, t('Look in your mailbox')),
+        h('p', {}, t('If the account has an e-mail address, the link is on its way. It works for one hour.')),
+        h('p', { class: 'dim' }, t('Nothing came? Look in the spam folder, or ask an admin to set a new password for you.')),
+        h('a', { href: '#/login', onclick: e => { e.preventDefault(); loginPage(); } }, t('Back to sign-in'))));
+    });
+  main().querySelector('form.center').append(h('div', { style: 'margin-top:12px' }, h('a', { href: '#/login', onclick: e => { e.preventDefault(); loginPage(); } }, t('Back to sign-in'))));
+}
+// The link from the mail: pick the new password.
+async function resetPage(code) {
+  let info;
+  try { info = await api('GET', '/api/password/reset/' + encodeURIComponent(code)); } catch (e) {
+    return set(h('div', { class: 'center' }, h('h1', {}, t('New password')), h('p', { class: 'err' }, e.message),
+      h('a', { href: '#/login', onclick: e => { e.preventDefault(); location.hash = '#/login'; forgotPage(); } }, t('Ask for a new link'))));
+  }
+  authPage(t('New password'), t('For {name} on {server}. Every device signed in with this account is signed out.', { name: info.username, server: info.server }),
+    [['password', t('New password (at least 6 characters)'), 'password', '', 'new-password'], ['again', t('The same password again'), 'password', '', 'new-password']], t('Save password'),
+    async v => {
+      if (v.password !== v.again) throw new Error(t('The two passwords are not the same'));
+      await api('POST', '/api/password/reset/' + encodeURIComponent(code), { password: v.password });
+      // Signed in here too: that sign-in has just ended.
+      if (S.me) logout(); else { history.replaceState(null, '', '#/login'); loginPage(); }
+      toast(t('Password saved. Sign in with the new one.'), 6000);
+    });
 }
 async function profileLogin(p, pin) {
   const r = await api('POST', `/api/home/${p.id}/login`, { pin, device: 'web' });

@@ -548,6 +548,7 @@ async function usersPage() {
   const note = h('input', { placeholder: t('A short message (optional)'), style: 'width:100%;max-width:420px' });
   const days = h('input', { type: 'number', min: 1, max: 365, value: 7, style: 'width:90px' });
   const asAdmin = h('input', { type: 'checkbox' });
+  const byMail = h('input', { type: 'checkbox', checked: !!(S.status && S.status.mail) });
   const allLibs = h('input', { type: 'checkbox', checked: true });
   const libChecks = S.sections.map(s => ({ s, el: h('input', { type: 'checkbox', checked: true }) }));
   const result = h('div');
@@ -578,15 +579,22 @@ async function usersPage() {
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Invite someone')),
       h('p', { class: 'dim' }, t('You get a link to send them (by email, chat …). They open it, pick a user name and password, and can watch the libraries you tick.')),
       formRow(t('Their email'), email), formRow(t('Message'), note),
+      S.status && S.status.mail ? formRow(t('Send by e-mail'), byMail, t('The server mails them the link and your message.'))
+        : formRow(t('Send by e-mail'), h('span', { class: 'dim' }, t('Needs a mail server: '), h('a', { href: '#/settings/general' }, t('Settings → General')))),
       formRow(t('Link works for (days)'), days),
       formRow(t('Libraries they may watch'), h('div', { class: 'checks' }, h('label', {}, allLibs, h('b', {}, t('All, including future ones'))), libChecks.map(c => h('label', {}, c.el, c.s.title)))),
       formRow(t('Make them an admin'), asAdmin),
       h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: async () => {
-        const body = { email: email.value, note: note.value, days: Number(days.value) || 7, admin: asAdmin.checked };
+        const sendIt = !!(S.status && S.status.mail) && byMail.checked && email.value.trim() !== '';
+        const body = { email: email.value, note: note.value, days: Number(days.value) || 7, admin: asAdmin.checked, send_mail: sendIt, lang: I18N.lang };
         if (!allLibs.checked) body.allowed_sections = libChecks.filter(c => c.el.checked).map(c => c.s.id);
-        const r = await api('POST', '/api/invites', body);
+        let r;
+        try { r = await api('POST', '/api/invites', body); } catch (e) { return toast(e.message, 6000); }
         const mail = `mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(t('Invitation to {server}', { server: S.status ? S.status.name : 'Lichtspiel' }))}&body=${encodeURIComponent((r.note ? r.note + '\n\n' : '') + t('Join here: {url}', { url: r.url }))}`;
-        result.replaceChildren(h('div', { class: 'panel', style: 'background:var(--panel2)' }, h('div', { class: 'ok' }, t('Invite ready. Send this link:')),
+        result.replaceChildren(h('div', { class: 'panel', style: 'background:var(--panel2)' },
+          r.mailed ? h('div', { class: 'ok' }, t('The invite was sent to {email}. The link, in case you need it:', { email: r.email }))
+            : r.mail_error ? [h('div', { class: 'err' }, t(r.mail_error)), h('div', {}, t('Send them this link yourself:'))]
+            : h('div', { class: 'ok' }, t('Invite ready. Send this link:')),
           h('input', { value: r.url, style: 'width:100%;margin:8px 0', onclick: e => e.target.select() }),
           h('button', { onclick: () => copy(r.url) }, t('Copy link')), ' ', r.email ? h('a', { href: mail }, h('button', {}, t('Open in email'))) : null));
       } }, t('Create invite link'))), result),
@@ -718,6 +726,7 @@ async function pluginsPage() {
 function accountPanel(dataDir) {
   const me = S.me;
   const name = h('input', { value: me.full_name || '', style: 'width:100%;max-width:320px' });
+  const mail = h('input', { type: 'email', value: me.email || '', placeholder: 'name@example.com', style: 'width:100%;max-width:320px' });
   const box = h('div');
   const drawTwo = async () => {
     const fresh = await GET('/api/me'); S.me.two_factor = fresh.two_factor;
@@ -747,7 +756,10 @@ function accountPanel(dataDir) {
   return [h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Your account')),
       formRow(t('User name'), h('b', {}, me.username)),
       formRow(t('Full name'), name, ''),
-      h('div', { class: 'actions' }, h('button', { onclick: async () => { await api('POST', '/api/me/profile', { full_name: name.value }); S.me.full_name = name.value.trim(); S.me.display_name = S.me.full_name || S.me.username; toast(t('Saved')); } }, t('Save')))),
+      formRow(t('E-mail address'), mail, t('For a new password when you forgot yours.')),
+      h('div', { class: 'actions' }, h('button', { onclick: async () => {
+        try { const x = await api('POST', '/api/me/profile', { full_name: name.value, email: mail.value }); S.me.full_name = x.full_name; S.me.email = x.email; S.me.display_name = S.me.full_name || S.me.username; toast(t('Saved')); } catch (e) { toast(e.message, 5000); }
+      } }, t('Save')))),
     h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Two-step sign-in')), box),
     linkPanel(),
     accountPasswordPanel(dataDir)];
@@ -1087,6 +1099,24 @@ async function settingsPage(tab, qs) {
       inp('public_url', t('Address used in invite links'), 'text', t('e.g. http://my-nas.example.com:8484 — leave empty to use the address you opened this page with')),
       inp('invite_default_days', t('Invite links last (days)'), 'number'),
       chk('home_profiles', t('Profiles on the sign-in screen'), t('Home profiles (set under Users & invites) can be picked with a tap and their PIN — only from your home network.')),
+      h('h3', {}, t('E-mail')),
+      h('p', { class: 'dim' }, t('With a mail server the server sends invites itself, people can ask for a new password when they forgot theirs, and plugins such as “New on Lichtspiel” send their mail through it.')),
+      inp('smtp_host', t('Mail server (SMTP)'), 'text', t('e.g. smtp.gmail.com, smtp.office365.com or mail.gmx.net. Empty = no e-mail.')),
+      inp('smtp_port', t('Port'), 'number', t('587 with STARTTLS, 465 with SSL/TLS.')),
+      sel('smtp_security', t('Encryption'), [['starttls', 'STARTTLS'], ['ssl', 'SSL/TLS'], ['none', t('None')]]),
+      inp('smtp_user', t('User name for the mail server'), 'text', t('Usually your e-mail address. Empty = no sign-in.')),
+      inp('smtp_password', t('Password for the mail server'), 'password', t('With Gmail, Outlook and two-step sign-in: an app password.')),
+      inp('smtp_from', t('Sender'), 'text', t('e.g. kino@example.com or Kino <kino@example.com>. Empty = the user name.')),
+      formRow('', h('button', { class: 'small', onclick: async () => {
+        const to = await ask(t('Send the test mail to'), { value: S.me.email || '', ok: t('Send') }); if (to === null) return;
+        const body = {}; for (const k of ['smtp_host', 'smtp_port', 'smtp_security', 'smtp_user', 'smtp_password', 'smtp_from']) body[k] = k === 'smtp_port' ? Number(f[k].value) : f[k].value;
+        try {
+          await api('PUT', '/api/settings', body);
+          try { S.status = await GET('/api/status'); } catch (e) { /* the next start asks again */ }
+          const x = await api('POST', '/api/settings/mail-test', { to, lang: I18N.lang });
+          toast(t('Test mail sent to {to}', { to: x.to }), 5000);
+        } catch (e) { toast(e.message, 9000); }
+      } }, t('Save and send a test mail'))),
     ],
     network: [
       sel('max_remote_plays', t('Videos per person outside the home network'), [[0, t('No limit')], ...[1, 2, 3, 4, 6].map(n => [n, String(n)])], t('How many different videos one person may play at once from outside. Admins are not limited.')),
@@ -1202,6 +1232,7 @@ async function settingsPage(tab, qs) {
     for (const [k, el] of Object.entries(f)) body[k] = typeof s[k] === 'boolean' ? el.checked : typeof s[k] === 'number' ? Number(el.value) : el.value;
     try {
       const x = await api('PUT', '/api/settings', body);
+      S.status = null; // asked again by boot(): "Forgot password" on the sign-in page follows the mail server
       toast([t('Saved'), x.refetching ? t('details for {n} movies and shows are being downloaded again in the new language', { n: x.refetching }) : '', x.restart_needed ? t(x.restart_needed) : ''].filter(Boolean).join(' · '), 6000);
       boot();
     } catch (e) { toast(e.message, 5000); }
@@ -2134,9 +2165,10 @@ async function render() {
   if (!S.status) { try { S.status = await GET('/api/status'); } catch (e) { return set(errorPage(e)); } }
   const draw = async () => {
     if (parts[0] === 'invite' && parts[1]) return await invitePage(parts[1]);
+    if (parts[0] === 'reset' && parts[1]) return await resetPage(parts[1]);
     if (S.status.setup_needed) return setupPage();
     // Not signed in: the page asked for is kept and opened right after the sign-in (a device link, an item).
-    if (!S.me) { S.after = parts[0] && !['login', 'invite'].includes(parts[0]) ? location.hash : ''; return loginPage(); }
+    if (!S.me) { S.after = parts[0] && !['login', 'invite', 'reset'].includes(parts[0]) ? location.hash : ''; return loginPage(); }
     switch (parts[0]) {
       case undefined: return await homePage();
       case 'section': return await sectionPage(parts[1], qs);

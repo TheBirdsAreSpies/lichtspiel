@@ -188,6 +188,139 @@ pub fn home_login(app: &Arc<App>, ctx: &Ctx, uid: &str) -> Resp {
     ok(json!({"token": tok, "user": user_json(&u)}))
 }
 
+// ---------------------------------------------------------------- e-mail
+
+/// The invite mail: who invites, their message and the link.
+pub fn invite_mail(settings: &db::Settings, lang: &str, who: &str, to: &str, note: &str, url: &str, days: u64) -> Result<(), String> {
+    let server = display_name(settings);
+    let note = note.trim();
+    let (subject, text) = if crate::mail::german(lang) {
+        (format!("Einladung zu {server}"),
+         format!("Hallo,\n\n{who} hat dich zu {server} eingeladen.{}\n\nÜber diesen Link wählst du einen Benutzernamen und ein Passwort:\n{url}\n\nDer Link gilt {}.\n",
+            if note.is_empty() { String::new() } else { format!("\n\n{note}") }, if days == 1 { "einen Tag".to_string() } else { format!("{days} Tage") }))
+    } else {
+        (format!("Invitation to {server}"),
+         format!("Hello,\n\n{who} invited you to {server}.{}\n\nPick a user name and password with this link:\n{url}\n\nThe link works for {}.\n",
+            if note.is_empty() { String::new() } else { format!("\n\n{note}") }, if days == 1 { "one day".to_string() } else { format!("{days} days") }))
+    };
+    crate::mail::send(settings, to, &subject, &text)
+}
+
+/// Settings → General → "Send a test mail": to the address given, else to the admin's own.
+pub fn mail_test(app: &Arc<App>, ctx: &Ctx, user: &User) -> Resp {
+    let to = ctx.body_or_param("to").map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).unwrap_or_else(|| user.email.trim().to_string());
+    if to.is_empty() { return fail(400, "Enter an address for the test mail, or your own under Settings → Account"); }
+    let settings = app.settings();
+    let lang = ctx.body_or_param("lang").unwrap_or_else(|| settings.metadata_language.clone());
+    let server = display_name(&settings);
+    let (subject, text) = if crate::mail::german(&lang) {
+        (format!("Test von {server}"), format!("Diese Mail kommt von {server}. Der Mailserver ist richtig eingerichtet.\n"))
+    } else {
+        (format!("Test from {server}"), format!("This mail comes from {server}. The mail server is set up correctly.\n"))
+    };
+    match crate::mail::send(&settings, &to, &subject, &text) {
+        Ok(()) => ok(json!({"ok": true, "to": to})),
+        Err(e) => fail(502, &e),
+    }
+}
+
+/// "Forgot password" requests per address and per account (time of each, the last hour).
+static FORGOT: std::sync::Mutex<Option<std::collections::HashMap<String, Vec<u64>>>> = std::sync::Mutex::new(None);
+
+/// Counts a request; false when there were too many in the last hour (10 per address, 3 per account).
+fn forgot_allowed(key: &str, limit: usize) -> bool {
+    let mut g = FORGOT.lock().unwrap_or_else(|e| e.into_inner());
+    let map = g.get_or_insert_with(Default::default);
+    if map.len() > 10_000 { map.retain(|_, v| v.iter().any(|t| *t + 3600 > now())); }
+    let v = map.entry(key.to_string()).or_default();
+    v.retain(|t| *t + 3600 > now());
+    if v.len() >= limit { return false; }
+    v.push(now());
+    true
+}
+
+/// The address in mails that go out without an admin asking (a reset link): the address set in
+/// Settings → General, else the one in the home network. Never the address of the request, which
+/// anyone can choose (a link to their own site with the code in it).
+fn mail_base(app: &Arc<App>, settings: &db::Settings) -> String {
+    let public = settings.public_url.trim().trim_end_matches('/');
+    if !public.is_empty() { return public.to_string(); }
+    format!("{}://{}:{}", scheme(), crate::lan_address(), *app.port.lock().unwrap())
+}
+
+/// POST /api/password/forgot {name: user name or e-mail address, lang}: a link to set a new
+/// password goes to the account's e-mail address. The answer is the same whether or not the
+/// account exists, and the mail is sent in the background (the time taken tells nothing either).
+pub fn password_forgot(app: &Arc<App>, ctx: &Ctx) -> Resp {
+    let settings = app.settings();
+    if !crate::mail::ready(&settings) { return fail(503, "This server cannot send e-mail; ask an admin to set a new password"); }
+    let name = ctx.body_or_param("name").unwrap_or_default().trim().to_lowercase();
+    if name.is_empty() { return fail(400, "Enter your user name or e-mail address"); }
+    if !forgot_allowed(&format!("ip:{}", ctx.remote.map(|a| a.to_string()).unwrap_or_default()), 10) {
+        return fail(429, "Too many requests; try again in an hour");
+    }
+    let lang = ctx.body_or_param("lang").unwrap_or_default();
+    let base = mail_base(app, &settings);
+    let found: Vec<(User, String)> = {
+        let db = app.db.lock().unwrap();
+        db.users.iter().filter(|u| !u.email.trim().is_empty() && (u.username.to_lowercase() == name || u.email.trim().to_lowercase() == name))
+            .map(|u| (u.clone(), auth::reset_code(&db.ticket_key, u.id, &u.password_hash, now()))).collect()
+    };
+    for (u, code) in found {
+        if !forgot_allowed(&format!("user:{}", u.id), 3) { continue; }
+        let settings = settings.clone();
+        let lang = u.prefs.get("lang").cloned().filter(|l| !l.is_empty()).unwrap_or_else(|| if lang.is_empty() { settings.metadata_language.clone() } else { lang.clone() });
+        let url = format!("{base}/#/reset/{code}");
+        std::thread::spawn(move || {
+            let server = display_name(&settings);
+            let name = u.display_name();
+            let (subject, text) = if crate::mail::german(&lang) {
+                (format!("Neues Passwort für {server}"),
+                 format!("Hallo {name},\n\njemand (hoffentlich du) möchte ein neues Passwort für dein Konto „{}“ bei {server} festlegen. Das geht mit diesem Link, er gilt eine Stunde:\n{url}\n\nWenn du das nicht warst, lösch diese Mail einfach. Dein Passwort bleibt dann, wie es ist.\n", u.username))
+            } else {
+                (format!("New password for {server}"),
+                 format!("Hello {name},\n\nsomeone (hopefully you) asked for a new password for your account “{}” on {server}. Set it with this link, it works for one hour:\n{url}\n\nIf that was not you, just delete this mail. Your password then stays as it is.\n", u.username))
+            };
+            if let Err(e) = crate::mail::send(&settings, &u.email, &subject, &text) {
+                crate::log::add(format!("Password reset mail for {}: {e}", u.username));
+            }
+        });
+    }
+    ok(json!({"ok": true}))
+}
+
+/// The account a reset code is for, while the code works.
+fn reset_user(app: &Arc<App>, code: &str) -> Option<User> {
+    let db = app.db.lock().unwrap();
+    let u = db.user(auth::reset_code_user(code)?)?;
+    auth::reset_code_ok(&db.ticket_key, code, &u.password_hash, now()).then(|| u.clone())
+}
+
+/// GET /api/password/reset/{code}: whether the link still works, and for whom.
+pub fn password_reset_info(app: &Arc<App>, code: &str) -> Resp {
+    match reset_user(app, code) {
+        Some(u) => ok(json!({"valid": true, "username": u.username, "server": display_name(&app.settings())})),
+        None => fail(410, "This link does not work any more. Ask for a new one"),
+    }
+}
+
+/// POST /api/password/reset/{code} {password}: the new password; every device is signed out.
+pub fn password_reset(app: &Arc<App>, ctx: &Ctx, code: &str) -> Resp {
+    let password = ctx.body_or_param("password").unwrap_or_default();
+    if password.chars().count() < 6 { return fail(400, "Use at least 6 characters for the password"); }
+    let Some(u) = reset_user(app, code) else { return fail(410, "This link does not work any more. Ask for a new one") };
+    let (h, s) = auth::hash_password(&password);
+    let mut db = app.db.lock().unwrap();
+    // Checked again under the lock: the link works once.
+    if !db.user(u.id).is_some_and(|x| x.password_hash == u.password_hash) { return fail(410, "This link does not work any more. Ask for a new one"); }
+    if let Some(x) = db.users.iter_mut().find(|x| x.id == u.id) { x.password_hash = h; x.salt = s; }
+    db.tokens.retain(|t| t.user_id != u.id);
+    drop(db);
+    if let Some(m) = LOGIN_FAILS.lock().unwrap().as_mut() { m.remove(&format!("user:{}", u.username.to_lowercase())); }
+    app.save();
+    ok(json!({"ok": true, "username": u.username}))
+}
+
 pub fn invite_info(app: &Arc<App>, code: &str) -> Resp {
     let db = app.db.lock().unwrap();
     match db.invites.iter().find(|i| i.code == code) {

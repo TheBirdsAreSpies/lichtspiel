@@ -95,6 +95,27 @@ pub fn ticket(key: &str, user: u64, scope: &str, token: Option<&str>, now: u64) 
     (format!("{msg}.{}", sig(key, &msg)), expires)
 }
 
+/// How long a "Forgot password" link works.
+pub const RESET_SECS: u64 = 3600;
+
+/// The code in a "Forgot password" link: user, end time and a signature that includes the
+/// current password hash, so the link stops working once the password was changed (it works once).
+pub fn reset_code(key: &str, user: u64, password_hash: &str, now: u64) -> String {
+    let msg = format!("{user}.{}", now + RESET_SECS);
+    format!("{msg}.{}", sig(key, &format!("reset.{msg}.{password_hash}")))
+}
+
+/// The user a reset code is for (not checked yet: see `reset_code_ok`).
+pub fn reset_code_user(code: &str) -> Option<u64> {
+    code.split('.').next()?.parse().ok()
+}
+
+pub fn reset_code_ok(key: &str, code: &str, password_hash: &str, now: u64) -> bool {
+    let Some((msg, s)) = code.rsplit_once('.') else { return false };
+    let Some(Ok(expires)) = msg.split_once('.').map(|(_, e)| e.parse::<u64>()) else { return false };
+    !key.is_empty() && expires > now && same(&sig(key, &format!("reset.{msg}.{password_hash}")), s)
+}
+
 /// (user, token id, scope) of a ticket made with `key` that has not ended.
 pub fn read_ticket(key: &str, t: &str, now: u64) -> Option<(u64, String, String)> {
     let (msg, sig) = t.rsplit_once('.')?;
@@ -152,5 +173,21 @@ mod tests {
         let (hash, salt) = super::hash_password("pw");
         assert!(super::verify("pw", &salt, &hash) && !super::verify("px", &salt, &hash));
         assert!(super::same("abc", "abc") && !super::same("abc", "abd") && !super::same("abc", "ab"));
+    }
+
+    #[test]
+    fn reset_codes() {
+        let c = super::reset_code("k", 7, "hash1", 1000);
+        assert_eq!(super::reset_code_user(&c), Some(7));
+        assert!(super::reset_code_ok("k", &c, "hash1", 1000 + 3599));
+        assert!(!super::reset_code_ok("k", &c, "hash1", 1000 + 3600), "ended");
+        assert!(!super::reset_code_ok("k", &c, "hash2", 1001), "the password was changed since");
+        assert!(!super::reset_code_ok("other", &c, "hash1", 1001));
+        assert!(!super::reset_code_ok("", &c, "hash1", 1001));
+        let forged = c.replacen("7.", "8.", 1);
+        assert!(!super::reset_code_ok("k", &forged, "hash1", 1001));
+        let longer = format!("7.{}.{}", 1000 + 99999, c.rsplit('.').next().unwrap());
+        assert!(!super::reset_code_ok("k", &longer, "hash1", 1001));
+        for bad in ["", "7", "7.x.y", "x.1.2"] { assert!(!super::reset_code_ok("k", bad, "hash1", 0), "{bad}"); }
     }
 }

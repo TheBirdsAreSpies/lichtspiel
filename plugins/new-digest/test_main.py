@@ -217,5 +217,16 @@ class DigestTest(unittest.TestCase):
         self.assertNotIn("input", p)
 
 
+    def test_the_servers_mail_server(self):
+        smtp = {"host": "mail.server", "port": 465, "security": "ssl", "user": "u", "password": "p", "from": "kino@server.example"}
+        s = main.with_server_mail({"smtp_host": ""}, {"smtp": smtp})
+        self.assertTrue(main.mail_ready(s))
+        self.assertEqual((s["smtp_host"], s["smtp_port"], s["smtp_security"], s["smtp_from"]), ("mail.server", 465, "ssl", "kino@server.example"))
+        # The plugin's own server comes first.
+        own = {"smtp_host": "own.example", "smtp_from": "a@own.example"}
+        self.assertEqual(main.with_server_mail(own, {"smtp": smtp})["smtp_host"], "own.example")
+        self.assertFalse(main.mail_ready(main.with_server_mail({"smtp_host": ""}, {})))
+
+
 if __name__ == "__main__":
     unittest.main()
