@@ -85,6 +85,7 @@ function cachedFilters(url) {
   return p;
 }
 
+/** @param {{ st: any, go: any, advRules: any, lastKey: string, loadFilters: any, prefetch?: any }} o */
 function filterUI({ st, go, advRules, lastKey, loadFilters, prefetch }) {
   // Ask for the values shortly after the page is up, so the panel opens at once.
   if (prefetch) setTimeout(() => { Promise.resolve().then(loadFilters).catch(() => {}); }, 400);
@@ -245,7 +246,7 @@ async function sectionPage(id, qs) {
     return q;
   };
   const sortParam = `${sortNow.field === 'show' ? 'episode_order' : sortNow.field}:${sortNow.desc ? 'desc' : 'asc'}`;
-  const listUrl = (start, size = PAGE_SIZE) => { const q = filterQuery(); q.set('sort', sortParam); q.set('start', start); q.set('size', size); return `/library/sections/${id}/all?${q}`; };
+  const listUrl = (start, size = PAGE_SIZE) => { const q = filterQuery(); q.set('sort', sortParam); q.set('start', String(start)); q.set('size', String(size)); return `/library/sections/${id}/all?${q}`; };
   const first = (await GET(listUrl(0))).MediaContainer;
   const total = first.totalSize;
   const pick = (key, opts, title) => {

@@ -78,7 +78,7 @@ async function playlistPage(id, qs) {
   if (st.watched) q.set('watched', st.watched === 'watched' ? 'true' : 'false');
   if (st.q) q.set('q', st.q);
   // A page at a time: a smart playlist can hold tens of thousands of episodes.
-  const listUrl = start => { const n = new URLSearchParams(q); n.set('start', start); n.set('size', PAGE_SIZE); return `/playlists/${id}/items?${n}`; };
+  const listUrl = start => { const n = new URLSearchParams(q); n.set('start', String(start)); n.set('size', String(PAGE_SIZE)); return `/playlists/${id}/items?${n}`; };
   const res = (await GET(listUrl(0))).MediaContainer;
   const manual = pl.kind === 'manual';
   const reorder = manual && !st.sort && !st.type && !st.watched && !st.q && pl.editable;
@@ -694,7 +694,7 @@ function settingField(k, v) {
     get = () => el.value.split('\n').map(s => s.trim()).filter(Boolean).map(s => /^[{[]/.test(s) ? JSON.parse(s) : numbers && isFinite(Number(s)) ? Number(s) : s);
   } else {
     el = h('textarea', { rows: 4, spellcheck: 'false', style: 'font-family:monospace' }, JSON.stringify(v, null, 2)); top = true; help = t('As JSON.');
-    get = () => { try { return JSON.parse(el.value); } catch (e) { throw new Error(label + ': ' + e.message); } };
+    get = () => { try { return JSON.parse(el.value); } catch (e) { throw new Error(label + ': ' + e.message, { cause: e }); } };
   }
   return { k, get, row: formRow(label, el, help, top) };
 }
@@ -947,7 +947,7 @@ function pluginPanels(only) {
     const pic = src => typeof src === 'string' && /^(https:\/\/|\/(?!\/))/.test(src) ? h('img', { src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: e => e.target.replaceWith(h('div', { class: 'pp-noimg' })) }) : h('div', { class: 'pp-noimg' });
     // A list where no entry has a picture gets no picture column; a title may link to a page of the app.
     const pics = (p.items || []).some(it => 'image' in it);
-    const name_ = it => typeof it.href === 'string' && /^#\/[\w\/-]+$/.test(it.href) ? h('a', { href: it.href }, h('b', {}, it.title || '')) : h('b', {}, it.title || '');
+    const name_ = it => typeof it.href === 'string' && /^#\/[\w/-]+$/.test(it.href) ? h('a', { href: it.href }, h('b', {}, it.title || '')) : h('b', {}, it.title || '');
     const items = (p.items || []).length ? h('div', { class: 'pp-items' }, p.items.map(it => h('div', { class: 'pp-item' }, pics ? pic(it.image) : null,
       h('div', { class: 'grow' }, name_(it), it.status ? h('span', { class: 'tag' + (it.status_kind ? ' ' + it.status_kind : '') }, it.status) : null,
         it.subtitle ? h('div', { class: 'dim' }, it.subtitle) : null),
@@ -1003,6 +1003,7 @@ async function refreshPluginNav() {
 }
 
 // The settings, in order: your account, the web app, the server's settings, and management.
+/** @type {Array<[string, string[][]]>} */
 const SETTINGS_TABS = [
   ['Account', [['account', 'Account'], ['devices', 'Devices'], ['watched', 'Watched indicator'], ['watchlist', 'Watchlist feed'], ['webhooks', 'Webhooks']]],
   ['Web', [['web', 'General']]],
@@ -1012,8 +1013,9 @@ const SETTINGS_TABS = [
 const USER_TABS = ['account', 'devices', 'watched', 'watchlist', 'web'];
 // Two rows: the groups on top, the pages of the group you are in below.
 function settingsNav(cur) {
+  /** @param {string[]} tab */
   const to = ([k, , href]) => href || '#/settings/' + k;
-  const mine = SETTINGS_TABS.map(([grp, items]) => [grp, items.filter(([k]) => S.me.admin || USER_TABS.includes(k))]).filter(([, items]) => items.length);
+  const mine = SETTINGS_TABS.map(([grp, items]) => /** @type {[string, string[][]]} */ ([grp, items.filter(([k]) => S.me.admin || USER_TABS.includes(k))])).filter(([, items]) => items.length);
   const here = mine.find(([, items]) => items.some(([k]) => k === cur)) || mine[0];
   const search = S.me.admin ? h('input', { type: 'search', placeholder: t('Search the settings…'), style: 'margin-left:auto;width:220px',
     value: cur === 'search' ? (new URLSearchParams((location.hash.split('?')[1]) || '').get('q') || '') : '',
@@ -1402,7 +1404,7 @@ async function personPage(key, qs) {
     try { d = await GET(`/library/people/${encodeURIComponent(key)}/details?name=${encodeURIComponent(r.name || name)}${refresh ? '&refresh=1' : ''}`); }
     catch (e) { more.replaceChildren(h('p', { class: 'dim' }, e.message)); return; }
     const day = s => s ? new Date(s + 'T00:00').toLocaleDateString(I18N.lang || undefined, { dateStyle: 'long' }) : '';
-    const age = d.birthday ? Math.floor(((d.deathday ? new Date(d.deathday) : new Date()) - new Date(d.birthday)) / 31557600000) : null;
+    const age = d.birthday ? Math.floor(((d.deathday ? new Date(d.deathday) : new Date()).getTime() - new Date(d.birthday).getTime()) / 31557600000) : null;
     facts.replaceChildren(...[
       d.birthday ? t('Born {date}', { date: day(d.birthday) }) + (age != null && !d.deathday ? ` (${age})` : '') : '',
       d.deathday ? t('Died {date}', { date: day(d.deathday) }) + (age != null ? ` (${age})` : '') : '',
@@ -1510,7 +1512,7 @@ document.addEventListener('keydown', e => {
   const m = document.activeElement && document.activeElement.closest('.menu');
   if (!m || !['ArrowDown', 'ArrowUp'].includes(e.key)) return;
   e.preventDefault();
-  const rows = [...m.querySelectorAll('.mi:not([disabled])')], i = rows.indexOf(document.activeElement);
+  const rows = [...m.querySelectorAll('.mi:not([disabled])')], i = rows.indexOf(/** @type {HTMLElement} */ (document.activeElement));
   rows[(i + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length].focus();
 });
 

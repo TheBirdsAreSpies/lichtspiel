@@ -1,0 +1,15 @@
+{
+  // Type checking only (npm run typecheck): the web app has no build step and is served as it is.
+  // The scripts are plain scripts that share one global scope, in the order index.html loads them.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": [],
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "files": ["globals.d.ts", "i18n.js", "lang/de.js", "app.js", "library.js", "player.js", "cast.js", "pages.js", "dashboard.js", "downloads.js"]
+}

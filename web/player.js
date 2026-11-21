@@ -9,6 +9,7 @@ const P = { it: null, offset: 0, method: 'direct', timer: null, queue: [], quali
   sub: -1, subSize: store.get('subSize', '100'), autoNext: store.get('autoNext', '1') === '1', remaining: store.get('timeLeft', '0') === '1',
   next: null, credits: [], intro: null, pending: null, pendingTimer: null, countdown: null, menu: null };
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+/** @type {[string, string][]} */
 const QUALITIES = [['original', t('Original quality')], ['1080p-20', '1080p 20 Mbps'], ['1080p-12', '1080p 12 Mbps'], ['1080p-8', '1080p 8 Mbps'], ['720p-4', '720p 4 Mbps'], ['720p-3', '720p 3 Mbps'], ['720p-2', '720p 2 Mbps'], ['480p-1.5', '480p ' + fmtNum(1.5) + ' Mbps'], ['320p-0.7', '320p ' + fmtNum(0.7) + ' Mbps']];
 const SUB_SIZES = [['75', t('Small')], ['100', t('Normal')], ['130', t('Large')], ['170', t('Very large')]];
 const video = $('#video');
@@ -173,7 +174,7 @@ function drawLyrics() {
 $('#plyricsbtn').addEventListener('click', e => { e.stopPropagation(); toggleLyrics(); });
 // Plays the pre-roll video (if one is set) until it ends, fails or "Skip" is pressed.
 async function playPreroll(it) {
-  let urls = [];
+  let urls;
   try { urls = (await GET('/api/preroll')).urls || []; } catch (e) { return; }
   for (const url of urls) { if (P.it !== it || player.style.display === 'none') return; if (!(await playPrerollVideo(it, url, urls.length > 1))) return; }
 }
@@ -927,7 +928,7 @@ const KEYS = [['Space / K', 'Play or pause'], ['← / J', 'Back 10 seconds'], ['
 function showKeys() {
   const k = $('#pkeys');
   k.replaceChildren(h('h2', { style: 'margin-top:0' }, t('Keyboard shortcuts')),
-    h('table', {}, KEYS.map(([key, what]) => h('tr', {}, h('td', {}, key.split(' ').map(x => /^[\w←→↑↓<>?…\/+%]+$/.test(x) && !['/', '+', '…'].includes(x) ? h('kbd', {}, x) : ' ' + x + ' ')), h('td', {}, t(what))))),
+    h('table', {}, KEYS.map(([key, what]) => h('tr', {}, h('td', {}, key.split(' ').map(x => /^[\w←→↑↓<>?…/+%]+$/.test(x) && !['/', '+', '…'].includes(x) ? h('kbd', {}, x) : ' ' + x + ' ')), h('td', {}, t(what))))),
     h('div', { class: 'actions' }, h('button', { onclick: () => { k.style.display = 'none'; } }, t('Close'))));
   k.style.display = 'block';
 }

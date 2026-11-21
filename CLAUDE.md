@@ -5,7 +5,7 @@ A media server for movies and TV shows (Rust server, plain-JS web app, Flutter a
 - Read [docs/development.md](docs/development.md) first: layout, build and test commands, conventions,
   commit style. What is still open is in [docs/todo.md](docs/todo.md); take an entry off when it is done.
 - Before committing, run what fits the change: `cargo test --release --no-default-features`,
-  `python3 -I -m unittest discover -s plugins/<name>`, `node --check web/*.js`.
+  `python3 -I -m unittest discover -s plugins/<name>`, `npm run check` (lint and type check of `web/`).
 - Line endings are mixed: a few files are CRLF (`web/lang/de.js`, `web/app.js`, all of `src/api/routes/` …;
   `git ls-files --eol`). Keep each file as it is: no `sed -i` on CRLF files, Python with `newline=''`,
   and check `git diff --stat` for whole-file changes.

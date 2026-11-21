@@ -8,3 +8,4 @@ __pycache__/
 plugins/*/state.json
 plugins/*/cache.json
 plugins/letterboxd-import/users/
+node_modules/

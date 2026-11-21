@@ -100,6 +100,7 @@ const legend = entries => h('div', { class: 'legend' }, entries.map(([c, l]) => 
 
 // Lines over time (the last hour). series: [{name, color, values}], times: unix seconds.
 // dates: the range is days long (the axis shows dates, the tooltip date and time).
+/** @param {HTMLElement} box @param {{ times: any, series: any, max?: number, fmt: any, height?: number, dates?: boolean }} o */
 function lineChart(box, { times, series, max, fmt, height = 150, dates = false }) {
   const when = (sec, tip) => { const d = new Date(sec * 1000); return dates ? (tip ? d.toLocaleString(I18N.lang, { day: 'numeric', month: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString(I18N.lang, { day: 'numeric', month: 'numeric' })) : tip ? d.toLocaleTimeString(I18N.lang) : d.toLocaleTimeString(I18N.lang, { hour: '2-digit', minute: '2-digit' }); };
   const W = Math.max(260, box.clientWidth || 600), H = height, L = 52, R = 10, T = 10, B = 22;
@@ -436,7 +437,7 @@ const COMING_NOTES = { 'in cinemas': 'In cinemas', 'digital release': 'Digital r
 // "2026-11-28" → Today / Tomorrow / the weekday within a week / "Fri, 28.11." later.
 function comingDay(date, long) {
   const [y, m, d] = date.split('-').map(Number), at = new Date(y, m - 1, d), now = new Date();
-  const days = Math.round((at - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+  const days = Math.round((at.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86400000);
   const full = at.toLocaleDateString(I18N.lang, long ? { weekday: 'long', day: 'numeric', month: 'long' } : { weekday: 'short', day: 'numeric', month: 'numeric' });
   if (days === 0) return long ? t('Today') + ' · ' + full : t('Today');
   if (days === 1) return long ? t('Tomorrow') + ' · ' + full : t('Tomorrow');

@@ -1,0 +1,16 @@
+{
+  "name": "lichtspiel-web-checks",
+  "private": true,
+  "description": "Checks for the web app (no build step: the files in web/ are served as they are).",
+  "scripts": {
+    "lint": "eslint web",
+    "typecheck": "tsc -p web",
+    "check": "npm run lint && npm run typecheck"
+  },
+  "devDependencies": {
+    "eslint": "^10",
+    "@eslint/js": "^10",
+    "globals": "^17",
+    "typescript": "^7"
+  }
+}

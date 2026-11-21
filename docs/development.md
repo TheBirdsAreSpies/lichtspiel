@@ -24,7 +24,7 @@ For developers: where things are, how to build and test, and the conventions. Wh
 | Client tests | `flutter test` in `clients/lichtspiel` |
 | Client lint | `flutter analyze` in `clients/lichtspiel` |
 | One plugin's tests | `python3 -I -m unittest discover -s plugins/<name>` |
-| Web app syntax check | `node --check web/*.js` (there is no web test suite) |
+| Web app lint and type check | `npm install` once, then `npm run check` (ESLint, and TypeScript checking the plain JS with `web/tsconfig.json` and `web/globals.d.ts`; nothing is built, the files are served as they are; there is no web test suite) |
 
 Some server tests need ffmpeg on the PATH and skip themselves without it.
 
