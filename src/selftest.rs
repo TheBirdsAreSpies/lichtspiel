@@ -447,6 +447,28 @@ pub fn run(out: &Path) -> bool {
         format!("invite link made ({}); friend joined (HTTP {}), sees {visible} library, TV blocked (HTTP {blocked}), admin pages blocked (HTTP {not_admin}), invite can't be reused (HTTP {reuse}), can sign in (HTTP {login})", url.replace(&code, "…"), joined.status),
     );
 
+    // ---- watch together: asking someone registered here in, without a link
+    {
+        friend.post("/api/me/profile", json!({"full_name": "Anna Freund"}));
+        let room = c.post("/api/together", json!({"item": mp4})).json()["code"].as_str().unwrap_or("").to_string();
+        c.get(&format!("/api/together/{room}"));
+        let people = c.get(&format!("/api/together/{room}/people")).json();
+        let listed = people["people"].as_array().is_some_and(|a| a.iter().any(|p| p["name"] == "Anna Freund"));
+        let fid = people["people"].as_array().and_then(|a| a.iter().find(|p| p["name"] == "Anna Freund")).and_then(|p| p["id"].as_u64()).unwrap_or(0);
+        let outsider = friend.get(&format!("/api/together/{room}/people")).status;
+        let asked = c.post(&format!("/api/together/{room}/invite"), json!({"users": [fid]})).json()["invited"].as_u64().unwrap_or(0);
+        let waiting = friend.get("/api/together/invites").json();
+        let shown = waiting["invites"][0]["code"] == json!(room) && waiting["invites"][0]["by"] == "owner";
+        let entered = friend.get(&format!("/api/together/{room}")).json();
+        let named = entered["members"].as_array().is_some_and(|a| a.iter().any(|m| m["name"] == "Anna Freund"));
+        let answered = friend.get("/api/together/invites").json()["invites"].as_array().is_some_and(|a| a.is_empty());
+        steps.add(
+            "watch together",
+            listed && outsider == 403 && asked == 1 && shown && named && answered,
+            format!("the friend is offered by full name ({listed}), can't list before joining (HTTP {outsider}), was asked in ({asked}), sees the invitation ({shown}), joins under their full name ({named}) and the invitation is gone ({answered})"),
+        );
+    }
+
     // ---- users: a local user made by the admin, no invite
     {
         let made = c.post("/api/users", json!({"username": "kid", "password": "kidpass1", "allowed_sections": [mid]}));

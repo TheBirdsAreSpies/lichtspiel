@@ -437,7 +437,13 @@ struct Room {
     /// Goes up with every change, so players know when to follow.
     seq: u64,
     by: String,
+    /// People asked to join from inside the app: user id → (who asked, when).
+    /// Joining or saying no takes them off.
+    invited: BTreeMap<u64, (String, Instant)>,
 }
+
+/// An invitation not answered after this long is no longer shown.
+const INVITE_SECONDS: u64 = 30 * 60;
 
 fn rooms() -> &'static Mutex<HashMap<String, Room>> {
     static R: OnceLock<Mutex<HashMap<String, Room>>> = OnceLock::new();
@@ -478,7 +484,7 @@ pub fn together_create(app: &Arc<App>, ctx: &Ctx, user: &User) -> Resp {
     };
     let mut members = BTreeMap::new();
     members.insert(user.id, (user.display_name(), Instant::now()));
-    let room = Room { item_id: iid, host: user.id, members, position_ms, paused: true, since: Instant::now(), seq: 1, by: user.display_name() };
+    let room = Room { item_id: iid, host: user.id, members, position_ms, paused: true, since: Instant::now(), seq: 1, by: user.display_name(), invited: BTreeMap::new() };
     let v = room.json(&code, &db);
     map.insert(code, room);
     js(201, v)
@@ -493,7 +499,69 @@ pub fn together_get(app: &Arc<App>, user: &User, code: &str) -> Resp {
         return fail(403, "You don't have access to this library");
     }
     room.members.insert(user.id, (user.display_name(), Instant::now()));
+    room.invited.remove(&user.id);
     ok(room.json(code, &db))
+}
+
+/// Everyone else who may see the room's video, to ask them in: {people: [{id, name, online, invited, in_room}]},
+/// the ones online right now first.
+pub fn together_people(app: &Arc<App>, user: &User, code: &str) -> Resp {
+    let db = app.db.lock().unwrap();
+    let map = rooms().lock().unwrap();
+    let Some(room) = map.get(code) else { return fail(404, "This watch-together link has ended") };
+    if !room.members.contains_key(&user.id) { return fail(403, "Open the link to join first"); }
+    let Some(it) = db.items.get(&room.item_id) else { return fail(404, "Not found") };
+    let seen = app.stats.seen.lock().unwrap();
+    let t = now();
+    let mut people: Vec<Value> = db.users.iter().filter(|u| u.id != user.id && db.can_see_item(u, it)).map(|u| {
+        let online = seen.get(&u.id).is_some_and(|s| t.saturating_sub(s.at) <= crate::dashboard::ACTIVE_SECONDS);
+        json!({"id": u.id, "name": u.display_name(), "online": online, "invited": room.invited.contains_key(&u.id), "in_room": room.members.contains_key(&u.id)})
+    }).collect();
+    people.sort_by_key(|p| (!p["online"].as_bool().unwrap_or(false), p["name"].as_str().unwrap_or("").to_lowercase()));
+    ok(json!({"people": people}))
+}
+
+/// Asks people into the room {users: [ids]}; they see the invitation in the app. Only people who may see the video.
+pub fn together_invite(app: &Arc<App>, ctx: &Ctx, user: &User, code: &str) -> Resp {
+    let ids: Vec<u64> = ctx.body.get("users").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_u64()).collect()).unwrap_or_default();
+    if ids.is_empty() { return fail(400, "users is needed"); }
+    let db = app.db.lock().unwrap();
+    let mut map = rooms().lock().unwrap();
+    let Some(room) = map.get_mut(code) else { return fail(404, "This watch-together link has ended") };
+    if !room.members.contains_key(&user.id) { return fail(403, "Open the link to join first"); }
+    let Some(it) = db.items.get(&room.item_id) else { return fail(404, "Not found") };
+    let mut asked = 0;
+    for id in ids {
+        let Some(u) = db.user(id) else { continue };
+        if u.id == user.id || room.members.contains_key(&u.id) || !db.can_see_item(u, it) { continue; }
+        room.invited.insert(u.id, (user.display_name(), Instant::now()));
+        asked += 1;
+    }
+    ok(json!({"ok": true, "invited": asked}))
+}
+
+/// The rooms this person was asked into and has not answered: {invites: [{code, by, item, title, members}]}.
+pub fn together_invites(app: &Arc<App>, user: &User) -> Resp {
+    let db = app.db.lock().unwrap();
+    let mut map = rooms().lock().unwrap();
+    forget_old_rooms(&mut map);
+    let mut list: Vec<(Instant, Value)> = vec![];
+    for (code, room) in map.iter_mut() {
+        room.invited.retain(|_, (_, at)| at.elapsed().as_secs() < INVITE_SECONDS);
+        let Some((by, at)) = room.invited.get(&user.id) else { continue };
+        let Some(it) = db.items.get(&room.item_id).filter(|it| db.can_see_item(user, it)) else { continue };
+        let members: Vec<&String> = room.members.values().filter(|(_, seen)| seen.elapsed().as_secs() < 20).map(|(n, _)| n).collect();
+        if members.is_empty() { continue; }
+        list.push((*at, json!({"code": code, "by": by, "item": room.item_id, "title": it.title, "members": members})));
+    }
+    list.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
+    ok(json!({"invites": list.into_iter().map(|(_, v)| v).collect::<Vec<_>>()}))
+}
+
+/// Says no to an invitation.
+pub fn together_decline(user: &User, code: &str) -> Resp {
+    if let Some(room) = rooms().lock().unwrap().get_mut(code) { room.invited.remove(&user.id); }
+    ok(json!({"ok": true}))
 }
 
 /// Play, pause, seek or another video: {position (ms), paused, item}.

@@ -53,11 +53,13 @@ class _AppShellState extends State<AppShell> {
       }
       if (mounted && m is Map && m['admin'] == true) Activity.start(widget.api);
     }).catchError((_) {});
+    TogetherInvites.start(context, widget.api);
   }
 
   @override
   void dispose() {
     Activity.stop();
+    TogetherInvites.stop();
     super.dispose();
   }
 

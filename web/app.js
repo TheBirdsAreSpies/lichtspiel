@@ -407,6 +407,7 @@ async function boot() {
   }
   render();
   ACT.done = -1; pollActivity();
+  tgCheckInvites();
 }
 function drawChrome() {
   const who = $('#who');

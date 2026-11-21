@@ -107,6 +107,10 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/together/{code}", "A room's state {item, position (ms), paused, seq, members}; asking keeps you in it"),
     ("POST", "/api/together/{code}", "Play, pause, seek or switch video for everyone {position, paused, item}"),
     ("DELETE", "/api/together/{code}", "Leave a room"),
+    ("GET", "/api/together/{code}/people", "Who else may see the room's video, to ask them in → {people: [{id, name, online, invited, in_room}]}"),
+    ("POST", "/api/together/{code}/invite", "Ask people into the room {users: [ids]}; they see the invitation in the app"),
+    ("DELETE", "/api/together/{code}/invite", "Say no to an invitation"),
+    ("GET", "/api/together/invites", "Rooms you were asked into → {invites: [{code, by, item, title, members}]}"),
     ("GET", "/library/metadata/{id}/decision", "How it would play: direct, remux or transcode ?quality=720p-4"),
     ("GET", "/library/parts/{id}/file", "The original file, with seeking (Range requests); ?download=1"),
     ("GET", "/library/parts/{id}/subtitles/{n}", "A subtitle track as WebVTT (n, or xN for side files), with its timing set by synchronizing or by hand"),
@@ -1172,7 +1176,11 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
             match id(rid) { Some(r) => crate::actions::update_report(app, ctx, r, m == "DELETE"), None => fail(404, "No such report") }
         }
         ("POST", ["api", "together"]) => crate::actions::together_create(app, ctx, &user),
+        ("GET", ["api", "together", "invites"]) => crate::actions::together_invites(app, &user),
         ("GET", ["api", "together", code]) => crate::actions::together_get(app, &user, code),
+        ("GET", ["api", "together", code, "people"]) => crate::actions::together_people(app, &user, code),
+        ("POST", ["api", "together", code, "invite"]) => crate::actions::together_invite(app, ctx, &user, code),
+        ("DELETE", ["api", "together", code, "invite"]) => crate::actions::together_decline(&user, code),
         ("POST", ["api", "together", code]) | ("PUT", ["api", "together", code]) => crate::actions::together_update(app, ctx, &user, code),
         ("DELETE", ["api", "together", code]) => crate::actions::together_leave(&user, code),
         ("GET", ["library", "metadata", iid, "decision"]) => {

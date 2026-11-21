@@ -1525,15 +1525,17 @@ async function shareItem(it) {
   copyBox(t('Share “{title}”', { title: name }), url, t('Anyone with an account on this server who may see this library can open it.'));
 }
 // Shows a link to copy (the clipboard needs https, so the text is selected as well).
+// Copies the link in the field (selected, so Ctrl+C works where copying is not allowed).
+async function copyLink(inp) {
+  inp.select();
+  let done = false;
+  try { if (navigator.clipboard && isSecureContext) { await navigator.clipboard.writeText(inp.value); done = true; } } catch (e) { /* not allowed */ }
+  if (!done) { try { done = document.execCommand('copy'); } catch (e) { /* old browser */ } }
+  toast(done ? t('Link copied') : t('Press Ctrl+C to copy the link'));
+}
 function copyBox(title, url, note) {
   const inp = h('input', { value: url, readonly: true, style: 'width:100%', onclick: e => e.target.select() });
-  const copy = async () => {
-    inp.select();
-    let done = false;
-    try { if (navigator.clipboard && isSecureContext) { await navigator.clipboard.writeText(url); done = true; } } catch (e) { /* not allowed */ }
-    if (!done) { try { done = document.execCommand('copy'); } catch (e) { /* old browser */ } }
-    toast(done ? t('Link copied') : t('Press Ctrl+C to copy the link'));
-  };
+  const copy = () => copyLink(inp);
   const box = modal(title, [note ? h('p', { class: 'dim' }, note) : null, inp,
     h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: copy }, t('Copy link')), h('button', { onclick: () => box.remove() }, t('Close')))]);
   inp.select();
@@ -1718,8 +1720,63 @@ async function watchTogether(it) {
   if (!target) return toast(t('Nothing to play'));
   const r = await api('POST', '/api/together', { item: target.id, position: target.viewOffset || 0 });
   const url = location.origin + location.pathname + '#/together/' + r.code;
-  const box = copyBox(t('Watch together'), url, t('Send this link to the people you want to watch with (they need an account here that may see this library). Whoever plays, pauses or jumps moves everyone.'));
-  box.querySelector('.actions').prepend(h('button', { class: 'primary', onclick: () => { box.remove(); joinTogether(r.code); } }, t('▶ Start watching')));
+  const inp = h('input', { value: url, readonly: true, style: 'width:100%', onclick: e => e.target.select() });
+  const people = h('div', {}, h('p', { class: 'dim' }, t('Loading…')));
+  const box = modal(t('Watch together'), [
+    h('p', { class: 'dim' }, t('Whoever plays, pauses or jumps moves everyone.')),
+    h('h3', {}, t('People here')), people,
+    h('h3', {}, t('Or send the link')), h('p', { class: 'dim' }, t('For someone with an account here that may see this library.')), inp,
+    h('div', { class: 'actions' }, h('button', { class: 'primary', onclick: () => { box.remove(); joinTogether(r.code); } }, t('▶ Start watching')),
+      h('button', { onclick: () => copyLink(inp) }, t('Copy link')), h('button', { onclick: () => box.remove() }, t('Close')))]);
+  tgPeople(r.code).then(el => people.replaceChildren(el));
+}
+// The people registered here who may see the room's video, to tick and ask in; they get the invitation in the app.
+async function tgPeople(code) {
+  let r;
+  try { r = await GET(`/api/together/${code}/people`); } catch (e) { return h('p', { class: 'err' }, e.message); }
+  const free = r.people.filter(p => !p.in_room);
+  if (!free.length) return h('p', { class: 'dim' }, t('Nobody else here may see this title.'));
+  const rows = free.map(p => {
+    const note = h('span', { class: 'dim' }, p.invited ? ' · ' + t('invited') : p.online ? ' · ' + t('online') : '');
+    return { p, note, el: h('input', { type: 'checkbox', disabled: p.invited }) };
+  });
+  const ask = h('button', { onclick: async () => {
+    const picked = rows.filter(x => x.el.checked);
+    if (!picked.length) return toast(t('Tick who you want to watch with'));
+    try {
+      await api('POST', `/api/together/${code}/invite`, { users: picked.map(x => x.p.id) });
+      for (const x of picked) { x.el.checked = false; x.el.disabled = true; x.note.textContent = ' · ' + t('invited'); }
+      toast(t('Invited: {names}', { names: picked.map(x => x.p.name).join(', ') }));
+    } catch (e) { toast(e.message, 5000); }
+  } }, t('Invite the ticked'));
+  return h('div', {}, h('div', { class: 'checks' }, rows.map(x => h('label', {}, x.el, x.p.name, x.note))), h('div', { style: 'margin-top:8px' }, ask));
+}
+// Invites more people while already watching together.
+function tgInviteMore() {
+  if (!TG.code) return;
+  const people = h('div', {}, h('p', { class: 'dim' }, t('Loading…')));
+  const box = modal(t('Watch together'), [h('h3', {}, t('People here')), people, h('div', { class: 'actions' }, h('button', { onclick: () => box.remove() }, t('Close')))]);
+  tgPeople(TG.code).then(el => people.replaceChildren(el));
+}
+// Invitations from others here: looked for every 15 seconds and each shown once.
+const TGI = { seen: new Set(), timer: null };
+async function tgCheckInvites() {
+  clearTimeout(TGI.timer);
+  TGI.timer = setTimeout(tgCheckInvites, 15000);
+  if (!S.me || TG.code || document.hidden) return;
+  let r;
+  try { r = await GET('/api/together/invites'); } catch (e) { return; }
+  const inv = r.invites.find(i => !TGI.seen.has(i.code));
+  // Not over another open window: it comes again on the next look.
+  if (!inv || document.querySelector('.modal')) return;
+  TGI.seen.add(inv.code);
+  const others = inv.members.filter(n => n !== inv.by);
+  const box = modal(t('Watch together'), [
+    h('p', {}, t('{by} asks you to watch “{title}” together.', { by: inv.by, title: inv.title })),
+    others.length ? h('p', { class: 'dim' }, t('Also there: {names}', { names: others.join(', ') })) : null,
+    h('div', { class: 'actions' },
+      h('button', { class: 'primary', onclick: () => { box.remove(); joinTogether(inv.code); } }, t('▶ Join')),
+      h('button', { onclick: () => { box.remove(); api('DELETE', `/api/together/${inv.code}/invite`).catch(() => {}); } }, t('No, thanks')))]);
 }
 async function joinTogether(code) {
   let st;
@@ -1737,7 +1794,8 @@ async function joinTogether(code) {
 function tgDraw(members) {
   TG.members = members || TG.members;
   const others = TG.members.filter(m => m.id !== S.me.id).map(m => m.name);
-  $('#ptogether').textContent = TG.code ? ' · ' + (others.length ? t('together with {names}', { names: others.join(', ') }) : t('together (waiting for others)')) : '';
+  $('#ptogether').replaceChildren(...(TG.code ? [' · ' + (others.length ? t('together with {names}', { names: others.join(', ') }) : t('together (waiting for others)')) + ' · ',
+    h('a', { href: '#', onclick: e => { e.preventDefault(); tgInviteMore(); } }, t('Invite more'))] : []));
 }
 async function tgPoll() {
   if (!TG.code || !P.it) return tgLeave();
