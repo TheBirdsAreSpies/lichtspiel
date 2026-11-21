@@ -1,10 +1,14 @@
 # Synology: Container Manager → Project → Create → paste this file.
-# Change the two folders on the left of each ":" to your own shared folders.
-# The automatic deploy (.gitea/workflows/deploy.yml) starts the same container with `docker run`;
-# keep mounts and devices in both alike. It replaces a container made from this file.
+# Change the two folders after ":-" in the first two "volumes" lines to your own shared folders.
+# This is the only description of the container: the automatic deploy (.gitea/workflows/deploy.yml)
+# starts it from this file too, with `docker compose up`. A change here applies to both. The deploy
+# fills in the ${LICHTSPIEL_…} values from its Gitea variables; a manual install takes the defaults
+# after ":-" (or values from a .env file next to this one).
 services:
   lichtspiel:
     build: .
+    # The deploy starts lichtspiel:previous here when the new version does not become healthy.
+    image: ${LICHTSPIEL_IMAGE:-lichtspiel:latest}
     container_name: lichtspiel
     restart: unless-stopped
     # Runs as uid 1026, gid 100 (the first Synology user and the users group). Other IDs: set
@@ -16,30 +20,29 @@ services:
     # a Plex still running on the NAS keeps UDP 32414 for itself.
     # network_mode: host
     ports:
-      - "8484:8484"   # to use another port, change only the left number
+      - "${LICHTSPIEL_PORT:-8484}:8484"   # to use another port, change only the left number
     volumes:
-      - /volume1/docker/lichtspiel:/config       # library, users, playlists, plugins, settings
+      - ${LICHTSPIEL_CONFIG:-/volume1/docker/lichtspiel}:/config   # library, users, playlists, plugins, settings
       #   (set up before the rename? keep your old folder, e.g. /volume1/docker/mediaserver)
-      - /volume1/video:/media:ro                 # your movies and TV shows (read-only)
+      - ${LICHTSPIEL_MEDIA:-/volume1/video}:/media:ro              # your movies and TV shows (read-only)
       # To import from your old server (Libraries page → Import), set OLD_SERVER to its data
       # folder (a .env file next to this one, or the project's environment settings in
-      # Container Manager). Read-only; the old server is not changed. Without it, an empty
-      # folder is mounted and nothing is found.
+      # Container Manager; the deploy takes LICHTSPIEL_OLD_SERVER). Read-only; the old server is
+      # not changed. Without it, an empty folder is mounted and nothing is found.
       #   DSM 7 package: OLD_SERVER=/volume1/PlexMediaServer/AppData/Plex Media Server
       #   DSM 6 package: OLD_SERVER=/volume1/Plex/Library/Application Support/Plex Media Server
       - "${OLD_SERVER:-/volume1/docker/lichtspiel/oldserver}:/oldserver:ro"
-    # Hardware transcoding on Intel-based models: keep these lines and set
-    # "Hardware acceleration" to VAAPI in the web app's Settings.
+    # Hardware transcoding on Intel-based models. A model without a graphics chip (no /dev/dri):
+    # delete these two lines, also for the deploy.
     devices:
       - /dev/dri:/dev/dri
-    # The user also needs the group of the graphics chip: put the number from `ls -n /dev/dri` (the
-    # group of renderD128) here and uncomment. Without it ffmpeg converts on the processor. (The Gitea
-    # deploy looks this number up and adds it by itself.)
-    # group_add:
-    #   - "937"
-    # The videos: a Synology shared folder usually grants only "administrators" (group 101), not
-    # "users", so the server (uid 1026, group 100) is refused and everything shows as missing. The
-    # group joins it for reading; the folder is mounted read-only above. If "users" may read the videos,
-    # remove this. (The Gitea deploy does the same with LICHTSPIEL_MEDIA_GROUPS, default 101.)
     group_add:
+      # The videos: a Synology shared folder usually grants only "administrators" (group 101), not
+      # "users", so the server (uid 1026, group 100) is refused and everything shows as missing. The
+      # group joins it for reading; the folder is mounted read-only above. If "users" may read the
+      # videos, remove this line.
       - "101"
+      # The graphics chip: the user needs its group, the number from `ls -n /dev/dri` (the group of
+      # renderD128). Set LICHTSPIEL_GPU_GROUP to it (in .env); without it ffmpeg converts on the
+      # processor. The deploy looks the number up by itself. (100 is the user's own group anyway.)
+      - "${LICHTSPIEL_GPU_GROUP:-100}"

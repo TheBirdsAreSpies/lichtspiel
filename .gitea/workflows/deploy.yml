@@ -10,26 +10,16 @@
 #   LICHTSPIEL_OLD_SERVER  the old Plex server's data folder for the import, read-only, shown as
 #                       /oldserver (e.g. /volume1/PlexMediaServer/AppData/Plex Media Server; default none)
 #   LICHTSPIEL_PORT     port on the Synology                    (default 8484)
-#   LICHTSPIEL_DOCKER_ARGS  more `docker run` options           (default --device /dev/dri:/dev/dri;
-#                       set it to a single space on a model without an Intel graphics chip).
-#                       Apps find the server on the home network (UDP 32414) only with host networking:
-#                       add `--network host` here. Then the port is always 8484 (LICHTSPIEL_PORT is
-#                       ignored), the DSM firewall must allow it, and a Plex still running on the NAS
-#                       keeps UDP 32414 for itself.
-#   LICHTSPIEL_USER     the user the server runs as, uid:gid (default 1026:100, set in the image).
+#   LICHTSPIEL_USER     the user the server runs as, uid:gid (default 1026:100).
 #                       That user must own the config folder; coming from an older version (which ran as
 #                       root), run once on the NAS: sudo chown -R 1026:100 /volume1/docker/lichtspiel.
 #                       The deploy stops before touching the running server if it can't write there.
-#                       For the graphics chip the deploy adds the group of /dev/dri/renderD128 itself
-#                       (`--group-add`) when LICHTSPIEL_DOCKER_ARGS passes /dev/dri and has no --group-add.
-#   LICHTSPIEL_MEDIA_GROUPS  groups (numbers, separated by spaces) the server's user joins to read the videos
-#                       (default 101 = "administrators" on a Synology). The server runs as 1026:100, and a
-#                       shared folder whose permissions name only other groups (DSM's usual: administrators,
-#                       not "users") refuses it: everything then shows as missing. Set it to a single space
-#                       when "users" or the user itself may read the videos.
 #
-# docker-compose.yml describes the same container for a manual install; keep mounts and devices in both
-# alike. This workflow replaces a container of that name, also one that Container Manager created.
+# The container itself (mounts, ports, the graphics chip, groups, host networking) is described only in
+# docker-compose.yml; this workflow starts it from there with `docker compose up`, filling in the variables
+# above. To change the container, change that file: a manual install and the deploy then stay alike.
+# The deploy adds the group of /dev/dri/renderD128 (LICHTSPIEL_GPU_GROUP) by itself.
+# It replaces a container named lichtspiel, also one that Container Manager created.
 name: Build and deploy
 
 on:
@@ -39,13 +29,15 @@ on:
 
 env:
   NAME: lichtspiel
-  CONFIG_DIR: ${{ vars.LICHTSPIEL_CONFIG || '/volume1/docker/lichtspiel' }}
-  MEDIA_DIR: ${{ vars.LICHTSPIEL_MEDIA || '/volume1/video' }}
-  PORT: ${{ vars.LICHTSPIEL_PORT || '8484' }}
-  DOCKER_ARGS: ${{ vars.LICHTSPIEL_DOCKER_ARGS || '--device /dev/dri:/dev/dri' }}
-  OLD_SERVER_DIR: ${{ vars.LICHTSPIEL_OLD_SERVER || '' }}
-  RUN_AS: ${{ vars.LICHTSPIEL_USER || '' }}
-  MEDIA_GROUPS: ${{ vars.LICHTSPIEL_MEDIA_GROUPS || '101' }}
+  # Read by docker-compose.yml; empty means its default.
+  LICHTSPIEL_CONFIG: ${{ vars.LICHTSPIEL_CONFIG }}
+  LICHTSPIEL_MEDIA: ${{ vars.LICHTSPIEL_MEDIA }}
+  LICHTSPIEL_PORT: ${{ vars.LICHTSPIEL_PORT }}
+  LICHTSPIEL_USER: ${{ vars.LICHTSPIEL_USER }}
+  OLD_SERVER: ${{ vars.LICHTSPIEL_OLD_SERVER }}
+  # Settings of earlier versions that docker-compose.yml replaces; only warned about.
+  OLD_DOCKER_ARGS: ${{ vars.LICHTSPIEL_DOCKER_ARGS }}
+  OLD_MEDIA_GROUPS: ${{ vars.LICHTSPIEL_MEDIA_GROUPS }}
 
 jobs:
   deploy:
@@ -60,6 +52,11 @@ jobs:
         run: |
           docker version --format 'Docker {{.Server.Version}}' || {
             echo "The runner cannot use Docker (on a Synology: run act_runner as root or add its user to the docker group)."; exit 1; }
+          docker compose version || docker-compose version || {
+            echo "Neither 'docker compose' nor 'docker-compose' works on the runner (Container Manager brings it on DSM 7.2)."; exit 1; }
+          if [ -n "${OLD_DOCKER_ARGS}${OLD_MEDIA_GROUPS}" ]; then
+            echo "::warning::LICHTSPIEL_DOCKER_ARGS and LICHTSPIEL_MEDIA_GROUPS are no longer used; the container is described in docker-compose.yml (devices, group_add, network_mode). Delete the variables."
+          fi
 
       - name: Tests
         run: docker build --target test --build-arg GIT_SHA=${GITHUB_SHA::8} -t ${NAME}-test .
@@ -73,15 +70,11 @@ jobs:
 
       - name: Replace the container
         run: |
+          if docker compose version >/dev/null 2>&1; then dc="docker compose"; else dc=docker-compose; fi
+          # The project gets the container's name, so Container Manager shows it as "lichtspiel".
           start() {
             docker rm -f ${NAME} >/dev/null 2>&1 || true
-            if [ -n "${OLD_SERVER_DIR}" ]; then
-              docker run -d --name ${NAME} --restart unless-stopped -p ${PORT}:8484 ${RUN_AS:+--user=$RUN_AS} \
-                -v "${CONFIG_DIR}:/config" -v "${MEDIA_DIR}:/media:ro" -v "${OLD_SERVER_DIR}:/oldserver:ro" ${DOCKER_ARGS} "$1"
-            else
-              docker run -d --name ${NAME} --restart unless-stopped -p ${PORT}:8484 ${RUN_AS:+--user=$RUN_AS} \
-                -v "${CONFIG_DIR}:/config" -v "${MEDIA_DIR}:/media:ro" ${DOCKER_ARGS} "$1"
-            fi
+            LICHTSPIEL_IMAGE="$1" $dc -p ${NAME} -f docker-compose.yml up -d --no-build --force-recreate
           }
           # Up to 10 minutes: the first start after an update may first convert the database.
           healthy() {
@@ -93,25 +86,25 @@ jobs:
             done
             return 1
           }
-          # The new image doesn't run as root: stop here, with the old server still running, if it couldn't
-          # write the config folder.
-          if docker run --rm ${RUN_AS:+--user=$RUN_AS} -v "${CONFIG_DIR}:/config" --entrypoint sh ${NAME}:latest \
-              -c 'find /config ! -writable -print -quit 2>/dev/null | grep -q .'; then
-            echo "The server's user ($(docker run --rm ${RUN_AS:+--user=$RUN_AS} --entrypoint id ${NAME}:latest)) cannot write everything in ${CONFIG_DIR}."
-            echo "Run once on the NAS: sudo chown -R ${RUN_AS:-1026:100} ${CONFIG_DIR}"
+          CONFIG_DIR=${LICHTSPIEL_CONFIG:-/volume1/docker/lichtspiel}
+          RUN_AS=${LICHTSPIEL_USER:-1026:100}
+          # The image doesn't run as root: stop here, with the old server still running, if it couldn't
+          # write the config folder. (/config/oldserver is the empty stand-in for the old server's folder,
+          # made by Docker and mounted read-only; it doesn't count.)
+          if docker run --rm --user=$RUN_AS -v "${CONFIG_DIR}:/config" --entrypoint sh ${NAME}:latest \
+              -c 'find /config -path /config/oldserver -prune -o ! -writable -print -quit 2>/dev/null | grep -q .'; then
+            echo "The server's user ($(docker run --rm --user=$RUN_AS --entrypoint id ${NAME}:latest)) cannot write everything in ${CONFIG_DIR}."
+            echo "Run once on the NAS: sudo chown -R ${RUN_AS} ${CONFIG_DIR}"
             exit 1
           fi
           # The server's user may open the graphics chip only as a member of its group, so look the group up
-          # through the new image (that also works when the runner runs in a container).
-          case "${DOCKER_ARGS}" in
-            *--group-add*) ;;
-            */dev/dri*)
-              gid=$(docker run --rm --device /dev/dri:/dev/dri --entrypoint stat ${NAME}:latest -c %g /dev/dri/renderD128 2>/dev/null || true)
-              if [ -n "$gid" ]; then DOCKER_ARGS="${DOCKER_ARGS} --group-add $gid"; else echo "No /dev/dri/renderD128 found: the server will convert videos on the processor."; fi ;;
-          esac
-          # Groups that may read the videos (after the check above, which looks for a --group-add of the owner's).
-          for g in ${MEDIA_GROUPS}; do DOCKER_ARGS="${DOCKER_ARGS} --group-add $g"; done
-          # Starting is part of the check: a failed `docker run` (bash -e) must also lead to the rollback.
+          # through the new image (that also works when the runner runs in a container). Without a chip
+          # (docker-compose.yml then has no devices) the compose default stays.
+          if [ -z "${LICHTSPIEL_GPU_GROUP}" ] && grep -q '^ *- /dev/dri:/dev/dri' docker-compose.yml; then
+            gid=$(docker run --rm --device /dev/dri:/dev/dri --entrypoint stat ${NAME}:latest -c %g /dev/dri/renderD128 2>/dev/null || true)
+            if [ -n "$gid" ]; then export LICHTSPIEL_GPU_GROUP=$gid; else echo "No /dev/dri/renderD128 found: the server will convert videos on the processor."; fi
+          fi
+          # Starting is part of the check: a failed start (bash -e) must also lead to the rollback.
           if start ${NAME}:latest && healthy; then
             echo "Lichtspiel ${GITHUB_SHA::8} is running."
           else

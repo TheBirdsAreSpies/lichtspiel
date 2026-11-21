@@ -10,10 +10,13 @@ You need DSM 7.2 or newer with **Container Manager** installed (Package Center).
    database, settings and plugins). Your videos can stay where they are, e.g. in the shared
    folder `video` with sub-folders `Movies` and `TV Shows`.
 2. Copy this whole `app` folder to the NAS, e.g. to `docker/lichtspiel-build`.
-3. Open `docker-compose.yml` and check the two paths on the left side of the `volumes:` lines:
+3. Open `docker-compose.yml` and check the two paths after `:-` in the first two `volumes:` lines:
    - `/volume1/docker/lichtspiel` → where the server keeps its data
    - `/volume1/video` → your videos (mounted read-only as `/media`)
    If you have no Intel graphics (or your model has none), delete the `devices:` lines.
+   For hardware transcoding the server also needs the group of the graphics chip: put
+   `LICHTSPIEL_GPU_GROUP=<number>` in a `.env` file next to `docker-compose.yml`, with the number
+   from `ls -n /dev/dri` (the group of `renderD128`).
 4. Container Manager → **Project** → **Create** → name `lichtspiel`, path
    `docker/lichtspiel-build`, "Use existing docker-compose.yml" → Next → Done.
    The first build takes 10–20 minutes on a NAS (it compiles the server).
@@ -52,11 +55,20 @@ Settings → Actions → Variables); all are optional:
 | `LICHTSPIEL_CONFIG` | `/volume1/docker/lichtspiel` | folder for the database and settings (`/config`) |
 | `LICHTSPIEL_MEDIA` | `/volume1/video` | folder with the videos, mounted read-only as `/media` |
 | `LICHTSPIEL_PORT` | `8484` | port on the Synology |
-| `LICHTSPIEL_DOCKER_ARGS` | `--device /dev/dri:/dev/dri` | more `docker run` options; set a single space on a model without an Intel graphics chip |
+| `LICHTSPIEL_USER` | `1026:100` | the user the server runs as (uid:gid); it must own the config folder |
+| `LICHTSPIEL_OLD_SERVER` | none | the old Plex server's data folder for the import, read-only as `/oldserver` |
 
-The container is called `lichtspiel`; the workflow removes one with that name and creates it
-again, with the data folder untouched. If you started Lichtspiel before as a Container Manager
-project, delete that project (not the folder) so the two do not fight over the name and the port.
+The container itself is described only in `docker-compose.yml`: the workflow starts it from there with
+`docker compose up` and fills in these variables. Everything else (the graphics chip under `devices:`,
+the groups under `group_add:`, host networking) is changed in that file, and then applies to a manual
+install and to the deploy alike. The group of the graphics chip is looked up by the workflow itself.
+`LICHTSPIEL_DOCKER_ARGS` and `LICHTSPIEL_MEDIA_GROUPS` from earlier versions are no longer used; the
+run warns while they are still set.
+
+The container is called `lichtspiel` (Compose project `lichtspiel`); the workflow removes one with
+that name and creates it again, with the data folder untouched. If you started Lichtspiel before as a
+Container Manager project, delete that project (not the folder) so the two do not fight over the
+name and the port. The runner needs `docker compose` or `docker-compose`; Container Manager brings it.
 The first run takes 10–20 minutes (it compiles everything); later runs reuse the compiled
 dependencies and take a few minutes.
 

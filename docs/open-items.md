@@ -1,6 +1,6 @@
 # Open items after the 2026-11-15/16 review
 
-The review of 2026-11-15 and 2026-11-16 found 126 problems. Almost all are fixed; [review-2026-11-15.md](review-2026-11-15.md) lists every one with its commit. This page lists only what is still open: 3 partly fixed items, and a few known limits that are worth real follow-up work. Every "where" below was checked again against the code at commit `ddb46ee` (2026-11-20).
+The review of 2026-11-15 and 2026-11-16 found 126 problems. Almost all are fixed; [review-2026-11-15.md](review-2026-11-15.md) lists every one with its commit. This page lists only what is still open: 2 partly fixed items, and a few known limits that are worth real follow-up work. Every "where" below was checked again against the code at commit `ddb46ee` (2026-11-20).
 
 Changes since the first version of this page (`2e6689d`):
 
@@ -13,6 +13,7 @@ Changes since the first version of this page (`2e6689d`):
 - On 2026-11-20/21 six more known limits were fixed: a restore is refused while a Plex sync runs and no sync starts during a restore (`f89c3fc`); the download dialog closes when a download fails before its first frame (`0bb0d4d`); home-network discovery answers each sender at most 5 times a second (`bb70be4`); the app gives up an answer whose body stops coming for as long as the request timeout (`336f783`, `855a517`); a client has 30 s for a request's header, and a connection that sends nothing is closed after 30 s (`db35e69`, see `vendor/tiny_http/README.lichtspiel.md`); the macOS Release build sets `CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO` (`925d81a`, not yet checked with `codesign` on a Mac).
 - **C7** is fixed (`456679e`): on a computer a picture over 3 MB is shrunk in the app before upload (`lib/picture.dart`, with the `image` package): turned upright, at most 3000 px, JPEG at quality 90 to 70 and smaller until it fits; a picture with see-through parts (a logo) stays a PNG. A 24-megapixel photo takes about 2 s, in an isolate.
 - The container runs as non-root on the NAS (confirmed by the owner on 2026-11-21).
+- **D8** is fixed (2026-11-21): `docker-compose.yml` is the only description of the container. `deploy.yml` starts it with `docker compose -p lichtspiel up -d --no-build` (the rollback with `LICHTSPIEL_IMAGE=lichtspiel:previous`) and fills in its Gitea variables; the graphics chip's group goes in as `LICHTSPIEL_GPU_GROUP`. `LICHTSPIEL_DOCKER_ARGS` and `LICHTSPIEL_MEDIA_GROUPS` are gone (a warning while still set). Not yet run on the NAS: the first deploy shows whether the runner has `docker compose`.
 - Two known limits are fixed: a restore now runs `Db::after_load` like a start does (old default server name, default playlists; test `a_restored_old_backup_gets_the_new_server_name_and_the_default_playlists`), and the app puts brackets around an IPv6 address typed without them (`Api.normalize`, with a test).
 
 ## Getting started
@@ -65,7 +66,6 @@ Commits use Conventional Commits with a scope, and the subject describes what th
 |---|---|---|---|---|
 | C12 | Client | Minor player errors bring up the error screen | partly | M |
 | W14 | Web | A huge library builds one empty card per title up front | partly | M |
-| D8 | Deploy | Compose and `deploy.yml` define the same container twice | partly | M |
 | D11 | Deploy | The Docker image was 616 MB; now 425 MB with Jellyfin's ffmpeg | check on the NAS | S |
 
 Sizes: S is under an hour and a few lines, M is a few hours or needs a decision, L is a day or more. Paths in the client section are relative to `clients/lichtspiel/`.
@@ -106,14 +106,6 @@ Report: [reviews/2026-11-15-web.md](reviews/2026-11-15-web.md). Remember the reb
 ### Deploy
 
 Report: [reviews/2026-11-15-ops.md](reviews/2026-11-15-ops.md).
-
-#### D8. Compose and `deploy.yml` define the same container twice
-
-- **Status:** partly fixed in `cd9586b`. Each file now says the other exists and that mounts and devices must match. They are not merged.
-- **Where:** `docker-compose.yml` (whole file) and `.gitea/workflows/deploy.yml:76-83` (`start()` with `docker run`).
-- **Problem:** both list mounts, ports, devices and the restart policy under the same name `lichtspiel`. A change to one is easy to miss in the other. If someone sets it up through Container Manager → Project and then turns on CI, the first deploy runs `docker rm -f` on the compose-made container and Container Manager shows a broken project.
-- **Fix:** keep one definition. For example, let `deploy.yml` run `docker compose up -d --no-build` with the image it just built (`image: lichtspiel:latest` in compose). Keep the rollback and the `--group-add` for `/dev/dri` working.
-- **Size:** M.
 
 #### D11. The Docker image is about 616 MB, the server in it about 12 MB
 
