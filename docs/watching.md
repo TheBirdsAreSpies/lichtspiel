@@ -39,7 +39,8 @@ The server finds a show's intro by **listening**: it reads the sound of the firs
 of every episode in a season and compares the episodes with each other. The stretch of sound
 (longer than 20 seconds) that most episodes share is the intro, even when it starts at a
 different time in each episode because of a cold open. While it plays, the player shows
-**Skip intro**, which jumps to its end; the seek bar marks it in blue.
+**Skip intro**, which jumps to its end; the seek bar marks it in blue. Like **Skip credits**,
+the button stays the whole time the intro runs, also when the other controls have faded out.
 
 It needs at least two episodes of a season, and runs by itself like credits detection
 (**Settings → Generate intro video markers**, default "as a scheduled task and when media is
