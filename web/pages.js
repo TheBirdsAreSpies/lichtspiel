@@ -1506,8 +1506,8 @@ async function addToDialog(it, changed) {
     list.replaceChildren(...hit.slice(0, LIMIT).map(r => h('div', { class: 'li', style: 'cursor:pointer', onclick: async () => {
       try { await r.run(); box.remove(); } catch (e) { toast(e.message, 5000); }
     } }, h('div', { class: 'grow' }, r.name), h('span', { class: 'dim' }, r.kind))),
-      hit.length > LIMIT ? h('div', { class: 'dim', style: 'padding:8px' }, t('{n} more — type to narrow down', { n: hit.length - LIMIT })) : null,
-      !hit.length ? h('div', { class: 'dim', style: 'padding:8px' }, t('Nothing found.')) : null);
+      hit.length > LIMIT ? h('div', { class: 'dim', style: 'padding:8px' }, t('{n} more — type to narrow down', { n: hit.length - LIMIT })) : '', // '' adds nothing; null would read "null"
+      !hit.length ? h('div', { class: 'dim', style: 'padding:8px' }, t('Nothing found.')) : '');
   };
   q.oninput = draw;
   const newPl = async () => { const name = await ask(t('Name of the new playlist')); if (name) { await api('POST', '/playlists', { title: name, kind: 'manual', ids: [it.id] }); toast(t('Added to {name}', { name })); box.remove(); } };

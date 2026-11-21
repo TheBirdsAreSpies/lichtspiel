@@ -119,7 +119,7 @@ function stagger() {
 // With a poster (or another of these) focused (Tab gets there), an arrow key moves to the nearest one in
 // that direction: across a row, into the next row or grid, up to the banner's or the title's buttons.
 // Enter opens it. Anywhere else the arrows scroll the page as always.
-const NAV_TARGETS = '#main a.card, #main .card a.t, #main a.person, #main .spot-act > *, #main .stabs button, #main .stabs-row > button, #main .item-actions > button';
+const NAV_TARGETS = '#main a.card, #main .card a.t, #main a.person, #main .spot-act > *, #main .stabs button,#main .item-actions > button';
 const NAV_DIRS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 document.addEventListener('keydown', e => {
   const dir = NAV_DIRS[e.key];
@@ -825,13 +825,18 @@ function seasonTabs(showId, seasons, at, firstEps, changed) {
   const cache = new Map([[String(seasons[at].id), firstEps]]);
   let cur = at;
   const box = h('div', { class: 'season-eps' }, episodeCards(firstEps, changed));
-  // "⋯" for the season shown (watched, edit …), as its poster had before.
-  const more = h('button', { class: 'small', title: t('More'), 'aria-label': t('More'), onclick: ev => itemMenu(seasons[cur], ev.currentTarget, changed) }, '⋯');
+  // A season's menu (watched, edit …), as its poster had before: a right click or a held finger on its tab, or the
+  // chosen tab clicked again, which its "⋯" hints at (it moves along with the choice).
+  const more = h('span', { class: 'more', title: t('More'), 'aria-hidden': 'true' }, '⋯');
   const tabs = seasons.length > 1 ? h('div', { class: 'stabs', role: 'tablist' }, seasons.map((s, k) => {
     const left = s.leafCount ? s.leafCount - (s.viewedLeafCount || 0) : 0;
-    return h('button', { type: 'button', role: 'tab', class: k === at ? 'on' : '', 'aria-selected': String(k === at), onclick: async ev => {
+    const tab = h('button', { type: 'button', role: 'tab', class: k === at ? 'on' : '', 'aria-selected': String(k === at), 'aria-haspopup': 'menu',
+      oncontextmenu: ev => { ev.preventDefault(); itemMenu(s, tab, changed); }, onclick: async ev => {
       const b = ev.currentTarget;
+      if (b._held) return; // the held finger opened the menu
+      if (k === cur) { itemMenu(s, b, changed); return; } // the chosen tab (and its "⋯"): its menu, also by keyboard and remote
       tabs.querySelectorAll('button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', String(x === b)); });
+      b.append(more);
       SEASON_PICK.set(String(showId), String(s.id)); cur = k;
       let eps = cache.get(String(s.id));
       if (!eps) {
@@ -843,12 +848,14 @@ function seasonTabs(showId, seasons, at, firstEps, changed) {
       box.classList.remove('loading');
       box.replaceChildren(episodeCards(eps, changed));
       if (!calm()) [...box.querySelectorAll('.card')].slice(0, 12).forEach((c, i) => fadeIn(c, i * 35, 'translateY(10px)'));
-    } }, seasonTitle(s.title), left && left < s.leafCount ? h('small', {}, left) : null);
+    } }, seasonTitle(s.title), left && left < s.leafCount ? h('small', {}, left) : null, k === at ? more : null);
+    longPress(tab, () => itemMenu(s, tab, changed));
+    return tab;
   })) : null;
   // Only one season on disk: no tabs and no second "⋯" (the show's own does the same); the heading says these are the
   // show's episodes, so the page is not taken for that season's.
   if (!tabs) return [h('h2', {}, t('Episodes'), ' ', h('span', { class: 'dim', style: 'font-weight:normal' }, '· ' + seasonTitle(seasons[0].title))), box];
-  return [h('h2', {}, t('Seasons')), h('div', { class: 'stabs-row' }, tabs, more), box];
+  return [h('h2', {}, t('Seasons')), h('div', { class: 'stabs-row' }, tabs), box];
 }
 // A show or season: the first episode not watched yet (else the first), the rest of them queued after it.
 async function playNextEpisode(id) {
