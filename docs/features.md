@@ -108,9 +108,19 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Eight
+  details, react to events (new item, playback, invites …) and add their own API calls. Nine
   are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list**,
-  **Subtitles**, the **Library doctor**, **Anime details**, **Smart home** and **New on Lichtspiel**.
+  **Subtitles**, the **Library doctor**, **Anime details**, **Smart home**, **New on Lichtspiel**
+  and **Telegram / Pushover**.
+  **Telegram / Pushover** sends the events chosen in `events` to Telegram chats and Pushover, in
+  their own message format: new titles (one message per scan, movies by name and episodes by show;
+  a single title with its poster and link), playback started, stopped or finished (with the
+  player and poster), problems reported, downloads ready, invites, new users, scans and server
+  starts. Telegram needs a bot made with @BotFather (`telegram_bot_token`); an admin connects
+  chats and groups under **Settings → Account** with a link and a code (in a group: `/start@bot
+  <code>`), sees them there, removes them and sends a test message. Pushover needs the app's token
+  (`pushover_token`) and the user or group keys (`pushover_users`). Messages are in `language`
+  (`"de"`, `"en"`; empty = the language of the admin who opened the panel last).
   **New on Lichtspiel** collects the movies and episodes added and sends everyone who wants it one
   message a week (`every`: `"week"` or `"day"`; `weekday`, default `"friday"`; a day missed while
   the server was off is made up for) with the posters: an e-mail, and/or a Telegram message with
