@@ -1,0 +1,18 @@
+{
+  "id": "scrobble-more",
+  "name": "SIMKL / MyAnimeList",
+  "version": "1.0",
+  "author": "Lichtspiel",
+  "description": "Marks what someone finished as watched on SIMKL and MyAnimeList. Each person connects their own accounts under Settings → Account. SIMKL: create an app at https://simkl.com/settings/developer/ (redirect URI urn:ietf:wg:oauth:2.0:oob) and enter its Client ID (simkl_client_id). MyAnimeList: create an app at https://myanimelist.net/apiconfig (type \"other\", any redirect URL, e.g. this server's address) and enter its Client ID and the same redirect URL (mal_client_id, mal_redirect_url; mal_client_secret only if MyAnimeList shows one). MyAnimeList gets anime only: titles with a MyAnimeList id, which the Anime details plugin adds.",
+  "command": ["python3", "main.py"],
+  "hooks": ["playback.watched", "api.call"],
+  "user_panel": true,
+  "settings": {
+    "simkl_client_id": "",
+    "mal_client_id": "",
+    "mal_client_secret": "",
+    "mal_redirect_url": ""
+  },
+  "timeout_seconds": 45,
+  "enabled_by_default": false
+}

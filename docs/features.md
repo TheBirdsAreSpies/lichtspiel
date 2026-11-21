@@ -108,10 +108,21 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Nine
+  details, react to events (new item, playback, invites …) and add their own API calls. Ten
   are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list**,
-  **Subtitles**, the **Library doctor**, **Anime details**, **Smart home**, **New on Lichtspiel**
-  and **Telegram / Pushover**.
+  **Subtitles**, the **Library doctor**, **Anime details**, **Smart home**, **New on Lichtspiel**,
+  **Telegram / Pushover** and **SIMKL / MyAnimeList**.
+  **SIMKL / MyAnimeList** puts what someone finished (also when marked as watched by hand) into
+  their SIMKL history and, for anime, their MyAnimeList list (episodes watched; completed after the
+  last one; a rewatch leaves a finished entry alone). Everyone connects their own accounts under
+  **Settings → Account**: SIMKL with a code typed in at simkl.com/pin, MyAnimeList through its
+  sign-in page, after which they paste the address it sent them to. An admin creates the apps
+  and enters their ids: SIMKL at <https://simkl.com/settings/developer/> (`simkl_client_id`),
+  MyAnimeList at <https://myanimelist.net/apiconfig>, type "other" (`mal_client_id`,
+  `mal_redirect_url` as entered there, `mal_client_secret` only if it shows one). MyAnimeList
+  needs titles with a MyAnimeList id, which **Anime details** adds; later seasons are found
+  through MyAnimeList's sequels, and episodes counted on from the start of a show (101 …) are
+  counted into the right season.
   **Telegram / Pushover** sends the events chosen in `events` to Telegram chats and Pushover, in
   their own message format: new titles (one message per scan, movies by name and episodes by show;
   a single title with its poster and link), playback started, stopped or finished (with the
