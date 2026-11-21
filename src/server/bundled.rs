@@ -88,6 +88,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn every_bundled_plugin_json_can_be_read() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("plugins");
+        for e in std::fs::read_dir(&dir).unwrap().flatten() {
+            let mf = e.path().join("plugin.json");
+            let Ok(text) = std::fs::read_to_string(&mf) else { continue };
+            if let Err(err) = serde_json::from_str::<crate::plugins::Manifest>(&text) {
+                panic!("{}: {err}", mf.display());
+            }
+        }
+    }
+
+    #[test]
     fn a_newer_bundled_plugin_replaces_only_its_own_files() {
         let root = std::env::temp_dir().join(format!("lichtspiel-bundled-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
