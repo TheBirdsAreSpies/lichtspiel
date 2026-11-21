@@ -1,6 +1,6 @@
 target
 shots
-data
+/data
 .evidence
 __pycache__/
 /clients/lichtspiel/android/build/
