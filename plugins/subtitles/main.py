@@ -277,7 +277,8 @@ def fetch(item, settings, data_dir=""):
 
 
 def main():
-    msg = json.load(sys.stdin)
+    # The server sends UTF-8, whatever the console code page is (Windows).
+    msg = json.loads(getattr(sys.stdin, "buffer", sys.stdin).read())
     event = msg.get("event", "")
     data = msg.get("data") or {}
     settings = msg.get("settings") or {}
