@@ -5,7 +5,7 @@ use super::*;
 pub fn plugin_list(app: &Arc<App>) -> Resp {
     let p = app.plugins.lock().unwrap();
     let db = app.db.lock().unwrap();
-    let list: Vec<Value> = p.list.iter().map(|pl| {
+    let mut list: Vec<Value> = p.list.iter().map(|pl| {
         let st = db.plugins.get(&pl.manifest.id).cloned().unwrap_or_default();
         let mut settings = pl.manifest.settings.clone();
         for (k, v) in &st.settings {
@@ -16,6 +16,8 @@ pub fn plugin_list(app: &Arc<App>) -> Resp {
             "settings": settings, "folder": pl.dir.to_string_lossy(), "user_panel": pl.manifest.user_panel, "reads_library": pl.manifest.reads_library,
             "placement": plugins::placement(&pl.manifest, &st.placement), "suggested_placement": plugins::placement(&pl.manifest, "")})
     }).collect();
+    // Switched-on plugins first; the sort is stable, so each group keeps its order.
+    list.sort_by_key(|v| v["enabled"] != true);
     ok(json!({"folder": p.dir.to_string_lossy(), "plugins": list, "errors": p.errors, "events": plugins::EVENTS}))
 }
 
