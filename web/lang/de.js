@@ -256,6 +256,7 @@ I18N.add('de', 'Deutsch', {
     'None of them works on this computer, so the processor converts.': 'Keiner davon funktioniert auf diesem Computer, deshalb wandelt der Prozessor um.',
     'Needs ffmpeg': 'Braucht ffmpeg',
     'Switch user or sign out': 'Benutzer wechseln oder abmelden',
+    'Appearance, switch user or sign out': 'Darstellung, Benutzer wechseln oder abmelden',
     'Back up now and restore a backup: Maintenance.': 'Jetzt sichern und eine Sicherung zurückspielen: Wartung.',
     'Export as text': 'Als Text exportieren',
     'Export compressed (.gz)': 'Komprimiert exportieren (.gz)',

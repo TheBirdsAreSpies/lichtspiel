@@ -417,10 +417,15 @@ function drawChrome() {
   $('#search').style.visibility = signed ? '' : 'hidden';
   $('#main').style.marginLeft = signed && innerWidth > 760 ? '220px' : '0';
   if (!signed) return;
-  // The gear opens the settings; switching user and signing out sit behind the name.
+  // The gear opens the settings; the colour scheme, switching user and signing out sit behind the name.
   const gear = iconBtn('gear', t('Settings'), () => { location.hash = '#/settings'; });
-  const name = h('button', { class: 'link', 'aria-haspopup': 'menu', title: t('Switch user or sign out'), style: 'background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:4px 6px' }, shownName(S.me) + ' ▾');
+  const name = h('button', { class: 'link', 'aria-haspopup': 'menu', title: t('Appearance, switch user or sign out'), style: 'background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:4px 6px' }, shownName(S.me) + ' ▾');
+  // The same choices as Settings → Web (kept with the account).
+  const choose = (key, def, opts) => async () => opts.map(([v, l]) => ({ label: l, checked: store.get(key, def) === v, run: () => { store.set(key, v); window.applyTheme(); } }));
   name.onclick = () => openMenu(name, [
+    { label: t('Appearance'), sub: choose('theme', 'system', [['system', t('System')], ['light', t('Light')], ['dark', t('Dark')], ['oled', t('OLED (pure black)')]]) },
+    { label: t('Accent color'), sub: choose('accent', 'rose', [['rose', t('Rose')], ['amber', t('Amber')], ['blue', t('Blue')], ['green', t('Green')], ['red', t('Red')], ['violet', t('Violet')]]) },
+    '-',
     { label: t('Switch user'), run: switchUser },
     { label: t('Sign in a device'), run: () => { location.hash = '#/link'; } },
     { label: t('Sign out'), run: async () => { if (await sure(t('Sign out on this device?'), { ok: t('Sign out') })) switchUser(); } },
