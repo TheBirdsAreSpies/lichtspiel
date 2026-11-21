@@ -162,7 +162,8 @@ fn walk_in(dir: &Path, out: &mut Vec<Listed>, depth: usize, rules: &mut Vec<Igno
 
 /// A fingerprint of the video files (names, sizes, change times) in a
 /// library's folders. It changes when a file is added, removed, renamed or is
-/// still being copied.
+/// still being copied, and when a file appears in or leaves a folder with videos
+/// (the folder's change time: a subtitle file put next to a video).
 pub fn folder_signature(paths: &[String], audio: bool) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -174,6 +175,10 @@ pub fn folder_signature(paths: &[String], audio: bool) -> u64 {
             f.path.hash(&mut h);
             f.size.hash(&mut h);
             f.mtime.hash(&mut h);
+        }
+        let dirs: std::collections::BTreeSet<&Path> = files.iter().filter_map(|f| f.path.parent()).collect();
+        for d in dirs {
+            file_mtime(d).hash(&mut h);
         }
         for f in &ignores {
             f.hash(&mut h);
@@ -794,6 +799,28 @@ fn find_subtitles_in(dir: &Path, stem: &str, store: Option<&Path>) -> Vec<String
     out
 }
 
+/// The subtitle files of the folders looked at during one scan, so a season's episodes read their
+/// folder once: folder -> (file name, path).
+type SubtitleCache = HashMap<PathBuf, Vec<(String, String)>>;
+
+/// `find_subtitles` with the folders read once per scan.
+fn find_subtitles_cached(cache: &mut SubtitleCache, dir: &Path, stem: &str) -> Vec<String> {
+    let store = SUBTITLE_STORE.get().map(|s| store_dir(s, dir));
+    let mut out = vec![];
+    for d in std::iter::once(dir.to_path_buf()).chain(store) {
+        let list = cache.entry(d.clone()).or_insert_with(|| {
+            let Ok(rd) = std::fs::read_dir(&d) else { return vec![] };
+            rd.flatten().map(|e| (e.file_name().to_string_lossy().to_string(), e.path()))
+                .filter(|(_, p)| SUBTITLE_EXTENSIONS.contains(&ext_of(p).as_str()))
+                .map(|(n, p)| (n, p.to_string_lossy().to_string())).collect()
+        });
+        out.extend(list.iter().filter(|(n, _)| n.starts_with(stem)).map(|(_, p)| p.clone()));
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// Looks for the subtitle files of a video file again (after a plugin saved one).
 pub fn refresh_subtitles(f: &mut MediaFile, store: &Path) -> bool {
     let p = Path::new(&f.path);
@@ -1078,6 +1105,8 @@ where
 
     // Which files are new or changed?
     let mut known: HashMap<String, (u64, u64, u64)> = HashMap::new();
+    // The subtitle files each known video had, to notice ones put next to it since.
+    let mut known_subs: HashMap<u64, Vec<String>> = HashMap::new();
     // The further parts each known movie has (path, size, change time).
     let mut known_parts: HashMap<u64, Vec<(String, u64, u64)>> = HashMap::new();
     // Known extras: item id -> (kind of extra, movie it belongs to).
@@ -1095,6 +1124,7 @@ where
                 }
                 if let Some(f) = &it.file {
                     known.insert(f.path.clone(), (it.id, f.size, f.modified));
+                    known_subs.insert(it.id, f.external_subtitles.clone());
                     if f.probed && f.probe_version < crate::db::PROBE_VERSION {
                         stale.insert(f.path.clone());
                     }
@@ -1105,6 +1135,7 @@ where
 
     let seen: HashSet<String> = found.iter().map(|f| f.path.to_string_lossy().to_string()).collect();
     let key_of = |f: &Found| f.path.to_string_lossy().to_string();
+    let mut sub_cache: SubtitleCache = HashMap::new();
 
     // Movies split over files ("… - pt1", "… - pt2" in one folder) become one
     // movie: the first part is its file, the others are its further parts.
@@ -1219,6 +1250,16 @@ where
                 }
             }
             if !changed {
+                // The video is as before, but a subtitle file may have been put next to it or taken away.
+                let id = known[&key].0;
+                let stem = f.path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                let subs = find_subtitles_cached(&mut sub_cache, f.path.parent().unwrap_or(Path::new(".")), &stem);
+                if known_subs.get(&id) != Some(&subs) {
+                    with_db(&mut |db: &mut Db| {
+                        if let Some(file) = db.items.get_mut(&id).and_then(|i| i.file.as_mut()) { file.external_subtitles = subs.clone(); }
+                    });
+                    report.updated.push(id);
+                }
                 if stale.contains(&key) {
                     let mut m = MediaFile { path: key.clone(), ..Default::default() };
                     if probe(ffprobe, &mut m) {
@@ -1987,6 +2028,32 @@ title=Two
             assert_eq!(db.views.get(&format!("1:{id}")).map(|v| v.view_count), Some(1));
             let _ = std::fs::remove_dir_all(&root);
         }
+    }
+
+    #[test]
+    fn a_subtitle_file_put_next_to_a_known_video_is_noticed_and_found() {
+        let (root, mut db) = library_with("latesrt", "movie", &["Heat (1995)/Heat (1995).mkv"], false);
+        let section = db.sections[0].clone();
+        let scan = |db: &mut Db| scan_section(&section, "no-such-ffprobe", |f| f(db));
+        scan(&mut db);
+        let subs = |db: &Db| db.items.values().find_map(|i| i.file.as_ref().map(|f| f.external_subtitles.len())).unwrap();
+        assert_eq!(subs(&db), 0);
+        let paths = vec![root.to_string_lossy().to_string()];
+        let before = folder_signature(&paths, false);
+        // Folder times count in seconds.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::fs::write(root.join("Heat (1995)/Heat (1995).de.srt"), b"1").unwrap();
+        let after = folder_signature(&paths, false);
+        let r = scan(&mut db);
+        let added = subs(&db);
+        std::fs::remove_file(root.join("Heat (1995)/Heat (1995).de.srt")).unwrap();
+        scan(&mut db);
+        let removed = subs(&db);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_ne!(before, after, "the folder watcher must notice the new subtitle file");
+        assert_eq!((added, removed), (1, 0));
+        assert_eq!(r.updated.len(), 1);
+        assert!(r.added.is_empty());
     }
 
     #[test]
