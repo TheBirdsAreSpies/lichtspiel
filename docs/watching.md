@@ -40,7 +40,8 @@ of every episode in a season and compares the episodes with each other. The stre
 (longer than 20 seconds) that most episodes share is the intro, even when it starts at a
 different time in each episode because of a cold open. While it plays, the player shows
 **Skip intro**, which jumps to its end; the seek bar marks it in blue. Like **Skip credits**,
-the button stays the whole time the intro runs, also when the other controls have faded out.
+the button shows for 10 seconds when the intro begins, also when the other controls have faded
+out; then it goes with them, and moving the mouse or tapping brings it back while the intro runs.
 
 It needs at least two episodes of a season, and runs by itself like credits detection
 (**Settings → Generate intro video markers**, default "as a scheduled task and when media is

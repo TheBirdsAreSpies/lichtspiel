@@ -493,12 +493,24 @@ function drawBar() {
   if (inCredits && $('#pnext').style.display !== 'flex') {
     const next = P.queue[0] || Q.list[0] || P.next;
     skip.textContent = !next ? t('Skip credits') : next.type === 'episode' ? t('Next episode ▸') : t('Play next ▸');
-    skip.style.display = 'block';
-  } else skip.style.display = 'none';
+    showSkip(skip, true);
+  } else showSkip(skip, false);
   // "Skip intro" while the intro runs.
   const si = $('#pskipintro');
-  if (P.intro && now >= P.intro[0] && now < P.intro[1] - 1) { si.textContent = t('Skip intro'); si.style.display = 'block'; }
-  else si.style.display = 'none';
+  if (P.intro && now >= P.intro[0] && now < P.intro[1] - 1) { si.textContent = t('Skip intro'); showSkip(si, true); }
+  else showSkip(si, false);
+}
+// A skip button that just came up stays SKIP_FRESH_MS even when the controls have faded out,
+// then goes with them (moving the mouse brings it back while the intro or credits still run).
+const SKIP_FRESH_MS = 10000;
+function showSkip(el, on) {
+  const was = el.style.display === 'block';
+  el.style.display = on ? 'block' : 'none';
+  if (on && !was) {
+    el.classList.add('fresh');
+    clearTimeout(el.freshTimer);
+    el.freshTimer = setTimeout(() => el.classList.remove('fresh'), SKIP_FRESH_MS);
+  }
 }
 function drawMarks() {
   const marks = $('.marks', bar); marks.replaceChildren();

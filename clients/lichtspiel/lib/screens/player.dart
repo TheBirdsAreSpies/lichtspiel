@@ -833,6 +833,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   // ---------------------------------------------------------------- build
 
+  // A skip button that just came up shows for 10 seconds even when the controls have faded out,
+  // then goes with them (moving the mouse or tapping brings it back while the intro or credits run).
+  String? skipShown; // 'intro', 'credits' or null
+  DateTime skipSince = DateTime(0);
+
   Widget overlay() {
     return StreamBuilder<Duration>(
       stream: player.stream.position,
@@ -840,10 +845,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
         final pos = (snap.data ?? player.state.position).inMilliseconds / 1000;
         final inIntro = intro != null && pos >= intro![0] && pos < intro![1];
         final inCredits = next != null && credits.isNotEmpty && pos >= credits.first && !nextCard;
+        final kind = inIntro ? 'intro' : inCredits ? 'credits' : null;
+        if (kind != skipShown) {
+          skipShown = kind;
+          skipSince = DateTime.now();
+        }
+        Widget skip(Widget button) => ValueListenableBuilder<bool>(
+              valueListenable: ticksOn,
+              builder: (_, controls, child) {
+                final on = controls || !player.state.playing || DateTime.now().difference(skipSince) < const Duration(seconds: 10);
+                return AnimatedOpacity(opacity: on ? 1 : 0, duration: const Duration(milliseconds: 250), child: IgnorePointer(ignoring: !on, child: child));
+              },
+              child: button,
+            );
         return Stack(children: [
-          if (inIntro) Positioned(right: 24, bottom: 110, child: FilledButton.tonal(onPressed: () => player.seek(Duration(milliseconds: (intro![1] * 1000).round())), child: const Text('Intro überspringen'))),
+          if (inIntro) Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => player.seek(Duration(milliseconds: (intro![1] * 1000).round())), child: const Text('Intro überspringen')))),
           if (inCredits && !inIntro)
-            Positioned(right: 24, bottom: 110, child: FilledButton.tonal(onPressed: () => playNext(), child: Text('Nächste Folge: ${nextName(next!)}'))),
+            Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => playNext(), child: Text('Nächste Folge: ${nextName(next!)}')))),
           if (nextCard && next != null) Positioned(right: 24, bottom: 110, child: _nextCard()),
         ]);
       },

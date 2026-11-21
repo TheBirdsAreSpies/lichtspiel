@@ -327,9 +327,9 @@ button.profile:hover .avatar,button.profile:focus-visible .avatar{border-color:v
 #player .plyrics:not(.sync) p{color:rgba(255,255,255,.85)}
 #player.idle{cursor:none}
 #player .ptop,#player .pctl{position:absolute;left:0;right:0;transition:opacity .25s;z-index:2}
-#player.idle .ptop,#player.idle .pctl{opacity:0;pointer-events:none}
-/* "Skip intro / credits" stays while they run, also when the controls have faded out. */
-#player.idle .pskip{cursor:pointer}
+#player.idle .ptop,#player.idle .pctl,#player.idle .pskip:not(.fresh){opacity:0;pointer-events:none}
+/* "Skip intro / credits" shows for a while when it comes up, also when the controls have faded out. */
+#player.idle .pskip.fresh{cursor:pointer}
 #player .ptop{top:0;display:flex;gap:14px;align-items:center;padding:14px 18px 40px;background:linear-gradient(rgba(0,0,0,.75),transparent)}
 #player .ptop .pt{min-width:0}
 #player .ptop b{font-size:18px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
