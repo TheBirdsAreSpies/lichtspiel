@@ -10,8 +10,9 @@ skip intro / credits, watch together, downloads, Trakt, the eleven bundled plugi
 
 - [x] **Sleep timer in the player** — "stop after this episode", or after 30 / 60 / 90 minutes.
   Small, in the web app and the app; useful with shows that play the next episode by themselves.
-- [ ] **Subtitle sync (plugin)** — subtitles from OpenSubtitles are often a few seconds off. A
-  plugin shifts them to fit the sound (`ffsubsync` or `alass`). Goes with the `subtitles` plugin.
+- [x] **Subtitle sync** — subtitles from OpenSubtitles are often a few seconds off. The server
+  already listened to the sound when an admin asked in the player; now every subtitle file is
+  synchronized once by itself (maintenance window, and right after the plugin downloads one).
 - [ ] **Clean-up suggestions (plugin, admins)** — like Maintainerr: titles nobody watched for X
   months, movies everyone has seen, the biggest files per hour of running time. Deleted only on a
   click, and only with *Allow media deletion* on. Helps when the NAS fills up.

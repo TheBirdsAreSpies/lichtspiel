@@ -1140,6 +1140,7 @@ async function settingsPage(tab, qs) {
       chk('analyze_loudness', t('Measure the loudness of videos'), t('Looks at 5 videos per minute inside the maintenance window until all are measured. Needs ffmpeg.')),
       chk('deep_analysis', t('Run deep analysis'), t('The bitrate of a file is only its average. Deep analysis reads the whole file to find out how fast a connection really has to be for it to play without stopping, also in its busiest scenes; with a speed limit, this decides whether a video is sent as it is or converted. One video at a time inside the maintenance window, and it reads every file completely, so disks stay busy for a long time. Needs ffprobe.')),
       chk('theme_from_intros', t('Theme music from show intros'), t('Cuts the intro of one episode per show once, 3 shows per minute inside the maintenance window, and plays it as the show’s theme music. Needs found intros; a theme.mp3 in the show’s folder comes first. Needs ffmpeg.')),
+      chk('sync_subtitles', t('Synchronize subtitle files with the sound'), t('Listens to the sound of a video once and moves the lines of each subtitle file next to it onto the speech, also when the file was made for another frame rate. Only moves a file when it is sure, never one whose timing was set by hand. One video per minute inside the maintenance window; files a plugin downloads are done right away. Needs ffmpeg.')),
       chk('generate_thumbnails', t('Create preview pictures'), t('Makes the pictures on the seek bar and the chapter pictures ahead of time, 2 videos per minute inside the maintenance window. Needs ffmpeg.')),
       chk('refresh_metadata', t('Read all libraries again every 3 days')),
     ],
@@ -1169,7 +1170,7 @@ async function settingsPage(tab, qs) {
     ],
   };
   // Without ffmpeg these do nothing: they are switched off and say why.
-  if (!tc.ffmpeg_found) for (const k of ['credits_from_picture', 'analyze_loudness', 'deep_analysis', 'generate_thumbnails', 'theme_from_intros', 'boost_dialogue', 'transcoder_quality', 'hw_accel', 'hw_device', 'hw_constant_quality', 'hdr_tone_mapping', 'h264_preset', 'h264_minimum_crf',
+  if (!tc.ffmpeg_found) for (const k of ['credits_from_picture', 'analyze_loudness', 'deep_analysis', 'generate_thumbnails', 'theme_from_intros', 'sync_subtitles', 'boost_dialogue', 'transcoder_quality', 'hw_accel', 'hw_device', 'hw_constant_quality', 'hdr_tone_mapping', 'h264_preset', 'h264_minimum_crf',
     'max_transcodes', 'max_gpu_transcodes', 'max_cpu_transcodes', 'hls_segment_seconds', 'segmented_transcoder_timeout_seconds']) {
     const el = f[k]; if (!el) continue;
     el.disabled = true; el.title = t('Needs ffmpeg');

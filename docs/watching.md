@@ -50,6 +50,26 @@ than half of a season's episodes share an intro, the season gets none. An
 intro can also be set by hand with `PUT /library/metadata/{id}/markers` and
 `{"intro": [start ms, end ms]}`.
 
+## Subtitle timing
+
+A subtitle file made for another release is often a few seconds off, or drifts because it was made
+for 25 instead of 23.976 frames per second. The server fixes that by **listening**: it finds the
+stretches where someone speaks and moves (and if needed stretches) the subtitle's lines onto them.
+It only applies a result it is sure of; the file itself is never changed, the server sends the
+lines moved, to the web app and the app alike.
+
+- **By itself:** every subtitle file next to a video (or in `<data>/subtitles/`) is listened to
+  once, one video per minute inside the maintenance window, and a file the **Subtitles** plugin
+  downloads right away. A file less than 0.2 s off is left alone, and so is one whose timing was
+  set before. Switch it off under **Settings → Scheduled tasks → Synchronize subtitle files with
+  the sound**. The log says which files were moved and by how much.
+- **By hand (admins):** in the player's subtitle menu, *Synchronize with the sound*, *Earlier /
+  Later by 0.5 s* and *Reset timing* (API: `POST /library/parts/{id}/subtitles/{n}/sync`,
+  `PUT …/timing`).
+
+A timing belongs to its file: when another subtitle file is added or one taken away, it stays with
+the file it was set for.
+
 ## Deep analysis
 
 The bitrate of a file is only its average: a busy scene can need far more for a while, and a

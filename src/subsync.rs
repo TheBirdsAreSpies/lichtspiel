@@ -104,6 +104,23 @@ pub fn loudness_curve(ffmpeg: &str, path: &str) -> Result<Vec<f32>, String> {
     Ok(curve)
 }
 
+/// The timings of side files are kept by their number ("x0" …), which moves when a file is added
+/// or taken away: carries each one over to its file's new number, and drops those of files gone.
+pub fn renumber_side_files(sync: &mut Value, old: &[String], new: &[String]) {
+    let Some(o) = sync.as_object_mut() else { return };
+    let side: Vec<(String, Value)> = o.iter().filter(|(k, _)| k.starts_with('x')).map(|(k, v)| (k.clone(), v.clone())).collect();
+    for (k, _) in &side { o.remove(k); }
+    for (k, v) in side {
+        let Some(p) = k[1..].parse::<usize>().ok().and_then(|i| old.get(i)) else { continue };
+        if let Some(j) = new.iter().position(|x| x == p) { o.insert(format!("x{j}"), v); }
+    }
+}
+
+/// A timing found by listening that is worth applying on its own: more than a few steps off, or stretched.
+pub fn worth_moving(t: Timing) -> bool {
+    t.offset_ms.abs() as f64 >= 4.0 * BIN_S * 1000.0 || (t.scale - 1.0).abs() > 1e-9
+}
+
 /// 1 where someone seems to speak, else 0, minus the average (so a line on silence counts against it).
 pub fn speech_signal(curve: &[f32]) -> Vec<f64> {
     let mut sorted: Vec<f32> = curve.to_vec();
@@ -204,6 +221,23 @@ mod tests {
             t += len + gap;
         }
         v
+    }
+
+    #[test]
+    fn timings_follow_their_side_file_when_another_is_added() {
+        let old = vec!["/m/A.en.srt".to_string(), "/m/A.fr.srt".to_string()];
+        let new = vec!["/m/A.de.srt".to_string(), "/m/A.en.srt".to_string()];
+        let mut sync = serde_json::json!({"2": {"offset_ms": 100}, "x0": {"offset_ms": 1500}, "x1": {"offset_ms": -700}});
+        renumber_side_files(&mut sync, &old, &new);
+        // en moved from x0 to x1, fr is gone, the embedded track's stays.
+        assert_eq!(sync, serde_json::json!({"2": {"offset_ms": 100}, "x1": {"offset_ms": 1500}}));
+    }
+
+    #[test]
+    fn small_shifts_are_left_alone() {
+        assert!(!worth_moving(Timing { offset_ms: 150, scale: 1.0 }));
+        assert!(worth_moving(Timing { offset_ms: -200, scale: 1.0 }));
+        assert!(worth_moving(Timing { offset_ms: 0, scale: 25.0 / 23.976 }));
     }
 
     #[test]

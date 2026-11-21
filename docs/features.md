@@ -199,7 +199,8 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   `username` and `password` of an OpenSubtitles account give more downloads a day) and the
   languages (`languages`, default `["de", "en"]`). Languages the video
   already has are skipped; once the daily download limit is reached it waits until the next
-  day. `POST /api/plugins/subtitles/call/test` checks the key.
+  day. `POST /api/plugins/subtitles/call/test` checks the key. Downloaded subtitles are
+  synchronized with the sound right away (see [watching.md](watching.md#subtitle-timing)).
 - **Trakt** — built in. An admin creates a Trakt app (<https://trakt.tv/oauth/applications/new>, redirect
   URI `urn:ietf:wg:oauth:2.0:oob`) and enters its Client ID and Client Secret under **Settings → Your
   account → Trakt**. Then everyone connects their own Trakt account there (a code to type in at

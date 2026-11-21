@@ -431,6 +431,81 @@ pub fn cut_show_theme(app: &App, show: u64) -> Result<(), String> {
     if ok { Ok(()) } else { Err("ffmpeg could not cut the intro (see the log)".into()) }
 }
 
+/// Side subtitle files already listened to are kept in extra.subsync_checked (path -> when).
+const SUBS_CHECKED: &str = "subsync_checked";
+/// One synchronization at a time: each reads a video's whole sound.
+static SUBS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn subs_waiting(it: &crate::db::Item) -> bool {
+    it.kind.playable() && it.kind != crate::db::ItemKind::Track && it.parts.is_empty() && !it.extra.contains_key(crate::scanner::MISSING)
+        && it.file.as_ref().is_some_and(|f| f.streams.iter().any(|s| s.kind == "audio")
+            && f.external_subtitles.iter().any(|p| it.extra.get(SUBS_CHECKED).and_then(|c| c.get(p)).is_none()))
+}
+
+/// Listens to the sound of a video once and synchronizes its subtitle files that were not checked
+/// yet. A file only moves when the result is certain and more than a moment off, and never when its
+/// timing was set before (by hand or by "Synchronize with the sound"). Returns how many were moved.
+pub fn sync_item_subtitles(app: &std::sync::Arc<App>, id: u64) -> usize {
+    let _one = SUBS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let (f, todo) = {
+        let db = app.db.lock().unwrap();
+        let Some(it) = db.items.get(&id).filter(|i| subs_waiting(i)) else { return 0 };
+        let f = it.file.clone().unwrap();
+        let timed = |i: usize| it.extra.get("subsync").and_then(|s| s.get(format!("x{i}"))).is_some();
+        let todo: Vec<(String, bool)> = f.external_subtitles.iter().enumerate()
+            .filter(|(_, p)| it.extra.get(SUBS_CHECKED).and_then(|c| c.get(p.as_str())).is_none())
+            .map(|(i, p)| (p.clone(), timed(i))).collect();
+        (f, todo)
+    };
+    let speech = if todo.iter().all(|t| t.1) { Err(String::new()) } else {
+        crate::subsync::loudness_curve(&app.settings().ffmpeg, &f.path).map(|c| crate::subsync::speech_signal(&c))
+    };
+    if let Err(e) = &speech { if !e.is_empty() { elog!("subtitles: could not listen to {}: {e}", f.path); } }
+    let mut found: Vec<(String, Option<crate::subsync::Timing>)> = vec![];
+    for (p, timed) in todo {
+        let t = match (&speech, timed) {
+            (Ok(sp), false) => {
+                let n = f.external_subtitles.iter().position(|x| *x == p).map(|i| format!("x{i}")).unwrap_or_default();
+                crate::handlers::subtitle_vtt(app, &f, &n).ok()
+                    .map(|v| crate::subsync::cues(&String::from_utf8_lossy(&v)))
+                    .filter(|c| c.len() >= 20)
+                    .and_then(|c| crate::subsync::find_timing(&c, sp))
+                    .map(|(t, _)| t).filter(|t| crate::subsync::worth_moving(*t))
+            }
+            _ => None,
+        };
+        found.push((p, t));
+    }
+    // The files may have been renumbered meanwhile: each timing goes to its file's number now.
+    let mut moved = 0;
+    {
+        let mut db = app.db.lock().unwrap();
+        let Some(it) = db.items.get_mut(&id) else { return 0 };
+        let now_list = it.file.as_ref().map(|f| f.external_subtitles.clone()).unwrap_or_default();
+        for (p, t) in found {
+            if let (Some(t), Some(i)) = (t, now_list.iter().position(|x| *x == p)) {
+                let sync = it.extra.entry("subsync").or_insert_with(|| json!({}));
+                if let Some(o) = sync.as_object_mut().filter(|o| !o.contains_key(&format!("x{i}"))) {
+                    o.insert(format!("x{i}"), t.to_json());
+                    moved += 1;
+                    elog!("subtitles: moved {p} by {:.1} s{} to fit the speech", t.offset_ms as f64 / 1000.0, if (t.scale - 1.0).abs() > 1e-9 { " and stretched it" } else { "" });
+                }
+            }
+            let checked = it.extra.entry(SUBS_CHECKED).or_insert_with(|| json!({}));
+            if let Some(o) = checked.as_object_mut() { o.insert(p, json!(crate::db::now())); }
+        }
+    }
+    app.save();
+    moved
+}
+
+/// Synchronizes the subtitle files of up to `max` videos that have unchecked ones. Returns how many videos were done.
+pub fn sync_new_subtitles(app: &std::sync::Arc<App>, max: usize) -> usize {
+    let todo: Vec<u64> = app.db.lock().unwrap().items.values().filter(|i| subs_waiting(i)).map(|i| i.id).take(max).collect();
+    for id in &todo { sync_item_subtitles(app, *id); }
+    todo.len()
+}
+
 /// Runs once a minute: starts the tasks that are due, but only inside the maintenance window.
 pub fn tick(app: &std::sync::Arc<App>) {
     let (s, now) = (app.settings(), crate::db::now());
@@ -464,6 +539,7 @@ pub fn tick(app: &std::sync::Arc<App>) {
     if s.deep_analysis { deep_analysis(app, 1); }
     if s.generate_thumbnails { make_thumbnails(app, 2); }
     if s.theme_from_intros { make_intro_themes(app, 3); }
+    if s.sync_subtitles { sync_new_subtitles(app, 1); }
     if !ran.is_empty() {
         { let mut db = app.db.lock().unwrap(); for k in ran { db.settings.maintenance_last.insert(k.to_string(), now); } }
         app.save();

@@ -708,7 +708,7 @@ pub fn hls_file(app: &Arc<App>, sid: &str, file: &str) -> Resp {
 }
 
 /// A subtitle track as WebVTT, as it is in the file (n: "2" for the third embedded track, "x0" for the first side file).
-fn subtitle_vtt(app: &Arc<App>, f: &db::MediaFile, n: &str) -> Result<Vec<u8>, Resp> {
+pub fn subtitle_vtt(app: &Arc<App>, f: &db::MediaFile, n: &str) -> Result<Vec<u8>, Resp> {
     let (source, embedded) = if let Some(x) = n.strip_prefix('x') {
         let Some(p) = x.parse::<usize>().ok().and_then(|i| f.external_subtitles.get(i)) else { return Err(fail(404, "No such subtitle")) };
         if !app.may_send(Path::new(p), false) { return Err(fail(403, "This file is outside the library folders")); }

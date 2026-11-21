@@ -1256,7 +1256,11 @@ where
                 let subs = find_subtitles_cached(&mut sub_cache, f.path.parent().unwrap_or(Path::new(".")), &stem);
                 if known_subs.get(&id) != Some(&subs) {
                     with_db(&mut |db: &mut Db| {
-                        if let Some(file) = db.items.get_mut(&id).and_then(|i| i.file.as_mut()) { file.external_subtitles = subs.clone(); }
+                        if let Some(it) = db.items.get_mut(&id) {
+                            let Some(file) = it.file.as_mut() else { return };
+                            let old = std::mem::replace(&mut file.external_subtitles, subs.clone());
+                            if let Some(sync) = it.extra.get_mut("subsync") { crate::subsync::renumber_side_files(sync, &old, &subs); }
+                        }
                     });
                     report.updated.push(id);
                 }

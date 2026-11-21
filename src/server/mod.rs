@@ -456,17 +456,31 @@ impl App {
     }
 
     /// Looks for an item's subtitle files again (next to the video and in the subtitle store).
-    pub fn refresh_subtitles(&self, id: u64) {
+    /// New ones are synchronized with the sound right away, in the background, when that is on.
+    pub fn refresh_subtitles(self: &Arc<Self>, id: u64) {
         let store = self.data_dir.join("subtitles");
         let changed = {
             let mut db = self.db.lock().unwrap();
             let Some(it) = db.items.get_mut(&id) else { return };
             let mut changed = false;
-            if let Some(f) = it.file.as_mut() { changed |= crate::scanner::refresh_subtitles(f, &store); }
+            if let Some(f) = it.file.as_mut() {
+                let old = f.external_subtitles.clone();
+                if crate::scanner::refresh_subtitles(f, &store) {
+                    changed = true;
+                    let new = f.external_subtitles.clone();
+                    if let Some(sync) = it.extra.get_mut("subsync") { crate::subsync::renumber_side_files(sync, &old, &new); }
+                }
+            }
             for f in it.parts.iter_mut() { changed |= crate::scanner::refresh_subtitles(f, &store); }
             changed
         };
-        if changed { self.save(); }
+        if changed {
+            self.save();
+            if self.settings().sync_subtitles {
+                let app = self.clone();
+                std::thread::spawn(move || { crate::maintenance::sync_item_subtitles(&app, id); });
+            }
+        }
     }
 
     /// Sends `schedule.daily` if it was not sent yet today (UTC). True if it was sent now.

@@ -899,6 +899,10 @@ pub struct Settings {
     /// Theme music for shows cut from the intro of one episode (during maintenance, once per show).
     #[serde(default = "yes")]
     pub theme_from_intros: bool,
+    /// Subtitle files next to a video are synchronized with its sound once each (during maintenance,
+    /// and right after a plugin saved one).
+    #[serde(default = "yes")]
+    pub sync_subtitles: bool,
     /// Surround sound converted to stereo: lift the dialogue (the centre channel) so voices stay clear.
     #[serde(default = "yes")]
     pub boost_dialogue: bool,
@@ -1172,6 +1176,7 @@ impl Default for Settings {
             meta_person_details: true,
             trailers_english: true,
             theme_from_intros: true,
+            sync_subtitles: true,
             trailers_red_band: false,
             group_recent_episodes: false,
             analyze_loudness: false,
