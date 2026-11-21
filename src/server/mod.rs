@@ -551,6 +551,8 @@ impl App {
             if let (Ok(v), Some(id)) = (&r, data["id"].as_u64()) {
                 if v["refresh_subtitles"] == json!(true) { self.refresh_subtitles(id); }
             }
+            // A plugin that keeps collections (smart collections): they are put in place.
+            if let Ok(v) = &r { crate::handlers::set_plugin_collections(self, v); }
             let mut p = self.plugins.lock().unwrap();
             match r {
                 Ok(v) => p.note(&pl.manifest.id, event, true, short(&v.to_string())),

@@ -10,7 +10,7 @@ For developers: where things are, how to build and test, and the conventions. Wh
 | `vendor/tiny_http/` | The HTTP library, copied in and patched (header limits and a 30 s header deadline; look for `lichtspiel:` comments) |
 | `web/` | The web app, plain JS with no build step, compiled into the binary |
 | `clients/lichtspiel/` | The Flutter app (Windows, Android, macOS, iOS/iPadOS) |
-| `plugins/` | Bundled Python plugins (`nfo-reader`, `webhook-notify`, `subtitles`, `wishlist`, `library-doctor`, `cleanup`, `anime-details`, `smart-home`, `new-digest`, `push-notify`, `scrobble-more`, `wrapped`) |
+| `plugins/` | Bundled Python plugins (`nfo-reader`, `webhook-notify`, `subtitles`, `wishlist`, `library-doctor`, `cleanup`, `smart-collections`, `anime-details`, `smart-home`, `new-digest`, `push-notify`, `scrobble-more`, `wrapped`) |
 | `Dockerfile`, `docker-compose.yml`, `.gitea/workflows/deploy.yml` | The image, the Synology setup, and the automatic deploy |
 
 `README.md` and the guides it links in `docs/` describe how everything works.

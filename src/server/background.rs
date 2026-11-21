@@ -407,6 +407,35 @@ mod tests {
     }
 
     #[test]
+    fn a_plugin_keeps_its_collections_and_leaves_ones_given_by_hand() {
+        let (app, root) = test_app("plugin-collections");
+        for (id, cols) in [(1u64, json!(["Mine"])), (2, json!(["IMDb Top 250"])), (3, json!([]))] {
+            app.db.lock().unwrap().items.insert(id, item(id, "movie", json!({"collections": cols})));
+        }
+        let cols = |id: u64| app.db.lock().unwrap().items.get(&id).unwrap().extra.get("collections").cloned().unwrap_or(json!([]));
+        let first = crate::handlers::set_plugin_collections(&app, &json!({"collections": {"IMDb Top 250": [1, 2], "Oscars": [3]}}));
+        let after_first = (cols(1), cols(2), cols(3));
+        // Title 1 leaves the list; title 2 had it by hand before, so it stays.
+        let second = crate::handlers::set_plugin_collections(&app, &json!({"collections": {"IMDb Top 250": [], "Oscars": [3]}}));
+        let after_second = (cols(1), cols(2), cols(3));
+        // Details downloaded again (TMDB's own collection): the plugin's stays.
+        {
+            let mut db = app.db.lock().unwrap();
+            let it = db.items.get_mut(&3).unwrap();
+            super::matching::apply_metadata(it, &json!({"extra": {"collections": ["Dune Collection"]}}), false);
+        }
+        let refreshed = cols(3);
+        let none = crate::handlers::set_plugin_collections(&app, &json!({"ok": true}));
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(first, Some((2, 0)));
+        assert_eq!(after_first, (json!(["Mine", "IMDb Top 250"]), json!(["IMDb Top 250"]), json!(["Oscars"])));
+        assert_eq!(second, Some((0, 1)));
+        assert_eq!(after_second, (json!(["Mine"]), json!(["IMDb Top 250"]), json!(["Oscars"])));
+        assert_eq!(refreshed, json!(["Dune Collection", "Oscars"]));
+        assert_eq!(none, None);
+    }
+
+    #[test]
     fn schedule_daily_is_sent_once_a_day_and_after_a_restart_only_if_missed() {
         let (app, root) = test_app("daily");
         let first = app.daily_tick();

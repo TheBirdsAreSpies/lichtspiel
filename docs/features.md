@@ -122,9 +122,9 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Twelve
+  details, react to events (new item, playback, invites …) and add their own API calls. Thirteen
   are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list**,
-  **Subtitles**, the **Library doctor**, **Clean-up suggestions**, **Anime details**, **Smart home**,
+  **Subtitles**, the **Library doctor**, **Clean-up suggestions**, **Smart collections**, **Anime details**, **Smart home**,
   **New on Lichtspiel**, **Telegram / Pushover**, **SIMKL / MyAnimeList** and **Lichtspiel Wrapped**.
   **Lichtspiel Wrapped** shows each person their year under **Settings → Account**: hours watched,
   movies and episodes, favourite genres, most watched shows, the longest binge (episodes of one
@@ -190,6 +190,16 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   without season or number, and titles for which no details were found online. Each entry links
   to its title and can be ignored; `skip_libraries` leaves libraries out by name (an anime
   library in Japanese …).
+  **Smart collections** fills collections in the movie libraries from lists, once a day and on
+  **Update now** (admins, under **Settings → Account**, with how many of each list you have):
+  `imdb-top-250` (IMDb's Top 250 through its copy on Letterboxd, as IMDb blocks programs),
+  `oscar-best-picture` (Wikidata), `tmdb-popular` and `tmdb-top-rated` (100 each, with a
+  `tmdb_api_key` in the plugin's settings) and any public Letterboxd list or watchlist by its
+  address — `lists: [{"name": "IMDb Top 250", "source": "imdb-top-250"}, …]`, `libraries` by name
+  (empty = every movie library). Titles are found by TMDB or IMDb id, else by title and year; only
+  titles you have go in. A collection the plugin filled keeps up with its list (titles that leave
+  the list leave it), a title put in it by hand stays, and downloading details again does not
+  remove it. A list taken out of the settings empties its collection.
   **Clean-up suggestions** helps when the disk fills up: once a day and on **Look through now** it
   shows admins under **Settings → Account** three lists, each with its total size: titles nobody
   watched for `unwatched_months` (default 12) that have been there at least as long, titles

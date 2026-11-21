@@ -54,8 +54,11 @@ bundled plugins.
 - [x] **"Coming soon" row and calendar** — new episodes of shows in the library (Sonarr or TMDB)
   and movies waiting in Radarr. Goes with the wish list. Built in the web app (TMDB or TVmaze,
   and Radarr / Sonarr through the wish list's `calendar`), in the web app and the app.
-- [ ] **Smart collections like Kometa (plugin)** — "IMDb Top 250", "Oscar winners", Trakt lists,
+- [x] **Smart collections like Kometa (plugin)** — "IMDb Top 250", "Oscar winners", Trakt lists,
   filled from the library automatically (`reads_library`). Maybe other things that Kometa does as well.
+  Built as `smart-collections` with IMDb Top 250, Oscar winners, TMDB popular / top rated and
+  Letterboxd lists; Trakt lists, Kometa's poster overlays and home rows for collections are
+  still open.
 - [ ] **Letterboxd import** — Letterboxd has no open API, but its CSV export can bring in watched
   state and ratings once. Also it should be possible to import lists and watchlist (as watchlist or as playlist).
 - [ ] **Warning when a disk fills up** — a message through `push-notify` when a library's disk is

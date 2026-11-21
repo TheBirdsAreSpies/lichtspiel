@@ -44,6 +44,12 @@ The plugin may print a JSON answer as its last line of output:
   when **Allow media deletion** is on and the caller may delete. The caller gets `deleted` (how
   many went) and, if any could not, an `error` instead of the plugin's `message`.
 
+An answer to any event with `"collections": {"IMDb Top 250": [42, …], …}` makes each named
+collection hold exactly those titles: they are put in it, and titles the plugin put in it before
+that are not listed any more are taken out (an empty list empties it). Collections given by hand
+are left alone, and the plugin's stay when details are downloaded again. The caller of an
+`api.call` gets `collections_added` and `collections_removed` back.
+
 Playback events (`playback.started`, `playback.progress` — sent when a player pauses or plays
 on — `playback.stopped`, `playback.watched`) carry `user`, `time` (ms), `progress` (percent),
 `state`, `player` and `item`: `{"id", "type", "title", "year", "duration_ms", "genres", "poster", "ids": {"imdb", "tmdb", "tvdb" …}}`,

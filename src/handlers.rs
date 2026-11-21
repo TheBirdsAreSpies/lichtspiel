@@ -1162,6 +1162,47 @@ pub fn mark_watched_from_plugin(app: &Arc<App>, user: &User, list: &[Value]) -> 
     (found, marked)
 }
 
+/// A plugin's `{"collections": {"IMDb Top 250": [ids], …}}`: each named collection holds exactly
+/// those titles afterwards — added where missing, taken off titles the plugin put in it before
+/// (`auto_collections`) that are no longer listed. A collection given by hand stays.
+/// Gives (added, removed), or None when the answer has no collections.
+pub fn set_plugin_collections(app: &Arc<App>, v: &Value) -> Option<(usize, usize)> {
+    let map = v.get("collections")?.as_object()?;
+    let want: Vec<(String, std::collections::HashSet<u64>)> = map.iter().map(|(n, ids)| (n.trim().to_string(), ids)).filter(|(n, _)| !n.is_empty() && n.len() <= 200)
+        .map(|(n, ids)| (n, ids.as_array().map(|a| a.iter().filter_map(|x| x.as_u64()).collect()).unwrap_or_default())).collect();
+    let names = |v: Option<&Value>| -> Vec<String> { v.and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect()).unwrap_or_default() };
+    let (mut added, mut removed) = (0, 0);
+    let mut db = app.db.lock().unwrap();
+    let ids: Vec<u64> = db.items.keys().copied().collect();
+    for id in ids {
+        let Some(it) = db.items.get(&id) else { continue };
+        let (mut have, mut auto) = (names(it.extra.get("collections")), names(it.extra.get("auto_collections")));
+        let mut changed = false;
+        for (name, members) in &want {
+            let is_in = members.contains(&id);
+            if is_in && !auto.contains(name) && !have.contains(name) {
+                // (A title already in it by hand stays the owner's, so it is never taken off.)
+                auto.push(name.clone());
+                have.push(name.clone());
+                added += 1;
+                changed = true;
+            } else if !is_in && auto.contains(name) {
+                auto.retain(|a| a != name);
+                have.retain(|a| a != name);
+                removed += 1;
+                changed = true;
+            }
+        }
+        if !changed { continue; }
+        let Some(it) = db.items.get_mut(&id) else { continue };
+        it.extra.insert("collections".into(), json!(have));
+        if auto.is_empty() { it.extra.remove("auto_collections"); } else { it.extra.insert("auto_collections".into(), json!(auto)); }
+    }
+    drop(db);
+    if added + removed > 0 { app.save(); }
+    Some((added, removed))
+}
+
 /// Deletes the titles a plugin named (`delete_media`), each as if the caller
 /// had pressed "Delete" on it; gives how many went and why others did not.
 pub fn delete_media_from_plugin(app: &Arc<App>, user: &User, list: &[Value]) -> (usize, Vec<String>) {
@@ -1200,6 +1241,14 @@ pub fn plugin_call(app: &Arc<App>, ctx: &Ctx, user: &User, pid: &str, action: &s
                     o.insert("not_found".into(), json!(list.len().saturating_sub(found)));
                 }
                 detail = format!("{action}: {found} of {} found, {marked} newly watched", list.len());
+            }
+            if let Some((added, removed)) = set_plugin_collections(app, &v) {
+                if let Some(o) = v.as_object_mut() {
+                    o.remove("collections");
+                    o.insert("collections_added".into(), json!(added));
+                    o.insert("collections_removed".into(), json!(removed));
+                }
+                detail = format!("{action}: collections +{added} −{removed}");
             }
             // {"delete_media": [ids]}: the files go, with the caller's own right to
             // delete (and only while media deletion is allowed in the settings).

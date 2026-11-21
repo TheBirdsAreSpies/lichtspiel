@@ -597,6 +597,7 @@ impl App {
                 }
                 it.extra.insert("metadata_status".into(), json!("unmatched"));
                 it.extra.insert("unmatched_by_hand".into(), json!(true));
+                keep_auto_collections(it, false);
             } else if it.kind == ItemKind::Episode {
                 if can("title") {
                     if let Some(t) = it.extra.get("file_title").and_then(|v| v.as_str()).map(String::from) {
@@ -781,8 +782,25 @@ pub fn apply_metadata(it: &mut Item, meta: &Value, by_hand: bool) {
             it.extra.insert(k.clone(), v.clone());
         }
     }
+    keep_auto_collections(it, by_hand);
     it.normalize();
     it.updated_at = now();
+}
+
+/// Collections a plugin put the title in (`auto_collections`, see `handlers::set_plugin_collections`)
+/// stay when the details are downloaded again; one taken off by hand is no longer the plugin's.
+pub fn keep_auto_collections(it: &mut Item, by_hand: bool) {
+    let names = |v: Option<&Value>| -> Vec<String> { v.and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect()).unwrap_or_default() };
+    let auto = names(it.extra.get("auto_collections"));
+    if auto.is_empty() { return; }
+    let mut have = names(it.extra.get("collections"));
+    if by_hand {
+        let left: Vec<String> = auto.into_iter().filter(|a| have.contains(a)).collect();
+        if left.is_empty() { it.extra.remove("auto_collections"); } else { it.extra.insert("auto_collections".into(), json!(left)); }
+        return;
+    }
+    for a in auto { if !have.contains(&a) { have.push(a); } }
+    it.extra.insert("collections".into(), json!(have));
 }
 
 
