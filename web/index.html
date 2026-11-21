@@ -65,6 +65,10 @@ label{display:block;color:var(--dim);font-size:13px;margin:10px 0 4px}
 .field>.ctl>input[type=checkbox]{margin:0}
 .field select{max-width:100%}
 .field>.help{grid-column:2;font-size:13px}
+.field.check{display:block}
+.field.check>.chk{display:flex;align-items:flex-start;gap:8px;margin:0;font-size:14px;color:var(--text);cursor:pointer}
+.field.check>.chk>input{margin:2px 0 0;flex:0 0 auto}
+.field.check>.help{margin:4px 0 0 24px}
 .modal .field{grid-template-columns:150px minmax(0,1fr)}
 #top{position:fixed;top:0;left:0;right:0;height:56px;background:var(--panel);display:flex;align-items:center;gap:16px;padding:0 18px;z-index:5;border-bottom:1px solid var(--topline)}
 #top .logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:18px;min-width:190px}

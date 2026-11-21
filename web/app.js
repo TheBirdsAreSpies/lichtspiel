@@ -41,8 +41,14 @@ function h(tag, attrs, ...kids) {
 let formIds = 0;
 function formRow(label, control, help, top) {
   if (control instanceof HTMLElement && /^(INPUT|SELECT|TEXTAREA)$/.test(control.tagName) && !control.id) control.id = 'fld' + (++formIds);
+  // A single tick box: the box in front of its text, the help below it (everywhere the same).
+  if (control instanceof HTMLElement && control.tagName === 'INPUT' && control.type === 'checkbox') return checkRow(control, label, help);
   return h('div', { class: 'field' + (top ? ' top' : '') }, h('label', control && control.id ? { for: control.id } : {}, label),
     h('div', { class: 'ctl' }, control), help ? h('div', { class: 'help dim' }, help) : null);
+}
+// A tick box with its text after it and an optional help line below, lined up under the text.
+function checkRow(box, label, help) {
+  return h('div', { class: 'field check' }, h('label', { class: 'chk' }, box, h('span', {}, label)), help ? h('div', { class: 'help dim' }, help) : null);
 }
 // The management pages (libraries, users, …) are tabs of the settings and show their tab bar.
 const MANAGE_PAGES = ['libraries', 'users', 'plugins', 'reports', 'api'];

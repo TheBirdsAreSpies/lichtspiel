@@ -724,7 +724,7 @@ function traktPanel() {
       const c = h('input', { type: 'checkbox' });
       c.checked = !!p[key];
       c.onchange = async () => { try { await api('PUT', '/api/trakt', { [key]: c.checked }); } catch (e) { toast(e.message, 5000); } draw(); };
-      return h('label', { style: 'display:block;margin:6px 0' }, c, ' ', label, hint ? h('div', { class: 'dim', style: 'font-size:12px;margin-left:24px' }, hint) : null);
+      return checkRow(c, label, hint);
     };
     if (!p.configured) {
       kids.push(h('p', {}, t('Trakt is not set up yet') + '. ' + (S.me.admin
