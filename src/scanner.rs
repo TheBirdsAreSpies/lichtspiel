@@ -1343,6 +1343,15 @@ where
         .filter(|r| std::fs::read_dir(r).map(|mut d| d.next().is_none()).unwrap_or(true))
         .collect();
     with_db(&mut |db: &mut Db| {
+        // A file swapped for another of the same movie or episode (a better version, a new name): the
+        // new file moves into the old title, so watched state, ratings, playlists and details stay.
+        for (old, new) in adopt_replacements(db, section.id, &seen, &later_parts, &offline, only) {
+            let was_new = report.added.contains(&new);
+            report.added.retain(|i| *i != new);
+            report.updated.retain(|i| *i != new);
+            if !was_new { report.removed.push(new); }
+            if !report.updated.contains(&old) { report.updated.push(old); }
+        }
         let auto = db.settings.empty_trash_automatically;
         let mut gone = vec![];
         let mut trash = vec![];
@@ -1410,6 +1419,77 @@ where
         }
     });
     report
+}
+
+/// Titles whose file is gone (not in `seen`, on a reachable folder) that another title of the
+/// library now stands in for: a movie with the same title and year (or the only other movie in the
+/// gone file's own folder), an episode with the same season and number. The other title's files
+/// move into the old one and the other title goes; what someone already did with the new one
+/// (watched, rated) moves along where the old one has nothing. Returns (old, new) ids.
+fn adopt_replacements(db: &mut Db, section: u64, seen: &HashSet<String>, later_parts: &HashSet<String>, offline: &[PathBuf], only: Option<&Path>) -> Vec<(u64, u64)> {
+    let roots: Vec<PathBuf> = db.sections.iter().filter(|s| s.id == section).flat_map(|s| s.paths.iter().map(PathBuf::from)).collect();
+    let present = |i: &Item| i.file.as_ref().is_some_and(|f| seen.contains(&f.path)) && !i.extra.contains_key(MISSING);
+    let candidate = |i: &Item| i.section_id == section && matches!(i.kind, ItemKind::Movie | ItemKind::Episode) && !i.is_extra();
+    let olds: Vec<u64> = db.items.values()
+        .filter(|i| candidate(i) && i.version_of().is_none())
+        .filter(|i| i.file.as_ref().is_some_and(|f| {
+            let p = Path::new(&f.path);
+            !seen.contains(&f.path) && !later_parts.contains(&f.path) && !p.is_file()
+                && only.is_none_or(|o| p.starts_with(o)) && !offline.iter().any(|r| p.starts_with(r))
+        }))
+        .map(|i| i.id).collect();
+    let dir_of = |i: &Item| i.file.as_ref().and_then(|f| Path::new(&f.path).parent().map(Path::to_path_buf));
+    let mut out = vec![];
+    let mut taken: HashSet<u64> = HashSet::new();
+    for old_id in olds {
+        let Some(old) = db.items.get(&old_id).cloned() else { continue };
+        let others: Vec<&Item> = db.items.values()
+            .filter(|i| candidate(i) && i.id != old_id && !taken.contains(&i.id) && present(i) && i.kind == old.kind)
+            // A version of a different title is not a stand-in.
+            .filter(|i| i.version_of().is_none_or(|v| v == old_id))
+            .collect();
+        let pick = if old.kind == ItemKind::Episode {
+            others.iter().filter(|i| old.parent_id.is_some() && i.parent_id == old.parent_id && old.index.is_some() && i.index == old.index).map(|i| i.id).min()
+        } else {
+            let same_year = |i: &Item| old.year.is_none() || i.year.is_none() || i.year == old.year;
+            let by_title = others.iter().filter(|i| i.title.to_lowercase() == old.title.to_lowercase() && same_year(i)).map(|i| i.id).min();
+            // A movie in its own folder (not a library folder itself): the one other movie there.
+            let by_dir = || {
+                let dir = dir_of(&old).filter(|d| !roots.iter().any(|r| r == d))?;
+                let here: Vec<u64> = others.iter().filter(|i| dir_of(i).as_ref() == Some(&dir)).map(|i| i.id).collect();
+                (here.len() == 1).then(|| here[0])
+            };
+            by_title.or_else(by_dir)
+        };
+        let Some(new_id) = pick else { continue };
+        let Some(new) = db.items.remove(&new_id) else { continue };
+        taken.insert(new_id);
+        if let Some(it) = db.items.get_mut(&old_id) {
+            it.file = new.file;
+            it.parts = new.parts;
+            it.duration_ms = new.duration_ms;
+            it.updated_at = now();
+            it.extra.remove(MISSING);
+            if it.poster.is_none() { it.poster = new.poster; }
+        }
+        // Its extras and its own versions now belong to the old title.
+        let kids: Vec<u64> = db.items.values().filter(|i| i.parent_id == Some(new_id) || i.version_of() == Some(new_id)).map(|i| i.id).collect();
+        for k in kids {
+            if let Some(it) = db.items.get_mut(&k) {
+                if it.parent_id == Some(new_id) { it.parent_id = Some(old_id); }
+                if it.version_of() == Some(new_id) { it.extra.insert("version_of".into(), Value::from(old_id)); }
+            }
+        }
+        let suffix = format!(":{new_id}");
+        let moved: Vec<String> = db.views.keys().filter(|k| k.ends_with(&suffix)).cloned().collect();
+        for k in moved {
+            let Some(v) = db.views.remove(&k) else { continue };
+            let to = format!("{}:{old_id}", &k[..k.len() - suffix.len()]);
+            if db.views.get(&to).is_none() { db.views.insert(to, v); }
+        }
+        out.push((old_id, new_id));
+    }
+    out
 }
 
 /// Several files of one movie (or one episode) become one title with several versions:
@@ -1788,6 +1868,100 @@ title=Two
         titles.sort();
         assert_eq!(titles, vec!["Curated", "Heat", "Inside"]);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A library in a temporary folder with these files, scanned once, and a scan function.
+    fn library_with(name: &str, kind: &str, files: &[&str], auto: bool) -> (PathBuf, Db) {
+        let root = std::env::temp_dir().join(format!("lichtspiel-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for f in files {
+            let p = root.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, b"x").unwrap();
+        }
+        let mut settings = crate::db::Settings::default();
+        settings.empty_trash_automatically = auto;
+        let db: Db = serde_json::from_value(serde_json::json!({"version": 1, "machine_id": "x", "next_id": 1, "settings": settings,
+            "sections": [{"id": 1, "name": "L", "kind": kind, "paths": [root.to_string_lossy()], "created_at": 0}],
+            "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        (root, db)
+    }
+
+    fn watched(db: &mut Db, id: u64) {
+        db.views.insert(format!("1:{id}"), crate::db::ViewState { view_count: 1, finished: true, ..Default::default() });
+    }
+
+    fn listed(db: &Db, kind: ItemKind) -> Vec<(u64, String, bool)> {
+        let mut v: Vec<(u64, String, bool)> = db.items.values().filter(|i| i.kind == kind && i.version_of().is_none())
+            .map(|i| (i.id, i.file.as_ref().map(|f| Path::new(&f.path).file_name().unwrap().to_string_lossy().to_string()).unwrap_or_default(), i.extra.contains_key(MISSING))).collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn a_movie_file_swapped_for_another_keeps_its_title_and_watched_state() {
+        for auto in [false, true] {
+            let (root, mut db) = library_with("swap", "movie", &["The Invite (2023)/The Invite (2023).mkv", "Heat (1995).mkv"], auto);
+            let section = db.sections[0].clone();
+            let scan = |db: &mut Db| scan_section(&section, "no-such-ffprobe", |f| f(db));
+            scan(&mut db);
+            let id = listed(&db, ItemKind::Movie).into_iter().find(|t| t.1.starts_with("The Invite")).unwrap().0;
+            watched(&mut db, id);
+            // Swapped at once, with another name (a better version).
+            std::fs::remove_file(root.join("The Invite (2023)/The Invite (2023).mkv")).unwrap();
+            std::fs::write(root.join("The Invite (2023)/The.Invite.2023.2160p.mkv"), b"xx").unwrap();
+            let r = scan(&mut db);
+            assert_eq!(listed(&db, ItemKind::Movie).iter().filter(|t| t.0 == id).map(|t| (t.1.as_str(), t.2)).collect::<Vec<_>>(), vec![("The.Invite.2023.2160p.mkv", false)], "auto {auto}");
+            assert_eq!(listed(&db, ItemKind::Movie).len(), 2);
+            assert!(r.added.is_empty() && r.updated.contains(&id), "{r:?}");
+            assert_eq!(db.views.get(&format!("1:{id}")).map(|v| v.view_count), Some(1));
+            // Copied in first, the old one deleted later: the same.
+            std::fs::write(root.join("The Invite (2023)/The Invite (2023) 1080p.mkv"), b"xxx").unwrap();
+            scan(&mut db);
+            std::fs::remove_file(root.join("The Invite (2023)/The.Invite.2023.2160p.mkv")).unwrap();
+            let r = scan(&mut db);
+            assert_eq!(listed(&db, ItemKind::Movie).iter().filter(|t| t.0 == id).map(|t| (t.1.as_str(), t.2)).collect::<Vec<_>>(), vec![("The Invite (2023) 1080p.mkv", false)], "auto {auto}");
+            assert_eq!(db.items.values().filter(|i| i.kind == ItemKind::Movie).count(), 2, "no version left behind");
+            assert_eq!(r.removed.len(), 1, "the title the new file had for a while goes: {r:?}");
+            assert_eq!(db.views.get(&format!("1:{id}")).map(|v| v.view_count), Some(1));
+            let _ = std::fs::remove_dir_all(&root);
+        }
+    }
+
+    #[test]
+    fn another_movie_in_the_same_library_folder_is_not_taken_for_a_swap() {
+        let (root, mut db) = library_with("noswap", "movie", &["Heat (1995).mkv"], false);
+        let section = db.sections[0].clone();
+        let scan = |db: &mut Db| scan_section(&section, "no-such-ffprobe", |f| f(db));
+        scan(&mut db);
+        let id = listed(&db, ItemKind::Movie)[0].0;
+        watched(&mut db, id);
+        std::fs::remove_file(root.join("Heat (1995).mkv")).unwrap();
+        std::fs::write(root.join("Ronin (1998).mkv"), b"x").unwrap();
+        let r = scan(&mut db);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(r.added.len(), 1);
+        let t = listed(&db, ItemKind::Movie);
+        assert_eq!(t.iter().map(|t| (t.1.as_str(), t.2)).collect::<Vec<_>>(), vec![("Heat (1995).mkv", true), ("Ronin (1998).mkv", false)]);
+        assert!(db.views.get(&format!("1:{}", r.added[0])).is_none());
+    }
+
+    #[test]
+    fn an_episode_file_swapped_for_another_keeps_its_watched_state() {
+        let (root, mut db) = library_with("epswap", "show", &["Dark/Season 1/Dark - S01E01.mkv", "Dark/Season 1/Dark - S01E02.mkv"], false);
+        let section = db.sections[0].clone();
+        let scan = |db: &mut Db| scan_section(&section, "no-such-ffprobe", |f| f(db));
+        scan(&mut db);
+        let id = listed(&db, ItemKind::Episode).into_iter().find(|t| t.1.contains("E01")).unwrap().0;
+        watched(&mut db, id);
+        std::fs::remove_file(root.join("Dark/Season 1/Dark - S01E01.mkv")).unwrap();
+        std::fs::write(root.join("Dark/Season 1/Dark.S01E01.Secrets.1080p.mkv"), b"xx").unwrap();
+        scan(&mut db);
+        let _ = std::fs::remove_dir_all(&root);
+        let t = listed(&db, ItemKind::Episode);
+        assert_eq!(t.len(), 2);
+        assert!(t.contains(&(id, "Dark.S01E01.Secrets.1080p.mkv".into(), false)), "{t:?}");
+        assert_eq!(db.views.get(&format!("1:{id}")).map(|v| v.view_count), Some(1));
     }
 
     #[test]

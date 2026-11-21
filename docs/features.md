@@ -88,6 +88,12 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
 - **Trash**: with *Empty trash automatically after every scan* off (Settings), files gone from
   disk stay as *Unavailable* — watched state and details kept — until the trash is emptied. A
   library folder that cannot be read (a share not mounted) never empties anything.
+- **Swapping a file**: a movie or episode whose file is replaced by another one (a better
+  version, another name) stays the same title: watched state, ratings, playlists and details
+  stay. The new file counts as the same movie when it has the same title and year, or is the
+  only other movie in the old file's own folder; an episode when it has the same season and
+  number. This works with the old file deleted first or the new one copied in first, and a title
+  already in the trash takes the new file over at the next scan.
 - **Deleting files**: with *Allow media deletion* on (the default), admins — and people ticked
   *May delete files* under Users & invites — get **Delete** in a poster's "⋯" menu. It deletes the
   movie's or episode's files (a season or show: all its episodes) from disk; only files inside the
