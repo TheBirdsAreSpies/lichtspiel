@@ -1459,6 +1459,9 @@ where
             if let Some(it) = db.items.get_mut(id) { it.extra.remove(MISSING); }
         }
         report.removed.extend(gone);
+        for id in merge_duplicate_shows(db, section.id) {
+            if !report.updated.contains(&id) { report.updated.push(id); }
+        }
         report.removed.extend(prune_empty(db, section.id));
         // Shows and seasons take the newest episode's date, so they rise in
         // "recently added", and the length of all their episodes.
@@ -1685,20 +1688,21 @@ fn find_or_make(
     poster: Option<String>,
 ) -> u64 {
     let key = sort_title(title);
+    // A show matched online carries the found title; the name it was scanned under still finds it.
     let matches = |i: &Item| {
         i.section_id == section
             && i.kind == kind
             && i.parent_id == parent
             && match kind {
                 ItemKind::Season => i.index == index,
-                _ => i.sort_title == key,
+                _ => i.sort_title == key || scanned_key(i).is_some_and(|k| k == key),
             }
     };
     let ck = container_key(kind, parent, index, &key);
     // The cached id is checked against the item itself (it may have been
-    // renamed or removed since); only then is the whole library searched.
+    // renamed or removed since); only then is the whole library searched (the oldest first).
     let cached = cache.get(&ck).and_then(|id| db.items.get(id)).filter(|i| matches(i));
-    let found = cached.or_else(|| db.items.values().find(|i| matches(i)));
+    let found = cached.or_else(|| db.items.values().filter(|i| matches(i)).min_by_key(|i| i.id));
     if let Some(it) = found {
         cache.insert(ck, it.id);
         let id = it.id;
@@ -1756,11 +1760,52 @@ fn container_key(kind: ItemKind, parent: Option<u64>, index: Option<u32>, sort_t
 /// The shows and seasons of a library, by their [`ContainerKey`].
 fn container_index(db: &Db, section: u64) -> HashMap<ContainerKey, u64> {
     let mut m = HashMap::new();
-    for i in db.items.values().filter(|i| i.section_id == section && !i.kind.playable()) {
-        // The first match wins, as in a search through the library.
+    let mut all: Vec<&Item> = db.items.values().filter(|i| i.section_id == section && !i.kind.playable()).collect();
+    all.sort_by_key(|i| i.id);
+    // The oldest wins, as in a search through the library; the title it has now before the one it was scanned under.
+    for i in &all {
         m.entry(container_key(i.kind, i.parent_id, i.index, &i.sort_title)).or_insert(i.id);
     }
+    for i in &all {
+        if let Some(k) = scanned_key(i) { m.entry(container_key(i.kind, i.parent_id, i.index, &k)).or_insert(i.id); }
+    }
     m
+}
+
+/// The sort key of the name a show (artist, album) was scanned under, kept when an online match renamed it.
+fn scanned_key(i: &Item) -> Option<String> {
+    i.extra.get("file_title").and_then(|v| v.as_str()).filter(|t| !t.trim().is_empty()).map(sort_title)
+}
+
+/// Shows of a library that are one and the same (the same folder name; one was renamed by an online match
+/// before more episodes came, and those made a second): the newer one's seasons and episodes move into the
+/// oldest, it is left empty and goes. Returns the shows that took something in.
+pub fn merge_duplicate_shows(db: &mut Db, section: u64) -> Vec<u64> {
+    let mut shows: Vec<(u64, String)> = db.items.values()
+        .filter(|i| i.section_id == section && i.kind == ItemKind::Show)
+        .map(|i| (i.id, scanned_key(i).unwrap_or_else(|| i.sort_title.clone())))
+        .collect();
+    shows.sort();
+    let mut keeper: HashMap<String, u64> = HashMap::new();
+    let mut merged = vec![];
+    for (id, key) in shows {
+        let Some(&keep) = keeper.get(&key) else { keeper.insert(key, id); continue };
+        let kids = children_map(db);
+        for season in kids.get(&id).cloned().unwrap_or_default() {
+            let index = db.items.get(&season).and_then(|s| s.index);
+            let target = kids.get(&keep).into_iter().flatten()
+                .find(|s| db.items.get(s).is_some_and(|s| s.kind == ItemKind::Season && s.index == index)).copied();
+            match target {
+                // That season is there already: its episodes move over, the empty season goes with the show.
+                Some(t) => for e in kids.get(&season).cloned().unwrap_or_default() {
+                    if let Some(e) = db.items.get_mut(&e) { e.parent_id = Some(t); }
+                },
+                None => if let Some(s) = db.items.get_mut(&season) { s.parent_id = Some(keep); },
+            }
+        }
+        if !merged.contains(&keep) { merged.push(keep); }
+    }
+    merged
 }
 
 #[cfg(test)]
@@ -2072,6 +2117,53 @@ title=Two
         let t = listed(&db, ItemKind::Movie);
         assert_eq!(t.iter().map(|t| (t.1.as_str(), t.2)).collect::<Vec<_>>(), vec![("Heat (1995).mkv", true), ("Ronin (1998).mkv", false)]);
         assert!(db.views.get(&format!("1:{}", r.added[0])).is_none());
+    }
+
+    // An online match renames the show; episodes added later (and a second show made before this fix) end up in it.
+    #[test]
+    fn a_show_renamed_by_its_match_takes_in_later_episodes() {
+        let (root, mut db) = library_with("showrename", "show", &["Ringe der Macht/Season 1/Ringe der Macht - S01E01.mkv"], false);
+        let section = db.sections[0].clone();
+        let scan = |db: &mut Db| scan_section(&section, "no-such-ffprobe", |f| f(db));
+        scan(&mut db);
+        let show = db.items.values().find(|i| i.kind == ItemKind::Show).unwrap().id;
+        let rename = |db: &mut Db, id: u64| {
+            let it = db.items.get_mut(&id).unwrap();
+            it.extra.insert("file_title".into(), Value::from(it.title.clone()));
+            it.title = "Der Herr der Ringe: Die Ringe der Macht".into();
+            it.sort_title = sort_title(&it.title);
+        };
+        rename(&mut db, show);
+        std::fs::write(root.join("Ringe der Macht/Season 1/Ringe der Macht - S01E02.mkv"), b"x").unwrap();
+        std::fs::create_dir_all(root.join("Ringe der Macht/Season 2")).unwrap();
+        std::fs::write(root.join("Ringe der Macht/Season 2/Ringe der Macht - S02E01.mkv"), b"x").unwrap();
+        scan(&mut db);
+        let shows: Vec<u64> = db.items.values().filter(|i| i.kind == ItemKind::Show).map(|i| i.id).collect();
+        assert_eq!(shows, vec![show]);
+        // A second show as the old scanner made it: its season 2 and episodes go into the first, it goes.
+        let s2 = db.items.values().find(|i| i.kind == ItemKind::Season && i.index == Some(2)).unwrap().id;
+        let s1 = db.items.values().find(|i| i.kind == ItemKind::Season && i.index == Some(1)).unwrap().id;
+        let dup = db.new_id();
+        let mut d = db.items[&show].clone();
+        d.id = dup;
+        d.extra.remove("file_title");
+        d.title = "Ringe der Macht".into();
+        d.sort_title = sort_title(&d.title);
+        db.items.insert(dup, d);
+        rename(&mut db, dup);
+        let dup_s1 = db.new_id();
+        let mut s = db.items[&s1].clone();
+        s.id = dup_s1;
+        s.parent_id = Some(dup);
+        db.items.insert(dup_s1, s);
+        let e2 = db.items.values().find(|i| i.kind == ItemKind::Episode && i.parent_id == Some(s1) && i.index == Some(2)).unwrap().id;
+        db.items.get_mut(&e2).unwrap().parent_id = Some(dup_s1);
+        db.items.get_mut(&s2).unwrap().parent_id = Some(dup);
+        scan(&mut db);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(!db.items.contains_key(&dup) && !db.items.contains_key(&dup_s1));
+        assert_eq!(db.items[&e2].parent_id, Some(s1));
+        assert_eq!(db.items[&s2].parent_id, Some(show));
     }
 
     #[test]
