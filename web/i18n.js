@@ -1,6 +1,6 @@
 // Lichtspiel web app: languages.
 //
-// The English text in app.js and pages.js is the key: t('Sign in') gives the
+// The English text in the scripts (app.js, library.js, player.js, pages.js …) is the key: t('Sign in') gives the
 // text of the chosen language pack, or the English text itself when the pack
 // has none. {name} in a text is filled from the second argument:
 //   t('Scanning {name}', { name: 'Movies' })

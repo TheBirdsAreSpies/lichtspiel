@@ -65,6 +65,8 @@ pub static WATCH_SECONDS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atom
 
 pub const WEB_APP: &str = include_str!("../../web/index.html");
 pub const WEB_JS: &str = include_str!("../../web/app.js");
+pub const WEB_LIBRARY_JS: &str = include_str!("../../web/library.js");
+pub const WEB_PLAYER_JS: &str = include_str!("../../web/player.js");
 pub const WEB_PAGES_JS: &str = include_str!("../../web/pages.js");
 pub const WEB_DASHBOARD_JS: &str = include_str!("../../web/dashboard.js");
 pub const WEB_DOWNLOADS_JS: &str = include_str!("../../web/downloads.js");

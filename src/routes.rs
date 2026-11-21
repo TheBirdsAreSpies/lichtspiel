@@ -263,6 +263,8 @@ pub fn route(app: &Arc<App>, ctx: &Ctx) -> Resp {
     // --- open to everyone
     match (m, segs.as_slice()) {
         ("GET", ["web", "app.js"]) => return web_script(WEB_JS, &ctx.params),
+        ("GET", ["web", "library.js"]) => return web_script(WEB_LIBRARY_JS, &ctx.params),
+        ("GET", ["web", "player.js"]) => return web_script(WEB_PLAYER_JS, &ctx.params),
         ("GET", ["web", "pages.js"]) => return web_script(WEB_PAGES_JS, &ctx.params),
         ("GET", ["web", "dashboard.js"]) => return web_script(WEB_DASHBOARD_JS, &ctx.params),
         ("GET", ["web", "downloads.js"]) => return web_script(WEB_DOWNLOADS_JS, &ctx.params),

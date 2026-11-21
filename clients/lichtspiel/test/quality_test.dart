@@ -26,7 +26,7 @@ void main() {
     expect(qualityKey(null), 'original');
   });
 
-  test('subtitle sizes are the web player ones (SUB_SIZES in web/app.js)', () {
+  test('subtitle sizes are the web player ones (SUB_SIZES in web/player.js)', () {
     expect(playerSubSizes.keys.toList(), [75, 100, 130, 170]);
   });
 

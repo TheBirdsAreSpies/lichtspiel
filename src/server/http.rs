@@ -50,7 +50,7 @@ pub fn web_version() -> &'static str {
     V.get_or_init(|| {
         use sha2::Digest;
         let mut h = sha2::Sha256::new();
-        for s in [WEB_JS, WEB_PAGES_JS, WEB_DASHBOARD_JS, WEB_DOWNLOADS_JS, WEB_I18N_JS] { h.update(s.as_bytes()); }
+        for s in [WEB_JS, WEB_LIBRARY_JS, WEB_PLAYER_JS, WEB_PAGES_JS, WEB_DASHBOARD_JS, WEB_DOWNLOADS_JS, WEB_I18N_JS] { h.update(s.as_bytes()); }
         for (name, s) in WEB_LANGS { h.update(name.as_bytes()); h.update(s.as_bytes()); }
         h.finalize().iter().take(6).map(|b| format!("{b:02x}")).collect()
     })
