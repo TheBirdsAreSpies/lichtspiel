@@ -109,7 +109,9 @@ function stagger() {
   const seen = [...main().querySelectorAll('.card:not(.ph)')].filter(c => { const r = c.getBoundingClientRect(); return r.width && r.top < H && r.bottom > 0 && r.left < W && r.right > 0; });
   if (!seen.length) return;
   MOTION.stagger = 0;
-  seen.slice(0, 36).forEach((c, i) => fadeIn(c, 60 + i * 28, 'translateY(14px)'));
+  // All in view, however many a big screen shows; with many the steps get shorter, so the last is in within a second.
+  const step = Math.min(28, 900 / seen.length);
+  seen.forEach((c, i) => fadeIn(c, 60 + i * step, 'translateY(14px)'));
 }
 // ---------- arrow keys from poster to poster, like on a TV
 // With a poster (or another of these) focused (Tab gets there), an arrow key moves to the nearest one in
@@ -1593,6 +1595,9 @@ async function itemPage(id) {
           m.file ? [h('div', {}, t('Path')), h('div', { style: 'word-break:break-all' }, m.file)] : null,
           (m.Part || []).length > 1 ? [h('div', {}, t('Parts')), h('div', {}, t('{n} files, played one after the other', { n: m.Part.length }))] : null,
           h('div', {}, t('In your browser')), h('div', { id: 'decision', class: 'dim' }, '…')) : null)),
+    // A show's or season's episodes come first, what one came for; the cast after them.
+    seasonAt >= 0 ? seasonTabs(id, kids, seasonAt, seasonEps, refresh) : null,
+    kids.length && it.type === 'season' ? [h('h2', {}, t('Episodes')), episodeCards(kids, refresh)] : null,
     cast.length ? [h('h2', {}, t('Cast')), scroller('row cast', cast.map(p => {
       const initials = () => h('div', { class: 'initials' }, (p.name || '?').split(' ').map(w => w[0]).slice(0, 2).join(''));
       // The photo saved on this server; the original web address only as a fallback.
@@ -1606,8 +1611,6 @@ async function itemPage(id) {
       const of = kids.filter(k => (k.releaseType || 'album') === r);
       return of.length ? [h('h2', {}, releaseName(r, true)), scroller('row', of.map(k => posterCard(k)))] : null;
     }) : null,
-    seasonAt >= 0 ? seasonTabs(id, kids, seasonAt, seasonEps, refresh) : null,
-    kids.length && it.type === 'season' ? [h('h2', {}, t('Episodes')), episodeCards(kids, refresh)] : null,
     kids.length && it.type !== 'artist' && it.type !== 'show' && it.type !== 'season' ? [h('h2', {}, it.type === 'album' ? t('Songs') : t('Episodes')),
         h('div', { class: 'list' }, kids.map((e, i) => h('div', { class: 'li' + (e.missing ? ' missing' : '') },
           it.type === 'album' ? null : h('img', { src: withTok(e.thumb), loading: 'lazy' }),
