@@ -1336,18 +1336,32 @@ async function sectionPage(id, qs) {
     bubble.textContent = best.btn.textContent;
     jump(Math.min(...best.ranges.map(r => r[0])));
   };
-  letters.addEventListener('pointerdown', e => {
-    if (e.pointerType === 'mouse' || !marks.length) return;
-    e.preventDefault();
-    scrubbing = true; scrubKey = null;
-    try { letters.setPointerCapture(e.pointerId); } catch (err) { /* none */ }
-    letters.classList.add('scrub');
-    scrubAt(e.clientY);
-  });
-  letters.addEventListener('pointermove', e => { if (scrubbing) scrubAt(e.clientY); });
-  const scrubEnd = () => { scrubbing = false; letters.classList.remove('scrub'); };
-  letters.addEventListener('pointerup', scrubEnd);
-  letters.addEventListener('pointercancel', scrubEnd);
+  // The bar sits where a thumb scrolls the page, so it only takes the finger after it rests on it a moment
+  // (HOLD ms); a finger that moves before that scrolls the page as usual. A tap still jumps to the letter.
+  const HOLD = 180;
+  let holdTimer = 0, holdY = 0, lastY = 0;
+  const scrubEnd = () => { clearTimeout(holdTimer); holdTimer = 0; scrubbing = false; letters.classList.remove('scrub'); };
+  letters.addEventListener('touchstart', e => {
+    scrubEnd();
+    if (e.touches.length !== 1 || !marks.length) return;
+    holdY = lastY = e.touches[0].clientY;
+    holdTimer = setTimeout(() => {
+      holdTimer = 0; scrubbing = true; scrubKey = null;
+      letters.classList.add('scrub');
+      scrubAt(lastY);
+    }, HOLD);
+  }, { passive: true });
+  letters.addEventListener('touchmove', e => {
+    lastY = e.touches[0].clientY;
+    if (scrubbing) {
+      if (!e.cancelable) { scrubEnd(); return; } // the page already scrolls
+      e.preventDefault();
+      scrubAt(lastY);
+    } else if (holdTimer && Math.abs(lastY - holdY) > 8) scrubEnd(); // moved at once: scrolling the page
+  }, { passive: false });
+  letters.addEventListener('touchend', e => { if (scrubbing) e.preventDefault(); scrubEnd(); }); // no click after a swipe
+  letters.addEventListener('touchcancel', scrubEnd);
+  letters.addEventListener('contextmenu', e => { if (scrubbing) e.preventDefault(); });
   const countEl = h('span', { class: 'count', title: t('{n} shown', { n: total }) }, itemCount(total));
   // The controls used less often fold away on a phone behind "More", so the row fits the screen.
   const opt = el => { if (el) el.classList.add('opt'); return el; };
