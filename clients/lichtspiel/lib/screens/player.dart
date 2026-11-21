@@ -84,6 +84,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Map<String, dynamic> it = {};
   String? error;
   bool triedHls = false;
+  bool checkingError = false; // an error came while playing; waiting to see whether playback goes on
   String get id => '${widget.item['ratingKey'] ?? widget.item['id']}';
 
   // Preferences (kept between videos).
@@ -452,7 +453,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (!mounted) return;
       await load(((it['viewOffset'] ?? 0) as num).toInt());
       subs.add(player.stream.error.listen((e) async {
-        if (e.isEmpty) return;
+        if (e.isEmpty || checkingError || error != null) return;
+        // media_kit passes many mpv log lines on as errors, and some are not fatal (one failed HLS
+        // segment, an external subtitle that does not load). While the film was playing, wait a moment:
+        // if the picture keeps moving, mpv carried on and the error is ignored.
+        if (player.state.playing) {
+          checkingError = true;
+          final at = player.state.position;
+          await Future.delayed(const Duration(seconds: 3));
+          checkingError = false;
+          if (!mounted || error != null) return;
+          if (player.state.playing && player.state.position - at >= const Duration(milliseconds: 1500)) {
+            debugPrint('player: ignored an error, playback went on: $e');
+            return;
+          }
+        }
         if (triedHls || quality != 'original') {
           await player.pause(); // the error screen replaces the picture; the sound must not go on behind it
           if (mounted) setState(() => error = e);
