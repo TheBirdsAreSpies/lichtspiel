@@ -1084,19 +1084,35 @@ function filterUI({ st, go, advRules, lastKey, loadFilters, prefetch }) {
   // ----- the filter panel: the kinds of filter on the left, the values of the chosen one (with a search box) on the right
   let filters = null;
   let panel = null;
-  const closePanel = () => { if (panel) { panel.remove(); panel = null; document.removeEventListener('mousedown', outside, true); } filterBtn.classList.remove('open'); };
+  const closePanel = () => {
+    if (panel) { panel.remove(); panel = null; document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', onKey, true); }
+    filterBtn.classList.remove('open');
+  };
   const outside = e => { if (panel && !panel.contains(e.target) && !filterBtn.contains(e.target) && !document.querySelector('.modal')) closePanel(); };
+  const onKey = e => { if (e.key === 'Escape' && panel && !document.querySelector('.modal')) { e.stopImmediatePropagation(); closePanel(); } };
+  // On a phone the panel covers the page (and the button), so it has its own close button there.
+  const touch = () => !!window.matchMedia && matchMedia('(hover: none)').matches;
   const openPanel = async () => {
     if (panel) return closePanel();
+    // The panel is there at once; the lists come in when they are loaded.
+    const right = h('div', { class: 'fp-right' }, h('div', { class: 'dim', style: 'padding:8px' }, t('Loading…'))), left = h('div', { class: 'fp-left' });
+    const me = panel = h('div', { class: 'filterpanel', role: 'dialog', 'aria-label': t('Filter') },
+      h('div', { class: 'fp-head' }, h('b', {}, t('Filter')), h('button', { class: 'fp-close', 'aria-label': t('Close'), onclick: closePanel }, '×')), left, right);
+    const r = filterBtn.getBoundingClientRect();
+    panel.style.left = Math.max(8, Math.min(r.left, innerWidth - 620)) + 'px'; panel.style.top = (r.bottom + 6) + 'px';
+    document.body.append(panel);
+    filterBtn.classList.add('open');
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', onKey, true);
     try { filters = filters || await loadFilters(); }
-    catch (e) { return toast(e.message, 6000); }
+    catch (e) { closePanel(); return toast(e.message, 6000); }
+    if (panel !== me) return; // closed while loading
     const byName = Object.fromEntries(filters.map(f => [f.filter, f]));
     const states = FILTER_GROUP_STATE.map(k => byName[k]).filter(Boolean);
     const main = FILTER_GROUP_MAIN.map(k => byName[k]).filter(Boolean);
     const more = filters.filter(f => !states.includes(f) && !main.includes(f));
     let cur = ''; try { cur = localStorage.getItem(lastKey) || ''; } catch (e) { /* none */ }
     if (!byName[cur] || byName[cur].type === 'boolean') cur = (main[0] || more[0] || {}).filter || '';
-    const right = h('div', { class: 'fp-right' }), left = h('div', { class: 'fp-left' });
     const drawRight = () => {
       const f = byName[cur];
       if (!f) return right.replaceChildren(h('div', { class: 'dim' }, t('None found')));
@@ -1114,7 +1130,8 @@ function filterUI({ st, go, advRules, lastKey, loadFilters, prefetch }) {
       };
       search.oninput = fill; fill();
       right.replaceChildren(search, list);
-      setTimeout(() => search.focus(), 0);
+      // Not on a phone: the keyboard would cover half the list and move the page.
+      if (!touch()) setTimeout(() => search.focus(), 0);
     };
     const drawLeft = () => {
       const entry = f => {
@@ -1127,12 +1144,6 @@ function filterUI({ st, go, advRules, lastKey, loadFilters, prefetch }) {
         h('hr'), h('button', { class: 'fp-item', onclick: () => { closePanel(); advancedDialog(); } }, h('span', {}, t('Advanced filters…')), h('small', { class: 'dim' }, advRules.length ? String(advRules.length) : '')));
     };
     drawLeft(); drawRight();
-    panel = h('div', { class: 'filterpanel' }, left, right);
-    const r = filterBtn.getBoundingClientRect();
-    panel.style.left = Math.max(8, Math.min(r.left, innerWidth - 620)) + 'px'; panel.style.top = (r.bottom + 6) + 'px';
-    document.body.append(panel);
-    filterBtn.classList.add('open');
-    document.addEventListener('mousedown', outside, true);
   };
   // ----- advanced filters: "all / any of the following" with a field, an operator and a value per line
   const advancedDialog = () => {

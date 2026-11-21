@@ -481,6 +481,8 @@ label.pair>span{flex:0 0 auto;max-width:100%}
 button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--panel2)}
 .src{font-size:10px;letter-spacing:.04em;background:var(--panel2);border-radius:3px;padding:0 4px;color:var(--text)}
 .filterpanel{position:fixed;z-index:40;display:flex;width:min(600px,calc(100vw - 16px));height:min(460px,calc(100vh - 140px));background:var(--menu);border:1px solid var(--menu-line);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.5);overflow:hidden}
+.fp-head{display:none}
+.fp-left,.fp-values{overscroll-behavior:contain}
 .fp-left{flex:0 0 230px;overflow:auto;padding:6px;border-right:1px solid var(--menu-line)}
 .fp-left hr{border:0;border-top:1px solid var(--menu-line);margin:6px 4px}
 .fp-right{flex:1;min-width:0;display:flex;flex-direction:column;padding:10px;gap:8px}
@@ -669,8 +671,14 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   #main table{display:block;max-width:100%;overflow-x:auto;white-space:nowrap}
   .li{flex-wrap:wrap;gap:10px;padding:10px}
   .modal .box{padding:16px;max-height:92vh}
-  .filterpanel{left:8px!important;right:8px;top:64px!important;width:auto;height:calc(100vh - 80px);flex-direction:column}
+  /* on a phone: the visible height (top and bottom, not vh, which reaches under the browser's bars), the page behind stays still, and a close button */
+  .filterpanel{left:8px!important;right:8px;top:calc(8px + env(safe-area-inset-top))!important;bottom:calc(8px + env(safe-area-inset-bottom));width:auto;height:auto;flex-direction:column}
+  html:has(.filterpanel){overflow:hidden}
+  .fp-head{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 4px 14px;border-bottom:1px solid var(--menu-line);flex:0 0 auto}
+  .fp-close{background:none;border:0;font-size:28px;line-height:1;padding:6px 12px;min-width:44px;min-height:44px}
   .fp-left{flex:0 0 auto;max-height:38%;border-right:0;border-bottom:1px solid var(--menu-line)}
+  .fp-right{min-height:0}
+  .fp-item,.fp-val{padding:10px}
   .li>.grow{flex:1 1 140px}
   /* a library's card: its details take the whole width, the buttons go below them */
   .li.libcard>.grow{flex-basis:100%}
