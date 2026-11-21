@@ -27,7 +27,7 @@ Changes since the first version of this page (`2e6689d`):
 | `vendor/tiny_http/` | The HTTP library, copied in and patched (header limits and a 30 s header deadline; look for `lichtspiel:` comments) |
 | `web/` | The web app, plain JS with no build step, compiled into the binary |
 | `clients/lichtspiel/` | The Flutter app (Windows, Android, macOS, iOS/iPadOS) |
-| `plugins/` | Bundled Python plugins (`nfo-reader`, `webhook-notify`, `subtitles`) |
+| `plugins/` | Bundled Python plugins (`nfo-reader`, `webhook-notify`, `subtitles`, `wishlist`) |
 | `Dockerfile`, `docker-compose.yml`, `.gitea/workflows/deploy.yml` | The image, the Synology setup, and the automatic deploy |
 
 `README.md` and the guides it links in `docs/` describe how everything works.

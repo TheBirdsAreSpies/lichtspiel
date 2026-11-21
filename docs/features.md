@@ -108,8 +108,19 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Three
-  are included: an `.nfo` file reader, a webhook / Discord notifier and **Subtitles**, which
+  details, react to events (new item, playback, invites …) and add their own API calls. Four
+  are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list** and
+  **Subtitles**.
+  The **Wish list** gives everyone a panel under **Settings → Account**: search for a movie or show,
+  wish for it, and see how the wishes stand (wished, downloading with its percentage, downloaded,
+  here). A wish goes straight to Radarr (movies) or Sonarr (shows), which look for it; a title
+  wished by several people goes there once. When the title arrives in the library the wish is
+  marked as here, and leaves the list 30 days later. Admins see every wish and who made it and
+  can remove one. Settings: `radarr_url` and `radarr_api_key` and/or `sonarr_url` and
+  `sonarr_api_key` (Settings → General in Radarr / Sonarr), optionally the quality profile and root
+  folder by name (`radarr_quality_profile`, `radarr_root_folder`, … — empty takes the first), at
+  most `max_open_wishes` open wishes per person (default 10, 0 = no limit), and `only_admins`.
+  **Subtitles**
   downloads missing subtitles for new movies and episodes from OpenSubtitles. They go to the
   server's data folder, `<data>/subtitles/` with the video's folder below it (for
   `/media/Movies/Heat (1995)/Heat (1995).mkv`:

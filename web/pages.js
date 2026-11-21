@@ -788,29 +788,56 @@ function traktPanel() {
 }
 
 // Plugins that give each person a panel of their own.
-// The plugin draws it: api.call "panel" answers {title, text, link, buttons: [{label, action, primary, confirm}]}.
-// A button's answer may carry {message, code, link, poll: {action, seconds}} (shown in a box that asks
-// again until the answer says done), {error}, and matched/marked counts after a history import.
+// The plugin draws it: api.call "panel" answers {title, text, link, buttons: [{label, action, args, primary, confirm}],
+// input: {placeholder, action, label, value}, items: [{title, subtitle, status, image, buttons}]}. A button's
+// action gets {args} in its body, the input's action {query}. An answer may carry {panel} (drawn at once, e.g.
+// search results), {message, code, link, poll: {action, seconds}} (shown in a box that asks again until the
+// answer says done), {error}, and matched/marked counts after a history import.
 function pluginPanels() {
   const box = h('div');
-  const call = (id, action) => api('POST', `/api/plugins/${id}/call/${action}`, { lang: I18N.lang });
-  const draw = async (id, name, slot) => {
-    let p;
-    try { p = await call(id, 'panel'); } catch (e) { p = { title: name, text: e.message, buttons: [] }; }
-    const run = async b => {
-      if (b.confirm && !(await sure(b.confirm, { danger: b.action === 'disconnect' }))) return;
-      let r;
-      try { r = await call(id, b.action); } catch (e) { return toast(e.message, 6000); }
-      if (r.poll) return pollBox(id, b.label, r, () => draw(id, name, slot));
+  const call = (id, action, extra) => api('POST', `/api/plugins/${id}/call/${action}`, Object.assign({ lang: I18N.lang }, extra || {}));
+  const draw = async (id, name, slot, given) => {
+    let p = given;
+    if (!p) { try { p = await call(id, 'panel'); } catch (e) { p = { title: name, text: e.message, buttons: [] }; } }
+    const after = (r, label) => {
+      if (r.poll) return pollBox(id, label, r, () => draw(id, name, slot));
       const counts = r.marked !== undefined ? ' ' + t('{found} found in your libraries, {marked} newly marked as watched.', { found: r.matched, marked: r.marked }) : '';
       if (r.error) toast(r.error, 6000); else if (r.message || counts) toast((r.message || '') + counts, 8000);
-      draw(id, name, slot);
+      draw(id, name, slot, r.panel);
     };
-    slot.replaceChildren(h('h2', { style: 'margin-top:0' }, p.title || name,
+    const run = async (b, btn) => {
+      if (b.confirm && !(await sure(b.confirm, { danger: b.action === 'disconnect' || b.danger }))) return;
+      let r;
+      if (btn) btn.disabled = true;
+      try { r = await call(id, b.action, b.args ? { args: b.args } : null); } catch (e) { if (btn) btn.disabled = false; return toast(e.message, 6000); }
+      after(r, b.label);
+    };
+    const buttons = (list, small) => (list || []).map(b => { const el = h('button', { class: (b.primary ? 'primary' : '') + (small ? ' small' : ''), onclick: () => run(b, el) }, b.label); return el; });
+    let search = null;
+    if (p.input && p.input.action) {
+      const q = h('input', { type: 'search', placeholder: p.input.placeholder || '', value: p.input.value || '', style: 'flex:1;min-width:0' });
+      const go = h('button', { class: 'primary', type: 'submit' }, p.input.label || t('Search'));
+      search = h('form', { class: 'pp-search', onsubmit: async e => {
+        e.preventDefault();
+        if (!q.value.trim()) return;
+        go.disabled = true;
+        try { after(await call(id, p.input.action, { query: q.value.trim() }), p.input.label); } catch (er) { toast(er.message, 6000); }
+        go.disabled = false;
+      } }, q, go);
+    }
+    // Pictures only from the web (https) or the server itself.
+    const pic = src => typeof src === 'string' && /^(https:\/\/|\/(?!\/))/.test(src) ? h('img', { src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: e => e.target.replaceWith(h('div', { class: 'pp-noimg' })) }) : h('div', { class: 'pp-noimg' });
+    const items = (p.items || []).length ? h('div', { class: 'pp-items' }, p.items.map(it => h('div', { class: 'pp-item' }, pic(it.image),
+      h('div', { class: 'grow' }, h('b', {}, it.title || ''), it.status ? h('span', { class: 'tag' + (it.status_kind ? ' ' + it.status_kind : '') }, it.status) : null,
+        it.subtitle ? h('div', { class: 'dim' }, it.subtitle) : null),
+      (it.buttons || []).length ? h('div', { class: 'actions' }, buttons(it.buttons, true)) : null))) : null;
+    // (replaceChildren would write a missing part as the word "null")
+    slot.replaceChildren(...[h('h2', { style: 'margin-top:0' }, p.title || name,
         p.status === 'on' ? h('span', { class: 'ok', style: 'font-size:14px;margin-left:10px' }, t('connected')) : null),
       p.text ? h('p', {}, p.text) : null,
       p.link ? h('p', {}, h('a', { href: p.link, target: '_blank', rel: 'noopener' }, p.link)) : null,
-      (p.buttons || []).length ? h('div', { class: 'actions' }, p.buttons.map(b => h('button', { class: b.primary ? 'primary' : '', onclick: () => run(b) }, b.label))) : null);
+      search, items,
+      (p.buttons || []).length ? h('div', { class: 'actions' }, buttons(p.buttons)) : null].filter(Boolean));
   };
   // A code to type in somewhere else (a device login): asks the plugin again until it is done.
   const pollBox = (id, title, first, done) => {

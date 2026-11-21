@@ -65,6 +65,15 @@ label{display:block;color:var(--dim);font-size:13px;margin:10px 0 4px}
 .field>.ctl>input[type=checkbox]{margin:0}
 .field select{max-width:100%}
 .field>.help{grid-column:2;font-size:13px}
+.pp-search{display:flex;gap:8px;margin:0 0 12px}
+.pp-items{display:flex;flex-direction:column;gap:8px;margin:0 0 12px}
+.pp-item{display:flex;gap:12px;align-items:center;padding:8px;border-radius:8px;background:var(--panel2)}
+.pp-item img,.pp-item .pp-noimg{width:46px;height:69px;object-fit:cover;border-radius:4px;flex:0 0 auto;background:var(--bg)}
+.pp-item .grow{flex:1;min-width:0}
+.pp-item .grow .tag{margin-left:8px}
+.pp-item .tag:not(.smart):not(.default){background:var(--bg)}
+.pp-item .actions{margin:0;flex:0 0 auto}
+@media (max-width:760px){.pp-item{flex-wrap:wrap}.pp-item .actions{flex-basis:100%;justify-content:flex-end}}
 .field.check{display:block}
 .field.check>.chk{display:flex;align-items:flex-start;gap:8px;margin:0;font-size:14px;color:var(--text);cursor:pointer}
 .field.check>.chk>input{margin:2px 0 0;flex:0 0 auto}

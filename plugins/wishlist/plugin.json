@@ -1,0 +1,24 @@
+{
+  "id": "wishlist",
+  "name": "Wish list",
+  "version": "1.0",
+  "author": "Lichtspiel",
+  "description": "Everyone can search for movies and shows under Settings and wish for them; the wishes go to Radarr and Sonarr, and the list shows how they stand (wished, downloading, downloaded, here). Enter the address (http://…:7878 / :8989) and API key (Settings → General in Radarr / Sonarr) of one or both. Optional: the quality profile and root folder by name (empty = the first), at most this many open wishes per person (0 = no limit), only admins may wish.",
+  "command": ["python3", "main.py"],
+  "hooks": ["api.call", "library.item.added", "schedule.daily"],
+  "user_panel": true,
+  "settings": {
+    "radarr_url": "",
+    "radarr_api_key": "",
+    "radarr_quality_profile": "",
+    "radarr_root_folder": "",
+    "sonarr_url": "",
+    "sonarr_api_key": "",
+    "sonarr_quality_profile": "",
+    "sonarr_root_folder": "",
+    "max_open_wishes": 10,
+    "only_admins": false
+  },
+  "timeout_seconds": 60,
+  "enabled_by_default": false
+}

@@ -54,11 +54,20 @@ while the server was off is sent right after the next start.
 
 With `"user_panel": true` in `plugin.json` each person gets a panel of the plugin under
 **Settings**. The page asks the plugin with `api.call` action `panel` and shows
-`{"title", "text", "link", "buttons": [{"label", "action", "primary", "confirm"}]}`; a button
-calls its action. That answer may say `{"message"}` or `{"error"}`, or show a code to type in
-elsewhere — `{"message", "code", "link", "poll": {"action": "poll", "seconds": 5}}` — in which
-case the page calls the `poll` action every few seconds until an answer comes without `poll`.
-The body of these calls includes `lang` (the page's language).
+`{"title", "text", "link", "buttons": [{"label", "action", "args", "primary", "confirm"}]}`; a button
+calls its action, with its `args` (any JSON) in the body. The panel may also have a search field,
+`"input": {"placeholder", "action", "label", "value"}`, whose action gets `{"query"}`, and a list,
+`"items": [{"title", "subtitle", "status", "status_kind", "image", "buttons"}]` (`status_kind`
+`"default"` shows the status green, `"smart"` in the accent colour; `image` is an `https://`
+address or one on the server). An answer may say `{"message"}` or `{"error"}`, bring a panel to
+show at once (`{"panel": {…}}`, e.g. search results), or show a code to type in elsewhere —
+`{"message", "code", "link", "poll": {"action": "poll", "seconds": 5}}` — in which case the page
+calls the `poll` action every few seconds until an answer comes without `poll`. The body of these
+calls includes `lang` (the page's language).
+
+The server sends UTF-8 on standard input. On Windows, Python reads standard input in the console's
+code page, so read the bytes (`json.loads(sys.stdin.buffer.read())`) and answer with escaped JSON
+(`json.dumps(…)` as it is, without `ensure_ascii=False`).
 
 Events: `metadata.lookup`, `library.item.added`, `library.item.removed`,
 `library.scan.finished`, `playback.started`, `playback.progress`, `playback.stopped`,
