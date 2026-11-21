@@ -664,6 +664,10 @@ pub fn run(app: &Arc<App>, o: &Options) -> Result<Value, String> {
                     v.view_offset_ms = s.offset_ms as u64;
                     resume += 1;
                 }
+                // Finished there after it was last played here: the resume point here is from before.
+                if leaf && s.views > 0 && s.offset_ms == 0 && v.view_offset_ms > 0 && s.last_viewed >= v.last_viewed_at as i64 {
+                    v.view_offset_ms = 0;
+                }
                 if s.last_viewed as u64 > v.last_viewed_at {
                     v.last_viewed_at = s.last_viewed as u64;
                 }

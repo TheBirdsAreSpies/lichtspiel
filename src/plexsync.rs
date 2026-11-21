@@ -517,6 +517,13 @@ fn run(app: &Arc<App>) -> Result<Value, String> {
     r.map(|_| report)
 }
 
+/// Shows how far the sync is in the activity bar (only when the sync is the job shown there).
+fn progress(app: &App, step: &str, done: usize, total: usize) {
+    if let Some(j) = app.job.lock().unwrap().as_mut().filter(|j| j.0.starts_with("Syncing with Plex")) {
+        *j = (step.into(), done, total.max(1));
+    }
+}
+
 fn run_inner(app: &Arc<App>, c: &Config) -> Result<Vec<Value>, String> {
     if c.url.is_empty() { return Err("No Plex server address set".into()); }
     if c.accounts.is_empty() { return Err("No Plex account added".into()); }
@@ -533,8 +540,7 @@ fn run_inner(app: &Arc<App>, c: &Config) -> Result<Vec<Value>, String> {
             .flat_map(|i| i.all_files().into_iter().map(move |f| (path_key(&f.path), i.id))).collect()
     };
     let mut reports = vec![];
-    for (n, acc) in c.accounts.iter().enumerate() {
-        if let Some(j) = app.job.lock().unwrap().as_mut().filter(|j| j.0 == "Syncing with Plex") { j.1 = n; }
+    for acc in &c.accounts {
         let mut rep = json!({"user_id": acc.user_id, "plex_name": acc.plex_name});
         match sync_account(app, c, &url, acc, &maps, &by_path, &mut state) {
             Ok(v) => { if let Value::Object(m) = v { for (k, x) in m { rep[k] = x; } } }
@@ -552,8 +558,10 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
     if app.db.lock().unwrap().user(u).is_none() { return Err("The person for this Plex account no longer exists".into()); }
     let mut plex: Vec<PlexItem> = vec![];
     let mut shows: HashMap<String, (String, Vec<String>)> = HashMap::new();
-    for s in sections(url, &c.client_id, &acc.token)? {
-        plex.extend(items(url, &c.client_id, &acc.token, &s, &mut shows)?);
+    let libs = sections(url, &c.client_id, &acc.token)?;
+    for (n, s) in libs.iter().enumerate() {
+        progress(app, "Syncing with Plex: reading the libraries", n, libs.len());
+        plex.extend(items(url, &c.client_id, &acc.token, s, &mut shows)?);
         if app.job_cancelled() { return Err("Cancelled".into()); }
     }
     let mut matched: Vec<(PlexItem, u64)> = vec![];
@@ -579,6 +587,9 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
             let plex_newer = p.last > lv.last_viewed_at;
             let mut res = agreed.clone().unwrap_or_default();
             let mut scrobbled = false;
+            // Finished in Plex (watched there, not here, no new resume point there): the resume point
+            // here is from before, like Plex clears its own when something is marked watched.
+            let mut finished_in_plex = false;
             if c.watched {
                 let w = pick(agreed.as_ref().map(|s| s.w), lv.view_count > 0, p.count > 0, plex_newer, |a, b| a == b, |a, b| a || b);
                 let w = directed(&c.direction, w, lv.view_count > 0, p.count > 0);
@@ -589,6 +600,10 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
                         v.view_count = p.count.max(1);
                         v.last_viewed_at = v.last_viewed_at.max(p.last);
                         v.finished = false;
+                        if p.count > 0 && p.offset == 0 {
+                            finished_in_plex = true;
+                            v.view_offset_ms = 0; // counted below, with the resume points
+                        }
                         let at = if p.last > 0 { p.last } else { now() };
                         db.record_play_at(u, *id, true, at);
                         here.watched += 1;
@@ -607,6 +622,7 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
             if c.resume {
                 let o = pick(agreed.as_ref().map(|s| s.o), lv.view_offset_ms, p.offset, plex_newer, |a, b| same_offset(*a, *b), |a, b| if plex_newer { b } else { a });
                 let o = directed(&c.direction, o, lv.view_offset_ms, p.offset);
+                let o = if finished_in_plex { 0 } else { o };
                 res.o = o;
                 if !same_offset(o, lv.view_offset_ms) {
                     let v = db.view_mut(u, *id);
@@ -691,8 +707,10 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
                 ((need_credits || need_intro) && now().saturating_sub(asked) >= week).then(|| (p.rk.clone(), *id, key))
             }).collect()
         };
-        for (rk, id, key) in todo {
+        let total = todo.len();
+        for (n, (rk, id, key)) in todo.into_iter().enumerate() {
             if app.job_cancelled() { break; }
+            if n % 10 == 0 { progress(app, "Syncing with Plex: taking intro and credits markers", n, total); }
             let Ok((intro, credits)) = plex_markers(url, &c.client_id, &acc.token, &rk) else { continue };
             if let Some(it) = app.db.lock().unwrap().items.get_mut(&id) {
                 let is_episode = it.kind == ItemKind::Episode;
@@ -720,12 +738,14 @@ fn sync_account(app: &Arc<App>, c: &Config, url: &str, acc: &Account, maps: &[(S
     }
     // Then tell Plex. What could not be sent is agreed again next time.
     let mut errors: Vec<String> = vec![];
-    let mut pushes = pushes.into_iter();
-    while let Some((key, rk, push)) = pushes.next() {
+    let total = pushes.len();
+    let mut pushes = pushes.into_iter().enumerate();
+    while let Some((n, (key, rk, push))) = pushes.next() {
+        if n % 10 == 0 { progress(app, "Syncing with Plex: sending the changes to Plex", n, total); }
         // Cancelled: what was not sent yet is agreed again next time.
         if app.job_cancelled() {
             state.items.remove(&key);
-            for (k, ..) in pushes { state.items.remove(&k); }
+            for (_, (k, ..)) in pushes { state.items.remove(&k); }
             errors.push("Cancelled".into());
             break;
         }
@@ -773,6 +793,57 @@ mod tests {
         let _ = request("GET", &format!("http://{plex}/library/sections"), "client", "token");
         assert_eq!(plex_hits.load(std::sync::atomic::Ordering::SeqCst), 1, "the Plex server on the home network was not asked");
         assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0, "a redirect from Plex sent the Plex token elsewhere");
+    }
+
+    /// A Plex server with one movie library holding `movie` (its JSON); anything else answers {}.
+    fn fake_plex(movie: Value) -> String {
+        use std::io::{Read, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap().to_string();
+        std::thread::spawn(move || for mut s in l.incoming().flatten() {
+            let mut buf = [0u8; 4096];
+            let n = s.read(&mut buf).unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+            let path = req.split_whitespace().nth(1).unwrap_or("").to_string();
+            let body = if path == "/library/sections" {
+                json!({"MediaContainer": {"Directory": [{"key": "1", "type": "movie", "title": "Movies"}]}})
+            } else if path.starts_with("/library/sections/1/all") {
+                json!({"MediaContainer": {"totalSize": 1, "Metadata": [movie.clone()]}})
+            } else {
+                json!({})
+            }.to_string();
+            let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes());
+        });
+        format!("http://{addr}")
+    }
+
+    #[test]
+    fn finished_in_plex_leaves_continue_watching_here() {
+        let (app, root) = crate::server::tests::test_app("plexsync-finished");
+        {
+            let mut db = app.db.lock().unwrap();
+            let mut it: crate::db::Item = serde_json::from_value(json!({"id": 50, "section_id": 1, "kind": "movie", "title": "Heat", "sort_title": "Heat",
+                "added_at": 0, "updated_at": 0, "duration_ms": 6_000_000})).unwrap();
+            it.file = Some(crate::db::MediaFile { path: "/m/Heat.mkv".into(), ..Default::default() });
+            db.items.insert(50, it);
+            // Half watched here, recently.
+            let v = db.view_mut(1, 50);
+            v.view_offset_ms = 3_000_000;
+            v.last_viewed_at = now();
+        }
+        // Finished in Plex: watched, no resume point, and no time it was watched (marked by hand).
+        let url = fake_plex(json!({"ratingKey": "7", "viewCount": 1, "Media": [{"Part": [{"file": "/m/Heat.mkv"}]}]}));
+        let c: Config = serde_json::from_value(json!({"url": url, "markers": false, "matches": false})).unwrap();
+        let acc = Account { id: "a".into(), token: "t".into(), user_id: 1, plex_name: String::new() };
+        let by_path: HashMap<String, u64> = [(path_key("/m/Heat.mkv"), 50)].into();
+        let mut state = State::default();
+        let r = sync_account(&app, &c, &url, &acc, &[], &by_path, &mut state).unwrap();
+        let v = app.db.lock().unwrap().view(1, 50);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!((v.view_count, v.view_offset_ms), (1, 0), "{r}");
+        assert_eq!(r["to_here"]["resume"], json!(1));
+        // Nothing goes back to Plex: it already has it so.
+        assert_eq!(r["to_plex"]["resume"], json!(0));
     }
 
     #[test]
