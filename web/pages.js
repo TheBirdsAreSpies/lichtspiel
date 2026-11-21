@@ -1443,7 +1443,11 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
     admin ? { label: t('Analyze'), run: async () => { await api('POST', `/library/metadata/${it.id}/analyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
     admin && it.type === 'show' ? { label: t('Cut theme music'), run: async () => {
       toast(t('Cutting the theme music…'));
-      try { const r = await api('POST', `/library/metadata/${it.id}/theme`); toast(r.folder_theme ? t('Theme music cut. The theme file in the show’s folder is played instead: {path}', { path: r.folder_theme }) : t('Theme music cut'), r.folder_theme ? 8000 : 3000); stopTheme(); } catch (e) { toast(t(e.message), 6000); }
+      try { const r = await api('POST', `/library/metadata/${it.id}/theme`); toast(r.folder_theme ? t('Theme music cut. The theme file in the show’s folder is played instead: {path}', { path: r.folder_theme }) : t('Theme music cut'), r.folder_theme ? 8000 : 3000);
+        // On the show's page: play what was just cut (or the folder's theme) at once.
+        stopTheme(); THEME.id = null;
+        if (location.hash.slice(1).split('?')[0] === `/item/${it.id}`) startTheme(String(it.id));
+      } catch (e) { toast(t(e.message), 6000); }
     } } : null,
     admin ? { label: t('Deep analysis'), run: async () => { await api('POST', `/library/metadata/${it.id}/deepanalyze`); toast(t('Analyzing — progress is shown at the top')); pollActivity(); } } : null,
     admin ? { label: t('Edit details'), run: async () => editItem(await fullItem(it)) } : null,
@@ -2042,7 +2046,16 @@ async function startTheme(id) {
   a.addEventListener('timeupdate', () => { if (a.duration - a.currentTime <= THEME_FADE_MS / 1000) fadeTheme(a); });
   THEME.audio = a; THEME.id = id;
   a.addEventListener('error', () => { if (THEME.audio === a) { THEME.audio = null; THEME.id = null; } });
-  a.play().catch(() => { /* the browser wants a click first, or there is no theme */ });
+  a.play().catch(e => {
+    // The browser wants a click first (a page opened by a link or reloaded): the first click or key on the page starts it.
+    // (Any other failure: there is no theme, see 'error' above.)
+    if (e && e.name !== 'NotAllowedError') return;
+    const go = () => {
+      document.removeEventListener('pointerdown', go, true); document.removeEventListener('keydown', go, true);
+      if (THEME.audio === a && player.style.display !== 'flex' && !document.pictureInPictureElement) a.play().catch(() => {});
+    };
+    document.addEventListener('pointerdown', go, true); document.addEventListener('keydown', go, true);
+  });
 }
 window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#/item/')) { stopTheme(); THEME.id = null; } });
 // ---------- going back: the page as it was left
