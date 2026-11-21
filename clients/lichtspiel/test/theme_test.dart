@@ -20,7 +20,7 @@ void main() {
     await AppTheme.set(theme: 'nonsense', accentName: 'pink');
     expect(AppTheme.choice.value, 'system');
     expect(AppTheme.mode, ThemeMode.system);
-    expect(AppTheme.accent.value, 'amber');
+    expect(AppTheme.accent.value, 'rose');
   });
 
   test('the choices are kept on the device and the account\'s choices win', () async {
