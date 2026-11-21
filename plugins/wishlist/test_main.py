@@ -23,6 +23,9 @@ MATRIX = {"title": "The Matrix", "year": 1999, "tmdbId": 603, "imdbId": "tt01330
 HEAT = {"title": "Heat", "year": 1995, "tmdbId": 949, "id": 5, "hasFile": True}
 DARK = {"title": "Dark", "year": 2017, "tvdbId": 334824, "images": [{"coverType": "poster", "remoteUrl": "http://insecure/x.jpg"}]}
 
+TMDB_DUNE = {"id": 438631, "title": "Dune: Part Three", "release_date": "2026-12-18", "overview": "Paul again.", "poster_path": "/dune.jpg"}
+TMDB_SEVERANCE = {"id": 95396, "name": "Severance", "first_air_date": "2022-02-17", "overview": "Work.", "poster_path": None}
+
 
 class Fake(BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -40,6 +43,8 @@ class Fake(BaseHTTPRequestHandler):
         raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         u = urllib.parse.urlsplit(self.path)
         q = dict(urllib.parse.parse_qsl(u.query))
+        if u.path.startswith("/tmdb/"):
+            return self.tmdb(u.path[len("/tmdb"):], q)
         app, path = u.path.split("/api/v3")
         app = app.strip("/")
         body = json.loads(raw or b"null")
@@ -77,6 +82,31 @@ class Fake(BaseHTTPRequestHandler):
             return self.reply(200, {"id": 77, "statistics": {"episodeFileCount": st.get("files", 0), "episodeCount": 18}})
         self.reply(404, {})
 
+    def tmdb(self, path, q):
+        SEEN.append(("tmdb", self.command, path, q, None, q.get("api_key") or self.headers.get("Authorization")))
+        if STATE.get("tmdb_down"):
+            return self.reply(401, {"status_message": "Invalid API key"})
+        if path == "/search/movie":
+            return self.reply(200, {"results": [TMDB_DUNE] if "dune" in q["query"].lower() else []})
+        if path == "/search/tv":
+            return self.reply(200, {"results": [TMDB_SEVERANCE] if "severance" in q["query"].lower() else []})
+        if path == "/movie/438631":
+            return self.reply(200, dict(TMDB_DUNE, imdb_id="tt1160419"))
+        if path == "/tv/95396":
+            return self.reply(200, dict(TMDB_SEVERANCE, external_ids={"tvdb_id": 371980, "imdb_id": "tt11280740"},
+                                        next_episode_to_air={"season_number": 3, "episode_number": 1}))
+        if path == "/movie/438631/release_dates":
+            return self.reply(200, {"results": [
+                {"iso_3166_1": "US", "release_dates": [{"type": 3, "release_date": "2026-11-01T00:00:00.000Z"}]},
+                {"iso_3166_1": "DE", "release_dates": [{"type": 3, "release_date": "2026-11-28T00:00:00.000Z"},
+                                                       {"type": 2, "release_date": "2026-11-25T00:00:00.000Z"},
+                                                       {"type": 4, "release_date": "2027-01-15T00:00:00.000Z"},
+                                                       {"type": 5, "release_date": "2027-06-01T00:00:00.000Z"}]}]})
+        if path == "/tv/95396/season/3":
+            return self.reply(200, {"episodes": [{"episode_number": 1, "name": "Neu", "air_date": "2026-12-05"},
+                                                 {"episode_number": 2, "name": "Später", "air_date": "2027-05-01"}]})
+        self.reply(404, {"status_message": "not found"})
+
     do_GET = do_POST = answer
 
 
@@ -98,9 +128,11 @@ class WishTest(unittest.TestCase):
 
     def setUp(self):
         SEEN.clear()
+        STATE.clear()
         STATE.update(radarr={}, sonarr={})
         self.dir = tempfile.mkdtemp()
         self.patches = [mock.patch.object(main, "STATE", os.path.join(self.dir, "wishes.json")),
+                        mock.patch.object(main, "TMDB", self.base + "/tmdb"),
                         mock.patch.object(main, "LOCK", os.path.join(self.dir, ".lock"))]
         for p in self.patches:
             p.start()
@@ -249,6 +281,60 @@ class WishTest(unittest.TestCase):
         self.assertIn("error", self.call("search", query="Matrix"))
         self.assertIn("Radarr", self.call("wish", args={"kind": "movie", "id": 603})["error"])
         self.assertFalse(os.path.exists(main.STATE) and self.wishes())
+
+    def test_with_only_a_tmdb_key_titles_are_searched_there_and_wished_onto_the_list(self):
+        only = {"tmdb_api_key": "tk", "release_country": "de"}
+        p = self.call("panel", settings=only)
+        self.assertIn("Die Admins sehen deine Wünsche", p["text"])
+        r = self.call("search", query="Dune", settings=only)["panel"]
+        dune = r["items"][0]
+        self.assertEqual((dune["title"], dune["image"]), ("Dune: Part Three", "https://image.tmdb.org/t/p/w342/dune.jpg"))
+        self.assertEqual(dune["buttons"][0]["args"], {"kind": "movie", "id": 438631})
+        self.assertIn(("tmdb", "GET", "/search/movie", {"query": "Dune", "language": "de", "api_key": "tk"}, None, "tk"), SEEN)
+        show = self.call("search", query="Severance", settings=only)["panel"]["items"][0]
+        self.assertEqual((show["image"], show["buttons"][0]["args"]), ("", {"kind": "show", "id": "tmdb:95396"}))
+        self.assertIn("Admins sehen es", self.call("wish", args={"kind": "movie", "id": 438631}, settings=only)["message"])
+        self.call("wish", args={"kind": "show", "id": "tmdb:95396"}, settings=only)
+        self.assertFalse([s for s in SEEN if s[0] in ("radarr", "sonarr")])
+        dune_w, sev_w = self.wishes()
+        self.assertEqual((dune_w["key"], dune_w["tmdb"], dune_w["imdb"], dune_w["status"], dune_w.get("arr_id")),
+                         ("movie:438631", 438631, "tt1160419", "wished", None))
+        self.assertEqual((sev_w["key"], sev_w["tvdb"], sev_w["year"]), ("show:tmdb:95396", 371980, 2022))
+        admin = self.call("panel", user="boss", admin=True, settings=only)
+        self.assertEqual(sorted(i["title"] for i in admin["items"]), ["Dune: Part Three", "Severance"])
+        # The show arrives in the library: found by its TheTVDB id.
+        r = self.run_plugin("library.item.added", {"item": {"type": "show", "title": "Severance (2022)", "ids": {"tvdb": 371980}}}, only)
+        self.assertEqual(r["here"], ["Severance"])
+
+    def test_the_calendar_has_the_release_dates_of_wishes_from_tmdb(self):
+        only = {"tmdb_api_key": "tk", "release_country": "DE"}
+        self.call("wish", args={"kind": "movie", "id": 438631}, settings=only)
+        self.call("wish", args={"kind": "show", "id": "tmdb:95396"}, settings=only)
+        out = self.run_plugin("calendar", {"start": "2026-11-21", "end": "2027-02-19"}, only)
+        poster = "https://image.tmdb.org/t/p/w342/dune.jpg"
+        self.assertEqual(out["entries"], [
+            {"type": "movie", "title": "Dune: Part Three", "year": 2026, "date": "2026-11-25", "poster": poster, "note": "in cinemas"},
+            {"type": "movie", "title": "Dune: Part Three", "year": 2026, "date": "2027-01-15", "poster": poster, "note": "digital release"},
+            {"type": "episode", "title": "Severance", "year": 2022, "season": 3, "episode": 1, "name": "Neu", "date": "2026-12-05", "poster": ""}])
+        # Once here, it is not coming any more.
+        self.run_plugin("library.item.added", {"item": {"type": "movie", "title": "Dune: Part Three", "year": 2026, "ids": {"tmdb": 438631}}}, only)
+        self.assertEqual([e["type"] for e in self.run_plugin("calendar", {"start": "2026-11-21", "end": "2027-02-19"}, only)["entries"]], ["episode"])
+
+    def test_radarr_for_movies_and_tmdb_for_shows(self):
+        mixed = {"radarr_url": self.base + "/radarr", "radarr_api_key": "rk", "tmdb_api_key": "eyJtoken"}
+        self.assertIn("Radarr sucht nach Filmen", self.call("panel", settings=mixed)["text"])
+        self.assertIn("Radarr sucht", self.call("wish", args={"kind": "movie", "id": 603}, settings=mixed)["message"])
+        self.assertIn("Admins sehen es", self.call("wish", args={"kind": "show", "id": "tmdb:95396"}, settings=mixed)["message"])
+        self.assertTrue([s for s in SEEN if s[0] == "tmdb" and s[5] == "Bearer eyJtoken"])
+        self.assertFalse([s for s in SEEN if s[0] == "tmdb" and "api_key" in s[3]])
+        # Radarr's calendar for the movie, TMDB's for the show.
+        out = self.run_plugin("calendar", {"start": "2026-11-21", "end": "2027-02-19"}, mixed)
+        self.assertEqual([(e["type"], e["title"]) for e in out["entries"]], [("movie", "The Matrix"), ("episode", "Severance")])
+
+    def test_a_wrong_tmdb_key_gives_a_message(self):
+        STATE["tmdb_down"] = True
+        r = self.call("search", query="Nothing", settings={"tmdb_api_key": "bad"})
+        self.assertIn("Invalid API key", r.get("error", ""))
 
     def test_the_english_panel(self):
         self.assertEqual(self.call("panel", lang="en")["title"], "Wish list")

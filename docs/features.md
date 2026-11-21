@@ -115,7 +115,8 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   The server looks a running show up once a day and an ended one once a month, at TMDB when a key
   is set, else at TVmaze (no key needed); it keeps what it found in `upcoming.json`. With the
   **Wish list** plugin on, what Radarr expects (cinema, digital and disc releases) and Sonarr's
-  coming episodes join in, every three hours. Everyone sees the shows of their own libraries;
+  coming episodes join in, every three hours — without Radarr / Sonarr the release dates of the
+  wished movies and the coming episodes of the wished shows, from TMDB. Everyone sees the shows of their own libraries;
   titles from Radarr and Sonarr are not shown to people with an age limit. `GET /api/upcoming`.
 - **Users and invites** — create an invite link (valid 7 days by default, single use),
   choose which libraries the person may see and whether the server may convert video for
@@ -234,10 +235,13 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   The **Wish list** gives everyone a page in the left menu: search for a movie or show,
   wish for it, and see how the wishes stand (wished, downloading with its percentage, downloaded,
   here). A wish goes straight to Radarr (movies) or Sonarr (shows), which look for it; a title
-  wished by several people goes there once. When the title arrives in the library the wish is
+  wished by several people goes there once. Without them (or for shows when only Radarr is set
+  up, and the other way round) the titles are searched at TMDB and a wish only lands on the list — a list of requests for
+  the admins, who get the title some other way. When the title arrives in the library the wish is
   marked as here, and leaves the list 30 days later. Admins see every wish and who made it and
-  can remove one. Settings: `radarr_url` and `radarr_api_key` and/or `sonarr_url` and
-  `sonarr_api_key` (Settings → General in Radarr / Sonarr), optionally the quality profile and root
+  can remove one. Settings: `tmdb_api_key` (for searching without Radarr / Sonarr) with
+  `release_country` (whose release dates, e.g. `DE`; default `US`), and/or `radarr_url` and
+  `radarr_api_key` and/or `sonarr_url` and `sonarr_api_key` (Settings → General in Radarr / Sonarr), optionally the quality profile and root
   folder by name (`radarr_quality_profile`, `radarr_root_folder`, … — empty takes the first), at
   most `max_open_wishes` open wishes per person (default 10, 0 = no limit), and `only_admins`.
   **Subtitles**

@@ -1,8 +1,10 @@
 """Wish list plugin.
 
-Everyone gets a panel under Settings: search for a movie (Radarr) or a show (Sonarr), wish for it,
-and see where the wishes stand (wished, downloading, downloaded, here). A wish goes straight to
-Radarr / Sonarr, which look for it. When the title arrives in the library (library.item.added) the
+Everyone gets a panel under Settings: search for a movie or a show, wish for it, and see where
+the wishes stand (wished, downloading, downloaded, here). With Radarr / Sonarr set up a wish goes
+straight there, and they look for it; without them the titles are searched at TMDB and the wish
+only lands on the list, which the admins see. The release dates of such wishes (cinema, digital,
+disc; the coming episodes of a show) come from TMDB for "Coming soon". When the title arrives in the library (library.item.added) the
 wish is marked as here; wishes that are here leave the list after 30 days (schedule.daily).
 
 The wishes are kept in wishes.json in the plugin's folder.
@@ -64,6 +66,14 @@ WORDS = {
     "Removed.": "Entfernt.",
     "No such wish.": "Diesen Wunsch gibt es nicht.",
     "{app} could not be reached: {e}": "{app} ist nicht erreichbar: {e}",
+    "The wish list is not set up yet: an admin enters a TMDB API key, or the address and API key of Radarr and/or Sonarr, in the plugin's settings.": "Die Wunschliste ist noch nicht eingerichtet: Ein Admin trägt einen TMDB-API-Key oder Adresse und API-Key von Radarr und/oder Sonarr in den Einstellungen des Plugins ein.",
+    "Search for a movie or show you would like to see here.": "Such nach einem Film oder einer Serie, die du hier gern sehen würdest.",
+    "Search for a movie you would like to see here.": "Such nach einem Film, den du hier gern sehen würdest.",
+    "Search for a show you would like to see here.": "Such nach einer Serie, die du hier gern sehen würdest.",
+    "The admins see your wishes.": "Die Admins sehen deine Wünsche.",
+    "Radarr looks for movies; the admins see your wishes for shows.": "Radarr sucht nach Filmen; deine Serienwünsche sehen die Admins.",
+    "Sonarr looks for shows; the admins see your wishes for movies.": "Sonarr sucht nach Serien; deine Filmwünsche sehen die Admins.",
+    "Wished. The admins see it on the list.": "Gewünscht. Die Admins sehen es auf der Liste.",
 }
 
 
@@ -210,27 +220,143 @@ def calendar(settings, start, end):
     return entries
 
 
+def ident_of(kind, found):
+    """The id a wish is known by: the TMDB id of a movie, the TheTVDB id of a show (from Sonarr),
+    or "tmdb:<id>" for a show found at TMDB."""
+    if kind == "movie":
+        return found.get("tmdbId")
+    return found.get("tvdbId") if found.get("_from") != "tmdb" else "tmdb:%s" % found.get("tmdbId")
+
+
 def key_of(kind, found):
-    return "movie:%s" % found.get("tmdbId") if kind == "movie" else "show:%s" % found.get("tvdbId")
+    return "%s:%s" % (kind, ident_of(kind, found))
 
 
-def search(settings, query):
-    """(kind, found) for what Radarr and Sonarr know by this name, the best first."""
+# ---------- TMDB: searching and release dates without Radarr / Sonarr
+
+TMDB = "https://api.themoviedb.org/3"
+TMDB_IMAGES = "https://image.tmdb.org/t/p/w342"
+
+
+def tmdb_key(settings):
+    return str(settings.get("tmdb_api_key") or "").strip()
+
+
+def source(settings, kind):
+    """Where movies / shows are searched and wishes go: "arr" (Radarr / Sonarr), "tmdb" or None."""
+    return "arr" if configured(settings, kind) else "tmdb" if tmdb_key(settings) else None
+
+
+def tmdb(settings, path, params=None):
+    key = tmdb_key(settings)
+    params = dict(params or {})
+    headers = {"Accept": "application/json"}
+    if key.startswith("eyJ"):  # a read access token
+        headers["Authorization"] = "Bearer " + key
+    else:
+        params["api_key"] = key
+    url = TMDB + path + ("?" + urllib.parse.urlencode(params) if params else "")
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=TIMEOUT) as r:
+            return json.loads(r.read() or b"null") or {}
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read() or b"null").get("status_message") or e.reason
+        except Exception:
+            msg = e.reason
+        raise ArrError("TMDB answered %d: %s" % (e.code, msg))
+    except (OSError, ValueError) as e:
+        raise ArrError("TMDB: %s" % e)
+
+
+def tmdb_found(kind, v):
+    """A TMDB movie or show in the shape Radarr / Sonarr give (title, year, ids, poster)."""
+    date = str(v.get("release_date" if kind == "movie" else "first_air_date") or "")
+    ext = v.get("external_ids") or {}
+    return {"_from": "tmdb", "title": v.get("title" if kind == "movie" else "name") or "", "year": int(date[:4]) if date[:4].isdigit() else None,
+            "overview": v.get("overview") or "", "tmdbId": v.get("id"), "imdbId": v.get("imdb_id") or ext.get("imdb_id"),
+            "tvdbId": ext.get("tvdb_id") if kind == "show" else None,
+            "remotePoster": TMDB_IMAGES + v["poster_path"] if v.get("poster_path") else ""}
+
+
+def tmdb_lang(lang):
+    return (lang or "en")[:2]
+
+
+# TMDB's release types and what they are called in "Coming soon" (2 is a limited cinema release).
+TMDB_RELEASES = ((2, "in cinemas"), (3, "in cinemas"), (4, "digital release"), (5, "on disc"))
+
+
+def tmdb_calendar(settings, start, end):
+    """The release dates of the wished movies and the coming episodes of the wished shows that
+    neither Radarr nor Sonarr look after, from TMDB."""
+    if not tmdb_key(settings):
+        return []
+    country = str(settings.get("release_country") or "US").strip().upper()
+    entries = []
+    for w in load():
+        if w.get("arr_id") or w.get("status") == "here" or not w.get("tmdb"):
+            continue
+        try:
+            if w["kind"] == "movie":
+                dates = {}
+                for r in tmdb(settings, "/movie/%s/release_dates" % w["tmdb"]).get("results") or []:
+                    if str(r.get("iso_3166_1") or "").upper() != country:
+                        continue
+                    for d in r.get("release_dates") or []:
+                        note = dict(TMDB_RELEASES).get(d.get("type"))
+                        date = str(d.get("release_date") or "")[:10]
+                        if note and date and (note not in dates or date < dates[note]):
+                            dates[note] = date
+                for note in ("in cinemas", "digital release", "on disc"):
+                    if start <= dates.get(note, "") <= end:
+                        entries.append({"type": "movie", "title": w["title"], "year": w.get("year"), "date": dates[note],
+                                        "poster": w.get("image") or "", "note": note})
+            else:
+                show = tmdb(settings, "/tv/%s" % w["tmdb"])
+                season = (show.get("next_episode_to_air") or {}).get("season_number")
+                if season is None:
+                    continue
+                for e in tmdb(settings, "/tv/%s/season/%s" % (w["tmdb"], season)).get("episodes") or []:
+                    date = str(e.get("air_date") or "")
+                    if start <= date <= end:
+                        entries.append({"type": "episode", "title": w["title"], "year": w.get("year"), "season": season,
+                                        "episode": e.get("episode_number"), "name": e.get("name") or "", "date": date,
+                                        "poster": w.get("image") or ""})
+        except ArrError as e:
+            log("%s: %s" % (w["title"], e))
+    return entries
+
+
+def search(settings, query, lang="en"):
+    """(kind, found) for what Radarr and Sonarr (or else TMDB) know by this name, the best first."""
     out = []
     for kind in ("movie", "show"):
-        if not configured(settings, kind):
+        src = source(settings, kind)
+        if src == "arr":
+            path = "/movie/lookup" if kind == "movie" else "/series/lookup"
+            found = (arr(settings, kind, "GET", path, {"term": query}) or [])[:8]
+        elif src == "tmdb":
+            v = tmdb(settings, "/search/movie" if kind == "movie" else "/search/tv", {"query": query, "language": tmdb_lang(lang)})
+            found = [tmdb_found(kind, r) for r in (v.get("results") or [])[:8]]
+        else:
             continue
-        path = "/movie/lookup" if kind == "movie" else "/series/lookup"
-        for f in (arr(settings, kind, "GET", path, {"term": query}) or [])[:8]:
-            if f.get("tmdbId" if kind == "movie" else "tvdbId"):
-                out.append((kind, f))
+        out += [(kind, f) for f in found if f.get("tmdbId" if kind == "movie" or f.get("_from") == "tmdb" else "tvdbId")]
     q = norm(query)
     # Exact titles first, then each app's own order.
     out.sort(key=lambda kf: norm(kf[1].get("title")) != q)
     return out[:12]
 
 
-def lookup_one(settings, kind, ident):
+def lookup_one(settings, kind, ident, lang="en"):
+    if source(settings, kind) == "tmdb" or str(ident).startswith("tmdb:"):
+        if not tmdb_key(settings):
+            return None
+        tid = str(ident).split(":")[-1]
+        if not tid.isdigit():
+            return None
+        v = tmdb(settings, ("/movie/%s" if kind == "movie" else "/tv/%s") % tid, {"append_to_response": "external_ids", "language": tmdb_lang(lang)})
+        return tmdb_found(kind, v) if v.get("id") else None
     if kind == "movie":
         found = arr(settings, kind, "GET", "/movie/lookup/tmdb", {"tmdbId": ident})
         return found if isinstance(found, dict) and found.get("tmdbId") else None
@@ -336,16 +462,22 @@ def may_wish(settings, admin):
 
 
 def intro(lang, settings):
-    m, s = configured(settings, "movie"), configured(settings, "show")
-    if m and s:
+    m, s = source(settings, "movie"), source(settings, "show")
+    if m == "arr" and s == "arr":
         return tr(lang, "Search for a movie or show you would like to see here. Radarr and Sonarr look for it."), tr(lang, "Movie or show…")
-    return (tr(lang, "Search for a movie you would like to see here. Radarr looks for it."), tr(lang, "Movie…")) if m else \
-        (tr(lang, "Search for a show you would like to see here. Sonarr looks for it."), tr(lang, "Show…"))
+    if m == "arr" and not s:
+        return tr(lang, "Search for a movie you would like to see here. Radarr looks for it."), tr(lang, "Movie…")
+    if s == "arr" and not m:
+        return tr(lang, "Search for a show you would like to see here. Sonarr looks for it."), tr(lang, "Show…")
+    # TMDB for both, or Radarr / Sonarr for one and TMDB for the other.
+    after = "Radarr looks for movies; the admins see your wishes for shows." if m == "arr" else \
+        "Sonarr looks for shows; the admins see your wishes for movies." if s == "arr" else "The admins see your wishes."
+    return tr(lang, "Search for a movie or show you would like to see here.") + " " + tr(lang, after), tr(lang, "Movie or show…")
 
 
 def panel(lang, settings, user, admin):
-    if not configured(settings, "movie") and not configured(settings, "show"):
-        return {"title": tr(lang, "Wish list"), "text": tr(lang, "The wish list is not set up yet: an admin enters the address and API key of Radarr and/or Sonarr in the plugin's settings.")}
+    if not source(settings, "movie") and not source(settings, "show"):
+        return {"title": tr(lang, "Wish list"), "text": tr(lang, "The wish list is not set up yet: an admin enters a TMDB API key, or the address and API key of Radarr and/or Sonarr, in the plugin's settings.")}
     with locked():
         wishes = prune(load())
         refresh_states(settings, wishes)
@@ -376,7 +508,7 @@ def results_panel(lang, settings, user, query, results, wishes):
         overview = (f.get("overview") or "").strip()
         if overview:
             sub += " · " + (overview[:160] + "…" if len(overview) > 160 else overview)
-        ident = f.get("tmdbId") if kind == "movie" else f.get("tvdbId")
+        ident = ident_of(kind, f)
         item = {"title": f.get("title") or "?", "subtitle": sub, "image": poster(f), "buttons": []}
         have = f.get("hasFile") if kind == "movie" else ((f.get("statistics") or {}).get("episodeFileCount") or 0) > 0
         if w and user in (w.get("by") or []):
@@ -402,7 +534,7 @@ def prune(wishes):
 
 def wish(lang, settings, user, admin, args):
     kind, ident = args.get("kind"), args.get("id")
-    if kind not in APPS or not ident or not configured(settings, kind):
+    if kind not in APPS or not ident or not source(settings, kind):
         return {"error": tr(lang, "No such wish.")}
     if not may_wish(settings, admin):
         return {"error": tr(lang, "Only admins can wish for titles here.")}
@@ -417,20 +549,22 @@ def wish(lang, settings, user, admin, args):
         if limit and not admin and len(mine) >= limit:
             return {"error": tr(lang, "You have {n} open wishes, the most allowed. Withdraw one first.", n=len(mine))}
         if w is None:
-            found = lookup_one(settings, kind, ident)
+            found = lookup_one(settings, kind, ident, lang)
             if not found:
                 return {"error": tr(lang, "No such wish.")}
             w = {"key": key, "kind": kind, "title": found.get("title") or "?", "year": found.get("year"),
                  "tmdb": found.get("tmdbId"), "tvdb": found.get("tvdbId"), "imdb": found.get("imdbId"),
                  "image": poster(found), "by": [], "at": int(time.time()), "status": "wished"}
-            try:
-                w["arr_id"] = add_to_arr(settings, kind, found)
-            except ArrError as e:
-                return {"error": tr(lang, "{app} could not be reached: {e}", app=APPS[kind][1], e=e)}
+            if found.get("_from") != "tmdb":
+                try:
+                    w["arr_id"] = add_to_arr(settings, kind, found)
+                except ArrError as e:
+                    return {"error": tr(lang, "{app} could not be reached: {e}", app=APPS[kind][1], e=e)}
             wishes.append(w)
         w["by"] = (w.get("by") or []) + [user]
         save(wishes)
-    return {"message": tr(lang, "Wished. {app} is looking for it.", app=APPS[kind][1]), "panel": panel(lang, settings, user, admin)}
+    msg = tr(lang, "Wished. {app} is looking for it.", app=APPS[kind][1]) if w.get("arr_id") else tr(lang, "Wished. The admins see it on the list.")
+    return {"message": msg, "panel": panel(lang, settings, user, admin)}
 
 
 def withdraw(lang, settings, user, admin, args, everyone):
@@ -498,10 +632,13 @@ def main():
         print(json.dumps({"ok": True, "pruned": len(wishes) - len(kept)}))
         return
     if event == "calendar":
+        start, end = str(data.get("start") or ""), str(data.get("end") or "")
+        entries = tmdb_calendar(settings, start, end)
         try:
-            out = {"entries": calendar(settings, str(data.get("start") or ""), str(data.get("end") or ""))}
+            out = {"entries": calendar(settings, start, end) + entries}
         except ArrError as e:
-            out = {"error": str(e)}
+            out = {"entries": entries} if entries else {"error": str(e)}
+            log(str(e))
         print(json.dumps(out))
         return
     if event != "api.call":
@@ -519,7 +656,7 @@ def main():
             if not may_wish(settings, admin):
                 out = {"error": tr(lang, "Only admins can wish for titles here.")}
             else:
-                results = search(settings, query) if query else []
+                results = search(settings, query, lang) if query else []
                 out = {"panel": results_panel(lang, settings, user, query, results, load())}
         elif action == "wish":
             out = wish(lang, settings, user, admin, args)

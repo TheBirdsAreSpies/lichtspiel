@@ -1,14 +1,16 @@
 {
   "id": "wishlist",
   "name": "Wish list",
-  "version": "1.1",
+  "version": "1.2",
   "author": "Lichtspiel",
-  "description": "Everyone can search for movies and shows on its own page in the left menu and wish for them; the wishes go to Radarr and Sonarr, and the list shows how they stand (wished, downloading, downloaded, here). What Radarr and Sonarr expect (release dates, new episodes) shows up under “Coming soon”. Enter the address (http://…:7878 / :8989) and API key (Settings → General in Radarr / Sonarr) of one or both. Optional: the quality profile and root folder by name (empty = the first), at most this many open wishes per person (0 = no limit), only admins may wish.",
+  "description": "Everyone can search for movies and shows on its own page in the left menu and wish for them, and the list shows how they stand (wished, downloading, downloaded, here). Without Radarr and Sonarr the titles are searched at TMDB (tmdb_api_key) and the wishes only land on the list, which admins see; their release dates (cinema, digital, disc in release_country, e.g. DE) and a wished show's new episodes show up under “Coming soon”. With Radarr and/or Sonarr (address http://…:7878 / :8989 and API key from Settings → General) a wish goes there, they look for it, and what they expect shows up under “Coming soon”. Optional: the quality profile and root folder by name (empty = the first), at most this many open wishes per person (0 = no limit), only admins may wish.",
   "command": ["python3", "main.py"],
   "hooks": ["api.call", "library.item.added", "schedule.daily", "calendar"],
   "user_panel": true,
   "placement": "sidebar",
   "settings": {
+    "tmdb_api_key": "",
+    "release_country": "US",
     "radarr_url": "",
     "radarr_api_key": "",
     "radarr_quality_profile": "",
