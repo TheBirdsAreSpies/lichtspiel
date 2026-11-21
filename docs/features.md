@@ -108,9 +108,20 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   them, then send them the link. They pick their own name and password. Each user has their
   own watched state, resume points, ratings, favourites and playlists.
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
-  details, react to events (new item, playback, invites …) and add their own API calls. Seven
+  details, react to events (new item, playback, invites …) and add their own API calls. Eight
   are included: an `.nfo` file reader, a webhook / Discord notifier, the **Wish list**,
-  **Subtitles**, the **Library doctor**, **Anime details** and **Smart home**.
+  **Subtitles**, the **Library doctor**, **Anime details**, **Smart home** and **New on Lichtspiel**.
+  **New on Lichtspiel** collects the movies and episodes added and sends everyone who wants it one
+  message a week (`every`: `"week"` or `"day"`; `weekday`, default `"friday"`; a day missed while
+  the server was off is made up for) with the posters: an e-mail, and/or a Telegram message with
+  the posters as an album. Episodes are grouped by show (`3 new episodes · S01E01–E02, S01E04`),
+  titles link to their page when the address used in invite links is set, and `skip_libraries`
+  leaves libraries out by name. Under **Settings → Account** each person enters their e-mail
+  address, connects Telegram (a link to the bot and a code, sent there with Start) and can ask for
+  a preview; admins can also send it to everyone at once. E-mail needs an SMTP server
+  (`smtp_host`, `smtp_port`, `smtp_security`: `"starttls"`, `"ssl"` or `"none"`, `smtp_user`,
+  `smtp_password`, `smtp_from`), Telegram the token of a bot made with @BotFather
+  (`telegram_bot_token`).
   **Smart home** switches Home Assistant scenes when playback starts, pauses and stops (dim the
   lights, lights back on). It needs the Home Assistant address (`home_assistant_url`) and a
   long-lived access token (`home_assistant_token`; your profile in Home Assistant → Security), and
