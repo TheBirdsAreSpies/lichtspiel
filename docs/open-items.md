@@ -76,7 +76,7 @@ Report: [reviews/2026-11-15-client.md](reviews/2026-11-15-client.md).
 
 #### C12. Minor player errors bring up the error screen
 
-- **Status:** partly fixed in `bdcc8c1`. The player now pauses before the error screen shows, so the sound no longer runs behind it. Errors are not filtered yet.
+- **Status:** partly fixed in `bdcc8c1`. The player now pauses before the error screen shows, so the sound no longer runs behind it. Since 2026-11-21 an error that comes while the film is playing is checked first: if the position moves on by at least 1.5 s within 3 s, it is ignored (only `debugPrint`). Not yet tried with a real failed HLS segment.
 - **Where:** `lib/screens/player.dart:466-475` (the error listener), `:873` (the error text replaces the picture).
 - **Problem:** media_kit passes many mpv log lines on as errors, and some are recoverable. With any quality other than "Original", one failed HLS segment request (a `tcp:` line) goes straight to "Wiedergabe fehlgeschlagen", even though mpv would have carried on.
 - **Fix:** ignore an error while playback is still moving, for example when `player.state.playing` is true and the position keeps advancing over the next second or two. The media_kit docs don't say which errors are recoverable, so test it with a real failed segment.
@@ -130,7 +130,7 @@ From "Known limits" in the overview, only the ones that are real follow-up work.
 | Limit | Where | Suggested direction |
 |---|---|---|
 | dart:io can't close a socket stuck in a TLS handshake. | `clients/lichtspiel/lib/api.dart:173` (a `shortcut:` comment) | Nothing simple in dart:io today; revisit when it gains a handshake timeout. One leaked socket per failed try. |
-| `?token=` in addresses is still accepted, for older clients and scripts. | `src/server.rs:2663-2667` | Log when it is used, then drop it once the Flutter app and scripts are all on `X-Token`. Keep `?ticket=`. |
+| `?token=` in addresses is still accepted, for older clients and scripts. Since 2026-11-21 each use is written to the server log (once an hour per user and device, with the address but not the token; the web app's sign-in link `/?token=` is not counted). | `src/server.rs` (`note_token_in_address`) | Watch the log for a while; once nothing shows up, drop `?token=`. Keep `?ticket=`. |
 
 ## Testing on real hardware
 
