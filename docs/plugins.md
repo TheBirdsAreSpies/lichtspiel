@@ -55,3 +55,5 @@ New plugins start switched off; switch them on in the **Plugins** page (where th
 errors and a log of recent runs are shown too). Any language works — the Docker image includes
 Python 3.
 
+
+Plugins planned next, in order: [plugin-ideas.md](plugin-ideas.md).
