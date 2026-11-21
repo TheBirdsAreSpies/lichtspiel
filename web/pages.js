@@ -1381,6 +1381,8 @@ function itemMenu(it, anchor, changed = () => {}, opts = {}) {
     it.type === 'clip' ? null : { label: it.watchlist ? t('Remove from watchlist') : t('Add to watchlist'), run: async () => { await toggleWatchlist(it); changed(); } },
     { label: t('Add to …'), run: () => addToDialog(it, changed) },
     { label: watched ? t('Mark as unwatched') : t('Mark as watched'), run: () => markWatched([it], !watched, changed) },
+    // Started (part watched, some episodes seen): it can also go back to not watched at all.
+    !watched && (it.viewOffset > 0 || it.viewedLeafCount > 0) ? { label: t('Mark as unwatched'), run: () => markWatched([it], false, changed) } : null,
     '-',
     admin ? { label: t('Refresh metadata'), run: async () => {
       toast(t('Downloading details…'));
