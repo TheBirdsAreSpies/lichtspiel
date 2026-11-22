@@ -68,8 +68,37 @@ class Lists(unittest.TestCase):
         self.assertEqual(cache["the-godfather"], {"tmdb": 238, "imdb": "tt0068646"})
         self.assertNotIn("untitled-2", cache)
 
+    def test_wikidata_is_asked_once_a_week_and_its_last_answer_used_while_it_does_not_answer(self):
+        asked = []
+
+        def fake_ask(award):
+            asked.append(award)
+            if len(asked) > 1:
+                raise main.urllib.error.HTTPError("https://query.wikidata.org/sparql", 429, "Too Many Requests", {}, None)
+            return [{"imdb": "tt0068646", "tmdb": 238}]
+        cache = {}
+        with mock.patch.object(main, "ask_wikidata", fake_ask):
+            self.assertEqual(main.wikidata_award("Q102427", cache), [{"imdb": "tt0068646", "tmdb": 238}])
+            self.assertEqual(main.wikidata_award("Q102427", cache), [{"imdb": "tt0068646", "tmdb": 238}])
+            self.assertEqual(len(asked), 1)
+            cache["wikidata:Q102427"]["at"] -= 8 * 86400
+            # Older than a week: asked again; Wikidata says 429, so the last answer is used.
+            self.assertEqual(main.wikidata_award("Q102427", cache), [{"imdb": "tt0068646", "tmdb": 238}])
+            self.assertEqual(len(asked), 2)
+            # Nothing kept yet: the error is shown.
+            with self.assertRaises(main.urllib.error.HTTPError):
+                main.wikidata_award("Q19020", {})
+
+    def test_a_site_that_says_how_long_to_wait_is_waited_for_at_most_two_minutes(self):
+        def err(after):
+            return main.urllib.error.HTTPError("u", 429, "Too Many Requests", {"Retry-After": after} if after else {}, None)
+        self.assertEqual(main.wait_for(err(None), 0), 5)
+        self.assertEqual(main.wait_for(err("60"), 0), 60)
+        self.assertEqual(main.wait_for(err("3600"), 1), 120)
+        self.assertEqual(main.wait_for(err("Wed, 21 Oct 2026 07:28:00 GMT"), 1), 10)
+
     def test_presets_and_unknown_sources(self):
-        with mock.patch.object(main, "letterboxd_films", lambda url, c, b: [{"url": url}]), mock.patch.object(main, "wikidata_award", lambda a: [{"award": a}]):
+        with mock.patch.object(main, "letterboxd_films", lambda url, c, b: [{"url": url}]), mock.patch.object(main, "wikidata_award", lambda a, c: [{"award": a}]):
             self.assertEqual(main.films_of("imdb-top-250", {}, {}, [0]), [{"url": "https://letterboxd.com/dave/list/imdb-top-250/"}])
             self.assertEqual(main.films_of("oscar-best-picture", {}, {}, [0]), [{"award": "Q102427"}])
             self.assertEqual(main.films_of("https://letterboxd.com/anna/watchlist/", {}, {}, [0]), [{"url": "https://letterboxd.com/anna/watchlist/"}])

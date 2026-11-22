@@ -233,7 +233,9 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   (empty = every movie library). Titles are found by TMDB or IMDb id, else by title and year; only
   titles you have go in. A collection the plugin filled keeps up with its list (titles that leave
   the list leave it), a title put in it by hand stays, and downloading details again does not
-  remove it. A list taken out of the settings empties its collection.
+  remove it. A list taken out of the settings empties its collection. A list that cannot be read
+  leaves its collection as it is; Wikidata is asked once a week, and while it does not answer
+  (it may let programs ask only once a minute) its last answer is used.
   **Letterboxd import**: each person downloads their data on letterboxd.com (Settings → Import &
   Export → Export your data), uploads the ZIP in their panel under **Settings → Account** (in the
   web page) and brings in, each on a click, what they watched (with the dates from their diary

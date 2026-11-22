@@ -13,6 +13,8 @@ Only titles in the library go in. The server puts them in each collection and ta
 plugin put there before that are no longer on the list; collections given by hand stay. A list
 taken out of the settings empties its collection once. Letterboxd films are looked up once (their
 TMDB and IMDb ids) and kept in cache.json; the last run is in state.json, both in the plugin's folder.
+Wikidata's answer is kept there too: asked again after a week, and used as it is while Wikidata
+does not answer (it may limit programs to one request a minute when it is busy).
 """
 import contextlib
 import html
@@ -36,6 +38,7 @@ TIMEOUT = 30
 LETTERBOXD_PAGES = 20          # at most 2,000 films a list
 NEW_LOOKUPS = 400              # Letterboxd film pages looked up a run (the rest the next day)
 PAUSE = 0.3
+WIKIDATA_DAYS = 7               # Wikidata's answer is asked again after a week
 
 PRESETS = {
     "imdb-top-250": ("letterboxd", "https://letterboxd.com/dave/list/imdb-top-250/"),
@@ -93,9 +96,18 @@ def get(url, accept="text/html", headers=None):
             if e.code == 404:
                 return None
             if e.code in (429, 503) and attempt < 2:
-                time.sleep(5 * (attempt + 1))
+                time.sleep(wait_for(e, attempt))
                 continue
             raise
+
+
+def wait_for(e, attempt):
+    """Seconds to wait before asking again: what the site asks for in Retry-After (at most 2 minutes)."""
+    try:
+        asked = int((e.headers or {}).get("Retry-After") or 0)
+    except (TypeError, ValueError):
+        asked = 0
+    return min(max(asked, 5 * (attempt + 1)), 120)
 
 
 def fetch_library(server):
@@ -162,8 +174,25 @@ def letterboxd_ids(slug):
     return {"tmdb": int(tmdb.group(1)) if tmdb else None, "imdb": imdb.group(1) if imdb else None}
 
 
-def wikidata_award(award):
-    """Films that won an award (Wikidata item), with their IMDb and TMDB ids."""
+def wikidata_award(award, cache=None):
+    """Films that won an award (Wikidata item), with their IMDb and TMDB ids. The answer is kept in
+    `cache` for WIKIDATA_DAYS; when Wikidata does not answer, the last one is used however old."""
+    cache = {} if cache is None else cache
+    key = "wikidata:" + award
+    kept = cache.get(key) if isinstance(cache.get(key), dict) else None
+    if kept and time.time() - kept.get("at", 0) < WIKIDATA_DAYS * 86400:
+        return kept["films"]
+    try:
+        films = ask_wikidata(award)
+    except (OSError, ValueError):
+        if kept:
+            return kept["films"]
+        raise
+    cache[key] = {"at": int(time.time()), "films": films}
+    return films
+
+
+def ask_wikidata(award):
     q = ("SELECT ?imdb ?tmdb WHERE { ?film wdt:P31 wd:Q11424; wdt:P166 wd:%s . "
          "OPTIONAL { ?film wdt:P345 ?imdb } OPTIONAL { ?film wdt:P4947 ?tmdb } }" % award)
     text = get("https://query.wikidata.org/sparql?" + urllib.parse.urlencode({"query": q}), "application/sparql-results+json")
@@ -194,7 +223,7 @@ def films_of(source, settings, cache, budget):
     if kind == "letterboxd":
         return letterboxd_films(arg, cache, budget)
     if kind == "wikidata":
-        return wikidata_award(arg)
+        return wikidata_award(arg, cache)
     if kind == "tmdb":
         key = str(settings.get("tmdb_api_key") or "").strip()
         if not key:
