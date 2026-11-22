@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // One playlist: play all or shuffled, rename, show on home, share, delete; its titles as a list, loaded
 // page by page (a smart playlist can hold thousands of episodes), with sorting and filters. In a normal
-// playlist in its own order, the titles move up and down and come out again.
-// (The rules of a smart playlist are edited in the classic web app for now.)
+// playlist in its own order, the titles move up and down and come out again. A smart playlist's rules are
+// edited here too (SmartEditor).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, get, list, picture, type Item, type Playlist } from '../api';
@@ -12,6 +12,7 @@ import { playAll, smartShuffle } from '../queue';
 import AskDialog from '../components/AskDialog.vue';
 import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
+import SmartEditor from '../components/SmartEditor.vue';
 
 const props = defineProps<{ id: string }>();
 const route = useRoute();
@@ -76,6 +77,7 @@ async function more() {
 function restart() { seq++; items.value = []; total.value = null; loading.value = false; more(); }
 watch(() => route.query, restart);
 const reload = () => { loadPlaylist(); restart(); };
+const editingRules = ref(false);
 
 const inView = () => { const el = sentinel.value; return !!el && el.getBoundingClientRect().top < innerHeight + 900; };
 let io: IntersectionObserver | null = null;
@@ -139,7 +141,7 @@ const rowInfo = (it: Item) => [it.type === 'track' ? it.parentTitle : null, it.y
         <button v-if="editable" @click="togglePin">{{ pl.pinned ? t('Remove from home') : t('Show on home') }}</button>
         <button v-if="editable && !pl.default" @click="toggleShare">{{ pl.shared ? t('Stop sharing') : t('Share with everyone') }}</button>
         <button v-if="pl.smart" @click="copy">{{ t('Save as normal playlist') }}</button>
-        <a v-if="pl.smart && editable" class="btn" :href="'/#/playlist/' + pl.id">{{ t('Edit rules') }} ↗</a>
+        <button v-if="pl.smart && editable" @click="editingRules = true">{{ t('Edit rules') }}</button>
         <button v-if="editable && !pl.default" class="danger" @click="deleting = true">{{ t('Delete') }}</button>
       </div>
       <div class="lib-bar tools">
@@ -176,6 +178,7 @@ const rowInfo = (it: Item) => [it.type === 'track' ? it.parentTitle : null, it.y
       <p v-if="total === 0" class="empty">{{ manual && !(type || watched || route.query.q) ? t('Empty. Open a movie or episode and use "Add to playlist".') : t('Nothing matches these rules right now.') }}</p>
       <div ref="sentinel" class="sentinel"></div>
       <AskDialog v-if="renaming" :title="t('New name')" :value="plTitle(pl)" @done="rename" />
+      <SmartEditor v-if="editingRules" :pl="pl" @close="editingRules = false" @saved="reload" />
       <Modal v-if="deleting" :title="t('Delete this playlist?')" @close="deleting = false">
         <p>{{ plTitle(pl) }}</p>
         <template #actions>

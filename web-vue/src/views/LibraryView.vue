@@ -7,8 +7,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { get, list, picture, session, type Group, type Item } from '../api';
-import { chipLabel, fromQuery } from '../filters';
+import { chipLabel, fromQuery, type Rule } from '../filters';
 import { t } from '../i18n';
+import AdvancedFilters from '../components/AdvancedFilters.vue';
 import FilterButton from '../components/FilterButton.vue';
 import PosterCard from '../components/PosterCard.vue';
 
@@ -25,6 +26,11 @@ const section = computed(() => session.sections.find(s => String(s.id) === props
 const kept = (() => { try { return JSON.parse(localStorage.getItem('vue-lib:' + props.id) || '{}'); } catch { return {}; } })();
 const sort = ref<string>(kept.sort || 'title:asc');
 const active = computed(() => fromQuery(route.query));
+// The advanced filters (rules) in the address: ?rules=[{field, op, value}…]&rmatch=any.
+const rulesText = computed(() => (typeof route.query.rules === 'string' ? route.query.rules : ''));
+const rmatch = computed(() => route.query.rmatch === 'any');
+const rules = computed<Rule[]>(() => { try { return rulesText.value ? JSON.parse(rulesText.value) : []; } catch { return []; } });
+const advancedOpen = ref(false);
 const q = ref('');
 const items = ref<Item[]>([]);
 const total = ref<number | null>(null);
@@ -38,6 +44,7 @@ function url(start: number) {
   for (const [f, v] of Object.entries(active.value)) p.set(f, v);
   if (q.value.trim()) p.set('q', q.value.trim());
   if (collection.value) p.set('collection', collection.value);
+  if (rules.value.length) { p.set('rules', rulesText.value); if (rmatch.value) p.set('rmatch', 'any'); }
   return `/library/sections/${props.id}/all?${p}`;
 }
 
@@ -58,11 +65,11 @@ async function more() {
 function restart() {
   seq++; items.value = []; total.value = null; loading.value = false; error.value = '';
   // (Not while the collections show: their address has no filters, and the kept ones stay.)
-  if (!tab.value) try { localStorage.setItem('vue-lib:' + props.id, JSON.stringify({ sort: sort.value, filters: active.value })); } catch { /* none */ }
+  if (!tab.value) try { localStorage.setItem('vue-lib:' + props.id, JSON.stringify({ sort: sort.value, filters: active.value, rules: rulesText.value, rmatch: rmatch.value })); } catch { /* none */ }
   more();
 }
 let typing = 0;
-watch([sort, () => JSON.stringify(active.value), collection], restart);
+watch([sort, () => JSON.stringify(active.value), collection, rulesText, rmatch], restart);
 
 /** Puts a filter on (or takes it off with ''); the collections tab gives way to the titles. */
 function setFilter(f: string, v: string) {
@@ -71,21 +78,33 @@ function setFilter(f: string, v: string) {
   if (v) q['f.' + f] = v;
   router.replace({ query: q });
 }
+/** Kept filters as an address query (?f.genre=…, the rules). */
+function asQuery(k: { filters?: Record<string, string>, rules?: string, rmatch?: boolean }): Record<string, string> {
+  const q: Record<string, string> = Object.fromEntries(Object.entries(k.filters || {}).map(([f, v]) => ['f.' + f, v]));
+  if (k.rules) { q.rules = k.rules; if (k.rmatch) q.rmatch = 'any'; }
+  return q;
+}
 /** The kept filters as an address query, for going back from the collections to the titles. */
 function keptQuery(): Record<string, string> {
-  let f: Record<string, string> = {};
-  try { f = JSON.parse(localStorage.getItem('vue-lib:' + props.id) || '{}').filters || {}; } catch { /* none */ }
-  return Object.fromEntries(Object.entries(f).map(([k, v]) => ['f.' + k, v]));
+  try { return asQuery(JSON.parse(localStorage.getItem('vue-lib:' + props.id) || '{}')); } catch { return {}; }
 }
 function clearFilters() {
   const q: Record<string, string> = {};
-  for (const [k, x] of Object.entries(route.query)) if (typeof x === 'string' && !k.startsWith('f.')) q[k] = x;
+  for (const [k, x] of Object.entries(route.query)) if (typeof x === 'string' && !k.startsWith('f.') && k !== 'rules' && k !== 'rmatch') q[k] = x;
+  router.replace({ query: q });
+}
+/** Applies the advanced filters (none: takes them off). */
+function setRules(list: Rule[], any: boolean) {
+  advancedOpen.value = false;
+  const q: Record<string, string> = {};
+  for (const [k, x] of Object.entries(route.query)) if (typeof x === 'string' && k !== 'tab' && k !== 'rules' && k !== 'rmatch') q[k] = x;
+  if (list.length) { q.rules = JSON.stringify(list); if (any) q.rmatch = 'any'; }
   router.replace({ query: q });
 }
 // Opened without a choice: the filters of the last visit come back (an older "unwatched" tick too).
 const saved: Record<string, string> = kept.filters || (kept.unwatched ? { [section.value && section.value.type === 'show' ? 'unwatched_leaves' : 'unwatched']: 'true' } : {});
-const restoring = !tab.value && !collection.value && !Object.keys(active.value).length && Object.keys(saved).length > 0;
-if (restoring) router.replace({ query: Object.fromEntries(Object.entries(saved).map(([k, v]) => ['f.' + k, v])) });
+const restoring = !tab.value && !collection.value && !Object.keys(active.value).length && !rulesText.value && (Object.keys(saved).length > 0 || !!kept.rules);
+if (restoring) router.replace({ query: asQuery({ filters: saved, rules: kept.rules, rmatch: kept.rmatch }) });
 watch(q, () => { clearTimeout(typing); typing = window.setTimeout(restart, 300); });
 
 const inView = () => { const el = sentinel.value; return !!el && el.getBoundingClientRect().top < innerHeight + 600; };
@@ -135,7 +154,7 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
           <select v-model="sort" :aria-label="t('Sort')">
             <option v-for="[v, l] in SORTS" :key="v" :value="v">{{ t(l) }}</option>
           </select>
-          <FilterButton :url="`/library/sections/${id}/filters`" :active="active" :remember-key="'vue-libFilter:' + id" @set="setFilter" />
+          <FilterButton :url="`/library/sections/${id}/filters`" :active="active" :remember-key="'vue-libFilter:' + id" :advanced="rules.length" @set="setFilter" @advanced="advancedOpen = true" />
         </div>
       </div>
       <div v-if="!collection" class="tabs flat">
@@ -159,10 +178,12 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
         <p v-else class="empty">{{ t('No collections yet. Film series are added when details are downloaded; add your own under Edit details → Collections.') }}</p>
       </template>
       <template v-else>
-      <div v-if="Object.keys(active).length" class="chips">
+      <div v-if="Object.keys(active).length || rules.length" class="chips">
         <button v-for="(v, f) in active" :key="f" class="chip" :title="t('Remove this filter')" @click="setFilter(String(f), '')">{{ chipLabel(String(f), v) }} <span aria-hidden="true">×</span></button>
-        <button v-if="Object.keys(active).length > 1" class="linkbtn" @click="clearFilters">{{ t('Clear filters') }}</button>
+        <button v-if="rules.length" class="chip" :title="t('Advanced filters')" @click="advancedOpen = true">{{ t('Advanced filters ({n})', { n: rules.length }) }}</button>
+        <button v-if="Object.keys(active).length + (rules.length ? 1 : 0) > 1" class="linkbtn" @click="clearFilters">{{ t('Clear filters') }}</button>
       </div>
+      <AdvancedFilters v-if="advancedOpen" :rules="rules" :any="rmatch" @close="advancedOpen = false" @apply="setRules" />
       <div class="grid">
         <PosterCard v-for="it in items" :key="it.id" :item="it" />
         <template v-if="loading && !items.length"><div v-for="n in 12" :key="n" class="card ph"><div class="poster skel"></div></div></template>

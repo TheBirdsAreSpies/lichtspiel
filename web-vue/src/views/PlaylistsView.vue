@@ -8,6 +8,7 @@ import { fmtDur, kindName, plTitle } from '../format';
 import { t } from '../i18n';
 import { playAll } from '../queue';
 import AskDialog from '../components/AskDialog.vue';
+import SmartEditor from '../components/SmartEditor.vue';
 import Icon from '../components/Icon.vue';
 
 const route = useRoute();
@@ -25,6 +26,7 @@ const q = ref(str(route.query.title));
 const pls = ref<Playlist[] | null>(null);
 const error = ref('');
 const asking = ref(false);
+const smartNew = ref(false);
 
 function go(change: Record<string, string>) {
   const next: Record<string, string> = { kind: kind.value, owner: owner.value, sort: sort.value, title: q.value.trim(), ...change };
@@ -81,6 +83,7 @@ async function make(name: string | null) {
           <option v-for="[v, l] in SORTS" :key="v" :value="v">{{ t(l) }}</option>
         </select>
         <button class="primary" @click="asking = true">{{ t('+ New playlist') }}</button>
+        <button class="primary" @click="smartNew = true">{{ t('+ New smart playlist') }}</button>
       </div>
     </div>
     <p v-if="error" class="err">{{ error }}</p>
@@ -99,5 +102,6 @@ async function make(name: string | null) {
     </div>
     <p v-else class="empty">{{ t('No playlists match.') }}</p>
     <AskDialog v-if="asking" :title="t('Name of the new playlist')" :ok="t('Create')" @done="make" />
+    <SmartEditor v-if="smartNew" @close="smartNew = false" />
   </div>
 </template>

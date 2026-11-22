@@ -24,6 +24,8 @@ export interface Item {
 export interface Playlist {
   id: number, title: string, summary?: string, kind: 'manual' | 'smart' | 'default', smart?: boolean, default?: boolean,
   leafCount: number, duration?: number, thumbs?: string[], owner?: string, shared?: boolean, pinned?: boolean, editable?: boolean,
+  /** A smart playlist's rules. */
+  query?: { match_all: boolean, rules: { field: string, op: string, value: unknown }[], sort: string, limit: number | null, sections: number[] },
 }
 /** A collection or category of a library (GET /library/sections/{id}/collections). */
 export interface Group { title: string, thumb?: string, childCount: number, viewedLeafCount?: number }

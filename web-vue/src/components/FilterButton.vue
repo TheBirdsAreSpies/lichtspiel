@@ -1,14 +1,15 @@
 <script setup lang="ts">
 // The "Filter" button of a library and its panel: the kinds of filter on the left (a state such as
 // "Unwatched" switches at once), the values of the chosen kind on the right, with a search box.
-// Emits set(filter, value); an empty value takes the filter off.
+// Emits set(filter, value); an empty value takes the filter off. With `advanced` (the number of advanced
+// rules on), the panel ends with "Advanced filters…", which emits advanced.
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { t } from '../i18n';
 import { filterName, loadFilters, MAIN, STATE, valueName, type Filter } from '../filters';
 import Icon from './Icon.vue';
 
-const props = defineProps<{ url: string, active: Record<string, string>, rememberKey: string }>();
-const emit = defineEmits<{ set: [string, string] }>();
+const props = defineProps<{ url: string, active: Record<string, string>, rememberKey: string, advanced?: number }>();
+const emit = defineEmits<{ set: [string, string], advanced: [] }>();
 const open = ref(false);
 const filters = ref<Filter[] | null>(null);
 const error = ref('');
@@ -17,7 +18,7 @@ const needle = ref('');
 const root = ref<HTMLElement | null>(null);
 const LIMIT = 300;
 
-const n = computed(() => Object.keys(props.active).length);
+const n = computed(() => Object.keys(props.active).length + (props.advanced ? 1 : 0));
 async function toggle() {
   open.value = !open.value;
   if (!open.value) return;
@@ -77,6 +78,10 @@ onBeforeUnmount(() => { document.removeEventListener('pointerdown', outside, tru
               <span>{{ filterName(f.filter) }}</span>
               <small class="dim">{{ f.type === 'boolean' ? (active[f.filter] ? '✓' : f.count ?? '') : active[f.filter] ? valueName(f.filter, active[f.filter]).slice(0, 14) : '›' }}</small>
             </button>
+          </template>
+          <template v-if="advanced !== undefined">
+            <hr>
+            <button class="fp-item" :class="{ on: advanced }" @click="open = false; emit('advanced')"><span>{{ t('Advanced filters…') }}</span><small class="dim">{{ advanced || '' }}</small></button>
           </template>
         </div>
         <div class="fp-right">

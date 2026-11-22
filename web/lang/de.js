@@ -586,6 +586,8 @@ I18N.add('de', 'Deutsch', {
     'Whether the "Skip credits" mark is searched for in this title.': 'Ob für diesen Titel die Marke für „Abspann überspringen“ gesucht wird.',
     'Poster': 'Plakat',
     'Pictures': 'Bilder',
+    'Field': 'Feld',
+    'Operator': 'Bedingung',
     'Background': 'Hintergrund',
     'Logo': 'Logo',
     'Square poster': 'Quadrat-Poster',

@@ -49,3 +49,13 @@ export function loadFilters(url: string): Promise<Filter[]> {
   p.catch(() => cache.delete(url));
   return p;
 }
+
+/** The fields and operators the server's rules know (GET /api/filters): smart playlists and the advanced
+ * library filters use them. Asked for once per page load. */
+export interface RuleField { field: string, label: string, type: 'text' | 'number' | 'date' | 'bool' | 'sort' }
+export interface Rule { field: string, op: string, value: unknown }
+let fieldsP: Promise<{ fields: RuleField[], operators: { op: string, label: string }[] }> | null = null;
+export function ruleFields() {
+  if (!fieldsP) { fieldsP = get('/api/filters'); fieldsP.catch(() => { fieldsP = null; }); }
+  return fieldsP;
+}

@@ -36,12 +36,12 @@ Some server tests need ffmpeg on the PATH and skip themselves without it.
 `web-vue/` is a second web app next to `web/`, served at `/vue/` (hash addresses: `/vue/#/item/12`).
 It talks to the same JSON API and keeps the sign-in under the same keys as `web/`, so both share it.
 So far it has signing in (password, two-step code, home profiles, first setup), home, libraries with
-their filters (`?f.genre=…`, `web-vue/src/filters.ts`) and collections, a title's page (with "Add to …"
+their filters (`?f.genre=…`, `web-vue/src/filters.ts`; advanced rules as `?rules=[…]`) and collections, a title's page (with "Add to …"
 a playlist or collection, the choice of version, and "Edit details" for the owner), people, search, the player (with quality, speed, night mode, chapters, a still preview on the seek bar, skipping
 intro, recap and credits, the countdown to the next episode, "Are you still watching?", the sleep timer,
 "What happened so far", subtitle timing for the owner and the keyboard shortcuts on `?`), your own settings (account, playback, devices,
 Trakt, watchlist feed; saved under the classic app's names, so both use them), the
-watchlist and playlists (playing one goes on through it: `web-vue/src/queue.ts`); the rest is still
+watchlist and playlists (smart ones with their rules; playing one goes on through it: `web-vue/src/queue.ts`); the rest is still
 only in `web/` (see [todo.md](todo.md)).
 
 - `build.rs` puts every file of `web-vue/dist` into the program (`VUE_FILES`, served by `vue_file` in
