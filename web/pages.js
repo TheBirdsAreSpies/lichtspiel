@@ -427,7 +427,7 @@ async function plexSyncPanel() {
       t('Only needed when Plex sees the videos under other paths than this server (e.g. /data/Filme there, /media/Filme here). Test connection lists the folders of Plex, choose the matching folder here for each.'), true),
     formRow(t('Sync'), h('div', { class: 'checks' }, box('watched', t('Watched')), box('resume', t('Resume points')), box('ratings', t('Ratings')), box('markers', t('Intro and credits markers (from Plex)')), box('matches', t('Online match of titles (from Plex)')))),
     formRow(t('Direction'), dir, t('With one direction only, the master side is copied as it is: a video unwatched on the master becomes unwatched on the other side too, and nothing is ever sent the other way.')),
-    formRow(t('Automatically'), h('label', { style: 'display:flex;gap:8px;align-items:center;margin:0' }, on, t('every'), every, t('minutes'))),
+    formRow(t('Automatically'), h('label', { style: 'display:flex;gap:8px;align-items:center;margin:0' }, on, h('span', { class: 'nowrap' }, t('every')), every, h('span', { class: 'nowrap' }, t('minutes')))),
     h('div', { class: 'actions' },
       h('button', { onclick: test }, t('Test connection')),
       h('button', { onclick: async () => { try { await save(); await api('POST', '/api/plex-sync/run'); showLast(null, true); pollActivity(); wait(); } catch (e) { toast(e.message, 6000); } } }, t('Sync now')),
