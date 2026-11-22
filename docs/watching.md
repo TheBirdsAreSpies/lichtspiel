@@ -31,7 +31,9 @@ file gets its music from its own episodes: inside the maintenance window the ser
 one episode (the first with a found intro of 10 s to 3 min, specials last) and keeps it as
 `data/themes/{show}.m4a`. It is cut again only when that intro changes. Switch this off under
 **Settings → Scheduled tasks → Theme music from show intros**. Turn the playing off under
-**Settings → Web → Play theme music**. Browsers may need one click on the page first.
+**Settings → Web → Play theme music**. Browsers may need one click on the page first. While it plays,
+the speaker button in the top bar mutes it; muted stays for the next pages in this browser until you
+unmute it there.
 
 ## Skip intro (TV shows)
 

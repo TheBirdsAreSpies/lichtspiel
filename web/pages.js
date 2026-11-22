@@ -2240,20 +2240,17 @@ function fadeTheme(a) {
   };
   step();
 }
-// The round speaker button at the bottom right, shown while a page's theme music plays: mutes it and unmutes
-// it again. Muted stays for the next pages too (this browser), until it is unmuted.
+// The speaker button in the top bar, shown while a page's theme music plays: mutes it and unmutes it again.
+// Muted stays for the next pages too (this browser), until it is unmuted.
 function themeButton(show) {
-  let b = THEME.btn;
-  if (!b && !show) return;
-  if (!b) {
-    b = THEME.btn = h('button', { class: 'themebtn', onclick: () => {
-      const muted = store.get('themeMuted', '0') !== '1';
-      store.set('themeMuted', muted ? '1' : '0');
-      if (THEME.audio) THEME.audio.muted = muted;
-      themeButton(true);
-    } });
-    document.body.append(b);
-  }
+  const b = document.getElementById('themebtn');
+  if (!b) return;
+  if (!b.onclick) b.onclick = () => {
+    const muted = store.get('themeMuted', '0') !== '1';
+    store.set('themeMuted', muted ? '1' : '0');
+    if (THEME.audio) THEME.audio.muted = muted;
+    themeButton(true);
+  };
   b.style.display = show ? '' : 'none';
   const muted = store.get('themeMuted', '0') === '1', label = muted ? t('Theme music on') : t('Mute theme music');
   b.replaceChildren(icon(muted ? 'mute' : 'vol')); b.title = label; b.setAttribute('aria-label', label);

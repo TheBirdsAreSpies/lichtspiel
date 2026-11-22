@@ -347,9 +347,9 @@ button.profile:hover .avatar,button.profile:focus-visible .avatar{border-color:v
 .err{color:var(--red);margin-top:10px;min-height:20px}
 .ok{color:var(--green)}
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);padding:10px 18px;border-radius:8px;display:none;z-index:30;align-items:center;gap:16px;max-width:calc(100vw - 24px)}
-.themebtn{position:fixed;right:22px;bottom:22px;z-index:15;width:44px;height:44px;border-radius:50%;padding:0;display:flex;align-items:center;justify-content:center;background:var(--panel2);border:1px solid var(--line);color:var(--text);box-shadow:0 4px 16px rgba(0,0,0,.4)}
-.themebtn svg{width:22px;height:22px;fill:currentColor}
-.themebtn:hover{color:var(--accent)}
+#themebtn{display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:36px;height:36px;padding:0;background:none;border:0;border-radius:50%;color:var(--dim)}
+#themebtn:hover{color:var(--text);background:var(--panel2)}
+#themebtn svg{width:22px;height:22px;fill:currentColor}
 #toast button{flex:none;background:none;border:0;color:var(--accent);font-weight:600;padding:4px 6px;margin:-4px -8px -4px 0}
 #player{position:fixed;inset:0;background:#000;z-index:20;display:none;flex-direction:column;--cue:100%;user-select:none;color:#fff}
 #player video{position:absolute;inset:0;width:100%;height:100%;background:#000}
@@ -691,7 +691,6 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   #tabbar svg{width:24px;height:24px;fill:currentColor}
   #tabbar a.on,body.nav-open #tabmenu{color:var(--accent)}
   body:has(#tabbar) #navbtn{display:none}
-  .themebtn{bottom:74px;right:14px}
   body:has(#side[style*="none"]) #tabbar{display:none}
   /* the open menu and the dimmed page leave the bar free, so its menu button closes the menu again */
   body.nav-open #side,body.nav-open::after{bottom:58px}
@@ -787,6 +786,7 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   <div id="search" class="clr"><input id="q" placeholder="Search movies and shows" data-t-placeholder="Search movies and shows" autocomplete="off"></div>
   <div id="activity" title="Background work on the server" data-t-title="Background work on the server"></div>
   <a id="npbtn" href="#/dashboard" style="display:none" title="Dashboard" data-t-title="Dashboard" aria-label="Dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-8 6 16 3-8h4"/></svg><b></b></a>
+  <button id="themebtn" type="button" style="display:none"></button>
   <div id="who"></div>
 </div>
 <nav id="side">
