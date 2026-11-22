@@ -102,6 +102,12 @@ pub(super) fn routes(app: &Arc<App>, ctx: &Ctx, user: &db::User, m: &str, segs: 
         ("GET", ["api", "preroll"]) => crate::api::handlers::preroll(app, ctx),
         ("GET", ["api", "preroll", n, "file"]) => crate::api::handlers::preroll_file(app, ctx, n),
         ("GET", ["api", "rss"]) | ("POST", ["api", "rss"]) => crate::connect::rss::manage(app, ctx, user.id),
+        ("GET", ["api", "short"]) => {
+            let minutes = ctx.num("minutes").unwrap_or(30).clamp(1, 600);
+            let db = app.db.lock().unwrap();
+            let ids = crate::api::dashboard::short_ids(&db, &user, minutes, ctx.num("limit").unwrap_or(30).clamp(1, 200) as usize);
+            list_resp(&db, &user, &ids, "short")
+        }
         ("GET", ["api", "watchlist"]) => {
             let db = app.db.lock().unwrap();
             let ids = crate::api::dashboard::watchlist_ids(&db, &user, ctx.param("sort").unwrap_or(""), ctx.param("type").and_then(ItemKind::parse));

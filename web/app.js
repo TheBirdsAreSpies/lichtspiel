@@ -867,7 +867,7 @@ function scroller(cls, kids) {
   return h('div', { class: 'rowwrap' }, l, row, r);
 }
 // Row titles come from the server in English ("Continue Watching", "More by …").
-const row = (title, items) => items.length ? [h('h2', {}, t(title)), scroller('row', items.map(i => posterCard(i, { cont: title === 'Continue Watching' })))] : null;
+const row = (title, items, extra) => items.length ? [h('h2', {}, t(title), extra || null),scroller('row', items.map(i => posterCard(i, { cont: title === 'Continue Watching' })))] : null;
 
 // ---------- home, search, browse
 // Grey placeholders while a list loads, only when it takes a moment (a quick answer would just flicker).
@@ -1059,7 +1059,10 @@ async function homePage() {
   if (spot) spot._key = key;
   S.hadSpot = !!spot;
   const shown = orderedHubs(hubs, lay).filter(hb => !lay.hidden.includes(hb.hubIdentifier));
-  const rows = [shown.length ? shown.map(hb => hb.coming ? comingRow(hb) : row(hb.title, hb.Metadata)) : h('div', { class: 'empty' }, hubs.length ? t('All rows are hidden.') : t('Nothing here yet. Libraries are still being scanned, or they are empty.')),
+  // "Something short" sits on the first row it picks from (what you are watching, or the watchlist).
+  const shortOn = shown.find(hb => ['continueWatching', 'watchlist'].includes(hb.hubIdentifier));
+  const shortBtn = () => h('button', { class: 'small h2btn', onclick: shortDialog }, t('⏱ Something short'));
+  const rows = [shown.length ? shown.map(hb => hb.coming ? comingRow(hb) : row(hb.title, hb.Metadata, hb === shortOn ? shortBtn() : null)): h('div', { class: 'empty' }, hubs.length ? t('All rows are hidden.') : t('Nothing here yet. Libraries are still being scanned, or they are empty.')),
     hubs.length ? h('div', { class: 'home-edit' }, h('button', { class: 'small', onclick: () => editHome(hubs) }, t('Customize home'))) : null];
   // The kept banner stays in the page (taken out and put back, its running bar would start over): only the rows change.
   if (spot && spot === old) {

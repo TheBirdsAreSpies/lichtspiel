@@ -52,9 +52,6 @@ Collected on 2026-11-22.
   a skip button.
 - **"What happened so far":** after weeks away from a show, a button that plays the last minutes
   of the previous episode.
-- **"Something short":** say how much time there is (e.g. 40 minutes) and get fitting episodes or
-  short movies from what you are watching or have on the watchlist.
-- **Random night:** a dice button on a library page that keeps the active filters.
 
 ### From earlier
 

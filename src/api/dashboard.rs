@@ -34,6 +34,34 @@ pub fn watchlist_ids(db: &Db, user: &User, sort: &str, kind: Option<ItemKind>) -
     list.into_iter().map(|x| x.0).collect()
 }
 
+/// "Something short": what fits into `minutes`, from what this person is watching (titles begun and
+/// the next episode of their shows) and from their watchlist (a show or season there gives its next
+/// unseen episode). What is left to watch counts, so a movie half seen fits into less time.
+/// What is being watched comes first, then the watchlist in its order; at most `limit`.
+pub fn short_ids(db: &Db, user: &User, minutes: u64, limit: usize) -> Vec<u64> {
+    let max_ms = minutes.saturating_mul(60_000);
+    let next_of = |id: u64| -> Option<u64> {
+        let it = db.items.get(&id)?;
+        if it.kind.playable() { return Some(id); }
+        let mut eps = db.leaves(id);
+        crate::library::query::sort_items(db, user.id, &mut eps, "episode_order");
+        eps.into_iter().find(|e| db.view(user.id, *e).view_count == 0)
+    };
+    let watching = continue_watching(db, user);
+    let listed = watchlist_ids(db, user, "", None).into_iter().filter_map(next_of);
+    let mut out = vec![];
+    for id in watching.into_iter().chain(listed) {
+        if out.contains(&id) { continue; }
+        let Some(it) = db.items.get(&id) else { continue };
+        if !matches!(it.kind, ItemKind::Movie | ItemKind::Episode | ItemKind::Video) || it.hidden() || it.duration_ms == 0 { continue; }
+        let left = it.duration_ms.saturating_sub(db.view(user.id, id).view_offset_ms);
+        if left == 0 || left > max_ms { continue; }
+        out.push(id);
+        if out.len() >= limit { break; }
+    }
+    out
+}
+
 /// Puts items on the watchlist or takes them off; returns how many changed.
 pub fn set_watchlist(db: &mut Db, user: &User, ids: &[u64], on: bool) -> Result<usize, Resp> {
     for id in ids {
@@ -391,5 +419,28 @@ mod tests {
         db.view_mut(1, 23).view_count = 1;
         db.record_play(1, 23, false);
         assert!(watchlist_ids(&db, &user, "", None).is_empty());
+    }
+
+    #[test]
+    fn something_short_from_what_is_watched_and_the_watchlist() {
+        let (mut db, user) = setup();
+        db.items.get_mut(&10).unwrap().duration_ms = 90 * 60000;
+        for (id, ix) in [(22, 1), (23, 2)] {
+            let e = db.items.get_mut(&id).unwrap();
+            e.duration_ms = 25 * 60000;
+            e.index = Some(ix);
+        }
+        let t = now();
+        db.view_mut(1, 20).watchlist_at = 1;
+        db.view_mut(1, 10).watchlist_at = 2;
+        // Nothing begun: the show on the watchlist gives its first episode; the movie is too long.
+        assert_eq!(short_ids(&db, &user, 30, 10), vec![22]);
+        // Episode 1 seen, the movie seen up to 20 minutes before its end.
+        { let v = db.view_mut(1, 22); v.view_count = 1; v.last_viewed_at = t - 100; }
+        { let v = db.view_mut(1, 10); v.view_offset_ms = 70 * 60000; v.last_viewed_at = t - 10; }
+        assert_eq!(short_ids(&db, &user, 30, 10), vec![10, 23]);
+        assert_eq!(short_ids(&db, &user, 22, 10), vec![10]);
+        assert_eq!(short_ids(&db, &user, 30, 1), vec![10]);
+        assert!(short_ids(&db, &user, 15, 10).is_empty());
     }
 }

@@ -61,6 +61,14 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   (its chip takes it off again). A movie page shows rows of other editions of the same
   film, related movies, **More by** the director and **More with** each of the first two actors
   (shows: related shows and More with).
+- **Random night** — the 🎲 button next to the sorting on a library page picks one title at
+  random from what the active filters leave (e.g. unwatched comedies from the 90s) and shows it
+  with its description: play it, open it, or throw again.
+- **Something short** — **⏱ Something short** on the home page (on the Continue Watching row, else
+  on the Watchlist row): say how much time there is (20, 30, 45, 60, 90 minutes or your own) and
+  get what fits into it, from what you are watching (a title begun counts with the time left,
+  the next episode of your shows) and from your watchlist (a show there gives its next unseen
+  episode). `GET /api/short?minutes=40`.
 - **The "⋯" menu** on every poster and on a title's page: **Watch together** (tick people
   registered here, who get the invitation in the app, or send a link; whoever plays, pauses or
   jumps moves everyone), Share, Add to queue, Add to (playlist or collection),

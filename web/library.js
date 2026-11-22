@@ -261,6 +261,14 @@ async function sectionPage(id, qs) {
   const sortBtn = dropBtn(sortName(sortNow.field), () => sortFields.map(([f]) => ({ label: sortName(f), checked: f === sortNow.field, run: () => { st.sort = f + ':' + (SORT_ASC.has(f) ? 'asc' : 'desc'); go(); } })), { title: t('Sort') });
   const dirBtn = h('button', { class: 'dirbtn', title: sortNow.desc ? t('Descending') : t('Ascending'), 'aria-label': sortNow.desc ? t('Descending') : t('Ascending'),
     onclick: () => { st.sort = sortNow.field + ':' + (sortNow.desc ? 'asc' : 'desc'); go(); } }, sortNow.desc ? '↓' : '↑');
+  // ----- the dice: one title at random from what the filters leave
+  const randomPick = async () => {
+    try {
+      const it = meta(await GET(listUrl(Math.floor(Math.random() * total), 1)))[0];
+      if (it) randomDialog(it, randomPick);
+    } catch (e) { toast(e.message); }
+  };
+  const diceBtn = total > 1 ? h('button', { class: 'dirbtn', title: t('Pick one at random'), 'aria-label': t('Pick one at random'), onclick: randomPick }, '🎲') : null;
   // ----- the posters: the first page now, more while scrolling, a jump from the side letters
   const caption = captionFor(sortNow.field);
   const cardOpts = { episodeThumb: st.type === 'episode', caption };
@@ -394,7 +402,7 @@ async function sectionPage(id, qs) {
   const tools = h('div', { class: 'bar-tools' + (optSet ? ' open' : '') },
     sec.type === 'show' ? pick('type', [['', t('Shows')], ['season', t('Seasons')], ['episode', t('Episodes')]]) : null,
     sec.type === 'music' ? pick('type', [['', t('Artists')], ['album', t('Albums')], ['track', t('Songs')]]) : null,
-    filterBtn, sortBtn, dirBtn,
+    filterBtn, sortBtn, dirBtn, diceBtn,
     h('button', { class: 'dd toolsmore' + (optSet ? ' on' : ''), 'aria-expanded': String(optSet), onclick: e => {
       const open = tools.classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', String(open));
     } }, t('More'), icon('down')),
@@ -512,5 +520,64 @@ async function sectionSubPage(sec, tab, tabs) {
       h('div', { class: 'dim' }, [pl.smart ? t('Smart playlist') : t('Playlist'), t('{n} items', { n: pl.leafCount ?? 0 }), pl.duration ? fmtDur(pl.duration) : null].filter(Boolean).join(' · '))))))
     : h('div', { class: 'empty' }, t('No playlists with anything from this library yet.')));
 }
+// A box with posters to pick from closes when one is opened or played (not for its "⋯" menu or the pencil).
+function closeOnOpen(box) {
+  box.addEventListener('click', e => {
+    const el = /** @type {Element} */ (e.target);
+    if (el.closest('a[href^="#/"]') && !el.closest('button.more, button.edit, .pick')) box.remove();
+  }, true);
+}
+
+// The dice of a library page: the title picked, with its description, to play, to open, or to throw again.
+function randomDialog(it, again) {
+  const at = resumeAt(it);
+  const name = it.type === 'episode' ? `${it.grandparentTitle} · ${it.title}` : it.type === 'season' ? `${it.parentTitle} · ${seasonTitle(it.title)}` : it.title;
+  const facts = [it.year, it.type === 'show' ? t('{n} episodes', { n: it.leafCount || 0 }) : it.duration ? fmtDur(it.duration) : '', ...(it.genres || []).slice(0, 3)].filter(Boolean).join(' · ');
+  const close = () => box.remove();
+  const playBtn = isPlayable(it) && !it.missing ? h('button', { class: 'primary', onclick: () => { close(); play(it, at); } }, at ? t('▶ Resume from {time}', { time: fmtTime(at) }) : t('▶ Play'))
+    : (it.type === 'show' || it.type === 'season') && it.leafCount ? h('button', { class: 'primary', onclick: () => { close(); playNextEpisode(it.id); } }, t('▶ Play next episode')) : null;
+  const box = modal(t('At random'), [
+    h('div', { class: 'pickone' }, posterCard(it),
+      h('div', {}, h('h3', {}, name), facts ? h('div', { class: 'dim' }, facts) : null, it.summary ? h('p', { class: 'pick-sum' }, it.summary) : null)),
+    h('div', { class: 'actions', style: 'margin-bottom:0' }, playBtn,
+      h('button', { onclick: () => { close(); location.hash = '#/item/' + it.id; } }, t('More info')),
+      h('button', { onclick: () => { close(); again(); } }, t('🎲 Another one')),
+      h('button', { onclick: close }, t('Close')))]);
+  closeOnOpen(box);
+}
+
+// "Something short": say how much time there is, and get what fits into it from what you are watching
+// (titles begun count with the time left) and from your watchlist.
+const SHORT_TIMES = [20, 30, 45, 60, 90];
+function shortDialog() {
+  let minutes = Number(store.get('shortMinutes', '30')) || 30;
+  const list = h('div', { class: 'picklist' });
+  const times = h('div', { class: 'picktimes' });
+  const own = h('input', { type: 'number', min: '1', max: '600', style: 'width:80px', 'aria-label': t('Minutes'),
+    onchange: e => { const v = Math.round(Number(e.target.value)); if (v > 0) choose(Math.min(600, v)); } });
+  let asked = 0;
+  const choose = async m => {
+    minutes = m; store.set('shortMinutes', String(m));
+    times.replaceChildren(...SHORT_TIMES.map(v => h('button', { class: 'small' + (v === m ? ' primary' : ''), 'aria-pressed': String(v === m), onclick: () => choose(v) },t('{m} min', { m: v }))),
+      h('label', { style: 'display:inline-flex;gap:6px;align-items:center' }, own, t('min')));
+    own.value = SHORT_TIMES.includes(m) ? '' : String(m);
+    const mine = ++asked;
+    list.replaceChildren(h('div', { class: 'dim' }, t('Loading…')));
+    try {
+      const items = meta(await GET(`/api/short?minutes=${m}`));
+      if (mine !== asked) return;
+      const left = it => Math.max(0, (it.duration || 0) - (it.viewOffset || 0));
+      list.replaceChildren(...(items.length ? items.map(it => posterCard(it, { caption: x => x.viewOffset ? t('{time} left', { time: fmtDur(left(x)) }) : fmtDur(x.duration) }))
+        : [h('div', { class: 'dim' }, t('Nothing you are watching or have on your watchlist fits into {m} minutes.', { m }))]));
+    } catch (e) { if (mine === asked) list.replaceChildren(h('div', { class: 'dim' }, e.message)); }
+  };
+  const box = modal(t('Something short'), [
+    h('p', { class: 'dim', style: 'margin-top:-6px' }, t('How much time do you have? What fits comes from what you are watching and from your watchlist.')),
+    times, list,
+    h('div', { class: 'actions', style: 'margin-bottom:0' }, h('button', { onclick: () => box.remove() }, t('Close')))]);
+  closeOnOpen(box);
+  choose(minutes);
+}
+
 // The server's own playlists have English names; show them in the chosen language.
 const plTitle = pl => pl.default ? t(pl.title) : pl.title;

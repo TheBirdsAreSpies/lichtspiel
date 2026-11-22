@@ -128,6 +128,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/rss", "{enabled: true|false, regenerate: true} switch your watchlist feed on or off, or make a new address"),
     ("GET", "/rss/watchlist/{key}.xml", "Public: the watchlist as RSS (the key is the private part of the address)"),
     ("GET", "/api/watchlist", "Your watchlist ?sort=added (newest first)|oldest|title|year|rating|added_at &type=movie|show|season|episode, and the filters of a library page (genre=…, year>=…, q=…, rules=…)"),
+    ("GET", "/api/short", "Something short: what fits into ?minutes=30 (time left to watch), from what you are watching (begun, next episodes) and your watchlist (a show gives its next unseen episode) &limit=30"),
     ("GET", "/api/upcoming", "Coming soon: episodes of shows in your libraries and titles from plugins (Radarr / Sonarr through the wish list) still to come ?days=1…90 (default 30) → {today, entries: [{kind, show_id, title, year, season, episode, name, date, poster, thumb, note, source}]}"),
     ("GET", "/api/watchlist/filters", "The filters of the library menu with the values found on your watchlist ?type=movie|show|season|episode &includeAdvanced=1"),
     ("POST", "/api/watchlist", "Put several on your watchlist or take them off {ids: [..], watchlist: true|false}"),
