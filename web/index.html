@@ -100,11 +100,14 @@ label{display:block;color:var(--dim);font-size:13px;margin:10px 0 4px}
 #who .link .av{display:none;width:32px;height:32px;border-radius:50%;background:var(--panel2);border:2px solid var(--line);align-items:center;justify-content:center;font-weight:600;color:var(--accent)}
 #side{position:fixed;top:56px;bottom:0;left:0;width:220px;background:var(--panel);overflow:auto;padding:14px 0}
 #side a{display:flex;align-items:center;gap:12px;padding:9px 22px 9px 18px;color:var(--dim);border-left:4px solid transparent}
-#side a>svg,#sidetoggle svg{width:20px;height:20px;fill:currentColor;flex:none}
+#side a>svg{width:20px;height:20px;fill:currentColor;flex:none}
 #side a>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* The button at the bottom folds the menu to its icons (the choice is kept in this browser). */
-#sidetoggle{display:flex;align-items:center;gap:12px;width:100%;margin-top:10px;padding:9px 22px;background:none;border:0;border-radius:0;color:var(--faint);text-align:left}
-#sidetoggle:hover{color:var(--text)}
+/* The ☰ in the top bar folds the menu to its icons (the choice is kept in this browser); its centre lines up
+   with the menu's icons (32px from the left), folded or not. On a phone it opens the menu instead (below). */
+#navbtn{display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:40px;height:40px;margin-left:-6px;margin-right:-6px;padding:0;background:none;border:0;border-radius:50%;color:var(--dim)}
+#navbtn:hover{color:var(--text);background:var(--hovfill)}
+#navbtn svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+body:has(#side[style*="none"]) #navbtn{display:none}
 /* Only the button animates the menu: a transition while resizing the window could stick at the old width
    (the page then kept the menu's space, or ran under the menu). */
 body.nav-anim #side,body.nav-anim #main{transition:width .15s,margin-left .15s}
@@ -112,11 +115,9 @@ body.nav-anim #side,body.nav-anim #main{transition:width .15s,margin-left .15s}
   body.nav-small #side{width:64px;overflow-x:hidden}
   body.nav-small #main{margin-left:64px}
   body.nav-small #side a{justify-content:center;padding:10px 4px 10px 0}
-  body.nav-small #side a>span,body.nav-small #side a small,body.nav-small #side .more,body.nav-small #side .navhint,body.nav-small #sidetoggle span,body.nav-small #ver{display:none}
+  body.nav-small #side a>span,body.nav-small #side a small,body.nav-small #side .more,body.nav-small #side .navhint,body.nav-small #ver{display:none}
   body.nav-small #side .head{font-size:0;padding:0;margin:10px 14px;border-top:1px solid var(--line)}
-  body.nav-small #sidetoggle{justify-content:center;padding:9px 0}
 }
-@media (max-width:760px){#sidetoggle{display:none}}
 #side a:hover{color:var(--text)}
 #side a.on{color:var(--text);background:var(--panel2);border-left-color:var(--accent)}
 #side .head{font-size:11px;letter-spacing:.08em;color:var(--faint);padding:16px 22px 6px}
@@ -679,11 +680,9 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 
 /* phones: a bar at the bottom (home, watchlist, playlists, the menu with the libraries and the rest) instead of the
    side bar, a one-line scrolling library bar, smaller posters, scrolling tables and tabs */
-#navbtn,#tabbar{display:none}
+#tabbar{display:none}
 @media (max-width:760px){
-  #navbtn{display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:40px;height:40px;padding:0;background:none;border:0;color:var(--text)}
-  #navbtn svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
-  body:has(#side[style*="none"]) #navbtn{display:none}
+  #navbtn{margin:0;color:var(--text)}
   body.nav-open #side{display:block;z-index:20;width:min(280px,80vw);box-shadow:6px 0 24px rgba(0,0,0,.5)}
   body.nav-open::after{content:"";position:fixed;inset:56px 0 0 0;background:rgba(0,0,0,.5);z-index:19}
   #tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;height:58px;background:var(--panel);border-top:1px solid var(--topline);z-index:18}
@@ -795,7 +794,6 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   <a href="#/watchlist" data-nav="watchlist" data-icon="markOff" data-t-title="Watchlist"><span data-t="Watchlist">Watchlist</span></a>
   <a href="#/downloads" data-nav="downloads" data-icon="download" data-t-title="Downloads" style="display:none"><span data-t="Downloads">Downloads</span></a>
   <div id="navsections"></div>
-  <button id="sidetoggle" type="button"></button>
   <div id="ver"></div>
 </nav>
 <main id="main"><p class="dim" data-t="Loading…">Loading…</p></main>
@@ -844,7 +842,8 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 // Phones: the menu button opens the side bar over the page; a tap on a link, the dimmed page or a page change closes it.
 (function () {
   var b = document.body, close = function () { b.classList.remove('nav-open'); };
-  document.getElementById('navbtn').addEventListener('click', function () { b.classList.toggle('nav-open'); });
+  // (On a wider screen the same button folds the menu to its icons instead: app.js, drawSideToggle.)
+  document.getElementById('navbtn').addEventListener('click', function () { if (matchMedia('(max-width:760px)').matches) b.classList.toggle('nav-open'); });
   document.getElementById('side').addEventListener('click', function (e) { if (e.target.closest('a')) close(); });
   document.addEventListener('click', function (e) { if (e.target === b) close(); });
   window.addEventListener('hashchange', close);

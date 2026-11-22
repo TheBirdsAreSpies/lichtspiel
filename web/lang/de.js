@@ -1562,7 +1562,6 @@ I18N.add('de', 'Deutsch', {
     // ---------- left menu, a library's "⋯" menu, trash, deleting files
     'LIBRARIES': 'MEDIATHEKEN',
     'Edit the menu': 'Menüband bearbeiten',
-    'Collapse': 'Einklappen',
     'Collapse the menu to its icons': 'Menü auf die Symbole einklappen',
     'Expand the menu': 'Menü ausklappen',
     'Pin': 'Anheften',

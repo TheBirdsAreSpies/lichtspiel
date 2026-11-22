@@ -184,8 +184,8 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   read on Linux (Synology) and Windows.
 - **The left menu is yours**: "⋯" next to *Libraries* → **Edit the menu** to sort it (drag, or
   the arrows) and to unpin libraries or Playlists; unpinned ones wait under **More**. Kept per
-  person on the server. Each entry has an icon (a library's by its kind), and **Collapse** at the
-  bottom folds the menu to just the icons (their names in the tooltips; kept in that browser).
+  person on the server. Each entry has an icon (a library's by its kind), and the **☰** at the
+  left of the top bar folds the menu to just the icons (their names in the tooltips; kept in that browser).
 - **A library's "⋯" menu** (in the left menu, on its page and under Libraries): **Scan library
   files**, **Grant access**, **Manage library** → Edit (name, language, credits detection and
   folders in one window), Refresh all metadata, **Empty trash**, Analyze, Delete; and Unpin.

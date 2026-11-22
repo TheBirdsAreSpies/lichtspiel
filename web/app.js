@@ -526,18 +526,17 @@ function drawChrome() {
   drawDlChip();
 }
 // The left menu folded to its icons (each link then names itself in its tooltip); kept in this browser,
-// as it suits the screen. The fixed links of index.html get their icons here.
+// as it suits the screen. The ☰ in the top bar folds it (on a phone it opens the menu: index.html). The fixed
+// links of index.html get their icons here.
 function drawSideToggle() {
   const small = store.get('navSmall', '0') === '1';
   document.body.classList.toggle('nav-small', small);
   document.querySelectorAll('#side > a[data-icon]').forEach(a => { if (!a.querySelector('svg')) a.prepend(icon(a.dataset.icon)); });
-  const label = small ? t('Expand the menu') : t('Collapse the menu to its icons');
-  $('#sidetoggle').replaceChildren(icon(small ? 'unfold' : 'fold'), h('span', {}, t('Collapse')));
-  $('#sidetoggle').title = label;
-  $('#sidetoggle').setAttribute('aria-label', label);
+  $('#navbtn').title = small ? t('Expand the menu') : t('Collapse the menu to its icons');
 }
 let navAnim;
-$('#sidetoggle').addEventListener('click', () => {
+$('#navbtn').addEventListener('click', () => {
+  if (window.matchMedia && matchMedia('(max-width:760px)').matches) return;
   document.body.classList.add('nav-anim'); clearTimeout(navAnim); navAnim = setTimeout(() => document.body.classList.remove('nav-anim'), 300);
   store.set('navSmall', store.get('navSmall', '0') === '1' ? '0' : '1'); drawSideToggle();
 });
