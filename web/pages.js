@@ -1119,7 +1119,8 @@ async function settingsPage(tab, qs) {
       box.replaceChildren(tk.length ? h('table', {},
         h('tr', {}, [t('Device'), t('Last used'), t('Address'), t('Signed in'), ''].map(x => h('th', {}, x))),
         tk.map(k => h('tr', {},
-          h('td', {}, h('b', {}, k.last_device || k.device || t('Web app')), k.current ? h('span', { class: 'badge', style: 'margin-left:8px' }, t('this device')) : null, k.device && k.last_device && k.device !== k.last_device ? h('div', { class: 'dim' }, k.device) : null),
+          // One block: on a phone the cell is a row of its parts, and three parts squeeze each other mid-word.
+          h('td', {}, h('div', {}, h('b', {}, k.last_device || k.device || t('Web app')), k.current ? h('span', { class: 'badge', style: 'margin-left:8px' }, t('this device')) : null, k.device && k.last_device && k.device !== k.last_device ? h('div', { class: 'dim' }, k.device) : null)),
           h('td', { class: 'dim' }, k.last_used ? fmtDateTime(k.last_used) : '–'), h('td', { class: 'dim' }, k.last_ip || '–'), h('td', { class: 'dim' }, fmtDateTime(k.created_at)),
           h('td', {}, k.current ? '' : h('button', { class: 'small danger', onclick: async () => {
             if (!(await sure(t('Sign this device out? It has to sign in again.'), { ok: t('Sign out'), danger: true }))) return;
@@ -1430,7 +1431,7 @@ async function apiPage() {
   const loadTokens = async () => {
     const tk = await GET('/api/tokens');
     tokens.replaceChildren(h('table', {}, tk.tokens.map(k => h('tr', {},
-      h('td', {}, h('code', {}, k.id)), h('td', {}, k.device || t('Web app'), k.current ? h('span', { class: 'badge' }, t('this device')) : ''),
+      h('td', {}, h('code', {}, k.id)), h('td', {}, h('span', {}, k.device || t('Web app'), k.current ? h('span', { class: 'badge' }, t('this device')) : '')),
       h('td', { class: 'dim' }, fmtDateTime(k.created_at)),
       h('td', {}, k.current ? '' : h('button', { class: 'small', onclick: async () => { if (!(await sure(t('Revoke this token? The device using it is signed out.'), { ok: t('Revoke'), danger: true }))) return; await api('DELETE', '/api/tokens/' + k.id); toast(t('Token revoked')); loadTokens(); } }, t('Revoke')))))));
   };
