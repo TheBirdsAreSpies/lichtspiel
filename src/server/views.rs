@@ -117,6 +117,8 @@ pub fn item_json_ix(db: &Db, user: &User, it: &Item, detail: bool, ix: Option<&I
         if !credits.is_empty() { o["credits"] = json!(credits); }
         // Where the intro runs (ms), for the player's "Skip intro".
         if let Some((s, e)) = db.intro_marker(it) { o["intro"] = json!({"start": s, "end": e}); }
+        // Where the recap ("Previously on") runs, for "Skip recap".
+        if let Some((s, e)) = db.recap_marker(it) { o["recap"] = json!({"start": s, "end": e}); }
     }
     // The file, then (if merged by hand) the other versions of it: 4K first.
     {

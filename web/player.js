@@ -115,6 +115,7 @@ async function play(it, startAt, queue, together, small) {
   P.chapters = [];
   if (it.Media && it.Media[0]) GET(`/library/metadata/${it.id}/chapters`).then(r => { if (P.it !== it) return; P.chapters = (r.MediaContainer.Chapter || []).map(c => ({ at: c.start / 1000, title: c.title.replace(/^Chapter (\d+)$/, (_, n) => t('Chapter {n}', { n })) })); drawMarks(); }).catch(() => {});
   P.intro = it.intro && it.intro.end > it.intro.start ? [it.intro.start / 1000, it.intro.end / 1000] : null;
+  P.recap = it.recap && it.recap.end > it.recap.start ? [it.recap.start / 1000, it.recap.end / 1000] : null;
   // A movie split over files: its parts play one after the other.
   P.parts = ((it.Media && it.Media[0].Part) || []).map(x => (x.duration || 0) / 1000);
   P.part = 0; P.base = 0; P.pending = null;
@@ -508,9 +509,10 @@ function drawBar() {
     skip.textContent = !next ? t('Skip credits') : next.type === 'episode' ? t('Next episode ▸') : t('Play next ▸');
     showSkip(skip, true);
   } else showSkip(skip, false);
-  // "Skip intro" while the intro runs.
+  // "Skip intro" while the intro runs, "Skip recap" while the recap ("Previously on") does.
   const si = $('#pskipintro');
-  if (P.intro && now >= P.intro[0] && now < P.intro[1] - 1) { si.textContent = t('Skip intro'); showSkip(si, true); }
+  const part = [[P.intro, 'Skip intro'], [P.recap, 'Skip recap']].find(([m]) => m && now >= m[0] && now < m[1] - 1);
+  if (part) { si.textContent = t(part[1]); si.dataset.to = String(part[0][1]); showSkip(si, true); }
   else showSkip(si, false);
 }
 // A skip button that just came up stays SKIP_FRESH_MS even when the controls have faded out,
@@ -531,7 +533,7 @@ function drawMarks() {
   // The chapters of the file: a thin line each (the first one is the start), their names show when hovering.
   if ((P.chapters || []).length > 1) for (const c of P.chapters.slice(1)) marks.append(h('div', { class: 'mark chap', style: `left:${pct(c.at)}%` }));
   for (const c of P.credits) marks.append(h('div', { class: 'mark', style: `left:${pct(c)}%`, title: t('Credits') }));
-  if (P.intro) marks.append(h('div', { class: 'mark intro', style: `left:${pct(P.intro[0])}%;width:${Math.max(0.3, pct(P.intro[1]) - pct(P.intro[0]))}%`, title: t('Intro') }));
+  for (const [m, title] of [[P.intro, 'Intro'], [P.recap, 'Recap']]) if (m) marks.append(h('div', { class: 'mark intro', style: `left:${pct(m[0])}%;width:${Math.max(0.3, pct(m[1]) - pct(m[0]))}%`, title: t(title) }));
 }
 function drawButtons() {
   const pb = $('#pplay'), playing = !isPaused();
@@ -709,7 +711,8 @@ for (const ev of ['pointerdown', 'keydown', 'touchstart', 'wheel']) document.add
 }, { passive: true, capture: true });
 $('#pskipintro').addEventListener('click', () => {
   $('#pskipintro').style.display = 'none';
-  if (P.intro) seekTo(P.intro[1]).then(() => tgSend());
+  const to = Number($('#pskipintro').dataset.to);
+  if (to > 0) seekTo(to).then(() => tgSend());
 });
 $('#pskip').addEventListener('click', () => {
   $('#pskip').style.display = 'none';

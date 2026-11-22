@@ -30,6 +30,16 @@
 //!    the detector first, then those with an episode never looked at, newest
 //!    first. Episodes that had no intro are not looked at again.
 //!
+//! "Previously on" (a recap at the start of an episode) is found with the same
+//! fingerprints: the first 300 seconds of an episode are compared in short
+//! windows of 24 values (about 3 s) with the whole sound of the one or two
+//! episodes before it (`find_recap`). A window counts when its likeness reaches
+//! 0.75 somewhere outside the earlier episode's intro and credits. Windows next to
+//! each other at the same shift make a clip; a clip longer than 30 s is shared
+//! music (an intro), not a recap. Clips less than 12 s apart make a group, and the
+//! first group with clips from at least 3 places of the earlier episodes and 12 s
+//! of shared sound in all is the recap.
+//!
 //! The fingerprint is a classic band-energy fingerprint (33 bands between 300 and 2000 Hz, one bit per
 //! pair of neighbouring bands, frame 4096 samples at 11025 Hz, a new value
 //! every 1365 samples = 0.1238 s), which the same matching works on.
@@ -76,6 +86,20 @@ pub const DETECTOR_VERSION: u32 = 2;
 /// Bump when the fingerprints themselves change, so they are read again.
 const PRINT_VERSION: u32 = 1;
 
+/// Recap ("Previously on") detection, see the top of the file.
+pub const RECAP_SEARCH_SECONDS: f32 = 300.0;
+pub const RECAP_CLIP: usize = 24;
+pub const RECAP_STEP: usize = 4;
+pub const RECAP_THRESHOLD: f32 = 0.75;
+pub const RECAP_MIN_SECONDS: f32 = 12.0;
+pub const RECAP_MIN_PLACES: usize = 3;
+pub const RECAP_GAP_SECONDS: f32 = 12.0;
+pub const RECAP_LONGEST_CLIP: f32 = 30.0;
+/// Two clips whose shifts against an earlier episode differ by more than this come from two places.
+pub const RECAP_PLACE_SECONDS: f32 = 10.0;
+/// Bump when recap detection changes, so episodes are looked at again.
+pub const RECAP_VERSION: u32 = 1;
+
 const SAMPLE_RATE: u32 = 11025;
 const FRAME: usize = 4096;
 const HOP: usize = 1365;
@@ -85,8 +109,22 @@ const HIGH_HZ: f32 = 2000.0;
 
 /// The fingerprint of the first minutes of a file's sound.
 pub fn fingerprint_file(ffmpeg: &str, path: &str) -> Result<Vec<u32>, String> {
-    let mut child = Command::new(ffmpeg)
-        .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-t", &SECONDS_ANALYZED.to_string(), "-i"])
+    fingerprint_part(ffmpeg, path, true)
+}
+
+/// The fingerprint of a file's whole sound (for the recaps of the episodes after it).
+pub fn fingerprint_whole_file(ffmpeg: &str, path: &str) -> Result<Vec<u32>, String> {
+    fingerprint_part(ffmpeg, path, false)
+}
+
+fn fingerprint_part(ffmpeg: &str, path: &str, head: bool) -> Result<Vec<u32>, String> {
+    let mut cmd = Command::new(ffmpeg);
+    cmd.args(["-nostdin", "-hide_banner", "-loglevel", "error"]);
+    if head {
+        cmd.args(["-t", &SECONDS_ANALYZED.to_string()]);
+    }
+    let mut child = cmd
+        .arg("-i")
         .arg(path)
         .args(["-map", "0:a:0", "-vn", "-sn", "-dn", "-ac", "1", "-ar", &SAMPLE_RATE.to_string(), "-f", "s16le", "pipe:1"])
         .stdin(Stdio::null())
@@ -100,7 +138,8 @@ pub fn fingerprint_file(ffmpeg: &str, path: &str) -> Result<Vec<u32>, String> {
         let _ = out.read_to_end(&mut buf);
         buf
     });
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+    // The whole file can mean reading many gigabytes from a network share.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(if head { 300 } else { 1800 });
     let status = loop {
         match child.try_wait() {
             Ok(Some(s)) => break Some(s),
@@ -378,6 +417,108 @@ pub fn detect_season(prints: &[Vec<u32>]) -> Vec<Option<(u64, u64)>> {
         .collect()
 }
 
+/// Where the recap runs in an episode (start and end, ms), if it has one.
+/// `head`: the fingerprint of its first minutes; `skip`: parts of it not to look
+/// at (its intro, seconds); `earlier`: the whole fingerprints of the episodes
+/// before it, each with the parts that don't count (their intro and credits).
+pub fn find_recap(head: &[u32], skip: &[(f32, f32)], earlier: &[(&[u32], Vec<(f32, f32)>)]) -> Option<(u64, u64)> {
+    let secs = |n: usize| n as f32 * ITEM_SECONDS;
+    let inside = |from: usize, to: usize, parts: &[(f32, f32)]| parts.iter().any(|&(s, e)| secs(to) > s && secs(from) < e);
+    let limit = ((RECAP_SEARCH_SECONDS / ITEM_SECONDS) as usize).min(head.len());
+    // (window in `head`, which earlier episode, where in it − where in `head`)
+    let mut hits: Vec<(usize, usize, i64)> = vec![];
+    for (n, (print, excluded)) in earlier.iter().enumerate() {
+        let mut at: HashMap<u32, Vec<usize>> = HashMap::new();
+        for (i, v) in print.iter().enumerate() {
+            at.entry(v >> KEY_SHIFT).or_default().push(i);
+        }
+        let mut i = 0;
+        while i + RECAP_CLIP <= limit {
+            let window = &head[i..i + RECAP_CLIP];
+            if !inside(i, i + RECAP_CLIP, skip) {
+                let mut votes: HashMap<i64, usize> = HashMap::new();
+                for (k, v) in window.iter().enumerate() {
+                    let Some(ps) = at.get(&(v >> KEY_SHIFT)) else { continue };
+                    // A value that comes back all the time (a held tone) says nothing.
+                    if ps.len() > 100 {
+                        continue;
+                    }
+                    for &p in ps {
+                        *votes.entry(p as i64 - k as i64).or_default() += 1;
+                    }
+                }
+                let mut best: Option<(f32, i64)> = None;
+                for (&c, &count) in &votes {
+                    if count < 2 || c < 0 || c as usize + RECAP_CLIP > print.len() || inside(c as usize, c as usize + RECAP_CLIP, excluded) {
+                        continue;
+                    }
+                    let s = likeness(window, &print[c as usize..c as usize + RECAP_CLIP]);
+                    if s >= RECAP_THRESHOLD && best.is_none_or(|b| s > b.0) {
+                        best = Some((s, c - i as i64));
+                    }
+                }
+                if let Some((_, o)) = best {
+                    hits.push((i, n, o));
+                }
+            }
+            i += RECAP_STEP;
+        }
+    }
+    hits.sort_by_key(|h| h.0);
+    // Clips: (start, end in `head`, earlier episode, shift).
+    let mut clips: Vec<(usize, usize, usize, i64)> = vec![];
+    for (i, n, o) in hits {
+        if let Some(c) = clips.iter_mut().rev().find(|c| c.2 == n && (c.3 - o).abs() <= 2 && i <= c.1 + RECAP_STEP) {
+            c.1 = c.1.max(i + RECAP_CLIP);
+            continue;
+        }
+        clips.push((i, i + RECAP_CLIP, n, o));
+    }
+    clips.retain(|c| secs(c.1 - c.0) <= RECAP_LONGEST_CLIP);
+    clips.sort_by_key(|c| c.0);
+    let place_gap = (RECAP_PLACE_SECONDS / ITEM_SECONDS) as i64;
+    let judge = |group: &[(usize, usize, usize, i64)]| -> Option<(u64, u64)> {
+        // Pieces of one stretch of sound share a shift; clips from other places of
+        // the earlier episode have other shifts.
+        let mut places: Vec<(usize, i64)> = vec![];
+        for c in group {
+            if !places.iter().any(|p| p.0 == c.2 && (p.1 - c.3).abs() <= place_gap) {
+                places.push((c.2, c.3));
+            }
+        }
+        let (start, end) = (group.first()?.0, group.iter().map(|c| c.1).max()?);
+        // Shared sound in all, overlapping clips counted once.
+        let (mut covered, mut upto) = (0, start);
+        for c in group {
+            let from = c.0.max(upto);
+            if c.1 > from {
+                covered += c.1 - from;
+                upto = c.1;
+            }
+        }
+        (places.len() >= RECAP_MIN_PLACES && secs(covered) >= RECAP_MIN_SECONDS).then(|| ((secs(start) * 1000.0) as u64, (secs(end) * 1000.0) as u64))
+    };
+    let gap = (RECAP_GAP_SECONDS / ITEM_SECONDS) as usize;
+    let mut group: Vec<(usize, usize, usize, i64)> = vec![];
+    for c in clips {
+        let end = group.iter().map(|g| g.1).max().unwrap_or(0);
+        if !group.is_empty() && c.0 > end + gap {
+            if let Some(found) = judge(&group) {
+                return Some(found);
+            }
+            group.clear();
+        }
+        group.push(c);
+    }
+    judge(&group)
+}
+
+/// Whether an episode is due for recap detection: not looked at by this
+/// version yet, and reading the files did not fail too often.
+pub fn recap_due(checked: u32, errors: u32) -> bool {
+    checked < RECAP_VERSION && errors <= 3
+}
+
 /// Cached fingerprints live in data/cache/intro, one file per video, named
 /// after its path, size and change time, so a new episode doesn't mean reading the whole season again.
 pub fn cache_name(path: &str, size: u64, modified: u64) -> String {
@@ -387,6 +528,11 @@ pub fn cache_name(path: &str, size: u64, modified: u64) -> String {
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
     format!("{h:016x}-v{PRINT_VERSION}.fp")
+}
+
+/// The same for the fingerprint of the whole sound.
+pub fn cache_name_whole(path: &str, size: u64, modified: u64) -> String {
+    cache_name(path, size, modified).replace(".fp", "-whole.fp")
 }
 
 pub fn read_cached(file: &std::path::Path) -> Option<Vec<u32>> {
@@ -505,6 +651,37 @@ mod tests {
         assert!(is_due(DETECTOR_VERSION - 1, true));
         assert!(!is_due(DETECTOR_VERSION - 1, false));
         assert!(!is_due(DETECTOR_VERSION, true));
+    }
+
+    /// A recap: 4 s clips from four places of the episode before, then the
+    /// intro (which both episodes have) and the new story.
+    #[test]
+    fn finds_the_recap_from_the_episode_before() {
+        let intro = tune(30.0, 7);
+        let mut before = tune(20.0, 50);
+        before.extend_from_slice(&intro);
+        let story_before = tune(240.0, 51);
+        before.extend_from_slice(&story_before);
+        let rate = SAMPLE_RATE as usize;
+        let mut episode = vec![];
+        for at in [20, 90, 150, 210] {
+            episode.extend_from_slice(&story_before[at * rate..(at + 4) * rate]);
+        }
+        let recap_end = episode.len() as f32 / rate as f32;
+        episode.extend_from_slice(&intro);
+        episode.extend(tune(120.0, 60));
+        let head = fingerprint(&episode);
+        let whole = fingerprint(&before);
+        let (s, e) = find_recap(&head, &[(16.0, 46.0)], &[(&whole, vec![(20.0, 50.0)])]).expect("recap found");
+        assert!(s < 1500, "start {s}");
+        assert!((e as f32 / 1000.0 - recap_end).abs() < 2.5, "end {e}, recap ends at {recap_end}");
+        // Without the intro marks the shared intro alone is no recap (one long clip).
+        let mut only_intro = tune(15.0, 70);
+        only_intro.extend_from_slice(&intro);
+        only_intro.extend(tune(60.0, 71));
+        assert_eq!(find_recap(&fingerprint(&only_intro), &[], &[(&whole, vec![])]), None);
+        // Nothing shared: none.
+        assert_eq!(find_recap(&fingerprint(&tune(120.0, 80)), &[], &[(&whole, vec![])]), None);
     }
 
     #[test]

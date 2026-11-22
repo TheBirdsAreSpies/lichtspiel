@@ -49,6 +49,15 @@ impl Db {
         }
         it.file.as_ref().and_then(|f| pair(&f.intro_ms))
     }
+
+    /// An episode's recap ("Previously on", start and end ms), when intro markers are made.
+    pub fn recap_marker(&self, it: &Item) -> Option<(u64, u64)> {
+        if it.kind != ItemKind::Episode || !self.intro_on(it) {
+            return None;
+        }
+        let f = it.file.as_ref()?;
+        (f.recap_ms.len() == 2 && f.recap_ms[1] > f.recap_ms[0]).then(|| (f.recap_ms[0], f.recap_ms[1]))
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

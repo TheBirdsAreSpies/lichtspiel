@@ -252,6 +252,15 @@ pub struct MediaFile {
     pub intro_checked: u32,
     #[serde(default)]
     pub intro_errors: u32,
+    /// Where the recap ("Previously on") runs (start and end, ms; empty = none),
+    /// found by comparing the start with the episodes before (intro.rs), which
+    /// version of that looked (0 = not yet) and how often reading failed.
+    #[serde(default)]
+    pub recap_ms: Vec<u64>,
+    #[serde(default)]
+    pub recap_checked: u32,
+    #[serde(default)]
+    pub recap_errors: u32,
     /// Deep analysis (deep.rs): the speed in kbit/s this file needs at each
     /// connection level, the analysis version, the file date it belongs to,
     /// and how often reading failed.

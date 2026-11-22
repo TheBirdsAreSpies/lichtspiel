@@ -52,6 +52,21 @@ than half of a season's episodes share an intro, the season gets none. An
 intro can also be set by hand with `PUT /library/metadata/{id}/markers` and
 `{"intro": [start ms, end ms]}`.
 
+### Skip recap ("Previously on")
+
+Intro detection also finds **recaps**, the clips from earlier episodes at the start of an
+episode. It compares the first 5 minutes of an episode in pieces of about 3 seconds with the
+whole sound of the one or two episodes before it (for the first episode of a season: the last
+one of the season before; specials are left out). When pieces from at least three places of the
+earlier episodes, 12 seconds or more in all, follow each other closely, that stretch is the recap.
+The earlier episodes' intro and credits don't count, so the shared intro is never taken for one.
+While it plays, the player shows **Skip recap** (the same button as Skip intro), and the seek bar
+marks it like the intro.
+
+For this the server reads each episode's whole sound once (kept in `cache/intro` like the
+intro prints), so the first run over a large library takes a while; it runs with intro detection
+and is switched on and off with it.
+
 ## Subtitle timing
 
 A subtitle file made for another release is often a few seconds off, or drifts because it was made

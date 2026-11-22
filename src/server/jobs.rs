@@ -200,7 +200,7 @@ impl App {
             return Err("Another job (credits or intro detection, or ratings) is already running; try again in a moment".into());
         }
         type Episode = (u64, String, u64, u64);
-        let (seasons, ffmpeg): (Vec<Vec<Episode>>, String) = {
+        let (seasons, ffmpeg): (Vec<(u64, Vec<Episode>)>, String) = {
             let db = self.db.lock().unwrap();
             if db.settings.intro_markers_behaviour == "never" {
                 return Err("Intro markers are switched off in Settings (Generate intro video markers: never)".into());
@@ -224,15 +224,17 @@ impl App {
                 if eps.len() < 2 {
                     continue;
                 }
-                let stale = eps.iter().any(|e| e.file.as_ref().is_some_and(|f| intro::is_due(f.intro_checked, !f.intro_ms.is_empty()) && f.intro_errors <= db::CREDITS_MAX_ERRORS));
+                let stale = eps.iter().any(|e| e.file.as_ref().is_some_and(|f| {
+                    (intro::is_due(f.intro_checked, !f.intro_ms.is_empty()) && f.intro_errors <= db::CREDITS_MAX_ERRORS) || intro::recap_due(f.recap_checked, f.recap_errors)
+                }));
                 if !force && !stale {
                     continue;
                 }
-                seasons.push(eps.iter().filter_map(|e| e.file.as_ref().map(|f| (e.id, f.path.clone(), f.size, f.modified))).collect());
+                seasons.push((sid, eps.iter().filter_map(|e| e.file.as_ref().map(|f| (e.id, f.path.clone(), f.size, f.modified))).collect()));
             }
             (seasons, db.settings.ffmpeg.clone())
         };
-        let total: usize = seasons.iter().map(|s| s.len()).sum();
+        let total: usize = seasons.iter().map(|s| s.1.len()).sum();
         if total == 0 {
             return Err(if force { "No season with at least two episodes to compare (or intro detection is off for this library)".into() } else { "Everything is already up to date".into() });
         }
@@ -241,7 +243,7 @@ impl App {
         self.job_yield.store(false, AtomicOrdering::SeqCst);
         self.job_auto.store(!force, AtomicOrdering::SeqCst);
         drop(job);
-        self.set_job_items("Detecting intros", &seasons.iter().flat_map(|s| s.iter().map(|e| e.0)).collect::<Vec<_>>());
+        self.set_job_items("Detecting intros", &seasons.iter().flat_map(|s| s.1.iter().map(|e| e.0)).collect::<Vec<_>>());
         let app = self.clone();
         let cache = self.data_dir.join("cache").join("intro");
         std::thread::spawn(move || {
@@ -252,7 +254,7 @@ impl App {
                 .unwrap_or_default();
             elog!("intro detection: {} files with intro markers in the old server's database; {total} episodes to check", from_plex.len());
             let mut taken = 0;
-            'seasons: for eps in seasons {
+            'seasons: for (season, eps) in seasons {
                 let (mut known, mut eps, compare_only) = split_known(eps, |e| from_plex.get(&e.1).is_some_and(|m| m.len() == 2));
                 {
                     let mut db = app.db.lock().unwrap();
@@ -281,6 +283,9 @@ impl App {
                 if eps.len() < 2 {
                     done += eps.len();
                     eps.clear();
+                    if !app.find_recaps(season, &ffmpeg, &cache, force) {
+                        break 'seasons;
+                    }
                     continue;
                 }
                 // Several episodes at once: each one is a separate ffmpeg that mostly waits for the disk or the network.
@@ -345,6 +350,10 @@ impl App {
                 }
                 drop(db);
                 app.save();
+                // The intros are known now, so they don't count as a recap.
+                if !app.find_recaps(season, &ffmpeg, &cache, force) {
+                    break 'seasons;
+                }
             }
             elog!("intro detection ended: {taken} of {total} episodes took the old server's intro markers");
             app.save();
@@ -364,6 +373,98 @@ impl App {
     }
 
 
+    /// Recaps ("Previously on") of a season's episodes, after its intros were
+    /// found: each episode's start against the whole sound of the one or two
+    /// episodes before it (for the first one: the last episode of the season
+    /// before). Specials are left out. False when the job was cancelled.
+    fn find_recaps(self: &Arc<Self>, season: u64, ffmpeg: &str, cache: &std::path::Path, force: bool) -> bool {
+        use crate::library::intro;
+        // id, path, size, modified
+        type File = (u64, String, u64, u64);
+        type Parts = Vec<(f32, f32)>;
+        // (episode, its intro, the episodes before it with their intro and credits)
+        let tasks: Vec<(File, Parts, Vec<(File, Parts)>)> = {
+            let db = self.db.lock().unwrap();
+            let Some(this) = db.items.get(&season) else { return true };
+            let episodes = |sid: u64| -> Vec<&Item> { db.children(sid).into_iter().filter(|e| e.kind == ItemKind::Episode && e.file.is_some()).collect() };
+            let file = |e: &Item| e.file.as_ref().map(|f| (e.id, f.path.clone(), f.size, f.modified));
+            let secs = |(s, e): (u64, u64)| (s as f32 / 1000.0, e as f32 / 1000.0);
+            let intro_of = |e: &Item| -> Parts { db.intro_marker(e).map(secs).into_iter().collect() };
+            let not_counted = |e: &Item| -> Parts {
+                let mut v = intro_of(e);
+                v.extend(db.credits_markers(e).first().map(|c| (*c as f32 / 1000.0, f32::MAX)));
+                v
+            };
+            let number = this.index.unwrap_or(0);
+            // The last episode of the season before (specials don't count).
+            let before = this.parent_id.and_then(|show| {
+                db.children(show).into_iter().filter(|s| s.kind == ItemKind::Season && s.index.is_some_and(|i| i > 0 && i < number)).max_by_key(|s| s.index)
+            });
+            let last_before: Option<&Item> = before.and_then(|s| episodes(s.id).into_iter().next_back());
+            let eps = episodes(season);
+            let mut tasks = vec![];
+            for (k, e) in eps.iter().enumerate() {
+                let Some(f) = e.file.as_ref() else { continue };
+                if number == 0 || !db.intro_on(e) || (!force && !intro::recap_due(f.recap_checked, f.recap_errors)) {
+                    continue;
+                }
+                let earlier: Vec<&Item> = if k > 0 { eps[k.saturating_sub(2)..k].to_vec() } else { last_before.into_iter().collect() };
+                let Some(me) = file(e) else { continue };
+                tasks.push((me, intro_of(e), earlier.into_iter().filter_map(|p| Some((file(p)?, not_counted(p)))).collect()));
+            }
+            tasks
+        };
+        let print = |(_, path, size, modified): &File, whole: bool| -> Result<Vec<u32>, String> {
+            let name = if whole { intro::cache_name_whole(path, *size, *modified) } else { intro::cache_name(path, *size, *modified) };
+            let file = cache.join(name);
+            match intro::read_cached(&file) {
+                Some(p) => Ok(p),
+                None if whole => intro::fingerprint_whole_file(ffmpeg, path).inspect(|p| intro::write_cached(&file, p)),
+                None => intro::fingerprint_file(ffmpeg, path).inspect(|p| intro::write_cached(&file, p)),
+            }
+        };
+        let mut wholes: HashMap<u64, Result<Vec<u32>, String>> = HashMap::new();
+        for (me, skip, earlier) in tasks {
+            if self.job_cancelled() {
+                return false;
+            }
+            let mut found = || -> Result<Option<(u64, u64)>, String> {
+                if earlier.is_empty() {
+                    return Ok(None);
+                }
+                let head = print(&me, false)?;
+                for (f, _) in &earlier {
+                    if !wholes.contains_key(&f.0) {
+                        wholes.insert(f.0, print(f, true));
+                    }
+                }
+                let mut list = vec![];
+                for (f, not) in &earlier {
+                    let whole = wholes[&f.0].as_ref().map_err(|e| format!("episode {} before it: {e}", f.0))?;
+                    list.push((whole.as_slice(), not.clone()));
+                }
+                Ok(intro::find_recap(&head, &skip, &list))
+            };
+            let result = found();
+            let mut db = self.db.lock().unwrap();
+            let Some(f) = db.items.get_mut(&me.0).and_then(|i| i.file.as_mut()) else { continue };
+            match result {
+                Ok(r) => {
+                    f.recap_ms = r.map(|(s, e)| vec![s, e]).unwrap_or_default();
+                    f.recap_checked = intro::RECAP_VERSION;
+                    f.recap_errors = 0;
+                }
+                Err(e) => {
+                    f.recap_errors += 1;
+                    elog!("recap detection for item {}: {e}", me.0);
+                }
+            }
+        }
+        self.save();
+        true
+    }
+
+
     /// Seasons still waiting for automatic intro detection (with at least two
     /// episodes, so there is something to compare): first those with an intro
     /// from an older detector, then those with an episode never looked at,
@@ -379,7 +480,8 @@ impl App {
             .filter(|i| i.kind == ItemKind::Episode && db.intro_on(i))
             .filter_map(|i| {
                 let f = i.file.as_ref()?;
-                let wanted = crate::library::intro::is_due(f.intro_checked, !f.intro_ms.is_empty()) && f.intro_errors <= db::CREDITS_MAX_ERRORS;
+                let wanted = (crate::library::intro::is_due(f.intro_checked, !f.intro_ms.is_empty()) && f.intro_errors <= db::CREDITS_MAX_ERRORS)
+                    || crate::library::intro::recap_due(f.recap_checked, f.recap_errors);
                 wanted.then_some((f.intro_checked == 0, i.added_at, i.parent_id?))
             })
             .collect();

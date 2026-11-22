@@ -1794,6 +1794,8 @@ I18N.add('de', 'Deutsch', {
     'Skip credits': 'Abspann überspringen',
     'Skip intro': 'Intro überspringen',
     'Intro': 'Intro',
+    'Skip recap': 'Rückblick überspringen',
+    'Recap': 'Rückblick',
     'Enable intro detection': 'Intro-Erkennung aktivieren',
     'Scan interval': 'Scan-Intervall',
     'Same as server': 'Wie der Server',

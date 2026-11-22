@@ -326,6 +326,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
   List<double> credits = []; // seconds
   List<double>? intro; // start, end in seconds
+  List<double>? recap; // the same for "Previously on"
   Map<String, dynamic>? next;
   bool suggested = false; // the next film of a series: offered at the end, not started by itself
   late List<Map<String, dynamic>> queue = [...widget.queue];
@@ -457,6 +458,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       credits = ((it['credits'] as List?) ?? const []).map((e) => (e as num) / 1000).toList();
       final i = it['intro'];
       if (i is Map && (i['end'] ?? 0) > (i['start'] ?? 0)) intro = [(i['start'] as num) / 1000, (i['end'] as num) / 1000];
+      final r = it['recap'];
+      if (r is Map && (r['end'] ?? 0) > (r['start'] ?? 0)) recap = [(r['start'] as num) / 1000, (r['end'] as num) / 1000];
       widget.api.chapters(id).then((c) {
         if (mounted) setState(() => chapters = c);
       });
@@ -835,7 +838,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   // A skip button that just came up shows for 10 seconds even when the controls have faded out,
   // then goes with them (moving the mouse or tapping brings it back while the intro or credits run).
-  String? skipShown; // 'intro', 'credits' or null
+  String? skipShown; // 'intro', 'recap', 'credits' or null
   DateTime skipSince = DateTime(0);
 
   Widget overlay() {
@@ -844,8 +847,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       builder: (context, snap) {
         final pos = (snap.data ?? player.state.position).inMilliseconds / 1000;
         final inIntro = intro != null && pos >= intro![0] && pos < intro![1];
+        final inRecap = !inIntro && recap != null && pos >= recap![0] && pos < recap![1];
         final inCredits = next != null && credits.isNotEmpty && pos >= credits.first && !nextCard;
-        final kind = inIntro ? 'intro' : inCredits ? 'credits' : null;
+        final kind = inIntro ? 'intro' : inRecap ? 'recap' : inCredits ? 'credits' : null;
         if (kind != skipShown) {
           skipShown = kind;
           skipSince = DateTime.now();
@@ -860,6 +864,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             );
         return Stack(children: [
           if (inIntro) Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => player.seek(Duration(milliseconds: (intro![1] * 1000).round())), child: const Text('Intro überspringen')))),
+          if (inRecap) Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => player.seek(Duration(milliseconds: (recap![1] * 1000).round())), child: const Text('Rückblick überspringen')))),
           if (inCredits && !inIntro)
             Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => playNext(), child: Text('Nächste Folge: ${nextName(next!)}')))),
           if (nextCard && next != null) Positioned(right: 24, bottom: 110, child: _nextCard()),
