@@ -538,6 +538,13 @@ $('#q').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer 
   else if (on) location.hash = '#/';
 }, 300); });
 window.addEventListener('hashchange', () => { if (!location.hash.startsWith('#/search/')) searchFrom = null; });
+// The × in a search field empties it, as typing it away would (shown only while there is text, see .clr).
+function clearBtn(input, cleared) {
+  return h('button', { type: 'button', class: 'clrx', title: t('Clear'), 'aria-label': t('Clear'),
+    onclick: () => { input.value = ''; input.focus(); cleared(); } }, '×');
+}
+function clearable(input, cleared) { return h('span', { class: 'clr' }, input, clearBtn(input, cleared)); }
+$('#search').append(clearBtn($('#q'), () => $('#q').dispatchEvent(new Event('input'))));
 
 // ---------- cards
 function posterCard(it, opts = {}) {

@@ -408,7 +408,7 @@ async function sectionPage(id, qs) {
     } }, t('More'), icon('down')),
     opt(text('from', t('Year from'), 95)), opt(text('to', t('Year to'), 85)),
     opt(pick('container', [['', t('Any file type')], ...['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'].map(c => [c, c.toUpperCase()])])),
-    opt(text('q', t('Filter by title'), 150)),
+    opt(clearable(text('q', t('Filter by title'), 150), () => { st.q = ''; go(); })),
     countEl,
     h('span', { class: 'grow' }),
     sizeSlider(),

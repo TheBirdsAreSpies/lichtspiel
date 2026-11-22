@@ -69,6 +69,13 @@ label{display:block;color:var(--dim);font-size:13px;margin:10px 0 4px}
 .field select{max-width:100%}
 .field>.help{grid-column:2;font-size:13px}
 .pp-search{display:flex;gap:8px;margin:0 0 12px}
+/* A search field with an × that empties it (clearBtn), shown while there is text. */
+.clr{position:relative;display:inline-block}
+.clr>input{padding-right:30px}
+.clr>input::-webkit-search-cancel-button{display:none}
+.clrx{position:absolute;right:3px;top:50%;transform:translateY(-50%);background:none;border:0;padding:2px 7px;font-size:18px;line-height:1;color:var(--dim);border-radius:50%}
+.clrx:hover{color:var(--text);background:var(--hovfill)}
+.clr>input:placeholder-shown+.clrx{display:none}
 .pp-items{display:flex;flex-direction:column;gap:8px;margin:0 0 12px}
 .pp-item{display:flex;gap:12px;align-items:center;padding:8px;border-radius:8px;background:var(--panel2)}
 .pp-item img,.pp-item .pp-noimg{width:46px;height:69px;object-fit:cover;border-radius:4px;flex:0 0 auto;background:var(--bg)}
@@ -701,7 +708,8 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   .libhead .bar-tools:not(.open) .opt{display:none}
   .libhead .bar-tools .count{position:absolute;right:14px;top:26px;font-size:13px}
   .libhead .bar-tools>input.opt{width:calc(50% - 4px)!important}
-  .libhead .bar-tools>input.opt:nth-of-type(3){width:auto!important;flex:1 1 140px}
+  .libhead .bar-tools>.clr.opt{flex:1 1 140px}
+  .libhead .bar-tools>.clr.opt>input{width:100%!important}
   .libhead .bar-tools .grow,.libhead .bar-tools .size{display:none}
   .libhead .chips{flex-wrap:nowrap;overflow-x:auto;margin-bottom:8px;scrollbar-width:none}
   .libhead .chips>*{flex:0 0 auto}
@@ -760,7 +768,7 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
 <div id="top">
   <button id="navbtn" aria-label="Menu" data-t-aria-label="Menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   <a class="logo" href="#/"><svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="beam"><stop offset="0" style="stop-color:var(--accent)" stop-opacity=".95"/><stop offset="1" style="stop-color:var(--accent)" stop-opacity=".15"/></linearGradient></defs><path d="M4.5 16 27 4.5v23z" fill="url(#beam)"/><circle cx="4.5" cy="16" r="3.5" style="fill:var(--accent)"/><rect x="27.5" y="3.5" width="3.2" height="25" rx="1.6" style="fill:var(--accent)"/></svg><span id="sname">Lichtspiel</span></a>
-  <div id="search"><input id="q" placeholder="Search movies and shows" data-t-placeholder="Search movies and shows" autocomplete="off"></div>
+  <div id="search" class="clr"><input id="q" placeholder="Search movies and shows" data-t-placeholder="Search movies and shows" autocomplete="off"></div>
   <div id="activity" title="Background work on the server" data-t-title="Background work on the server"></div>
   <a id="npbtn" href="#/dashboard" style="display:none" title="Dashboard" data-t-title="Dashboard" aria-label="Dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-8 6 16 3-8h4"/></svg><b></b></a>
   <div id="who"></div>

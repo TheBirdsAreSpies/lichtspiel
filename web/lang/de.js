@@ -507,6 +507,7 @@ I18N.add('de', 'Deutsch', {
     '{v}s': '{v}er',
     'Advanced': 'Erweitert',
     'Clear filters': 'Filter zurücksetzen',
+    'Clear': 'Leeren',
     '{n} shown': '{n} angezeigt',
     'Shows': 'Serien',
     'Seasons': 'Staffeln',
