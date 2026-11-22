@@ -27,6 +27,10 @@ pub(super) fn routes(app: &Arc<App>, ctx: &Ctx, user: &db::User, m: &str, segs: 
                 hub_ix(&db, &user, "recentlyAddedEpisodes", "Recently Added TV", episodes, &ix),
                 hub_ix(&db, &user, "recentlyAddedAlbums", "Recently Added Music", recently_added(&db, &user, Some(ItemKind::Album), 20), &ix),
             ]);
+            // Titles like the last one this person watched, from any library.
+            for b in related::because_rows(&db, &user, None, 1, 20) {
+                hubs.push(hub_ix(&db, &user, &b.identifier, &b.title, b.ids, &ix));
+            }
             for p in db.playlists.iter().filter(|p| p.pinned && visible_playlist(p, &user)) {
                 if matches!(p.default_key.as_deref(), Some("continue" | "recent_movies" | "recent_episodes")) { continue; }
                 let mut ids = query::playlist_items(&db, &user, p);

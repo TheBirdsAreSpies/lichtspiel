@@ -36,12 +36,6 @@ and conventions are in [development.md](development.md).
 
 Collected on 2026-11-22.
 
-### Recommendations
-
-- **"Because you watched X":** home rows built only from the own library, by likeness of genre,
-  director and cast, and by what the others in the household rated well.
-- **Forgotten gems:** a home row of highly rated movies nobody has watched for over a year.
-
 ### Server
 
 - **Convert ahead:** for a title that only plays converted (Chromecast, on the road), the server

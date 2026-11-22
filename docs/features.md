@@ -121,6 +121,12 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   *May delete files* under Users & invites — get **Delete** in a poster's "⋯" menu. It deletes the
   movie's or episode's files (a season or show: all its episodes) from disk; only files inside the
   library's folders are touched.
+- **Because you watched …** — the home page has a row of titles like the movie or show you watched
+  last, and a movie or TV library's **Recommended** page has two (for the last two). Only titles
+  you have not begun, the most alike first (genres, collection, director, actors, year as for
+  related movies), and what the others in the household rated moves a title up (10 of 10) or
+  down (0 of 10). A movie library's Recommended page also shows **Forgotten gems**: movies rated
+  7.5 or more that somebody watched once, but nobody in the last year.
 - **Rows for the time of year** — the home page adds a row while the season lasts:
   **Halloween** (1 Oct – 2 Nov: horror and anything with Halloween in it), **Christmas**
   (1–26 Dec), **New Year's Eve** (27 Dec – 1 Jan) and **Valentine's Day** (7–14 Feb). Titles

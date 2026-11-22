@@ -368,6 +368,109 @@ fn add(hubs: &mut Vec<Hub>, count: usize, title: String, identifier: &str, list:
     hubs.push(Hub { title, identifier: identifier.into(), context: format!("hub.{identifier}"), ids: list.iter().take(count).map(|i| i.id).collect(), more });
 }
 
+/// "Because You Watched …": rows for the last this many titles a person watched, on a library's page.
+pub const BECAUSE_ROWS: usize = 2;
+/// "Forgotten Gems": movies rated at least this (out of 10) …
+pub const GEM_MIN_RATING: f32 = 7.5;
+/// … that somebody watched once, but nobody in this many days (estimated).
+pub const GEM_DAYS: u64 = 365;
+
+/// The movie, or the show of an episode or season.
+fn title_of<'a>(db: &'a Db, it: &'a Item) -> Option<&'a Item> {
+    match it.kind {
+        ItemKind::Movie | ItemKind::Show => Some(it),
+        ItemKind::Episode | ItemKind::Season => show_of(db, it),
+        _ => None,
+    }
+}
+
+/// Rows of titles like the last movies and shows this person watched (newest first, at most `rows`):
+/// only titles they have not begun, each in one row only. The others' ratings in the household
+/// move a title up or down. `sid` keeps to one library.
+pub fn because_rows(db: &Db, user: &User, sid: Option<u64>, rows: usize, count: usize) -> Vec<Hub> {
+    use std::collections::{HashMap, HashSet};
+    let mine = |i: &Item| sid.is_none_or(|s| i.section_id == s) && !i.hidden() && db.can_see_item(user, i);
+    // Every movie or show this person began, and when they last finished one (or an episode of it).
+    let mut begun: HashSet<u64> = HashSet::new();
+    let mut finished: HashMap<u64, u64> = HashMap::new();
+    for (k, v) in db.views.range(format!("{}:", user.id)..format!("{};", user.id)) {
+        if v.view_count == 0 && v.view_offset_ms == 0 {
+            continue;
+        }
+        let Some(t) = k.split_once(':').and_then(|x| x.1.parse::<u64>().ok()).and_then(|i| db.items.get(&i)).and_then(|i| title_of(db, i)) else { continue };
+        begun.insert(t.id);
+        if v.view_count > 0 && v.last_viewed_at > 0 {
+            let e = finished.entry(t.id).or_default();
+            *e = (*e).max(v.last_viewed_at);
+        }
+    }
+    let mut sources: Vec<(u64, &Item)> = finished.iter().filter_map(|(id, at)| db.items.get(id).filter(|i| mine(i)).map(|i| (*at, i))).collect();
+    sources.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.id.cmp(&b.1.id)));
+    // The others' ratings: from -2 (0 of 10) through 0 (5) to +2 (10), their average per title.
+    let mut others: HashMap<u64, (f32, u32)> = HashMap::new();
+    for (k, v) in db.views.iter() {
+        let (Some(r), Some((u, i))) = (v.rating, k.split_once(':')) else { continue };
+        if u.parse::<u64>().ok() == Some(user.id) {
+            continue;
+        }
+        if let Ok(i) = i.parse::<u64>() {
+            let e = others.entry(i).or_default();
+            e.0 += r;
+            e.1 += 1;
+        }
+    }
+    let bonus = |id: u64| others.get(&id).map(|(sum, n)| ((sum / *n as f32 - 5.0) / 2.5) as f64).unwrap_or(0.0);
+    let mut used: HashSet<u64> = HashSet::new();
+    let mut hubs = vec![];
+    for (_, src) in sources {
+        if hubs.len() >= rows {
+            break;
+        }
+        let prefix = if src.kind == ItemKind::Movie { "movie" } else { "tv" };
+        let src_tags = tags(db, user.id, src);
+        let mut scored: Vec<(f64, &Item)> = db
+            .items
+            .values()
+            .filter(|o| o.kind == src.kind && o.section_id == src.section_id && !begun.contains(&o.id) && !used.contains(&o.id) && mine(o))
+            .filter_map(|o| {
+                let s = similarity(&src_tags, src.year, &tags(db, user.id, o), o.year);
+                (s >= SIMILAR_MIN_SCORE).then(|| (s + bonus(o.id), o))
+            })
+            .collect();
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal).then(by_rating(&a.1, &b.1)));
+        if scored.is_empty() {
+            continue;
+        }
+        used.extend(scored.iter().take(count).map(|x| x.1.id));
+        let identifier = format!("{prefix}.because.{}", hubs.len());
+        add(&mut hubs, count, format!("Because You Watched {}", src.title), &identifier, scored.into_iter().map(|x| x.1).collect());
+    }
+    hubs
+}
+
+/// Well rated movies of `pool` that somebody watched once but nobody in [`GEM_DAYS`] days, best first.
+fn forgotten_gems<'a>(db: &Db, pool: &[&'a Item]) -> Vec<&'a Item> {
+    use std::collections::HashMap;
+    let mut latest: HashMap<u64, u64> = HashMap::new();
+    for (k, v) in db.views.iter() {
+        if v.view_count == 0 && v.view_offset_ms == 0 {
+            continue;
+        }
+        if let Some(i) = k.split_once(':').and_then(|x| x.1.parse::<u64>().ok()) {
+            let e = latest.entry(i).or_default();
+            *e = (*e).max(v.last_viewed_at);
+        }
+    }
+    let cutoff = crate::data::db::now().saturating_sub(GEM_DAYS * 86400);
+    let mut gems: Vec<&Item> = pool
+        .iter()
+        .copied()
+        .filter(|i| i.rating.is_some_and(|r| r >= GEM_MIN_RATING) && latest.get(&i.id).is_some_and(|t| *t > 0 && *t < cutoff))
+        .collect();
+    gems.sort_by(by_rating);
+    gems
+}
+
 /// The rows of a library's Recommended page. `day` picks the time-of-year rows, `seed` (the day number)
 /// which genre, person or network gets a row today.
 pub fn section_rows(db: &Db, user: &User, sid: u64, day: (u32, u32), seed: u64, count: usize) -> Vec<Hub> {
@@ -446,6 +549,8 @@ pub fn section_rows(db: &Db, user: &User, sid: u64, day: (u32, u32), seed: u64, 
             let mut unwatched: Vec<&Item> = pool.iter().copied().filter(|i| db.view(user.id, i.id).view_count == 0 && i.rating.is_some()).collect();
             unwatched.sort_by(by_rating);
             add(&mut hubs, count, "Top Unwatched Picks".into(), "movie.unwatched", unwatched);
+            hubs.extend(because_rows(db, user, Some(sid), BECAUSE_ROWS, count));
+            add(&mut hubs, count, "Forgotten Gems".into(), "movie.gems", forgotten_gems(db, &pool));
             for o in seasonal() {
                 hubs.push(o);
             }
@@ -478,6 +583,7 @@ pub fn section_rows(db: &Db, user: &User, sid: u64, day: (u32, u32), seed: u64, 
             let mut fresh: Vec<&Item> = pool.iter().copied().filter(|s| !last.contains_key(&s.id)).collect();
             fresh.sort_by(|a, b| b.added_at.cmp(&a.added_at).then(a.sort_title.cmp(&b.sort_title)));
             add(&mut hubs, count, "Start Watching".into(), "tv.startwatching", fresh);
+            hubs.extend(because_rows(db, user, Some(sid), BECAUSE_ROWS, count));
             // Rediscover: shows watched long ago, the longest ago first.
             let cutoff = crate::data::db::now().saturating_sub(REDISCOVER_DAYS * 86400);
             let mut old: Vec<(u64, &Item)> = pool.iter().filter_map(|s| last.get(&s.id).filter(|t| **t > 0 && **t < cutoff).map(|t| (*t, *s))).collect();
@@ -623,6 +729,48 @@ mod tests {
         let short = section_rows(&db, &user, 1, (6, 1), 0, 2);
         let added = short.iter().find(|h| h.identifier == "movie.recentlyadded").unwrap();
         assert!(added.more && added.ids == vec![4, 3]);
+    }
+
+    #[test]
+    fn because_you_watched_and_forgotten_gems() {
+        let mut db: Db = serde_json::from_value(json!({"version": 1, "machine_id": "x", "next_id": 99, "settings": crate::data::db::Settings::default(),
+            "sections": [], "items": {}, "users": [], "invites": [], "tokens": [], "playlists": [], "views": {}, "plugins": {}})).unwrap();
+        db.sections.push(Section { id: 1, name: "M".into(), kind: SectionKind::Movie, paths: vec![], created_at: 0, scanned_at: 0, credits_detection: true, intro_detection: true, language: String::new(), scan_interval_minutes: None });
+        let mk = |id: u64, genres: &[&str], rating: f32, director: &str| -> Item {
+            serde_json::from_value(json!({"id": id, "section_id": 1, "kind": "movie", "title": format!("T{id}"), "sort_title": format!("t{id:03}"),
+                "genres": genres, "rating": rating, "added_at": id, "updated_at": 0, "extra": {"directors": [director]}})).unwrap()
+        };
+        for it in [
+            mk(1, &["Sci-Fi", "Drama"], 7.0, "Dee"),
+            mk(2, &["Sci-Fi", "Drama"], 6.0, "Dee"),
+            mk(3, &["Sci-Fi", "Drama"], 6.0, "Eve"),
+            mk(4, &["Sci-Fi"], 9.0, "Zed"),
+            mk(5, &["Comedy"], 8.0, "Fay"),
+            mk(6, &["Sci-Fi", "Drama"], 9.0, "Dee"),
+        ] {
+            db.items.insert(it.id, it);
+        }
+        let user: User = serde_json::from_value(json!({"id": 1, "username": "o", "admin": true, "password_hash": "", "salt": "", "created_at": 0})).unwrap();
+        let now = crate::data::db::now();
+        let view = |count: u32, at: u64, rating: Option<f32>| crate::data::db::ViewState { view_count: count, last_viewed_at: at, rating, ..Default::default() };
+        // This person finished 1 and began 6; somebody else loved 3 and did not like 2, and watched 5 two years ago.
+        db.views.insert("1:1".into(), view(1, now, None));
+        db.views.insert("1:6".into(), crate::data::db::ViewState { view_offset_ms: 60_000, last_viewed_at: now, ..Default::default() });
+        db.views.insert("2:3".into(), view(1, now, Some(10.0)));
+        db.views.insert("2:2".into(), view(1, now, Some(2.5)));
+        db.views.insert("2:5".into(), view(1, now - 2 * 365 * 86400, None));
+
+        let rows = because_rows(&db, &user, None, 2, 20);
+        assert_eq!(rows.len(), 1, "one title watched, one row");
+        assert_eq!(rows[0].title, "Because You Watched T1");
+        // 2: two genres and the director (4), not liked (-1) = 3; 3: two genres (2), loved (+2) = 4.
+        // 4 shares one genre only (too little), 5 none, 6 was begun.
+        assert_eq!(rows[0].ids, vec![3, 2]);
+        assert_eq!(rows[0].identifier, "movie.because.0");
+
+        let rows = section_rows(&db, &user, 1, (6, 1), 0, 20);
+        assert_eq!(rows.iter().find(|h| h.identifier == "movie.gems").map(|h| h.ids.clone()), Some(vec![5]), "watched once, long ago, well rated");
+        assert!(rows.iter().any(|h| h.identifier == "movie.because.0"));
     }
 
     #[test]
