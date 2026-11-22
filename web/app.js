@@ -500,10 +500,15 @@ function drawChrome() {
   if (!signed) return;
   // The gear opens the settings; the colour scheme, switching user and signing out sit behind the name.
   const gear = iconBtn('gear', t('Settings'), () => { location.hash = '#/settings'; });
-  const name = h('button', { class: 'link', 'aria-haspopup': 'menu', title: t('Appearance, switch user or sign out'), style: 'background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:4px 6px' }, shownName(S.me) + ' ▾');
+  const name = h('button', { class: 'link', 'aria-haspopup': 'menu', title: t('Appearance, switch user or sign out'), style: 'background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:4px 6px', 'aria-label': shownName(S.me) },
+    // On a phone the round initial stands in for the name (which did not fit); the menu then names who is signed in.
+    h('span', { class: 'av', 'aria-hidden': 'true' }, (shownName(S.me)[0] || '?').toUpperCase()), h('span', { class: 'nm' }, shownName(S.me) + ' ▾'));
+  const narrow = () => !!window.matchMedia && matchMedia('(max-width:760px)').matches;
   // The same choices as Settings → Web (kept with the account).
   const choose = (key, def, opts) => async () => opts.map(([v, l]) => ({ label: l, checked: store.get(key, def) === v, run: () => { store.set(key, v); window.applyTheme(); } }));
   name.onclick = () => openMenu(name, [
+    narrow() ? { label: t('Signed in as {name}', { name: shownName(S.me) }), disabled: true } : null,
+    narrow() ? '-' : null,
     { label: t('Appearance'), sub: choose('theme', 'system', [['system', t('System')], ['light', t('Light')], ['dark', t('Dark')], ['oled', t('OLED (pure black)')]]) },
     { label: t('Accent color'), sub: choose('accent', 'rose', [['rose', t('Rose')], ['amber', t('Amber')], ['blue', t('Blue')], ['green', t('Green')], ['red', t('Red')], ['violet', t('Violet')]]) },
     '-',
