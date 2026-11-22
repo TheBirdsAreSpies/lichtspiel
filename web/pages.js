@@ -1028,8 +1028,8 @@ function pluginPanels(only) {
         go.disabled = false;
       } }, file, go);
     }
-    // Pictures only from the web (https) or the server itself.
-    const pic = src => typeof src === 'string' && /^(https:\/\/|\/(?!\/))/.test(src) ? h('img', { src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: e => e.target.replaceWith(h('div', { class: 'pp-noimg' })) }) : h('div', { class: 'pp-noimg' });
+    // Pictures only from the web (https) or the server itself (with the ticket, or the server turns them away).
+    const pic = src => typeof src === 'string' && /^(https:\/\/|\/(?!\/))/.test(src) ? h('img', { src: src[0] === '/' ? smallTok(src, 120) : src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: e => e.target.replaceWith(h('div', { class: 'pp-noimg' })) }) : h('div', { class: 'pp-noimg' });
     // A list where no entry has a picture gets no picture column; a title may link to a page of the app,
     // or to a page on the web (https, in a new tab).
     const pics = (p.items || []).some(it => 'image' in it);
