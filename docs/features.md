@@ -138,7 +138,14 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
 - **Users and invites** — create an invite link (valid 7 days by default, single use),
   choose which libraries the person may see and whether the server may convert video for
   them, then send them the link. They pick their own name and password. Each user has their
-  own watched state, resume points, ratings, favourites and playlists.
+  own watched state, resume points, ratings, favourites and playlists. Under **Users & invites**
+  an admin can give a person an **age limit** (parental controls: up to 0, 6, 12, 16 or 18;
+  titles above it are hidden everywhere, episodes take the rating of their show, and *Hide
+  unrated* also hides titles without one) and make them a **home profile** (shown on the
+  sign-in screen of browsers in the home network, a tap and an optional PIN sign in; switched on
+  under Settings with *Profiles on the sign-in screen*). A TV or another device without a
+  keyboard signs in **with a code**: it shows a code and a QR code, and a signed-in phone confirms
+  it (`#/link`).
 - **E-mail** — with a mail server under **Settings → General → E-mail** (`smtp_host`,
   `smtp_port`, `smtp_security`: `"starttls"`, `"ssl"` or `"none"`, `smtp_user`, `smtp_password`,
   `smtp_from`; **Save and send a test mail** checks it) the server mails invites itself (*Send by

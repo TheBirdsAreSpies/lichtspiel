@@ -34,22 +34,19 @@ and conventions are in [development.md](development.md).
 
 ## Ideas
 
-Collected on 2026-11-22, the first three are the most useful.
+Collected on 2026-11-22.
 
-### Family and recommendations
+### Recommendations
 
-- **Age limit per user (kids profile):** an admin sets a highest age rating per user; titles above
-  it are hidden everywhere (libraries, search, home rows, collections, API, MCP). The age rating
-  is already in the metadata.
 - **"Because you watched X":** home rows built only from the own library, by likeness of genre,
   director and cast, and by what the others in the household rated well.
 - **Forgotten gems:** a home row of highly rated movies nobody has watched for over a year.
-- **Sign in on a TV without a password:** the TV shows a code, confirmed on the phone.
 
 ### Server
 
 - **Convert ahead:** for a title that only plays converted (Chromecast, on the road), the server
-  makes a fitting version in the maintenance window, so the NAS has nothing to do while playing.
+  makes a fitting version in the maintenance window, so the NAS has nothing to do while playing
+  (by hand this is **Optimize** in a title's "⋯" menu).
 - **Quality check:** the Library doctor reports movies in low resolution or without a German audio
   track; with Radarr it could ask for a better version.
 - **Statistics page:** who watches how much, the most watched shows, times of day, load on the
