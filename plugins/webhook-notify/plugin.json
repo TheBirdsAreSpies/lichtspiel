@@ -1,7 +1,7 @@
 {
   "id": "webhook-notify",
   "name": "Webhook notify",
-  "version": "1.1",
+  "version": "1.2",
   "author": "example",
   "description": "Sends a message to one or more web addresses when something happens: new movies and episodes, playback, invites and new users. Works with Discord, Home Assistant, ntfy and anything that accepts JSON.",
   "command": ["python3", "main.py"],

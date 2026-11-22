@@ -37,6 +37,7 @@ Some server tests need ffmpeg on the PATH and skip themselves without it.
 - Web text: the English string is the key (`t('Sign in')`). Add the German text to `web/lang/de.js` whenever you add or change UI text.
 - The Flutter client's UI text is German and written directly in the code.
 - Line endings: most files are LF, a few are CRLF (`web/lang/de.js`, `web/app.js`, all of `src/api/routes/` …; `git ls-files --eol` shows them). Keep each file as it is; `sed -i` and editors that normalize a whole file change every line.
+- A change to a bundled plugin's code needs a higher `version` in its `plugin.json` (`1.1` → `1.2`). A server that already has the plugin copies in the new `.py` files and `plugin.json` only when that version goes up (`src/server/bundled.rs`). Without the higher version, the NAS keeps running the old code.
 - `cargo build --release --no-default-features` (the Docker build) must keep compiling. Anything that needs a window goes behind `#[cfg(feature = "console")]`.
 
 ## Commits and pushing

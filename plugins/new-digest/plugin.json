@@ -1,7 +1,7 @@
 {
   "id": "new-digest",
   "name": "New on Lichtspiel",
-  "version": "1.0",
+  "version": "1.1",
   "author": "Lichtspiel",
   "description": "Collects the movies and episodes added and sends one message a week (or a day) with their posters, by e-mail and/or Telegram. Each person chooses under Settings: their e-mail address, connecting Telegram, or nothing. E-mail goes through the mail server set under Settings → General; enter one here (smtp_host, smtp_port, smtp_security: \"starttls\", \"ssl\" or \"none\", smtp_user, smtp_password, smtp_from) only for a different one for this plugin; for Telegram the token of a bot made with @BotFather (telegram_bot_token). \"every\": \"week\" or \"day\"; \"weekday\": the day of the weekly message (monday … sunday); \"skip_libraries\": libraries left out, by name. With the address used in invite links (Settings → General) the titles link to their page.",
   "command": ["python3", "main.py"],

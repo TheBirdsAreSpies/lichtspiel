@@ -1,7 +1,7 @@
 {
   "id": "wrapped",
   "name": "Lichtspiel Wrapped",
-  "version": "1.0",
+  "version": "1.1",
   "author": "Lichtspiel",
   "description": "A look back at the year for each person on its own page in the left menu: hours watched, movies and episodes, favourite genres, most watched shows, longest binge, busiest month, first and last title of the year. It counts every movie and episode watched to the end, also those brought in from Plex and those from before it was switched on (titles marked as watched by hand do not count). Each person sees only their own year.",
   "command": ["python3", "main.py"],
