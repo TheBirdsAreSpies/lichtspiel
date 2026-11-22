@@ -2072,10 +2072,13 @@ function setPinned(key, pinned) {
   toast(pinned ? t('Pinned to the menu') : t('Unpinned — it is under “More” in the menu'));
 }
 const moreBtn = (title, onclick) => h('button', { class: 'more', title, 'aria-label': title, onclick: e => { e.preventDefault(); e.stopPropagation(); onclick(e.currentTarget); } }, '⋯');
+// Each entry's icon: a library's by its kind, then Playlists, Statistics and the plugins' pages.
+const navIcon = e => e.sec ? ({ movie: 'movie', show: 'tv', music: 'music', artist: 'music', photo: 'photo' })[e.sec.type] || 'folder'
+  : ({ playlists: 'playlists', stats: 'stats' })[e.key] || 'plugin';
 function navLink(e) {
   const s = e.sec;
-  return h('a', { href: '#/' + e.nav, 'data-nav': e.nav },
-    h('span', {}, e.title), s ? h('small', {}, s.type === 'show' ? t('{n} shows', { n: s.count }) : s.videoCount) : null,
+  return h('a', { href: '#/' + e.nav, 'data-nav': e.nav, title: e.title },
+    icon(navIcon(e)), h('span', {}, e.title), s ? h('small', {}, s.type === 'show' ? t('{n} shows', { n: s.count }) : s.videoCount) : null,
     moreBtn(t('More'), b => s ? sectionMenu(s, b) : openMenu(b, [{ label: e.hidden ? t('Pin') : t('Unpin'), run: () => setPinned(e.key, e.hidden) }])));
 }
 function drawNav() {
@@ -2099,11 +2102,11 @@ function drawNav() {
     // "More" opens by itself while one of its libraries is shown.
     const open = NAV.more || off.some(e => e.nav === NAV.cur);
     box.replaceChildren(head, ...pinned.map(navLink),
-      off.length ? h('a', { href: '#', class: 'morehead', onclick: ev => {
+      off.length ? h('a', { href: '#', class: 'morehead', title: t('More'), onclick: ev => {
         ev.preventDefault(); NAV.more = !open;
         store.set('navMore', NAV.more ? '1' : '0');
         drawNav();
-      } }, h('span', {}, t('More')), h('small', {}, (open ? '▾ ' : '▸ ') + off.length)) : '',
+      } }, icon('more'), h('span', {}, t('More')), h('small', {}, (open ? '▾ ' : '▸ ') + off.length)) : '',
       ...(open ? off.map(navLink) : []));
   }
   document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', a.dataset.nav === NAV.cur));

@@ -496,7 +496,9 @@ function drawChrome() {
   const signed = !!S.me;
   $('#side').style.display = signed ? '' : 'none';
   $('#search').style.visibility = signed ? '' : 'hidden';
-  $('#main').style.marginLeft = signed && innerWidth > 760 ? '220px' : '0';
+  // The menu's width (folded to its icons or not) is the style sheet's; signed out there is none.
+  $('#main').style.marginLeft = signed ? '' : '0';
+  drawSideToggle();
   if (!signed) return;
   // The gear opens the settings; the colour scheme, switching user and signing out sit behind the name.
   const gear = iconBtn('gear', t('Settings'), () => { location.hash = '#/settings'; });
@@ -523,6 +525,18 @@ function drawChrome() {
   drawNav();
   drawDlChip();
 }
+// The left menu folded to its icons (each link then names itself in its tooltip); kept in this browser,
+// as it suits the screen. The fixed links of index.html get their icons here.
+function drawSideToggle() {
+  const small = store.get('navSmall', '0') === '1';
+  document.body.classList.toggle('nav-small', small);
+  document.querySelectorAll('#side > a[data-icon]').forEach(a => { if (!a.querySelector('svg')) a.prepend(icon(a.dataset.icon)); });
+  const label = small ? t('Expand the menu') : t('Collapse the menu to its icons');
+  $('#sidetoggle').replaceChildren(icon(small ? 'unfold' : 'fold'), h('span', {}, t('Collapse')));
+  $('#sidetoggle').title = label;
+  $('#sidetoggle').setAttribute('aria-label', label);
+}
+$('#sidetoggle').addEventListener('click', () => { store.set('navSmall', store.get('navSmall', '0') === '1' ? '0' : '1'); drawSideToggle(); });
 // The phone's bar at the bottom: its menu button opens the side bar over the page (and closes it again).
 $('#tabmenu').addEventListener('click', e => { e.stopPropagation(); document.body.classList.toggle('nav-open'); });
 function markNav(key) { NAV.cur = key; document.querySelectorAll('#side a, #tabbar a').forEach(a => a.classList.toggle('on', a.dataset.nav === key)); $('#npbtn').classList.toggle('on', key === 'dashboard'); }

@@ -99,7 +99,22 @@ label{display:block;color:var(--dim);font-size:13px;margin:10px 0 4px}
 #who{color:var(--dim);font-size:14px;display:flex;gap:10px;align-items:center}
 #who .link .av{display:none;width:32px;height:32px;border-radius:50%;background:var(--panel2);border:2px solid var(--line);align-items:center;justify-content:center;font-weight:600;color:var(--accent)}
 #side{position:fixed;top:56px;bottom:0;left:0;width:220px;background:var(--panel);overflow:auto;padding:14px 0}
-#side a{display:flex;justify-content:space-between;padding:9px 22px;color:var(--dim);border-left:4px solid transparent}
+#side a{display:flex;align-items:center;gap:12px;padding:9px 22px 9px 18px;color:var(--dim);border-left:4px solid transparent}
+#side a>svg,#sidetoggle svg{width:20px;height:20px;fill:currentColor;flex:none}
+#side a>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The button at the bottom folds the menu to its icons (the choice is kept in this browser). */
+#sidetoggle{display:flex;align-items:center;gap:12px;width:100%;margin-top:10px;padding:9px 22px;background:none;border:0;border-radius:0;color:var(--faint);text-align:left}
+#sidetoggle:hover{color:var(--text)}
+#side,#main{transition:width .15s,margin-left .15s}
+@media (min-width:761px){
+  body.nav-small #side{width:64px;overflow-x:hidden}
+  body.nav-small #main{margin-left:64px}
+  body.nav-small #side a{justify-content:center;padding:10px 4px 10px 0}
+  body.nav-small #side a>span,body.nav-small #side a small,body.nav-small #side .more,body.nav-small #side .navhint,body.nav-small #sidetoggle span,body.nav-small #ver{display:none}
+  body.nav-small #side .head{font-size:0;padding:0;margin:10px 14px;border-top:1px solid var(--line)}
+  body.nav-small #sidetoggle{justify-content:center;padding:9px 0}
+}
+@media (max-width:760px){#sidetoggle{display:none}}
 #side a:hover{color:var(--text)}
 #side a.on{color:var(--text);background:var(--panel2);border-left-color:var(--accent)}
 #side .head{font-size:11px;letter-spacing:.08em;color:var(--faint);padding:16px 22px 6px}
@@ -774,10 +789,11 @@ button.dirbtn{padding:6px 10px;font-size:15px;line-height:1;background:var(--pan
   <div id="who"></div>
 </div>
 <nav id="side">
-  <a href="#/" data-nav="home" data-t="Home">Home</a>
-  <a href="#/watchlist" data-nav="watchlist" data-t="Watchlist">Watchlist</a>
-  <a href="#/downloads" data-nav="downloads" data-t="Downloads" style="display:none">Downloads</a>
+  <a href="#/" data-nav="home" data-icon="home" data-t-title="Home"><span data-t="Home">Home</span></a>
+  <a href="#/watchlist" data-nav="watchlist" data-icon="markOff" data-t-title="Watchlist"><span data-t="Watchlist">Watchlist</span></a>
+  <a href="#/downloads" data-nav="downloads" data-icon="download" data-t-title="Downloads" style="display:none"><span data-t="Downloads">Downloads</span></a>
   <div id="navsections"></div>
+  <button id="sidetoggle" type="button"></button>
   <div id="ver"></div>
 </nav>
 <main id="main"><p class="dim" data-t="Loading…">Loading…</p></main>
