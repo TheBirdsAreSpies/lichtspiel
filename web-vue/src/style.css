@@ -357,6 +357,16 @@ code.ev { margin: 0 6px 6px 0; display: inline-block; }
 .pp-item .actions { margin: 0; flex-wrap: wrap; justify-content: flex-end; }
 .select { user-select: all; }
 .narrow-wide { max-width: 900px; }
+.bar-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.bar-tools .check { display: flex; gap: 6px; align-items: center; margin: 0; }
+.small-text { font-size: 13px; word-break: break-word; }
+.dl-list { display: flex; flex-direction: column; }
+.dl-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.dl-row img { width: 46px; height: 68px; object-fit: cover; border-radius: 4px; background: var(--panel2); flex: none; }
+.dl-row .actions { margin: 0; flex-wrap: wrap; justify-content: flex-end; }
+.dlbar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 6px; max-width: 360px; }
+.dlbar i { display: block; height: 100%; background: var(--accent); transition: width .5s; }
+.nav-count { margin-left: auto; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 999px; }
 .saved { margin-left: 10px; font-size: 13px; }
 .small { font-size: 13px; }
 .qr { width: 220px; height: 220px; border-radius: 8px; overflow: hidden; background: #fff; }

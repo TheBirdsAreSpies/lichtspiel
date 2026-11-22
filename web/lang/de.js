@@ -1668,6 +1668,7 @@ I18N.add('de', 'Deutsch', {
     'Try again': 'Erneut versuchen',
     'Stop and remove': 'Abbrechen und entfernen',
     'Stop converting “{title}” and remove it?': 'Umwandlung von „{title}“ abbrechen und entfernen?',
+    'Use the download button on the page of a movie, an episode, a season or a show.': 'Nutze den Download-Knopf auf der Seite eines Films, einer Folge, einer Staffel oder einer Serie.',
     'Use “Download…” on a movie, an episode, a season or a show, or in a poster’s “⋯” menu.': 'Nutze „Herunterladen …“ bei einem Film, einer Folge, einer Staffel oder einer Serie oder im „⋯“-Menü eines Posters.',
     'Converted copies are kept on the server for {n} days.': 'Umgewandelte Kopien bleiben {n} Tage auf dem Server.',
     'Downloads are switched off for your account. Ask the owner of the server.': 'Herunterladen ist für dein Konto ausgeschaltet. Frag den Besitzer des Servers.',

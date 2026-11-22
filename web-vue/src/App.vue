@@ -7,6 +7,7 @@ import { session, signOut, savePref } from './api';
 import { lang, packs, setLang, t } from './i18n';
 import Icon from './components/Icon.vue';
 import { loadPanels, panels } from './plugins';
+import { dl, loadDlCount } from './downloads';
 import { toastState } from './toast';
 
 const route = useRoute();
@@ -31,7 +32,7 @@ function search(now = false) {
 }
 
 // The plugins' own pages in the left menu (asked for again after signing in as someone else).
-watch(() => session.me && session.me.id, id => { if (id) loadPanels(); }, { immediate: true });
+watch(() => session.me && session.me.id, id => { if (id) { loadPanels(); loadDlCount(); } }, { immediate: true });
 
 const menuOpen = ref(false);
 const sideOpen = ref(false);
@@ -78,6 +79,7 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
       <RouterLink to="/" class="nav" exact-active-class="on"><Icon name="home" /><span>{{ t('Home') }}</span></RouterLink>
       <RouterLink to="/watchlist" class="nav" active-class="on"><Icon name="mark" /><span>{{ t('Watchlist') }}</span></RouterLink>
       <RouterLink to="/playlists" class="nav" :class="{ on: route.name === 'playlist' }" active-class="on"><Icon name="playlist" /><span>{{ t('Playlists') }}</span></RouterLink>
+      <RouterLink v-if="session.me && session.me.can_download" to="/downloads" class="nav" active-class="on"><Icon name="download" /><span>{{ t('Downloads') }}</span><small v-if="dl.busy" class="nav-count" :title="t('{n} being converted', { n: dl.busy })">{{ dl.busy }}</small></RouterLink>
       <div class="nav-head">{{ t('Libraries') }}</div>
       <RouterLink v-for="s in session.sections" :key="s.id" :to="'/library/' + s.id" class="nav" active-class="on">
         <Icon :name="icon(s.type)" /><span>{{ s.title }}</span>
