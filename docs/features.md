@@ -259,7 +259,7 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   `imdb-top-250` (IMDb's Top 250 through its copy on Letterboxd, as IMDb blocks programs),
   `oscar-best-picture` (Wikidata), `tmdb-popular` and `tmdb-top-rated` (100 each, with a
   `tmdb_api_key` in the plugin's settings) and any public Letterboxd list or watchlist by its
-  address — the lists are a table in the plugin's settings (a name and a source per line, the
+  address (or its boxd.it share link) — the lists are a table in the plugin's settings (a name and a source per line, the
   sources offered to pick), `libraries` by name
   (empty = every movie library). Titles are found by TMDB or IMDb id, else by title and year; only
   titles you have go in. A collection the plugin filled keeps up with its list (titles that leave

@@ -7,7 +7,7 @@ Once a day and when an admin asks, fills collections in the movie libraries from
 - "oscar-best-picture": the winners of the Academy Award for Best Picture (Wikidata),
 - "tmdb-popular" / "tmdb-top-rated": TMDB's 100 most popular / best rated movies (needs a TMDB key
   in the settings),
-- any public Letterboxd list or watchlist, by its address.
+- any public Letterboxd list or watchlist, by its address (or its boxd.it short link).
 
 Only titles in the library go in. The server puts them in each collection and takes out titles the
 plugin put there before that are no longer on the list; collections given by hand stay. A list
@@ -215,10 +215,24 @@ def tmdb_list(path, key):
     return out
 
 
+LETTERBOXD_LIST = r"^https://(www\.)?letterboxd\.com/[^/]+/(list/[^/]+|watchlist)/?"
+
+
+def unshorten(url):
+    """Where a boxd.it short link leads (Letterboxd's share links), or None."""
+    if not re.match(r"^https?://boxd\.it/[A-Za-z0-9]+/?$", url):
+        return None
+    req = urllib.request.Request(url, headers={"User-Agent": UA}, method="HEAD")
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        return r.geturl()
+
+
 def films_of(source, settings, cache, budget):
     source = str(source or "").strip()
     kind, arg = PRESETS.get(source, (None, None))
-    if kind is None and re.match(r"^https://(www\.)?letterboxd\.com/[^/]+/(list/[^/]+|watchlist)/?", source):
+    if kind is None:
+        source = unshorten(source) or source
+    if kind is None and re.match(LETTERBOXD_LIST, source):
         kind, arg = "letterboxd", source
     if kind == "letterboxd":
         return letterboxd_films(arg, cache, budget)
@@ -252,13 +266,17 @@ def library_index(listing, settings):
     return by_tmdb, by_imdb, by_name
 
 
-def match(films, index):
-    """The library ids of the films (each film may be there as several titles)."""
+def titles_of(film, index):
+    """The library ids of one film (it may be there as several titles: in two libraries …)."""
     by_tmdb, by_imdb, by_name = index
+    return by_tmdb.get(film.get("tmdb")) or by_imdb.get(film.get("imdb")) or by_name.get((norm(film.get("title")), film.get("year"))) or []
+
+
+def match(films, index):
+    """The library ids of the films."""
     out = []
     for f in films:
-        ids = by_tmdb.get(f.get("tmdb")) or by_imdb.get(f.get("imdb")) or by_name.get((norm(f.get("title")), f.get("year"))) or []
-        for i in ids:
+        for i in titles_of(f, index):
             if i not in out:
                 out.append(i)
     return out
@@ -285,7 +303,9 @@ def run(server, settings):
             films = films_of(source, settings, cache, budget)
             ids = match(films, index)
             collections[name] = ids
-            report.append({"name": name, "source": source, "found": len(ids), "total": len(films)})
+            # Films of the list you have, not titles: a film there twice counts once.
+            found = sum(1 for f in films if titles_of(f, index))
+            report.append({"name": name, "source": source, "found": found, "total": len(films)})
         except Exception as e:  # noqa: BLE001 — shown in the panel, the other lists go on
             # Not reachable: the collection is left as it is.
             report.append({"name": name, "source": source, "error": str(e)})

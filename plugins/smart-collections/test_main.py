@@ -104,6 +104,13 @@ class Lists(unittest.TestCase):
             self.assertEqual(main.films_of("https://letterboxd.com/anna/watchlist/", {}, {}, [0]), [{"url": "https://letterboxd.com/anna/watchlist/"}])
         with self.assertRaisesRegex(ValueError, "TMDB key"):
             main.films_of("tmdb-popular", {}, {}, [0])
+            # A boxd.it share link is followed to the list it leads to.
+            with mock.patch.object(main, "unshorten", lambda u: "https://letterboxd.com/a/list/b/" if "boxd.it" in u else None):
+                self.assertEqual(main.films_of("https://boxd.it/bAS2M", {}, {}, [0]), [{"url": "https://letterboxd.com/a/list/b/"}])
+            with mock.patch.object(main, "unshorten", lambda u: "https://evil.example/x" if "boxd.it" in u else None):
+                with self.assertRaisesRegex(ValueError, "unknown source"):
+                    main.films_of("https://boxd.it/abc", {}, {}, [0])
+        self.assertIsNone(main.unshorten("https://letterboxd.com/a/list/b/"))
         for bad in ("https://evil.example/list/", "http://letterboxd.com/a/list/b/", "imdb"):
             with self.assertRaisesRegex(ValueError, "unknown source"):
                 main.films_of(bad, {}, {}, [0])
@@ -140,6 +147,12 @@ class Runs(unittest.TestCase):
             self.assertEqual(main.read_json(main.STATE, {})["managed"], ["Down", "IMDb Top 250", "Oscars"])
             out, _ = main.run({}, {"lists": [{"name": "Oscars", "source": "oscar-best-picture"}]})
             self.assertEqual(out["collections"], {"Oscars": [1], "IMDb Top 250": [], "Down": []})
+            # A film you have twice (in two libraries) is one film of the list, in both titles.
+            twice = dict(LIBRARY, items=LIBRARY["items"] + [movie(7, "Der Pate", 1972, tmdb=238, section=2)])
+            with mock.patch.object(main, "fetch_library", lambda server: twice):
+                out, report = main.run({}, {"lists": [{"name": "Oscars", "source": "oscar-best-picture"}]})
+            self.assertEqual(out["collections"]["Oscars"], [1, 7])
+            self.assertEqual((report[0]["found"], report[0]["total"]), (1, 2))
             out, _ = main.run({}, {"lists": [{"name": "Oscars", "source": "oscar-best-picture"}]})
             self.assertEqual(out["collections"], {"Oscars": [1]})
 
