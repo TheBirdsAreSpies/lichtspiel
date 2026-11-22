@@ -64,6 +64,7 @@ Movies are read the way Plex's naming guide describes:
 | Extras in a subfolder of the movie's folder | `Avatar (2009)/Trailers/Teaser.mkv` — also `Behind The Scenes`, `Deleted Scenes`, `Featurettes`, `Interviews`, `Scenes`, `Shorts`, `Other`, `Extras` |
 | Extras next to the movie | `Avatar (2009)-trailer.mkv` — also `-behindthescenes`, `-deleted`, `-featurette`, `-interview`, `-scene`, `-short`, `-other` |
 | A trailer file on its own | `Avatar (2009)/trailer.mkv` or `movie-trailer.mkv` |
+| Subtitles next to the video, with their language (`de`, `ger`, `German`) and `forced` or `sdh` / `cc` | `Avatar (2009).de.srt`, `Avatar (2009).en.forced.srt`, `Avatar (2009).en.sdh.srt` |
 
 **Trailers:** the **▶ Trailer** button on a movie or show page plays a trailer file when there
 is one. Otherwise it plays the first online trailer found while matching (from TMDB, or from

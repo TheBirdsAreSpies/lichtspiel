@@ -203,7 +203,11 @@ pub fn item_json_ix(db: &Db, user: &User, it: &Item, detail: bool, ix: Option<&I
                         "offsetMs": crate::api::handlers::subtitle_timing(m, &n.to_string()).map(|t| t.offset_ms)}))
                     .collect();
                 for (n, p) in f.external_subtitles.iter().enumerate() {
-                    subs.push(json!({"key": format!("/library/parts/{}/subtitles/x{}", m.id, n), "file": Path::new(p).file_name().map(|s| s.to_string_lossy().to_string()), "embedded": false,
+                    let name = Path::new(p).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                    let video = Path::new(&f.path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                    let (language, forced, sdh) = subtitle_file_info(&name, &video);
+                    subs.push(json!({"key": format!("/library/parts/{}/subtitles/x{}", m.id, n), "file": name, "embedded": false,
+                        "language": language, "forced": forced, "sdh": sdh,
                         "offsetMs": crate::api::handlers::subtitle_timing(m, &format!("x{n}")).map(|t| t.offset_ms)}));
                 }
                 media["subtitles"] = json!(subs);
@@ -525,9 +529,59 @@ pub fn placeholder_svg(title: &str, kind: &str, id: u64) -> String {
     )
 }
 
+/// What the name of a subtitle file next to a video says, named the Plex way: its language and whether it
+/// is forced or for the hard of hearing. "Movie (2020).de.srt" → ("de", false, false), "Movie.en.forced.srt",
+/// "Movie.German.sdh.srt", "Movie.ger.cc.srt". Only the words after the video's own name count (else the last
+/// two before the extension), so a word of the title is not taken for a language.
+pub fn subtitle_file_info(file: &str, video_stem: &str) -> (Option<String>, bool, bool) {
+    const NAMES: [(&str, &str); 24] = [("english", "en"), ("german", "de"), ("deutsch", "de"), ("french", "fr"), ("francais", "fr"), ("français", "fr"),
+        ("spanish", "es"), ("espanol", "es"), ("español", "es"), ("italian", "it"), ("italiano", "it"), ("portuguese", "pt"), ("dutch", "nl"),
+        ("nederlands", "nl"), ("swedish", "sv"), ("danish", "da"), ("norwegian", "no"), ("finnish", "fi"), ("polish", "pl"), ("russian", "ru"),
+        ("turkish", "tr"), ("japanese", "ja"), ("korean", "ko"), ("chinese", "zh")];
+    const THREE: [&str; 23] = ["eng", "ger", "deu", "fre", "fra", "spa", "ita", "por", "dut", "nld", "swe", "dan", "nor", "fin", "pol", "rus",
+        "tur", "jpn", "kor", "chi", "zho", "cze", "hun"];
+    let stem = file.rsplit_once('.').map(|(a, _)| a).unwrap_or(file);
+    let words: Vec<&str> = match stem.strip_prefix(video_stem).filter(|_| !video_stem.is_empty()) {
+        Some(rest) => rest.split(['.', '_']).filter(|w| !w.is_empty()).collect(),
+        None => { let all: Vec<&str> = stem.split('.').collect(); all[all.len().saturating_sub(2).max(1).min(all.len())..].to_vec() }
+    };
+    let (mut lang, mut forced, mut sdh) = (None, false, false);
+    for w in words {
+        let l = w.to_lowercase();
+        match l.as_str() {
+            "forced" | "erzwungen" => forced = true,
+            // (Not "hi": that is Hindi.)
+            "sdh" | "cc" => sdh = true,
+            _ if lang.is_none() => {
+                let base = l.split('-').next().unwrap_or("");
+                if let Some((_, code)) = NAMES.iter().find(|(n, _)| *n == l) { lang = Some(code.to_string()); }
+                else if base.len() == 2 && base.chars().all(|c| c.is_ascii_lowercase()) { lang = Some(base.to_string()); }
+                else if THREE.contains(&base) { lang = Some(base.to_string()); }
+            }
+            _ => {}
+        }
+    }
+    (lang, forced, sdh)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_subtitle_files_name_tells_its_language() {
+        let f = |file: &str| subtitle_file_info(file, "Big Test (2020)");
+        assert_eq!(f("Big Test (2020).de.srt"), (Some("de".into()), false, false));
+        assert_eq!(f("Big Test (2020).en.forced.srt"), (Some("en".into()), true, false));
+        assert_eq!(f("Big Test (2020).German.sdh.srt"), (Some("de".into()), false, true));
+        assert_eq!(f("Big Test (2020).ger.srt"), (Some("ger".into()), false, false));
+        assert_eq!(f("Big Test (2020).pt-BR.srt"), (Some("pt".into()), false, false));
+        assert_eq!(f("Big Test (2020).srt"), (None, false, false));
+        assert_eq!(f("Big Test (2020).hi.srt"), (Some("hi".into()), false, false));
+        // A name that does not start with the video's: only the last words count, not the title's.
+        assert_eq!(subtitle_file_info("It Follows.srt", "other"), (None, false, false));
+        assert_eq!(subtitle_file_info("Up.2009.en.srt", "other"), (Some("en".into()), false, false));
+    }
 
     fn item(id: u64, kind: ItemKind, parent: Option<u64>, index: u32) -> Item {
         let mut it: Item = serde_json::from_value(json!({"id": id, "section_id": 1, "kind": kind.as_str(), "title": format!("t{id}"), "added_at": 1, "updated_at": 1})).unwrap();
