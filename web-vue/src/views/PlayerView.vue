@@ -8,9 +8,12 @@
 // and credits are marked on the seek bar, with buttons to skip the intro / recap and the credits. At the end
 // (or on "Skip credits") the next episode comes after a countdown; after a few in a row without anyone
 // touching anything, the player asks whether somebody is still watching.
+// The sleep timer (⚙) pauses after some minutes or stops at the end of the title; ? lists the keys.
+// The owner can move a subtitle's timing (subtitle menu). "What happened so far" (?until=…&then=…) plays
+// the end of the episode before without saving anything, then goes on to the episode.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api, get, list, picture, pref, savePref, ticket, withTicket, type Container, type Item, type Stream, type Subtitle } from '../api';
+import { api, get, list, picture, pref, savePref, session, ticket, withTicket, type Container, type Item, type Stream, type Subtitle } from '../api';
 import { fmtClock, fmtNum, fmtTime, langName, lang2, resumeAt } from '../format';
 import { t } from '../i18n';
 import Icon from '../components/Icon.vue';
@@ -34,7 +37,7 @@ const volume = ref(1);
 const full = ref(false);
 const idle = ref(false);
 const menu = ref<'' | 'subs' | 'audio' | 'settings' | 'chapters'>('');
-const page = ref<'main' | 'quality' | 'speed'>('main'); // the page of ⚙ that shows
+const page = ref<'main' | 'quality' | 'speed' | 'sleep'>('main'); // the page of ⚙ that shows
 const audio = ref<number | null>(null); // the audio stream's index, null = the file's first
 const sub = ref(-1); // the text subtitle shown (index in subs), -1 = none
 const burn = ref<number | null>(null); // the picture subtitle burned into the video (index in subs)
@@ -44,6 +47,8 @@ const stopped = ref(false); // the owner stopped this playback (from the dashboa
 const stoppedMsg = ref('');
 const upNext = ref<Item | null>(null); // the next episode (looked up when the video starts)
 let tk = '';
+// "What happened so far": this is the episode before, played up to `until` (s), then `then` from `at`.
+const catchUp = route.query.until && route.query.then ? { until: Number(route.query.until), then: String(route.query.then), at: Number(route.query.at) || 0 } : null;
 let timer = 0;
 let idleTimer = 0;
 let loadSeq = 0;
@@ -62,7 +67,7 @@ const partStart = (n: number) => parts.value.slice(0, n).reduce((a, b) => a + b,
 const title = computed(() => (it.value ? (it.value.type === 'episode' ? it.value.grandparentTitle : it.value.title) : ''));
 const subLine = computed(() => {
   const i = it.value; if (!i) return '';
-  return i.type === 'episode' ? `${t('S{n}', { n: i.parentIndex || 0 })}${t('E{n}', { n: i.index || 0 })} · ${i.title}` : i.year ? String(i.year) : '';
+  return i.type === 'episode' ? `${catchUp ? t('What happened so far') + ' · ' : ''}${t('S{n}', { n: i.parentIndex || 0 })}${t('E{n}', { n: i.index || 0 })} · ${i.title}` : i.year ? String(i.year) : '';
 });
 const subName = (s: Subtitle, i: number) => [s.language ? langName(s.language) : '', s.title, s.forced ? t('forced') : '', s.sdh ? 'SDH' : '', !s.language && s.file ? s.file : ''].filter(Boolean).join(' · ') || t('Subtitles {n}', { n: i + 1 });
 const audioName = (a: Stream) => [a.language ? langName(a.language) : '', String(a.codec || '').toUpperCase(), a.channels === 6 ? '5.1' : a.channels === 8 ? '7.1' : a.channels === 2 ? t('Stereo') : '', a.title || ''].filter(Boolean).join(' · ');
@@ -115,6 +120,7 @@ async function load(at: number) {
 // Text subtitles as <track>s; a converted stream starts at the seek point, so their times move by as much.
 // They belong to the first file of a split movie (a later part would show them at the wrong time).
 let tracks: number[] = []; // the subtitle (index in subs) of each <track>
+let subRev = 0; // set when a subtitle's timing changed, so the browser fetches it again
 function addSubtitles() {
   const v = video.value; if (!v) return;
   v.querySelectorAll('track').forEach(tr => tr.remove());
@@ -125,7 +131,7 @@ function addSubtitles() {
     tracks.push(i);
     const el = document.createElement('track');
     el.kind = 'subtitles'; el.label = subName(s, i); el.srclang = (s.language || 'und').slice(0, 2);
-    el.src = withTicket(s.key, tk);
+    el.src = withTicket(s.key + (subRev ? '?r=' + subRev : ''), tk);
     const shift = offset.value;
     el.addEventListener('load', () => {
       if (shift > 0 && el.track.cues) for (const c of Array.from(el.track.cues)) { c.startTime = Math.max(0, c.startTime - shift); c.endTime = Math.max(0, c.endTime - shift); }
@@ -212,6 +218,28 @@ function setSub(i: number) {
   // A burned-in picture comes or goes: the video is fetched again from here.
   if (before !== burn.value) load(now.value);
 }
+// Subtitle timing (owner): listen to the sound and move the lines onto the speech, or nudge by hand.
+// The server keeps the shift with the subtitle, so it holds for everybody and every app.
+const canTime = computed(() => !!session.me?.admin && sub.value >= 0 && !part.value);
+async function syncSub() {
+  const s = subs.value[sub.value]; if (!s) return;
+  menu.value = '';
+  notice.value = t('Listening to the sound … this takes a moment'); clearTimeout(noticeTimer);
+  try {
+    const r = await api<{ applied: boolean, message?: string, offsetMs: number, scale: number }>('POST', s.key + '/sync');
+    if (!r.applied) { say(t(r.message || '')); return; }
+    s.offsetMs = r.offsetMs; subRev = Date.now(); addSubtitles();
+    say(t('Subtitles moved by {s} s', { s: fmtNum(r.offsetMs / 1000, 1) }) + (Math.abs(r.scale - 1) > 1e-6 ? ' · ' + t('and stretched for another frame rate') : ''));
+  } catch (e) { say((e as Error).message); }
+}
+async function nudgeSub(ms: number | null) {
+  const s = subs.value[sub.value]; if (!s) return;
+  try {
+    const r = await api<{ offsetMs?: number }>('PUT', s.key + '/timing', ms === null ? { reset: true } : { delta_ms: ms });
+    s.offsetMs = r.offsetMs || null; subRev = Date.now(); addSubtitles();
+    say(ms === null ? t('Subtitle timing reset') : t('Subtitles moved by {s} s', { s: fmtNum((r.offsetMs || 0) / 1000, 1) }));
+  } catch (e) { say((e as Error).message); }
+}
 function setAudio(a: Stream, i: number) {
   menu.value = '';
   audio.value = i === 0 ? null : (a.index ?? null);
@@ -296,6 +324,7 @@ const chapterAt = (s: number) => (chapters.value.length > 1 ? [...chapters.value
 // "Skip intro" / "Skip recap" while they run; "Skip credits" (or on to what comes next) while the credits do.
 const skipBtn = computed<{ label: string, to: number } | null>(() => {
   const n = now.value, d = duration.value;
+  if (catchUp) return { label: t('On to the episode ▸'), to: -2 };
   for (const [m, label] of [[intro.value, 'Skip intro'], [recap.value, 'Skip recap']] as const) if (m && n >= m[0] && n < m[1] - 1) return { label: t(label), to: m[1] };
   if (d && credits.value.some(c => n >= c) && n < d - 3) {
     const nxt = route.query.queue ? queue.items[0] : upNext.value;
@@ -313,7 +342,7 @@ watch(() => skipBtn.value && skipBtn.value.label, (l, was) => {
 });
 function doSkip() {
   const b = skipBtn.value; if (!b) return;
-  if (b.to >= 0) seek(b.to); else finish();
+  if (b.to === -2) catchUpDone(); else if (b.to >= 0) seek(b.to); else finish();
 }
 // The time and chapter under the pointer on the seek bar, and a still from the server (rounded to 10 s,
 // asked for once the pointer rests a moment; shown only when it has loaded, so no empty box flickers).
@@ -368,7 +397,7 @@ function toggleFull() {
 }
 
 function report(state: 'playing' | 'paused' | 'stopped', ms = Math.floor(now.value * 1000)) {
-  const i = it.value; if (!i) return Promise.resolve();
+  const i = it.value; if (!i || catchUp) return Promise.resolve(); // "What happened so far" leaves no trace
   return api<{ stopped?: boolean, message?: string } | null>('POST', `/:/timeline?ratingKey=${i.id}&time=${ms}&state=${state}&client=web`)
     .then(r => {
       // The owner stopped this playback from the dashboard.
@@ -424,6 +453,7 @@ const nextName = (n: Item) => (n.type === 'episode' ? `${t('S{n}', { n: n.parent
 const someone = () => { watching.autoRun = 0; };
 const INPUT = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
 function ended() {
+  if (catchUp) { catchUpDone(); return; }
   // The next part of a split movie.
   if (split.value && part.value < parts.value.length - 1) { load(partStart(part.value + 1)); return; }
   finish();
@@ -432,11 +462,83 @@ function ended() {
 // (Cancelled during the credits, the box comes again at the very end.)
 async function finish() {
   if (!done) { done = true; await report('stopped', Math.floor(duration.value * 1000)); }
+  if (sleep.value && sleep.value.end) { sleep.value = null; close(); return; } // the sleep timer stops here
   const next = await following();
   if (!next) { close(); return; }
   if (!route.query.queue) upNext.value = next;
   showNext(next);
 }
+// "What happened so far" is over: on to the episode itself.
+let caughtUp = false;
+function catchUpDone() {
+  if (!catchUp || caughtUp) return;
+  caughtUp = true;
+  router.replace({ name: 'play', params: { id: catchUp.then }, query: { t: String(Math.floor(catchUp.at)) } });
+}
+watch(now, n => { if (catchUp && n >= catchUp.until && !waiting.value) catchUpDone(); });
+
+// The sleep timer: pauses after a number of minutes (clock time, the sound fading out over the last 20 s),
+// or stops at the end of this episode or movie (at its credits when they are known, which then counts it
+// as watched). It lasts over episodes (kept in `watching`) until it fires or the player is left. Any input
+// while the sound fades switches it off again.
+const SLEEP_MINUTES = [15, 30, 45, 60, 90, 120], SLEEP_FADE = 20;
+const sleep = computed({ get: () => watching.sleep, set: v => { watching.sleep = v; } });
+const sleepTick = ref(0); // counts the seconds, so what is shown follows the clock
+let sleepVol: number | null = null, sleepTimer = 0;
+const sleepLeft = () => (sleep.value && sleep.value.at ? Math.max(0, (sleep.value.at - Date.now()) / 1000) : 0);
+const sleepLabel = computed(() => { void sleepTick.value; return !sleep.value ? t('Off') : sleep.value.end ? t('End of this title') : t('{n} min left', { n: Math.ceil(sleepLeft() / 60) }); });
+const sleepLine = computed(() => { void sleepTick.value; return !sleep.value ? '' : sleep.value.end ? t('stops after this title') : t('sleep timer {time}', { time: fmtTime(sleepLeft()) }); });
+// The fade turns the volume down without keeping it as the chosen volume; 1 puts it back.
+function sleepFade(f: number) {
+  const v = video.value; if (!v) return;
+  if (f >= 1) { if (sleepVol === null) return; v.volume = sleepVol; sleepVol = null; return; }
+  if (sleepVol === null) sleepVol = v.volume;
+  v.volume = sleepVol * Math.max(0, f);
+}
+function setSleep(v: number | 'end' | null) {
+  menu.value = '';
+  sleepFade(1);
+  sleep.value = v === null ? null : v === 'end' ? { end: true } : { at: Date.now() + v * 60000 };
+  if (v !== null) say(t('Sleep timer: {when}', { when: sleepLabel.value }));
+}
+function sleepCheck() {
+  sleepTick.value++;
+  const sl = sleep.value, v = video.value;
+  if (!sl || !v || !it.value) return;
+  if (sl.end) {
+    // The credits count as the end, like "Skip credits".
+    if (credits.value.some(c => now.value >= c) && now.value < duration.value - 3 && !v.paused) finish();
+    return;
+  }
+  const left = sleepLeft();
+  if (left <= 0) { sleep.value = null; v.pause(); sleepFade(1); hideNext(); menu.value = ''; say(t('Sleep timer: paused. Good night!')); return; }
+  if (left <= SLEEP_FADE && !v.paused) sleepFade(left / SLEEP_FADE);
+}
+function sleepWake() { if (sleepVol !== null && sleep.value) { sleep.value = null; sleepFade(1); say(t('Sleep timer off')); } }
+
+// Picture in picture (P).
+function togglePip() {
+  const v = video.value; if (!v || !document.pictureInPictureEnabled) return;
+  if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
+  else v.requestPictureInPicture().catch(e => say((e as Error).message));
+}
+// The list of keyboard shortcuts (?, or ⚙ → Keyboard shortcuts).
+const showKeys = ref(false);
+const KEYS = [['Space / K', 'Play or pause'], ['← / J', 'Back 10 seconds'], ['→ / L', 'Forward 30 seconds'], ['Shift + ← / →', '1 minute back / forward'],
+  ['↑ / ↓', 'Louder / quieter'], ['M', 'Mute'], ['F', 'Full screen'], ['P', 'Picture in picture'], ['C', 'Subtitles on / off'], ['N', 'Next'],
+  ['< / >', 'Slower / faster'], ['0 … 9', 'Jump to 0 % … 90 %'], ['Home / End', 'Start / near the end'], ['?', 'This list'], ['Esc', 'Close']];
+// "Shift + ← / →" → keys in boxes, the words between them plain.
+const keyParts = (k: string) => k.split(' ').map(x => ({ x, kbd: !['/', '+', '…'].includes(x) }));
+let lastSub = -1;
+function toggleSubs() {
+  if (!subs.value.length) { say(t('No subtitles for this video')); return; }
+  if (sub.value >= 0 || burn.value !== null) { lastSub = burn.value ?? sub.value; setSub(-1); say(t('Subtitles off')); return; }
+  const text = subs.value.findIndex(s => !isPicture(s));
+  setSub(lastSub >= 0 ? lastSub : text >= 0 ? text : 0);
+  const on = burn.value ?? sub.value;
+  if (on >= 0) say(t('Subtitles: {name}', { name: subName(subs.value[on], on) }));
+}
+
 function close() {
   if (window.history.state && window.history.state.back) router.back();
   else router.replace(it.value ? '/item/' + it.value.id : '/');
@@ -450,16 +552,29 @@ function wake() {
 function key(e: KeyboardEvent) {
   if (e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement).tagName === 'INPUT' && (e.target as HTMLInputElement).type !== 'range') return;
   const v = video.value; if (!v) return;
-  const k = e.key;
-  if (k === ' ' || k === 'k') toggle();
-  else if (k === 'ArrowLeft' || k === 'j') skip(-10);
-  else if (k === 'ArrowRight' || k === 'l') skip(30);
-  else if (k === 'ArrowUp') setVolume(Math.min(1, v.volume + 0.1));
-  else if (k === 'ArrowDown') setVolume(Math.max(0, v.volume - 0.1));
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (k === 'Escape') {
+    if (showKeys.value) showKeys.value = false;
+    else if (document.fullscreenElement) return; // the browser leaves full screen
+    else if (menu.value) menu.value = '';
+    else if (nextBox.value) cancelNext();
+    else close();
+  }
+  else if (k === ' ' || k === 'k') toggle();
+  else if (k === 'ArrowLeft' || k === 'j') skip(e.shiftKey ? -60 : -10);
+  else if (k === 'ArrowRight' || k === 'l') skip(e.shiftKey ? 60 : 30);
+  else if (k === 'ArrowUp') { setVolume(Math.min(1, Math.round((v.volume + 0.05) * 100) / 100)); say(t('Volume: {n} %', { n: Math.round(v.volume * 100) })); }
+  else if (k === 'ArrowDown') { setVolume(Math.max(0, Math.round((v.volume - 0.05) * 100) / 100)); say(t('Volume: {n} %', { n: Math.round(v.volume * 100) })); }
   else if (k === 'm') toggleMute();
   else if (k === 'f') toggleFull();
+  else if (k === 'p') togglePip();
+  else if (k === 'c') toggleSubs();
+  else if (k === 'n') { if (hasNext.value) finish(); }
+  else if (k === 'Home') seek(0);
+  else if (k === 'End') seek(duration.value - 15);
+  else if (k === '?') showKeys.value = !showKeys.value;
   else if (k === '<' || k === '>') { const n = SPEEDS.indexOf(speed.value) + (k === '>' ? 1 : -1); setSpeed(SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, n))], true); }
-  else if (k === 'Escape' && !document.fullscreenElement) { if (menu.value) menu.value = ''; else if (nextBox.value) cancelNext(); else close(); }
+  else if (/^[0-9]$/.test(k) && duration.value) seek(duration.value * Number(k) / 10);
   else return;
   e.preventDefault(); wake();
 }
@@ -483,6 +598,8 @@ onMounted(async () => {
   document.addEventListener('keydown', key);
   document.addEventListener('fullscreenchange', onFull);
   for (const ev of INPUT) document.addEventListener(ev, someone, { passive: true, capture: true });
+  for (const ev of INPUT) document.addEventListener(ev, sleepWake, { passive: true, capture: true });
+  sleepTimer = window.setInterval(sleepCheck, 1000);
   try {
     it.value = list<Item>(await get('/library/metadata/' + props.id))[0] || null;
     if (!it.value) { error.value = t('Not found'); return; }
@@ -492,13 +609,17 @@ onMounted(async () => {
     if (media.value) get<Container<'Chapter', { start: number, title: string }>>(`/library/metadata/${id}/chapters`).then(r => {
       chapters.value = (r.MediaContainer.Chapter || []).map(c => ({ at: c.start / 1000, title: c.title.replace(/^Chapter (\d+)$/, (_, n) => t('Chapter {n}', { n })) }));
     }).catch(() => {});
-    if (!route.query.queue) nextEpisode().then(n => { upNext.value = n; }).catch(() => {});
+    if (!route.query.queue && !catchUp) nextEpisode().then(n => { upNext.value = n; }).catch(() => {});
     timer = window.setInterval(() => { if (!paused.value) report('playing'); }, 10000);
   } catch (e) { error.value = (e as Error).message; waiting.value = false; }
 });
 onBeforeUnmount(() => {
   clearInterval(timer); clearTimeout(idleTimer); clearTimeout(noticeTimer); clearTimeout(freshTimer); clearInterval(countdown); clearTimeout(stillTimer);
   for (const ev of INPUT) document.removeEventListener(ev, someone, { capture: true });
+  for (const ev of INPUT) document.removeEventListener(ev, sleepWake, { capture: true });
+  clearInterval(sleepTimer); sleepFade(1);
+  // Leaving the player (not going on to the next episode) ends the sleep timer.
+  if (!router.currentRoute.value.path.startsWith('/play/')) watching.sleep = null;
   if (sound) sound.ctx.close().catch(() => {});
   document.removeEventListener('keydown', key);
   document.removeEventListener('fullscreenchange', onFull);
@@ -536,10 +657,20 @@ const endsAt = computed(() => {
       <button class="iconbtn" :aria-label="t('Back')" @click="close"><Icon name="back" /></button>
       <div>
         <div class="p-title">{{ title }}</div>
-        <div class="dim">{{ subLine }}<span v-if="it"> · {{ methodName }}</span><span v-if="endsAt"> · {{ endsAt }}</span></div>
+        <div class="dim">{{ subLine }}<span v-if="it"> · {{ methodName }}</span><span v-if="endsAt"> · {{ endsAt }}</span><span v-if="sleepLine"> · {{ sleepLine }}</span></div>
       </div>
     </div>
     <div v-if="notice" class="p-notice">{{ notice }}</div>
+    <div v-if="showKeys" class="p-keys" @click.stop>
+      <h2>{{ t('Keyboard shortcuts') }}</h2>
+      <table>
+        <tr v-for="[k, what] in KEYS" :key="k">
+          <td><template v-for="(p, n) in keyParts(k)" :key="n"><kbd v-if="p.kbd">{{ p.x }}</kbd><template v-else>{{ ' ' + p.x + ' ' }}</template></template></td>
+          <td>{{ t(what) }}</td>
+        </tr>
+      </table>
+      <div class="actions"><button @click="showKeys = false">{{ t('Close') }}</button></div>
+    </div>
     <div v-if="nextBox" class="p-next" @click.stop>
       <img :src="picture(nextBox.item.thumb || `/library/metadata/${nextBox.item.id}/thumb`, 300)" alt="">
       <div>
@@ -601,6 +732,14 @@ const endsAt = computed(() => {
             <hr>
             <div class="p-menu-head">{{ t('Subtitle size') }}</div>
             <button v-for="[v, l] in SUB_SIZES" :key="v" :class="{ on: pref('subSize', '100') === v }" @click="setSubSize(v)">{{ t(l) }}</button>
+            <template v-if="canTime">
+              <hr>
+              <div class="p-menu-head">{{ t('Subtitle timing') }}<template v-if="subs[sub].offsetMs"> · {{ fmtNum((subs[sub].offsetMs || 0) / 1000, 1) }} s</template></div>
+              <button @click="syncSub">{{ t('Synchronize with the sound') }}</button>
+              <button @click="nudgeSub(-500)">{{ t('Earlier by 0.5 s') }}</button>
+              <button @click="nudgeSub(500)">{{ t('Later by 0.5 s') }}</button>
+              <button v-if="subs[sub].offsetMs" @click="nudgeSub(null)">{{ t('Reset timing') }}</button>
+            </template>
           </div>
         </div>
         <div class="p-menu-wrap">
@@ -611,6 +750,15 @@ const endsAt = computed(() => {
             <hr>
             <button v-if="hasNext" :class="{ on: autoNext }" @click="savePref('autoNext', autoNext ? '0' : '1').catch(() => {})">{{ autoNext ? '✓ ' : '' }}{{ t('Play the next episode by itself') }}</button>
             <button :class="{ on: night }" @click="setNight(!night)">{{ night ? '✓ ' : '' }}{{ t('Night mode') }}</button>
+            <hr>
+            <button class="entry" @click="page = 'sleep'">{{ t('Sleep timer') }} <span class="dim">{{ sleepLabel }} ›</span></button>
+            <button class="entry" @click="menu = ''; showKeys = true">{{ t('Keyboard shortcuts') }} <span class="dim">?</span></button>
+          </div>
+          <div v-else-if="menu === 'settings' && page === 'sleep'" class="p-menu">
+            <button class="p-menu-head back" @click="page = 'main'">‹ {{ t('Sleep timer') }}</button>
+            <button :class="{ on: !sleep }" @click="setSleep(null)">{{ t('Off') }}</button>
+            <button :class="{ on: !!sleep?.end }" @click="setSleep('end')">{{ it?.type === 'episode' ? t('End of this episode') : t('End of this movie') }}</button>
+            <button v-for="n in SLEEP_MINUTES" :key="n" @click="setSleep(n)">{{ t('{n} minutes', { n }) }}</button>
           </div>
           <div v-else-if="menu === 'settings' && page === 'quality'" class="p-menu">
             <button class="p-menu-head back" @click="page = 'main'">‹ {{ t('Quality') }}</button>

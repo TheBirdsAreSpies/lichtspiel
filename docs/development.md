@@ -38,7 +38,8 @@ It talks to the same JSON API and keeps the sign-in under the same keys as `web/
 So far it has signing in (password, two-step code, home profiles, first setup), home, libraries with
 their filters (`?f.genre=…`, `web-vue/src/filters.ts`) and collections, a title's page (with "Add to …"
 a playlist or collection), people, search, the player (with quality, speed, night mode, chapters, a still preview on the seek bar, skipping
-intro, recap and credits, the countdown to the next episode and "Are you still watching?"), your own settings (account, playback, devices,
+intro, recap and credits, the countdown to the next episode, "Are you still watching?", the sleep timer,
+"What happened so far", subtitle timing for the owner and the keyboard shortcuts on `?`), your own settings (account, playback, devices,
 Trakt, watchlist feed; saved under the classic app's names, so both use them), the
 watchlist and playlists (playing one goes on through it: `web-vue/src/queue.ts`); the rest is still
 only in `web/` (see [todo.md](todo.md)).

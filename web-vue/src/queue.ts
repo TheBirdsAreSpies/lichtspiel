@@ -9,8 +9,9 @@ import { resumeAt } from './format';
 export const queue = reactive({ items: [] as Item[] });
 
 /** How many videos in a row went on by themselves, without anyone touching anything (the player asks
- * "Are you still watching?" after a few). Lasts from one video to the next. */
-export const watching = { autoRun: 0 };
+ * "Are you still watching?" after a few), and the sleep timer (at = when it pauses, end = at the end of the
+ * title). Both last from one video to the next. */
+export const watching = reactive({ autoRun: 0, sleep: null as { at?: number, end?: boolean } | null });
 
 /** Plays the first of `items` and keeps the rest for afterwards. */
 export function playAll(router: Router, items: Item[]) {

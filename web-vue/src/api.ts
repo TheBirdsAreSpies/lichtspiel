@@ -4,7 +4,7 @@ import { reactive, ref } from 'vue';
 import { t } from './i18n';
 
 export interface Stream { kind: string, index?: number, codec?: string, language?: string, channels?: number, title?: string }
-export interface Subtitle { key: string, language?: string, title?: string, forced?: boolean, sdh?: boolean, codec?: string, embedded?: boolean, file?: string }
+export interface Subtitle { key: string, language?: string, title?: string, forced?: boolean, sdh?: boolean, codec?: string, embedded?: boolean, file?: string, offsetMs?: number | null }
 export interface Media {
   id?: number, height?: number, width?: number, size?: number, container?: string, videoCodec?: string, audioCodec?: string,
   audioChannels?: number, edition?: string, streams?: Stream[], subtitles?: Subtitle[], Part?: { duration?: number }[],
@@ -17,6 +17,8 @@ export interface Item {
   grandparentRatingKey?: string, grandparentThumb?: string, genres?: string[], contentRating?: string, rating?: number,
   studio?: string, editionTitle?: string, missing?: boolean, librarySectionID?: number, squareThumb?: string, role?: string, favorite?: boolean, watchlist?: boolean, updatedAt?: number,
   credits?: number[], intro?: { start: number, end: number }, recap?: { start: number, end: number }, loudness?: number,
+  /** "What happened so far": the episode before, played from `from` to `to` (ms, its credits). */
+  catchUp?: { id: number, from: number, to: number, parentIndex?: number, index?: number, title?: string },
   Media?: Media[], extra?: { cast?: Person[], directors?: string[], writers?: string[], creators?: string[], original_title?: string, collections?: string[] },
 }
 export interface Playlist {

@@ -16,7 +16,8 @@ export function fmtTime(s: number): string {
   return (hh ? hh + ':' + String(mm).padStart(2, '0') : mm) + ':' + String(ss).padStart(2, '0');
 }
 
-export const fmtNum = (n: number) => Number(n).toLocaleString(lang.value);
+/** A number as the language writes it; `digits` fixes the places after the point. */
+export const fmtNum = (n: number, digits?: number) => Number(n).toLocaleString(lang.value, digits === undefined ? undefined : { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
 /** A time of day (14:05, or 2:05 PM), as Settings → Time format says. */
 export function fmtClock(d: Date): string {

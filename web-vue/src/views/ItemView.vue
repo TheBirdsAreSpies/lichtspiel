@@ -64,6 +64,12 @@ const crew = computed(() => ([[t('Directed by'), x.value.directors], [t('Written
 function play(item: Item, at: number) {
   router.push({ name: 'play', params: { id: item.id }, query: { t: String(Math.floor(at)) } });
 }
+// After a long break: the last minutes of the episode before (up to its credits), then this one
+// from where it stopped. The player plays the one before without saving anything about it.
+function catchUp(item: Item) {
+  const c = item.catchUp; if (!c) return;
+  router.push({ name: 'play', params: { id: c.id }, query: { t: String(Math.floor(c.from / 1000)), until: String(Math.floor(c.to / 1000)), then: String(item.id), at: String(Math.floor(resumeAt(item))) } });
+}
 // A show or season: the next episode not watched yet (or the first).
 async function playNext() {
   const i = it.value; if (!i) return;
@@ -128,6 +134,8 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
               <button v-if="resumeAt(it)" class="primary big" @click="play(it, resumeAt(it))">{{ t('▶ Resume from {time}', { time: fmtTime(resumeAt(it)) }) }}</button>
               <button v-if="resumeAt(it)" class="iconbtn round" :title="t('▶ Play from start')" @click="play(it, 0)"><Icon name="restart" /></button>
               <button v-else class="primary big" @click="play(it, 0)">{{ t('▶ Play') }}</button>
+              <button v-if="it.catchUp" class="big" :title="t('The last minutes of S{s}E{e} before its credits, then this episode', { s: it.catchUp.parentIndex || 0, e: it.catchUp.index || 0 })"
+                @click="catchUp(it)">{{ t('What happened so far') }}</button>
             </template>
             <button v-else-if="it.leafCount" class="primary big" @click="playNext">{{ t('▶ Play next episode') }}</button>
             <button class="iconbtn round" :class="{ on: isWatched(it) }" :title="isWatched(it) ? t('Mark as unwatched') : t('Mark as watched')" @click="toggleWatched"><Icon name="check" /></button>
