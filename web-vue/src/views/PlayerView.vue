@@ -9,7 +9,8 @@
 // (or on "Skip credits") the next episode comes after a countdown; after a few in a row without anyone
 // touching anything, the player asks whether somebody is still watching.
 // The sleep timer (⚙) pauses after some minutes or stops at the end of the title; ? lists the keys.
-// With a Chromecast (cast.ts) the TV plays and these controls steer it.
+// With a Chromecast (cast.ts) the TV plays and these controls steer it. Watching together (together.ts),
+// play, pause, a jump and the next episode go to the room, and what the others do comes back every 2 s.
 // The owner can move a subtitle's timing (subtitle menu). "What happened so far" (?until=…&then=…) plays
 // the end of the episode before without saving anything, then goes on to the episode.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
@@ -19,6 +20,9 @@ import { fmtClock, fmtNum, fmtTime, langName, lang2, resumeAt } from '../format'
 import { t } from '../i18n';
 import Icon from '../components/Icon.vue';
 import { nextInQueue, queue, watching } from '../queue';
+import { tg, tgLeave, tgSend, type Room } from '../together';
+import Modal from '../components/Modal.vue';
+import TogetherPeople from '../components/TogetherPeople.vue';
 import { cast, castHooks, castLoad, castMute, castPause, castPick, castSeek, castStop, castToggle, castUrl, castVolume, initCast } from '../cast';
 
 const props = defineProps<{ id: string }>();
@@ -160,6 +164,33 @@ function castStarted() {
 function castEnded() { if (it.value) load(now.value); }
 const castFailed = () => say(t('The TV could not play this video.'));
 Object.assign(castHooks, { started: castStarted, ended: castEnded, finished: () => ended(), failed: castFailed });
+
+// ---- watching together
+const others = computed(() => tg.members.filter(m => m.id !== (session.me && session.me.id)).map(m => m.name));
+const inviting = ref(false);
+let tgTimer = 0;
+const tgSay = () => tgSend(now.value, paused.value);
+watch(paused, () => { if (!(video.value && video.value.ended)) tgSay(); });
+async function tgPoll() {
+  if (!tg.code || !it.value) return;
+  let st: Room;
+  try { st = await get<Room>('/api/together/' + tg.code); } catch (e) { say((e as Error).message); tgLeave(); clearInterval(tgTimer); return; }
+  const before = tg.members.map(m => m.name).join();
+  tg.members = st.members;
+  if (before && before !== tg.members.map(m => m.name).join()) say(t('Watching together: {names}', { names: tg.members.map(m => m.name).join(', ') }));
+  if (st.seq <= tg.seq) return;
+  tg.seq = st.seq; tg.quiet = Date.now() + 2000;
+  // Another title: its own player, from where the room is.
+  if (st.item !== it.value.id) { router.replace({ path: '/play/' + st.item, query: { t: String(st.position / 1000), together: '1', ...(st.paused ? { paused: '1' } : {}) } }); return; }
+  const want = st.position / 1000;
+  if (Math.abs(now.value - want) > 2) seek(want);
+  const v = video.value;
+  if (st.paused && !paused.value) { if (cast.on) castPause(); else if (v) v.pause(); }
+  if (!st.paused && paused.value) {
+    if (cast.on) castToggle();
+    else if (v) v.play().catch(() => say(t('{who} pressed play — click the video to play along', { who: st.by || '?' })));
+  }
+}
 
 // Text subtitles as <track>s; a converted stream starts at the seek point, so their times move by as much.
 // They belong to the first file of a split movie (a later part would show them at the wrong time).
@@ -416,15 +447,16 @@ function seek(to: number) {
   const v = video.value; if (!v) return;
   to = Math.max(0, Math.min(duration.value ? duration.value - 1 : to, to));
   now.value = to;
-  if (cast.on) { if (method.value === 'direct' && !split.value) castSeek(to); else load(to); return; }
+  if (cast.on) { if (method.value === 'direct' && !split.value) castSeek(to); else load(to); tgSay(); return; }
   // Another part of a split movie: that file is loaded.
   const inPart = !split.value || (to >= base.value && (part.value === parts.value.length - 1 || to < partStart(part.value + 1)));
   if (!inPart) { load(to); return; }
-  if (method.value === 'direct') { v.currentTime = to - base.value; return; }
+  if (method.value === 'direct') { v.currentTime = to - base.value; tgSay(); return; }
   // Converted: within what has arrived already the stream itself seeks, else a new stream from there.
   const local = to - base.value - offset.value;
   if (local >= 0 && local <= buffered.value) v.currentTime = local;
   else load(to);
+  tgSay();
 }
 const skip = (s: number) => seek(now.value + s);
 function toggle() {
@@ -656,6 +688,13 @@ onMounted(async () => {
     if (!it.value) { error.value = t('Not found'); return; }
     chooseTracks();
     await load(Number(route.query.t) || 0);
+    if (route.query.paused) { if (cast.on) castPause(); else v.pause(); }
+    if (tg.code) {
+      // In a room: a title started here (the next episode …) goes to the others; one from the room was said already.
+      if (!route.query.together) { tg.quiet = 0; tgSend(Number(route.query.t) || 0, false, { item: it.value.id }); }
+      else if (route.query.joined) say(others.value.length ? t('Joined — watching with {names}', { names: others.value.join(', ') }) : t('Waiting for the others — playing starts for everyone when you press play'));
+      tgTimer = window.setInterval(tgPoll, 2000);
+    }
     const id = it.value.id;
     if (media.value) get<Container<'Chapter', { start: number, title: string }>>(`/library/metadata/${id}/chapters`).then(r => {
       chapters.value = (r.MediaContainer.Chapter || []).map(c => ({ at: c.start / 1000, title: c.title.replace(/^Chapter (\d+)$/, (_, n) => t('Chapter {n}', { n })) }));
@@ -668,10 +707,10 @@ onBeforeUnmount(() => {
   clearInterval(timer); clearTimeout(idleTimer); clearTimeout(noticeTimer); clearTimeout(freshTimer); clearInterval(countdown); clearTimeout(stillTimer);
   for (const ev of INPUT) document.removeEventListener(ev, someone, { capture: true });
   for (const ev of INPUT) document.removeEventListener(ev, sleepWake, { capture: true });
-  clearInterval(sleepTimer); sleepFade(1);
+  clearInterval(sleepTimer); sleepFade(1); clearInterval(tgTimer);
   // Leaving the player (not going on to the next episode) ends the sleep timer.
   // (the TV too; going on to the next episode, it plays that one)
-  if (!router.currentRoute.value.path.startsWith('/play/')) { watching.sleep = null; castStop(); }
+  if (!router.currentRoute.value.path.startsWith('/play/')) { watching.sleep = null; castStop(); tgLeave(); }
   if (castHooks.started === castStarted) { castHooks.started = castHooks.ended = castHooks.finished = castHooks.failed = undefined; }
   if (sound) sound.ctx.close().catch(() => {});
   document.removeEventListener('keydown', key);
@@ -711,10 +750,15 @@ const endsAt = computed(() => {
       <button class="iconbtn" :aria-label="t('Back')" @click="close"><Icon name="back" /></button>
       <div>
         <div class="p-title">{{ title }}</div>
-        <div class="dim">{{ subLine }}<span v-if="it"> · {{ methodName }}</span><span v-if="cast.on"> · {{ t('on {device}', { device: cast.device }) }}</span><span v-if="endsAt"> · {{ endsAt }}</span><span v-if="sleepLine"> · {{ sleepLine }}</span></div>
+        <div class="dim">{{ subLine }}<span v-if="it"> · {{ methodName }}</span><span v-if="cast.on"> · {{ t('on {device}', { device: cast.device }) }}</span><span v-if="tg.code"> · {{ others.length ? t('together with {names}', { names: others.join(', ') }) : t('together (waiting for others)') }} · <a href="#" @click.prevent="inviting = true">{{ t('Invite more') }}</a></span><span v-if="endsAt"> · {{ endsAt }}</span><span v-if="sleepLine"> · {{ sleepLine }}</span></div>
       </div>
     </div>
     <div v-if="notice" class="p-notice">{{ notice }}</div>
+    <Modal v-if="inviting && tg.code" :title="t('Watch together')" @close="inviting = false" @click.stop>
+      <h3>{{ t('People here') }}</h3>
+      <TogetherPeople :code="tg.code" />
+      <template #actions><button @click="inviting = false">{{ t('Close') }}</button></template>
+    </Modal>
     <div v-if="showKeys" class="p-keys" @click.stop>
       <h2>{{ t('Keyboard shortcuts') }}</h2>
       <table>

@@ -9,6 +9,8 @@ import Icon from './components/Icon.vue';
 import { loadPanels, panels } from './plugins';
 import { dl, loadDlCount } from './downloads';
 import { toastState } from './toast';
+import { checkInvites, declineInvite, invites } from './together';
+import Modal from './components/Modal.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -33,6 +35,9 @@ function search(now = false) {
 
 // The plugins' own pages in the left menu (asked for again after signing in as someone else).
 watch(() => session.me && session.me.id, id => { if (id) { loadPanels(); loadDlCount(); } }, { immediate: true });
+// Invitations to watch together, looked for every 15 seconds.
+window.setInterval(() => { if (session.me) checkInvites(); }, 15000);
+function joinInvite() { const inv = invites.shown; invites.shown = null; if (inv) router.push('/together/' + inv.code); }
 
 const menuOpen = ref(false);
 const sideOpen = ref(false);
@@ -105,4 +110,12 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
   <!-- (Keyed by the address: the next episode is a new player.) -->
   <RouterView v-else :key="route.path" />
   <div v-if="toastState.text" :key="toastState.n" class="toast" role="status">{{ toastState.text }}</div>
+  <Modal v-if="invites.shown" :title="t('Watch together')" @close="invites.shown = null">
+    <p>{{ t('{by} asks you to watch “{title}” together.', { by: invites.shown.by, title: invites.shown.title }) }}</p>
+    <p v-if="invites.shown.members.some(n => n !== invites.shown!.by)" class="dim">{{ t('Also there: {names}', { names: invites.shown.members.filter(n => n !== invites.shown!.by).join(', ') }) }}</p>
+    <template #actions>
+      <button class="primary" @click="joinInvite">{{ t('▶ Join') }}</button>
+      <button @click="declineInvite(invites.shown)">{{ t('No, thanks') }}</button>
+    </template>
+  </Modal>
 </template>
