@@ -80,6 +80,7 @@ I18N.add('de', 'Deutsch', {
     'Online video from {site}': 'Online-Video von {site}',
     'This subtitle is made of pictures; turn on burning in under Settings → Web.': 'Dieser Untertitel besteht aus Bildern; schalte das Einbrennen unter Einstellungen → Web ein.',
     'burned in': 'eingebrannt',
+    'This subtitle is made of pictures; turn on burning in under Settings → Playback.': 'Dieser Untertitel besteht aus Bildern; schalte das Einbrennen unter Einstellungen → Wiedergabe ein.',
     'Burn in subtitles': 'Untertitel einbrennen',
     'Only picture-based (Blu-ray, DVD)': 'Nur grafische (Blu-ray, DVD)',
     'Picture-based subtitles can’t be shown as text, so the server paints them into the video (the video is converted for that).': 'Grafische Untertitel lassen sich nicht als Text zeigen, deshalb brennt der Server sie ins Video ein (das Video wird dafür umgewandelt).',

@@ -170,6 +170,8 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .player { position: fixed; inset: 0; background: #000; color: #fff; z-index: 50; overflow: hidden; }
 .player video { width: 100%; height: 100%; display: block; object-fit: contain; }
 .player.idle { cursor: none; }
+.p-notice { position: absolute; left: 50%; top: 80px; transform: translateX(-50%); max-width: 90%; background: rgba(20,20,20,.9); padding: 10px 16px; border-radius: 8px; z-index: 2; }
+.p-menu button:disabled { opacity: .45; cursor: default; }
 .player.idle .p-top, .player.idle .p-bottom { opacity: 0; pointer-events: none; }
 .p-top, .p-bottom { position: absolute; left: 0; right: 0; padding: 16px 22px; transition: opacity .3s; }
 .p-top { top: 0; display: flex; gap: 12px; align-items: center; background: linear-gradient(180deg, rgba(0,0,0,.75), transparent); }

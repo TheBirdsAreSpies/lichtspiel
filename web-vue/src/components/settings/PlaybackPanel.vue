@@ -28,6 +28,8 @@ const SUBS: Row[] = [
     hint: 'SDH subtitles also describe sounds. Needs a library that was read again after this version.' },
   { key: 'subForced', def: '1', label: 'Forced subtitles', opts: [['1', 'Show with audio in the preferred language'], ['0', 'Off']],
     hint: 'Forced subtitles only translate foreign lines, e.g. when characters speak another language.' },
+  { key: 'burnSubs', def: 'auto', label: 'Burn in subtitles', opts: [['auto', 'Only picture-based (Blu-ray, DVD)'], ['never', 'Never']],
+    hint: 'Picture-based subtitles can’t be shown as text, so the server paints them into the video (the video is converted for that).' },
   { key: 'subSize', def: '100', label: 'Subtitle size', opts: [['75', 'Small'], ['100', 'Normal'], ['130', 'Large'], ['170', 'Very large']] },
   { key: 'subBg', def: '1', label: 'Subtitle background', opts: [['1', 'Dark box'], ['0', 'None']] },
   { key: 'subLift', def: '0', label: 'Subtitle position', opts: [['0', 'Bottom'], ['2', 'Slightly higher'], ['4', 'Higher'], ['7', 'Much higher']] },

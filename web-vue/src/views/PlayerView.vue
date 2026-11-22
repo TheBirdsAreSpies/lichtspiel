@@ -3,7 +3,8 @@
 // (GET …/decision): as it is (the file itself, the browser seeks in it), or repackaged / converted as a
 // stream that starts at the seek point (stream.mp4?offset=…), so one seek bar covers the whole video either way.
 // Progress goes to the server every 10 s and on pause and leaving (/:/timeline). An episode goes on with the next.
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+// A movie split over files plays its parts one after the other, still with one seek bar.
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, get, list, pref, savePref, ticket, withTicket, type Item, type Stream, type Subtitle } from '../api';
 import { fmtTime, langName, lang2, resumeAt } from '../format';
@@ -30,7 +31,10 @@ const full = ref(false);
 const idle = ref(false);
 const menu = ref<'' | 'subs' | 'audio'>('');
 const audio = ref<number | null>(null); // the audio stream's index, null = the file's first
-const sub = ref(-1);
+const sub = ref(-1); // the text subtitle shown (index in subs), -1 = none
+const burn = ref<number | null>(null); // the picture subtitle burned into the video (index in subs)
+const part = ref(0); // the file of a split movie that plays
+const base = ref(0); // where that file starts in the whole movie (s)
 const stopped = ref(false); // the owner stopped this playback (from the dashboard)
 const stoppedMsg = ref('');
 let tk = '';
@@ -42,14 +46,19 @@ const PICTURE_SUBS = ['pgs', 'dvd_sub', 'dvb_sub', 'xsub', 'vobsub', 'hdmv'];
 const media = computed(() => (it.value && it.value.Media && it.value.Media[0]) || null);
 const duration = computed(() => ((it.value && it.value.duration) || 0) / 1000 || (video.value && isFinite(video.value.duration) ? video.value.duration + offset.value : 0));
 const audios = computed<Stream[]>(() => ((media.value && media.value.streams) || []).filter(s => s.kind === 'audio'));
-// Subtitles made of pictures have to be burned into the picture; the classic app does that, this one leaves them out.
-const subs = computed<Subtitle[]>(() => ((media.value && media.value.subtitles) || []).filter(s => !(s.embedded && PICTURE_SUBS.some(k => String(s.codec || '').toLowerCase().includes(k)))));
+const subs = computed<Subtitle[]>(() => (media.value && media.value.subtitles) || []);
+// Subtitles made of pictures (Blu-ray, DVD) can't be shown as text: the server burns them into the video.
+const isPicture = (s?: Subtitle) => !!s && !!s.embedded && PICTURE_SUBS.some(k => String(s.codec || '').toLowerCase().includes(k));
+// A movie split over files: how long each part is (s). Only when every length is known.
+const parts = computed(() => ((media.value && media.value.Part) || []).map(x => (x.duration || 0) / 1000));
+const split = computed(() => parts.value.length > 1 && parts.value.every(d => d > 0));
+const partStart = (n: number) => parts.value.slice(0, n).reduce((a, b) => a + b, 0);
 const title = computed(() => (it.value ? (it.value.type === 'episode' ? it.value.grandparentTitle : it.value.title) : ''));
 const subLine = computed(() => {
   const i = it.value; if (!i) return '';
   return i.type === 'episode' ? `${t('S{n}', { n: i.parentIndex || 0 })}${t('E{n}', { n: i.index || 0 })} · ${i.title}` : i.year ? String(i.year) : '';
 });
-const subName = (s: Subtitle, i: number) => [s.language ? langName(s.language) : '', s.title, s.forced ? t('forced') : '', s.sdh ? 'SDH' : ''].filter(Boolean).join(' · ') || t('Subtitles {n}', { n: i + 1 });
+const subName = (s: Subtitle, i: number) => [s.language ? langName(s.language) : '', s.title, s.forced ? t('forced') : '', s.sdh ? 'SDH' : '', !s.language && s.file ? s.file : ''].filter(Boolean).join(' · ') || t('Subtitles {n}', { n: i + 1 });
 const audioName = (a: Stream) => [a.language ? langName(a.language) : '', String(a.codec || '').toUpperCase(), a.channels === 6 ? '5.1' : a.channels === 8 ? '7.1' : a.channels === 2 ? t('Stereo') : '', a.title || ''].filter(Boolean).join(' · ');
 
 const CODECS = (() => {
@@ -67,7 +76,13 @@ async function load(at: number) {
   let q = pref('quality', 'original');
   const want = Number((/^(\d+)p/.exec(q) || [])[1]) || 0, have = Number(media.value && media.value.height) || 0;
   if (want && have && have <= want && pref('keepSmall', '1') !== '0') q = 'original';
-  const extra = (CODECS ? `&videoCodecs=${CODECS}` : '') + (audio.value !== null ? `&audio=${audio.value}` : '');
+  // Which part of a split movie the position is in; `at` becomes the time inside that part.
+  let p = 0;
+  if (split.value) while (p < parts.value.length - 1 && at >= partStart(p + 1)) p++;
+  part.value = p; base.value = split.value ? partStart(p) : 0;
+  at = Math.max(0, at - base.value);
+  const extra = (CODECS ? `&videoCodecs=${CODECS}` : '') + (audio.value !== null ? `&audio=${audio.value}` : '') + (p ? `&part=${p}` : '')
+    + (burn.value !== null ? `&subtitle=${burn.value}` : '');
   const d = await get<{ method: 'direct' | 'remux' | 'transcode', allowed: boolean }>(`/library/metadata/${i.id}/decision?quality=${q}${extra}`);
   tk = await ticket('item=' + i.id);
   if (seq !== loadSeq) return;
@@ -77,7 +92,7 @@ async function load(at: number) {
   method.value = m;
   if (m === 'direct') {
     offset.value = 0;
-    v.src = withTicket(`/library/parts/${i.id}/file`, tk);
+    v.src = withTicket(`/library/parts/${i.id}/file${p ? '?part=' + p : ''}`, tk);
     v.addEventListener('loadedmetadata', () => { v.currentTime = at; }, { once: true });
   } else {
     offset.value = at;
@@ -88,10 +103,16 @@ async function load(at: number) {
 }
 
 // Text subtitles as <track>s; a converted stream starts at the seek point, so their times move by as much.
+// They belong to the first file of a split movie (a later part would show them at the wrong time).
+let tracks: number[] = []; // the subtitle (index in subs) of each <track>
 function addSubtitles() {
   const v = video.value; if (!v) return;
   v.querySelectorAll('track').forEach(tr => tr.remove());
+  tracks = [];
+  if (part.value) return;
   subs.value.forEach((s, i) => {
+    if (isPicture(s)) return;
+    tracks.push(i);
     const el = document.createElement('track');
     el.kind = 'subtitles'; el.label = subName(s, i); el.srclang = (s.language || 'und').slice(0, 2);
     el.src = withTicket(s.key, tk);
@@ -105,21 +126,34 @@ function addSubtitles() {
 }
 function showSub() {
   const v = video.value; if (!v) return;
-  Array.from(v.textTracks).forEach((tr, i) => {
-    tr.mode = i === sub.value ? 'showing' : 'disabled';
-    // Settings → Subtitle position: the lines sit higher than the bottom.
-    tr.oncuechange = () => {
-      const up = Number(pref('subLift', '0')) || 0;
-      if (up) for (const c of Array.from(tr.activeCues || []) as VTTCue[]) { c.snapToLines = true; c.line = -(1 + up); }
-    };
+  Array.from(v.textTracks).forEach((tr, n) => {
+    tr.mode = tracks[n] === sub.value ? 'showing' : 'disabled';
+    tr.oncuechange = () => placeCues();
   });
+  placeCues();
+}
+// Where the lines sit: Settings → Subtitle position lifts them above the bottom, and while the controls
+// are shown they move up above those, so they are not hidden behind the seek bar.
+function placeCues() {
+  const v = video.value; if (!v) return;
+  const up = Number(pref('subLift', '0')) || 0;
+  const bar = !idle.value && bottom.value ? bottom.value.offsetHeight : 0;
+  const h = v.clientHeight || 1;
+  for (const tr of Array.from(v.textTracks)) {
+    if (tr.mode !== 'showing') continue;
+    for (const c of Array.from(tr.activeCues || []) as VTTCue[]) {
+      if (bar && bar / h < 0.5) { c.snapToLines = false; c.lineAlign = 'end'; c.line = Math.round((1 - bar / h) * 100) - 2 - up * 5; }
+      else if (up) { c.snapToLines = true; c.lineAlign = 'start'; c.line = -(1 + up); }
+      else { c.snapToLines = true; c.lineAlign = 'start'; c.line = 'auto'; }
+    }
+  }
 }
 
 // The audio and subtitles a video starts with (Settings → Playback), as in the classic app: the preferred
 // audio language; the subtitle language picked last time, else the subtitle mode decides (always, or with
 // foreign audio) and forced subtitles come on with audio in the preferred language.
 function pickSub(lang: string, sdh: string, forced: boolean) {
-  const all = subs.value.map((s, i) => ({ s, i })).filter(x => lang2(x.s.language) === lang);
+  const all = subs.value.map((s, i) => ({ s, i })).filter(x => lang2(x.s.language) === lang && (!isPicture(x.s) || burnOk()));
   let pool = forced ? all.filter(x => x.s.forced) : all.filter(x => !x.s.forced);
   if (!forced && !pool.length) pool = all;
   if (!pool.length) return -1;
@@ -139,18 +173,32 @@ function chooseTracks() {
     if (mode !== 'manual' && (mode === 'always' || foreign)) sub.value = pickSub(want, pref('subSdh', 'any'), false);
     else if (!foreign && pref('subForced', '1') === '1') sub.value = pickSub(want, 'any', true);
   }
+  // A picture subtitle is burned in (when Settings → Playback allows it).
+  if (sub.value >= 0 && isPicture(subs.value[sub.value])) { if (burnOk()) burn.value = sub.value; sub.value = -1; }
 }
+const burnOk = () => pref('burnSubs', 'auto') === 'auto';
 // Size, colour and background of the subtitles, as CSS variables for video::cue.
 const cueStyle = computed(() => ({
   '--cue': pref('subSize', '100') + '%',
   '--cue-color': pref('subColor', '#ffffff'),
   '--cue-bg': pref('subBg', '1') === '1' ? 'rgba(0,0,0,.55)' : 'transparent',
 }));
+const notice = ref('');
+let noticeTimer = 0;
+function say(text: string) { notice.value = text; clearTimeout(noticeTimer); noticeTimer = window.setTimeout(() => { notice.value = ''; }, 5000); }
 function setSub(i: number) {
-  sub.value = i; menu.value = '';
+  menu.value = '';
+  const before = burn.value, s = subs.value[i];
+  burn.value = null;
+  if (isPicture(s)) {
+    if (!burnOk()) { say(t('This subtitle is made of pictures; turn on burning in under Settings → Playback.')); i = -1; }
+    else { burn.value = i; i = -1; }
+  }
+  sub.value = i;
   showSub();
-  const s = subs.value[i];
-  savePref('subLang', s ? s.language || '' : '').catch(() => {});
+  savePref('subLang', s && (i >= 0 || burn.value !== null) ? s.language || '' : '').catch(() => {});
+  // A burned-in picture comes or goes: the video is fetched again from here.
+  if (before !== burn.value) load(now.value);
 }
 function setAudio(a: Stream, i: number) {
   menu.value = '';
@@ -162,9 +210,12 @@ function seek(to: number) {
   const v = video.value; if (!v) return;
   to = Math.max(0, Math.min(duration.value ? duration.value - 1 : to, to));
   now.value = to;
-  if (method.value === 'direct') { v.currentTime = to; return; }
+  // Another part of a split movie: that file is loaded.
+  const inPart = !split.value || (to >= base.value && (part.value === parts.value.length - 1 || to < partStart(part.value + 1)));
+  if (!inPart) { load(to); return; }
+  if (method.value === 'direct') { v.currentTime = to - base.value; return; }
   // Converted: within what has arrived already the stream itself seeks, else a new stream from there.
-  const local = to - offset.value;
+  const local = to - base.value - offset.value;
   if (local >= 0 && local <= buffered.value) v.currentTime = local;
   else load(to);
 }
@@ -205,6 +256,8 @@ async function nextEpisode(): Promise<Item | null> {
 }
 let done = false; // the end was reported already (not again when leaving)
 async function ended() {
+  // The next part of a split movie.
+  if (split.value && part.value < parts.value.length - 1) { load(partStart(part.value + 1)); return; }
   done = true;
   await report('stopped');
   const fromQueue = nextInQueue();
@@ -244,7 +297,7 @@ const onFull = () => { full.value = !!document.fullscreenElement; };
 onMounted(async () => {
   const v = video.value!;
   try { v.volume = Math.min(1, Math.max(0, Number(localStorage.getItem('volume') || 1))); } catch { /* none */ }
-  v.addEventListener('timeupdate', () => { now.value = offset.value + v.currentTime; });
+  v.addEventListener('timeupdate', () => { now.value = base.value + offset.value + v.currentTime; });
   v.addEventListener('progress', () => { buffered.value = v.buffered.length ? v.buffered.end(v.buffered.length - 1) : 0; });
   v.addEventListener('play', () => { paused.value = false; wake(); });
   v.addEventListener('pause', () => { paused.value = true; idle.value = false; if (!v.ended) report('paused'); });
@@ -265,7 +318,7 @@ onMounted(async () => {
   } catch (e) { error.value = (e as Error).message; waiting.value = false; }
 });
 onBeforeUnmount(() => {
-  clearInterval(timer); clearTimeout(idleTimer);
+  clearInterval(timer); clearTimeout(idleTimer); clearTimeout(noticeTimer);
   document.removeEventListener('keydown', key);
   document.removeEventListener('fullscreenchange', onFull);
   if (it.value && !stopped.value && !done) report('stopped');
@@ -275,7 +328,10 @@ onBeforeUnmount(() => {
 });
 
 const pct = computed(() => (duration.value ? (now.value / duration.value) * 100 : 0));
-const bufPct = computed(() => (duration.value ? Math.min(100, ((offset.value + buffered.value) / duration.value) * 100) : 0));
+const bufPct = computed(() => (duration.value ? Math.min(100, ((base.value + offset.value + buffered.value) / duration.value) * 100) : 0));
+// The lines move with the controls.
+const bottom = ref<HTMLElement | null>(null);
+watch(idle, () => placeCues());
 const methodName = computed(() => ({ direct: t('direct play'), remux: t('repackaged'), transcode: t('converting') }[method.value]));
 </script>
 
@@ -295,7 +351,8 @@ const methodName = computed(() => ({ direct: t('direct play'), remux: t('repacka
         <div class="dim">{{ subLine }}<span v-if="it"> · {{ methodName }}</span></div>
       </div>
     </div>
-    <div class="p-bottom" @click.stop>
+    <div v-if="notice" class="p-notice">{{ notice }}</div>
+    <div ref="bottom" class="p-bottom" @click.stop>
       <div class="seek">
         <div class="seek-buf" :style="{ width: bufPct + '%' }"></div>
         <input type="range" min="0" :max="duration || 1" step="1" :value="now" :aria-label="t('Position')"
@@ -316,10 +373,12 @@ const methodName = computed(() => ({ direct: t('direct play'), remux: t('repacka
           </div>
         </div>
         <div class="p-menu-wrap">
-          <button v-if="subs.length" class="iconbtn" :class="{ on: sub >= 0 || menu === 'subs' }" :aria-label="t('Subtitles')" @click="menu = menu === 'subs' ? '' : 'subs'"><Icon name="cc" /></button>
+          <button v-if="subs.length" class="iconbtn" :class="{ on: sub >= 0 || burn !== null || menu === 'subs' }" :aria-label="t('Subtitles')" @click="menu = menu === 'subs' ? '' : 'subs'"><Icon name="cc" /></button>
           <div v-if="menu === 'subs'" class="p-menu">
-            <button :class="{ on: sub < 0 }" @click="setSub(-1)">{{ t('Off') }}</button>
-            <button v-for="(s, i) in subs" :key="i" :class="{ on: sub === i }" @click="setSub(i)">{{ subName(s, i) }}</button>
+            <button :class="{ on: sub < 0 && burn === null }" @click="setSub(-1)">{{ t('Off') }}</button>
+            <button v-for="(s, i) in subs" :key="i" :class="{ on: sub === i || burn === i }" :disabled="part > 0 && !isPicture(s)" @click="setSub(i)">
+              {{ subName(s, i) }}<template v-if="isPicture(s)"> · {{ t('burned in') }}</template>
+            </button>
           </div>
         </div>
         <button class="iconbtn" :aria-label="t('Full screen')" @click="toggleFull"><Icon :name="full ? 'exitfull' : 'full'" /></button>
