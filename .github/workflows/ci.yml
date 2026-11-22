@@ -68,9 +68,12 @@ jobs:
         working-directory: clients/lichtspiel
     steps:
       - uses: actions/checkout@v4
+      # The same Flutter as on the development machine, so analyze finds the same here as there; a newer
+      # one may deprecate things (e.g. material.dart for package:material_ui). Raise it on purpose.
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: 3.47.9
           cache: true
       - run: flutter pub get
       - run: flutter analyze
