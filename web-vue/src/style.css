@@ -357,6 +357,12 @@ code.ev { margin: 0 6px 6px 0; display: inline-block; }
 .pp-item .actions { margin: 0; flex-wrap: wrap; justify-content: flex-end; }
 .select { user-select: all; }
 .narrow-wide { max-width: 900px; }
+.set-search { min-width: 220px; padding: 7px 12px; }
+.form .form-wide { grid-column: 1 / -1; margin: 6px 0 0; }
+.form h3.form-wide { margin-top: 14px; }
+.faded { opacity: .5; }
+.form .check { display: flex; gap: 8px; align-items: center; padding-top: 2px; }
+pre.log { max-height: 320px; overflow: auto; white-space: pre-wrap; font-size: 12px; margin: 8px 0; background: var(--bg); padding: 10px; border-radius: 8px; }
 .p-cast { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font-size: 20px; color: var(--dim); background: #000; }
 .p-cast .icon { width: 72px; height: 72px; }
 .bar-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 12px 0; }

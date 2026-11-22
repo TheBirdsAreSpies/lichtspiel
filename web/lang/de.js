@@ -1939,6 +1939,7 @@ I18N.add('de', 'Deutsch', {
     'Set up the Trakt app in the classic web app (Settings → Account).': 'Richte die Trakt-App in der klassischen Web-App ein (Einstellungen → Konto).',
     'The Trakt app and the sync settings are in the classic web app.': 'Die Trakt-App und die Einstellungen zum Abgleich sind in der klassischen Web-App.',
     'Server settings': 'Server-Einstellungen',
+    'Search settings': 'Einstellungen durchsuchen',
     'Playback': 'Wiedergabe',
     'Trakt': 'Trakt',
     'The quality used when a video starts. Saved with your account.': 'Die Qualität, mit der ein Video startet. Wird mit deinem Konto gespeichert.',

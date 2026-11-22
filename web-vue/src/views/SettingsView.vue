@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Settings: your own (account, playback, devices, Trakt, the watchlist feed), one tab each (/settings/<tab>).
-// The server's settings are for admins and still in the classic web app.
+// The server's settings are for the owner, on their own page (/server).
 import { computed } from 'vue';
 import { session } from '../api';
 import { t } from '../i18n';
@@ -24,7 +24,7 @@ const tab = computed(() => (TABS.some(([k]) => k === props.tab) ? props.tab : 'a
       <RouterLink v-for="[k, l] in TABS" :key="k" :to="'/settings/' + k" custom v-slot="{ navigate }">
         <button :class="{ on: tab === k }" @click="navigate">{{ t(l) }}</button>
       </RouterLink>
-      <a v-if="session.me?.admin" class="btn admin-link" href="/#/settings/general">{{ t('Server settings') }} ↗</a>
+      <RouterLink v-if="session.me?.admin" class="btn admin-link" to="/server">{{ t('Server settings') }}</RouterLink>
     </nav>
     <template v-if="tab === 'account'">
       <AccountPanel />

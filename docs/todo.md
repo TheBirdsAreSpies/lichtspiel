@@ -43,7 +43,8 @@ Collected on 2026-11-22.
 
 ### Vue web app (`web-vue/`, branch `feat/vue-frontend`)
 
-- **Still missing there** (only in `web/` so far): the server's settings.
+- **Still missing there** (only in `web/` so far): the libraries page (`#/libraries`), reported problems
+  (`#/reports`), the API page, the calendar, the statistics, and the watched indicator and webhooks settings.
 
 ### Server
 
