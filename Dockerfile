@@ -26,6 +26,9 @@ RUN touch src/main.rs && cargo build --release --locked --no-default-features
 
 # `docker build --target test .` runs the tests (the automatic build on Gitea does this first).
 FROM build AS test
+# A test reads every bundled plugin.json. Copied here, not in the build stage, so a plugin change
+# does not compile the server again.
+COPY plugins ./plugins
 RUN cargo test --release --locked --no-default-features
 
 FROM debian:bookworm-slim
