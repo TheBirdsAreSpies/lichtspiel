@@ -1151,6 +1151,7 @@ async function settingsPage(tab, qs) {
         pref('autoLogin', '1', t('Sign in automatically'), [['1', t('Yes')], ['0', t('No')]], t('No: you are signed out when the browser is closed.'), () => { saveToken(S.token); }),
         pref('levelVolume', '0', t('Level the volume'), [['0', t('No')], ['1', t('Yes')]], t('Quiet and loud videos are brought to a similar loudness. Works for videos the server has measured (Settings → Scheduled tasks).')),
         pref('themeMusic', '1', t('Play theme music'), [['0', t('No')], ['1', t('Yes')]], t('Plays theme music quietly on a movie’s or show’s page: a theme.mp3 from its folder, or for shows the music cut from the intro. Browsers may need one click on the page first.'), () => { if (store.get('themeMusic', '1') !== '1') stopTheme(); }),
+        pref('themeLoop', '1', t('Theme music repeats'), [['1', t('Over and over')], ['0', t('Once')]], t('Over and over: until you leave the page or start playing. Once: it stops at its end.'), () => { if (THEME.audio) THEME.audio.loop = store.get('themeLoop', '1') === '1'; }),
         pref('rememberTab', '0', t('Remember the last page'), [['0', t('No')], ['1', t('Yes')]], t('When the app is opened without an address, it continues where you left off.'))),
       h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, t('Quality')),
         pref('quality', 'original', t('Video quality'), QUALITIES, t('The quality used when a video starts; you can still change it in the player. Saved with your account.'), () => { P.quality = store.get('quality', 'original'); }),
@@ -2271,9 +2272,11 @@ async function startTheme(id) {
   // (Left the page, or the player opened, while the ticket was on its way.)
   if (!tk || THEME.id !== id || player.style.display === 'flex' || document.pictureInPictureElement) return;
   const a = new Audio(withTicket(`/library/metadata/${id}/theme`, tk));
-  a.volume = THEME_VOLUME; a.loop = true; a.muted = store.get('themeMuted', '0') === '1';
+  a.volume = THEME_VOLUME; a.loop = store.get('themeLoop', '1') === '1'; a.muted = store.get('themeMuted', '0') === '1';
   THEME.audio = a; THEME.id = id;
   a.addEventListener('error', () => { if (THEME.audio === a) { THEME.audio = null; THEME.id = null; themeButton(false); } });
+  // Played once: done on this page (THEME.id stays, so a redraw does not start it again).
+  a.addEventListener('ended', () => { if (THEME.audio === a) { THEME.audio = null; themeButton(false); } });
   // The button only once it really plays (not while the browser waits for a click: that click would also mute it).
   a.addEventListener('playing', () => { if (THEME.audio === a) themeButton(true); });
   a.play().catch(e => {
