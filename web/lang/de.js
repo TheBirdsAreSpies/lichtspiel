@@ -585,6 +585,7 @@ I18N.add('de', 'Deutsch', {
     'Applies the next time the details are fetched online (menu "⋯" → refresh).': 'Gilt, sobald die Details das nächste Mal online geholt werden (Menü „⋯“ → aktualisieren).',
     'Whether the "Skip credits" mark is searched for in this title.': 'Ob für diesen Titel die Marke für „Abspann überspringen“ gesucht wird.',
     'Poster': 'Plakat',
+    'Pictures': 'Bilder',
     'Background': 'Hintergrund',
     'Logo': 'Logo',
     'Square poster': 'Quadrat-Poster',

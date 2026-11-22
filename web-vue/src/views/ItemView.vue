@@ -3,10 +3,11 @@
 // watchlist; a show's seasons with their episodes, a season's episodes, the cast and related rows.
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { api, get, list, picture, type Hub, type Item, type Person } from '../api';
-import { fmtDur, fmtTime, isPlayable, isWatched, resumeAt, seasonTitle } from '../format';
+import { api, get, list, picture, session, type Hub, type Item, type Person } from '../api';
+import { fmtDur, fmtSize, fmtTime, isPlayable, isWatched, resumeAt, seasonTitle } from '../format';
 import { lang, t } from '../i18n';
 import AddToDialog from '../components/AddToDialog.vue';
+import EditDetails from '../components/EditDetails.vue';
 import Icon from '../components/Icon.vue';
 import PosterRow from '../components/PosterRow.vue';
 
@@ -20,6 +21,7 @@ const top = ref<Item | null>(null);
 const related = ref<Hub[]>([]);
 const error = ref('');
 const adding = ref(false);
+const editing = ref(false);
 
 async function load() {
   error.value = '';
@@ -61,14 +63,29 @@ const facts = computed(() => {
 const crew = computed(() => ([[t('Directed by'), x.value.directors], [t('Written by'), x.value.writers], [t('Created by'), x.value.creators]] as [string, string[] | undefined][])
   .filter(r => r[1] && r[1].length) as [string, string[]][]);
 
+// Merged by hand (the owner's "Merge"): several files of the same title. Which one plays is chosen
+// here and kept per title in this browser (as in the classic app, under the same key).
+const versions = computed(() => (it.value && it.value.Media && it.value.Media.length > 1 ? it.value.Media : null));
+const version = ref(0);
+watch(() => props.id, id => {
+  let v = 0; try { v = Number(localStorage.getItem('version:' + id)) || 0; } catch { /* none */ }
+  version.value = v;
+}, { immediate: true });
+function setVersion(v: number) { version.value = v; try { localStorage.setItem('version:' + props.id, String(v)); } catch { /* none */ } }
+const versionName = (m: NonNullable<Item['Media']>[number]) => [m.height ? (m.height >= 2000 ? '4K' : m.height + 'p') : '', m.edition, m.size ? fmtSize(m.size) : ''].filter(Boolean).join(' · ');
+// The id that plays for this title: the chosen version's (each version is an item of its own).
+const playId = (item: Item) => {
+  const v = versions.value;
+  return item === it.value && v && version.value > 0 && version.value < v.length && v[version.value].id ? v[version.value].id! : item.id;
+};
 function play(item: Item, at: number) {
-  router.push({ name: 'play', params: { id: item.id }, query: { t: String(Math.floor(at)) } });
+  router.push({ name: 'play', params: { id: playId(item) }, query: { t: String(Math.floor(at)) } });
 }
 // After a long break: the last minutes of the episode before (up to its credits), then this one
 // from where it stopped. The player plays the one before without saving anything about it.
 function catchUp(item: Item) {
   const c = item.catchUp; if (!c) return;
-  router.push({ name: 'play', params: { id: c.id }, query: { t: String(Math.floor(c.from / 1000)), until: String(Math.floor(c.to / 1000)), then: String(item.id), at: String(Math.floor(resumeAt(item))) } });
+  router.push({ name: 'play', params: { id: c.id }, query: { t: String(Math.floor(c.from / 1000)), until: String(Math.floor(c.to / 1000)), then: String(playId(item)), at: String(Math.floor(resumeAt(item))) } });
 }
 // A show or season: the next episode not watched yet (or the first).
 async function playNext() {
@@ -136,12 +153,16 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
               <button v-else class="primary big" @click="play(it, 0)">{{ t('▶ Play') }}</button>
               <button v-if="it.catchUp" class="big" :title="t('The last minutes of S{s}E{e} before its credits, then this episode', { s: it.catchUp.parentIndex || 0, e: it.catchUp.index || 0 })"
                 @click="catchUp(it)">{{ t('What happened so far') }}</button>
+              <select v-if="versions" :value="Math.min(version, versions.length - 1)" :title="t('Version')" :aria-label="t('Version')" @change="setVersion(Number(($event.target as HTMLSelectElement).value))">
+                <option v-for="(m, i) in versions" :key="i" :value="i">{{ versionName(m) }}</option>
+              </select>
             </template>
             <button v-else-if="it.leafCount" class="primary big" @click="playNext">{{ t('▶ Play next episode') }}</button>
             <button class="iconbtn round" :class="{ on: isWatched(it) }" :title="isWatched(it) ? t('Mark as unwatched') : t('Mark as watched')" @click="toggleWatched"><Icon name="check" /></button>
             <button class="iconbtn round" :class="{ on: it.favorite }" :title="it.favorite ? t('Remove from favorites') : t('Add to favorites')" @click="toggleFavorite"><Icon :name="it.favorite ? 'heart' : 'heartOff'" /></button>
             <button class="iconbtn round" :class="{ on: it.watchlist }" :title="it.watchlist ? t('Remove from watchlist') : t('Add to watchlist')" @click="toggleWatchlist"><Icon :name="it.watchlist ? 'mark' : 'markOff'" /></button>
             <button v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" class="iconbtn round" :title="t('Add to …')" :aria-label="t('Add to …')" @click="adding = true"><Icon name="playlistAdd" /></button>
+            <button v-if="session.me?.admin && it.type !== 'clip'" class="iconbtn round" :title="t('Edit details')" :aria-label="t('Edit details')" @click="editing = true"><Icon name="edit" /></button>
           </div>
         </div>
       </div>
@@ -179,6 +200,7 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
       </section>
       <PosterRow v-for="h in related" :key="h.hubIdentifier + h.title" :title="t(h.title)" :items="h.Metadata || []" />
       <AddToDialog v-if="adding" :item="it" @close="adding = false" @changed="load" />
+      <EditDetails v-if="editing" :id="it.id" @close="editing = false" @saved="load" />
     </template>
   </div>
 </template>

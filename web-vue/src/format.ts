@@ -26,6 +26,8 @@ export function fmtClock(d: Date): string {
 }
 
 /** Where to go on from, in seconds; less than a second in counts as not started. */
+/** A file size: 1,4 GB, 700 MB. */
+export const fmtSize = (b: number) => (b > 1e9 ? fmtNum(b / 1e9, 1) + ' GB' : fmtNum(b / 1e6, 0) + ' MB');
 export const resumeAt = (it: Item) => ((it.viewOffset || 0) >= 1000 ? (it.viewOffset || 0) / 1000 : 0);
 
 export const seasonTitle = (s?: string) => (/^(Season \d+|Specials)$/.test(s || '') ? t(s || '') : s || '');

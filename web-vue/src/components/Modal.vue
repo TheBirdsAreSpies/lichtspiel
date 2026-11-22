@@ -8,7 +8,7 @@ const open: symbol[] = [];
 // Escape and a click beside it close it.
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
-defineProps<{ title: string }>();
+defineProps<{ title: string, wide?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const box = ref<HTMLElement | null>(null);
 const me = Symbol('modal');
@@ -26,7 +26,7 @@ onBeforeUnmount(() => { document.removeEventListener('keydown', esc, true); open
 <template>
   <Teleport to="body">
     <div class="modal-back" @mousedown.self="emit('close')">
-      <div ref="box" class="modal" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
+      <div ref="box" class="modal" :class="{ wide }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
         <h2>{{ title }}</h2>
         <slot />
         <div class="actions"><slot name="actions" /></div>
