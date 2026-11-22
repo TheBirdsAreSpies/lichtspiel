@@ -105,7 +105,9 @@ label{display:block;color:var(--dim);font-size:13px;margin:10px 0 4px}
 /* The button at the bottom folds the menu to its icons (the choice is kept in this browser). */
 #sidetoggle{display:flex;align-items:center;gap:12px;width:100%;margin-top:10px;padding:9px 22px;background:none;border:0;border-radius:0;color:var(--faint);text-align:left}
 #sidetoggle:hover{color:var(--text)}
-#side,#main{transition:width .15s,margin-left .15s}
+/* Only the button animates the menu: a transition while resizing the window could stick at the old width
+   (the page then kept the menu's space, or ran under the menu). */
+body.nav-anim #side,body.nav-anim #main{transition:width .15s,margin-left .15s}
 @media (min-width:761px){
   body.nav-small #side{width:64px;overflow-x:hidden}
   body.nav-small #main{margin-left:64px}

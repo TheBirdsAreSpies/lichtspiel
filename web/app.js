@@ -536,7 +536,11 @@ function drawSideToggle() {
   $('#sidetoggle').title = label;
   $('#sidetoggle').setAttribute('aria-label', label);
 }
-$('#sidetoggle').addEventListener('click', () => { store.set('navSmall', store.get('navSmall', '0') === '1' ? '0' : '1'); drawSideToggle(); });
+let navAnim;
+$('#sidetoggle').addEventListener('click', () => {
+  document.body.classList.add('nav-anim'); clearTimeout(navAnim); navAnim = setTimeout(() => document.body.classList.remove('nav-anim'), 300);
+  store.set('navSmall', store.get('navSmall', '0') === '1' ? '0' : '1'); drawSideToggle();
+});
 // The phone's bar at the bottom: its menu button opens the side bar over the page (and closes it again).
 $('#tabmenu').addEventListener('click', e => { e.stopPropagation(); document.body.classList.toggle('nav-open'); });
 function markNav(key) { NAV.cur = key; document.querySelectorAll('#side a, #tabbar a').forEach(a => a.classList.toggle('on', a.dataset.nav === key)); $('#npbtn').classList.toggle('on', key === 'dashboard'); }
