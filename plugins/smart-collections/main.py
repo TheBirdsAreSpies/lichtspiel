@@ -83,6 +83,9 @@ WORDS = {
     "Nothing is missing.": "Es fehlt nichts.",
     "The first {n} are shown.": "Die ersten {n} werden gezeigt.",
     "Back": "Zurück",
+    "Save as playlist": "Als Playlist speichern",
+    "Saving …": "Wird gespeichert …",
+    "From the smart collections": "Aus den smarten Sammlungen",
 }
 
 
@@ -350,7 +353,7 @@ def run(server, settings, progress=None):
             # Films of the list you have, not titles: a film there twice counts once.
             missing = [f for f in films if not titles_of(f, index)]
             report.append({"name": name, "source": source, "found": len(films) - len(missing), "total": len(films),
-                           "missing": [described(f) for f in missing[:MISSING_KEPT]]})
+                           "missing": [described(f) for f in missing[:MISSING_KEPT]], "ids": ids})
         except Exception as e:  # noqa: BLE001 — shown in the panel, the other lists go on
             # Not reachable: the collection is left as it is.
             report.append({"name": name, "source": source, "error": str(e)})
@@ -478,8 +481,9 @@ def panel(lang, settings, message=None):
         else:
             status = tr(lang, "{n} of {m} in your libraries", n=r["found"], m=r["total"])
         item = {"title": name, "subtitle": source, "status": status, "status_kind": "default" if r and not r.get("error") else None}
-        if r and not r.get("error") and r.get("missing"):
-            item["buttons"] = [{"label": tr(lang, "Show missing"), "action": "missing", "args": {"name": name}}]
+        if r and not r.get("error"):
+            item["buttons"] = ([{"label": tr(lang, "Show missing"), "action": "missing", "args": {"name": name}}] if r.get("missing") else []) + \
+                ([{"label": tr(lang, "Save as playlist"), "action": "playlist", "args": {"name": name}, "working": tr(lang, "Saving …")}] if r.get("ids") else [])
         items.append(item)
     text = tr(lang, "Updated {when}.", when=when(state["at"], lang)) if state.get("at") else tr(lang, "Not updated yet.")
     if message:
@@ -521,11 +525,20 @@ def answer_call(data, settings, server):
     if not data.get("admin"):
         return {"error": tr(lang, "Only admins can see the smart collections.")}
     action = data.get("action")
-    if action not in ("panel", "update", "progress", "missing"):
+    if action not in ("panel", "update", "progress", "missing", "playlist"):
         return {"error": "unknown action %s" % action}
+    args = body.get("args") if isinstance(body.get("args"), dict) else {}
     if action == "missing":
-        args = body.get("args") if isinstance(body.get("args"), dict) else {}
         return {"panel": missing_panel(lang, str(args.get("name") or ""))}
+    if action == "playlist":
+        # The titles of the list you have, in the list's order, as a playlist of whoever clicked
+        # (filled anew when saved again; it does not follow the list by itself).
+        name = str(args.get("name") or "")
+        r = next((r for r in read_json(STATE, {}).get("lists") or [] if r.get("name") == name and r.get("ids")), None)
+        if r is None:
+            return {"error": tr(lang, "Not updated yet.")}
+        return {"save_playlist": {"title": name, "summary": tr(lang, "From the smart collections"), "ids": r["ids"]},
+                "panel": panel(lang, settings)}
     done = finished(lang)
     if done:
         # The collections go to the server with whichever call comes first after the run.

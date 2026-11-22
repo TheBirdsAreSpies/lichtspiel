@@ -213,7 +213,12 @@ class Runs(unittest.TestCase):
         self.assertNotIn("collections", call("panel"))
         # Which films of the list you do not have: a button on the list shows them.
         item = call("panel")["items"][0]
-        self.assertEqual(item["buttons"], [{"label": "Fehlende zeigen", "action": "missing", "args": {"name": "Oscars"}}])
+        self.assertEqual(item["buttons"], [{"label": "Fehlende zeigen", "action": "missing", "args": {"name": "Oscars"}},
+                                           {"label": "Als Playlist speichern", "action": "playlist", "args": {"name": "Oscars"}, "working": "Wird gespeichert …"}])
+        # The list as a playlist: the titles you have, in the list's order.
+        pl = main.answer_call({"action": "playlist", "admin": True, "body": {"lang": "de", "args": {"name": "Oscars"}}}, settings, {})
+        self.assertEqual(pl["save_playlist"], {"title": "Oscars", "summary": "Aus den smarten Sammlungen", "ids": [1]})
+        self.assertIn("error", main.answer_call({"action": "playlist", "admin": True, "body": {"args": {"name": "Gibt es nicht"}}}, settings, {}))
         m = main.answer_call({"action": "missing", "admin": True, "body": {"lang": "de", "args": {"name": "Oscars"}}}, settings, {})["panel"]
         self.assertEqual(m["title"], "Oscars: fehlt dir")
         self.assertEqual(m["text"], "1 Filme dieser Liste sind nicht in deinen Mediatheken.")

@@ -1,7 +1,7 @@
 {
   "id": "smart-collections",
   "name": "Smart collections",
-  "version": "1.3",
+  "version": "1.4",
   "author": "Lichtspiel",
   "description": "Fills collections in the movie libraries from lists, once a day and on Update now (admins, under Settings): IMDb Top 250, the Oscar winners for Best Picture, TMDB's popular and best rated movies (with a TMDB key), and any public Letterboxd list or watchlist. Only titles you have go in; collections given by hand stay. Settings: lists [{\"name\": the collection's name, \"source\": imdb-top-250 | oscar-best-picture | tmdb-popular | tmdb-top-rated | a letterboxd.com address or boxd.it link}], libraries by name (empty = every movie library), tmdb_api_key (only for the TMDB lists).",
   "command": ["python3", "main.py"],
