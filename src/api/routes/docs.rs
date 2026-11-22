@@ -98,7 +98,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/api/together/{code}/invite", "Ask people into the room {users: [ids]}; they see the invitation in the app"),
     ("DELETE", "/api/together/{code}/invite", "Say no to an invitation"),
     ("GET", "/api/together/invites", "Rooms you were asked into → {invites: [{code, by, item, title, members}]}"),
-    ("GET", "/library/metadata/{id}/decision", "How it would play: direct, remux or transcode ?quality=720p-4"),
+    ("GET", "/library/metadata/{id}/decision", "How it would play: direct, remux or transcode ?quality=720p-4; with &offset=seconds also \"start\", where stream.mp4 asked for that time really starts (a copied picture starts at a key frame)"),
     ("GET", "/library/parts/{id}/file", "The original file, with seeking (Range requests); ?download=1"),
     ("GET", "/library/parts/{id}/subtitles/{n}", "A subtitle track as WebVTT (n, or xN for side files), with its timing set by synchronizing or by hand"),
     ("POST", "/library/parts/{id}/subtitles/{n}/sync", "Admin: listen to the sound and move the subtitle track so its lines fall on the speech (also fixes 23.976 / 25 fps stretches); only kept when certain. Takes a while"),

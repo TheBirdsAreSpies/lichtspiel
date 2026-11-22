@@ -349,14 +349,14 @@ async function load(at) {
   P.base = split() ? partStart(P.part) : 0;
   at = Math.max(0, at - P.base);
   const extra = (CLIENT_CODECS && !cast ? `&videoCodecs=${CLIENT_CODECS}` : '') + (P.audio ? `&audio=${P.audio}` : '') + (P.part ? `&part=${P.part}` : '') + (P.burn !== null && P.burn !== undefined ? `&subtitle=${P.burn}` : '');
-  const d = await GET(`/library/metadata/${it.id}/decision?quality=${q}${extra}`);
+  const d = await GET(`/library/metadata/${it.id}/decision?quality=${q}&offset=${at.toFixed(3)}${extra}`);
   P.tk = await ticket('item=' + it.id);
   if (P.it !== it || seq !== P.loadSeq) return; // a newer load (another quick seek) wins
   P.method = P.audio && d.method === 'direct' ? 'remux' : d.method;
   if (!d.allowed) toast(t('Converting is switched off for your account, so this file may not play here.'), 5000);
   if (cast && castOn()) {
     if (store.get('directPlay', '1') === '0' && P.method === 'direct' && d.allowed) P.method = 'transcode';
-    await castLoad(it, at, q, extra);
+    await castLoad(it, P.method === 'remux' && typeof d.start === 'number' && d.start <= at ? d.start : at, q, extra);
     clearInterval(P.timer);
     P.timer = setInterval(() => { if (!isPaused() && CAST.media) report('playing'); }, 10000);
     drawBar();
@@ -371,8 +371,10 @@ async function load(at) {
     video.src = withTicket(`/library/parts/${it.id}/file${P.part ? '?part=' + P.part : ''}`, P.tk);
     video.addEventListener('loadedmetadata', () => { video.currentTime = at; }, { once: true });
   } else {
+    // A repackaged stream starts at the key frame before `at` (the server says where), a converted one at `at`.
+    if (P.method === 'remux' && typeof d.start === 'number' && d.start <= at) at = d.start;
     P.offset = at;
-    video.src = withTicket(`/video/transcode/${it.id}/stream.mp4?quality=${q}&offset=${at.toFixed(1)}${extra}${noDirect ? '&transcode=1' : ''}`, P.tk);
+    video.src = withTicket(`/video/transcode/${it.id}/stream.mp4?quality=${q}&offset=${at.toFixed(3)}${extra}${noDirect ? '&transcode=1' : ''}`, P.tk);
   }
   addSubtitles();
   $('#pmethod').textContent = { direct: ' · ' + t('direct play'), remux: ' · ' + t('repackaged'), transcode: ' · ' + t('converting') }[P.method] || '';

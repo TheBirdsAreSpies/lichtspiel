@@ -35,10 +35,18 @@ pub(super) fn routes(app: &Arc<App>, ctx: &Ctx, user: &db::User, m: &str, segs: 
                     "hls": format!("/video/transcode/{iid}/start.m3u8?quality={q}{tok}"), "resume": db.view(user.id, iid).view_offset_ms, "duration": it.duration_ms}));
             }
             let code = if !allowed && d.method == Method::Transcode { 2000 } else { transcode::decision_code(&d.method) };
-            ok(json!({"method": d.method, "reasons": d.reasons, "height": d.height, "bitrateKbps": d.bitrate_kbps, "url": url,
+            let mut body = json!({"method": d.method, "reasons": d.reasons, "height": d.height, "bitrateKbps": d.bitrate_kbps, "url": url,
                 "decisionCode": code, "decisionText": transcode::decision_text(code),
                 "hls": format!("/video/transcode/{iid}/start.m3u8?quality={q}{tok}"), "direct": format!("/library/parts/{iid}/file?x=1{tok}"),
-                "allowed": allowed || d.method == Method::Direct, "resume": db.view(user.id, iid).view_offset_ms, "duration": it.duration_ms}))
+                "allowed": allowed || d.method == Method::Direct, "resume": db.view(user.id, iid).view_offset_ms, "duration": it.duration_ms});
+            // ?offset=s: where stream.mp4 asked for that time really starts (a copied picture starts at a key frame before
+            // it). The player asks for the stream at "start" and counts it from there. Looked up after the lock is let go.
+            if let Some(offset) = ctx.param("offset").and_then(|o| o.parse::<f64>().ok()) {
+                let (settings, f) = (db.settings.clone(), f.clone());
+                drop(db);
+                body["start"] = json!(transcode::stream_start(&settings, &f, &d, &req, offset));
+            }
+            ok(body)
         }
         ("GET", ["library", "parts", iid, "file"]) | ("GET", ["library", "parts", iid, _, "file"]) | ("GET", ["library", "parts", iid, "file", _]) => direct_file(app, ctx, &user, iid),
         ("GET", ["library", "parts", iid, "subtitles", n]) => subtitles(app, ctx, &user, iid, n),

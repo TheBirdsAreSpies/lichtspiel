@@ -89,7 +89,7 @@ async function load(at: number) {
   at = Math.max(0, at - base.value);
   const extra = (CODECS ? `&videoCodecs=${CODECS}` : '') + (audio.value !== null ? `&audio=${audio.value}` : '') + (p ? `&part=${p}` : '')
     + (burn.value !== null ? `&subtitle=${burn.value}` : '');
-  const d = await get<{ method: 'direct' | 'remux' | 'transcode', allowed: boolean }>(`/library/metadata/${i.id}/decision?quality=${q}${extra}`);
+  const d = await get<{ method: 'direct' | 'remux' | 'transcode', allowed: boolean, start?: number }>(`/library/metadata/${i.id}/decision?quality=${q}&offset=${at.toFixed(3)}${extra}`);
   tk = await ticket('item=' + i.id);
   if (seq !== loadSeq) return;
   let m = audio.value !== null && d.method === 'direct' ? 'remux' : d.method;
@@ -102,8 +102,10 @@ async function load(at: number) {
     v.src = withTicket(`/library/parts/${i.id}/file${p ? '?part=' + p : ''}`, tk);
     v.addEventListener('loadedmetadata', () => { v.currentTime = at; }, { once: true });
   } else {
+    // A repackaged stream starts at the key frame before `at` (the server says where), a converted one at `at`.
+    if (m === 'remux' && typeof d.start === 'number' && d.start <= at) at = d.start;
     offset.value = at;
-    v.src = withTicket(`/video/transcode/${i.id}/stream.mp4?quality=${q}&offset=${at.toFixed(1)}${extra}${noDirect ? '&transcode=1' : ''}`, tk);
+    v.src = withTicket(`/video/transcode/${i.id}/stream.mp4?quality=${q}&offset=${at.toFixed(3)}${extra}${noDirect ? '&transcode=1' : ''}`, tk);
   }
   v.defaultPlaybackRate = v.playbackRate = speed.value;
   addSubtitles();

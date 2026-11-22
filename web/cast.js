@@ -111,7 +111,7 @@ async function castLoad(it, at, q, extra) {
   P.offset = direct ? 0 : at;
   const dev = '&X-Plex-Product=Chromecast&X-Plex-Device-Name=' + encodeURIComponent(CAST.device);
   const path = direct ? `/library/parts/${it.id}/file${P.part ? '?part=' + P.part : ''}`
-    : `/video/transcode/${it.id}/stream.mp4?quality=${q}&offset=${at.toFixed(1)}${extra}${store.get('directPlay', '1') === '0' ? '&transcode=1' : ''}`;
+    : `/video/transcode/${it.id}/stream.mp4?quality=${q}&offset=${at.toFixed(3)}${extra}${store.get('directPlay', '1') === '0' ? '&transcode=1' : ''}`;
   const container = String((it.Media && it.Media[0] && it.Media[0].container) || '').toLowerCase();
   const mi = new chrome.cast.media.MediaInfo(castUrl(withTicket(path, P.tk)) + dev, direct && container === 'webm' ? 'video/webm' : 'video/mp4');
   mi.streamType = chrome.cast.media.StreamType.BUFFERED;

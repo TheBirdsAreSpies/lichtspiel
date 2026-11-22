@@ -471,6 +471,13 @@ fn audio_args(file: &MediaFile, req: &Request) -> Vec<String> {
     v
 }
 
+/// The `-ss` for a stream from `offset_s`. With a copied picture ffmpeg seeks 3/23 s early when the video has B-frames
+/// (it seeks by decode time), so a seek to exactly a key frame (`stream_start`) would land on the one before; a little
+/// later finds it. The stream's times start at its first frame either way.
+fn seek_target(method: &Method, offset_s: f64) -> f64 {
+    if *method == Method::Remux { offset_s + 0.15 } else { offset_s }
+}
+
 /// ffmpeg arguments for a progressive, seekable-by-restart MP4 stream on stdout.
 pub fn progressive_args(settings: &Settings, file: &MediaFile, d: &Decision, req: &Request, offset_s: f64) -> Vec<String> {
     let burn = burn_settings(settings, file, req);
@@ -482,7 +489,7 @@ pub fn progressive_args(settings: &Settings, file: &MediaFile, d: &Decision, req
         // A copied picture can only start at a key frame, before the asked-for time. Sound cut exactly there would play
         // ahead of the picture by the difference, so with a copied picture the sound starts at the key frame as well.
         if method == Method::Remux { a.push("-noaccurate_seek".into()); }
-        a.extend(["-ss".into(), format!("{offset_s:.3}")]);
+        a.extend(["-ss".into(), format!("{:.3}", seek_target(&method, offset_s))]);
     }
     a.extend(["-i".into(), file.path.clone()]);
     let mut audio = audio_args(file, req);
@@ -495,6 +502,35 @@ pub fn progressive_args(settings: &Settings, file: &MediaFile, d: &Decision, req
         "-f".into(), "mp4".into(), "pipe:1".into(),
     ]);
     a
+}
+
+/// Where the stream `progressive_args` makes for a seek to `offset_s` really starts. A copied picture starts at the last
+/// key frame at or before it, so a player that counts the stream as starting at `offset_s` would show times ahead by up
+/// to the key frame distance. The time is rounded up to the millisecond, so a stream asked for at exactly that time
+/// starts at that key frame. `offset_s` when the picture is converted or no key frame is found within 30 s before.
+pub fn stream_start(settings: &Settings, file: &MediaFile, d: &Decision, req: &Request, offset_s: f64) -> f64 {
+    let copied = burn_settings(settings, file, req).is_none() && matches!(d.method, Method::Direct | Method::Remux);
+    if offset_s <= 0.0 || !copied { return offset_s.max(0.0); }
+    keyframe_before(&settings.ffprobe, &file.path, offset_s).unwrap_or(offset_s)
+}
+
+/// The last key frame of the first video stream at or before `at_s` (seconds from the file's start), looking back 30 s.
+fn keyframe_before(ffprobe: &str, path: &str, at_s: f64) -> Option<f64> {
+    let window = format!("{:.3}%{:.3}", (at_s - 30.0).max(0.0), at_s + 0.001);
+    let out = std::process::Command::new(ffprobe)
+        .args(["-v", "error", "-select_streams", "v:0", "-read_intervals", &window, "-show_entries", "packet=pts_time,flags:format=start_time", "-of", "json", path])
+        .stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+        .output().ok()?;
+    let j: Value = serde_json::from_slice(&out.stdout).ok()?;
+    let num = |v: &Value| v.as_str().and_then(|s| s.parse::<f64>().ok());
+    let start = j["format"].get("start_time").and_then(num).unwrap_or(0.0);
+    let key = j["packets"].as_array()?.iter()
+        .filter(|p| p["flags"].as_str().is_some_and(|f| f.starts_with('K')))
+        .filter_map(|p| p.get("pts_time").and_then(num))
+        .map(|t| t - start)
+        .filter(|&t| t <= at_s)
+        .fold(None, |m: Option<f64>, t| Some(m.map_or(t, |m| m.max(t))))?;
+    Some((key.max(0.0) * 1000.0).ceil() / 1000.0)
 }
 
 /// "Optimize": versions saved as a file that every browser plays directly
@@ -554,7 +590,7 @@ pub fn hls_args(settings: &Settings, file: &MediaFile, d: &Decision, req: &Reque
         // A copied picture can only start at a key frame, before the asked-for time. Sound cut exactly there would play
         // ahead of the picture by the difference, so with a copied picture the sound starts at the key frame as well.
         if method == Method::Remux { a.push("-noaccurate_seek".into()); }
-        a.extend(["-ss".into(), format!("{offset_s:.3}")]);
+        a.extend(["-ss".into(), format!("{:.3}", seek_target(&method, offset_s))]);
     }
     a.extend(["-i".into(), file.path.clone()]);
     let mut audio = audio_args(file, req);
