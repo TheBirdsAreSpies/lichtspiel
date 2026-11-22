@@ -107,7 +107,8 @@ With `"user_panel": true` in `plugin.json` each person gets a panel of the plugi
 `{"title", "text", "link", "buttons": [{"label", "action", "args", "primary", "confirm"}]}`; a button
 calls its action, with its `args` (any JSON) in the body (`"danger": true` makes its
 `confirm` question red). The panel may also have a search field,
-`"input": {"placeholder", "action", "label", "value"}`, whose action gets `{"query"}`, and a list,
+`"input": {"placeholder", "action", "label", "value", "args"}`, whose action gets `{"query"}` (and
+its `args`, if it has some), and a list,
 `"items": [{"title", "subtitle", "status", "status_kind", "image", "buttons"}]` (`status_kind`
 `"default"` shows the status green, `"smart"` in the accent colour; `image` is an `https://`
 address or one on the server). An answer may say `{"message"}` or `{"error"}`, bring a panel to

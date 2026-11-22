@@ -969,7 +969,7 @@ function traktPanel() {
 // Plugins that give each person a panel of their own.
 // The plugin draws it: api.call "panel" answers {title, text, link, buttons: [{label, action, args, primary, confirm}],
 // input: {placeholder, action, label, value}, upload: {label, action, accept}, items: [{title, subtitle, status, image,
-// href (#/… in the app or https://…), buttons}]}. A button's action gets {args} in its body, the input's action {query}, the upload's {file (base64), name}.
+// href (#/… in the app or https://…), buttons}]}. A button's action gets {args} in its body, the input's action {query} (and its {args}, if it has some), the upload's {file (base64), name}.
 // While a button's action runs it turns and says so ({working}: its own words for that, e.g. "Checking the library…").
 // An answer may carry {panel} (drawn at once, e.g. search results), {message, code, link, wait, poll: {action, seconds}}
 // (shown in a box that asks again until the answer says done), {error}, and the counts of what was brought in.
@@ -1006,7 +1006,7 @@ function pluginPanels(only) {
         e.preventDefault();
         if (!q.value.trim()) return;
         go.disabled = true;
-        try { after(await call(id, p.input.action, { query: q.value.trim() }), p.input.label); } catch (er) { toast(er.message, 6000); }
+        try { after(await call(id, p.input.action, Object.assign({ query: q.value.trim() }, p.input.args ? { args: p.input.args } : {})), p.input.label); } catch (er) { toast(er.message, 6000); }
         go.disabled = false;
       } }, q, go);
     }

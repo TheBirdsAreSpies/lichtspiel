@@ -185,7 +185,8 @@ class Runs(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
         self.patches = [mock.patch.object(main, n, os.path.join(self.dir, f)) for n, f in (("STATE", "state.json"), ("CACHE", "cache.json"), ("LOCK", ".lock"),
-                                                                                          ("PROGRESS", "progress.json"), ("PENDING", "pending.json"))]
+                                                                                          ("PROGRESS", "progress.json"), ("PENDING", "pending.json"),
+                                                                                          ("CHOICES", "choices.json"))]
         self.patches.append(mock.patch.object(main, "fetch_library", lambda server: LIBRARY))
         for p in self.patches:
             p.start()
@@ -223,6 +224,69 @@ class Runs(unittest.TestCase):
             self.assertEqual(report[0]["playlist"], [1])
             out, _ = main.run({}, {"lists": [{"name": "Oscars", "source": "oscar-best-picture"}]})
             self.assertEqual(out["collections"], {"Oscars": [1]})
+
+    def test_a_missing_title_can_be_given_your_title_of_it_or_hidden_for_every_list(self):
+        # The finale of a show, in cinemas as a film, that you have as the show's episode.
+        finale = {"tmdb": 1500000, "title": "Stranger Things 5: The Finale", "year": 2025}
+        st = {"id": 40, "title": "Stranger Things", "year": 2016, "ids": {"tmdb": 66732}}
+        lib = dict(LIBRARY, items=LIBRARY["items"] + [
+            {"id": 41, "type": "episode", "title": "Kapitel acht: Zurück auf der richtigen Seite", "season": 5, "episode": 8, "section_id": 3, "ids": {}, "show": st},
+            {"id": 42, "type": "episode", "title": "Kapitel eins", "season": 1, "episode": 1, "section_id": 3, "ids": {}, "show": st}])
+        lists = {"Popular": [{"tmdb": 238}, finale, {"tmdb": 77}], "Best": [finale, {"tmdb": 77}, {"tmdb": 14160}]}
+        settings = {"lists": [{"name": n, "source": n} for n in lists]}
+        server = {"library": "x"}
+
+        def call(action, args=None, **body):
+            return main.answer_call({"action": action, "admin": True, "body": dict(body, lang="de", args=args or {})}, settings, server)
+        with mock.patch.object(main, "fetch_library", lambda server: lib), \
+                mock.patch.object(main, "films_of", lambda source, *a: [dict(f) for f in lists[source]]):
+            main.run(server, settings)
+            m = call("missing", {"name": "Popular"})["panel"]
+            self.assertEqual([i["title"] for i in m["items"]], ["Stranger Things 5: The Finale (2025)", "?"])
+            pick = m["items"][0]["buttons"][0]
+            about = {"name": "Popular", "key": "tmdb:movie:1500000", "title": "Stranger Things 5: The Finale (2025)"}
+            self.assertEqual(pick["args"], about)
+            # The search starts with the list's title; the show and its episodes are found by their names.
+            p = call("pick", pick["args"])["panel"]
+            self.assertEqual((p["input"]["value"], p["input"]["args"], p["items"]), ("Stranger Things 5: The Finale", about, []))
+            self.assertIn("Nichts gefunden.", p["text"])
+            p = call("find", pick["args"], query="stranger things s05e08")["panel"]
+            self.assertEqual([(i["title"], i["subtitle"]) for i in p["items"]],
+                             [("Stranger Things – S05E08 – Kapitel acht: Zurück auf der richtigen Seite", "Episode")])
+            self.assertEqual([i["title"] for i in call("find", pick["args"], query="stranger")["panel"]["items"]][:2],
+                             ["Stranger Things (2016)", "Stranger Things – S01E01 – Kapitel eins"])
+            # Picked: it counts as had in every list and plays in its place, but an episode is no title of a collection.
+            r = call("assign", p["items"][0]["buttons"][0]["args"])
+            self.assertEqual(r["message"], "„Stranger Things 5: The Finale (2025)“ ist jetzt Stranger Things – S05E08 – Kapitel acht: Zurück auf der richtigen Seite.")
+            self.assertEqual(r["collections"], {"Popular": [1], "Best": [5]})
+            state = {x["name"]: x for x in main.read_json(main.STATE, {})["lists"]}
+            self.assertEqual((state["Popular"]["playlist"], state["Popular"]["found"], state["Popular"]["total"]), ([1, 41], 2, 3))
+            self.assertEqual(state["Best"]["playlist"], [41, 5])
+            self.assertEqual([i.get("status") for i in r["panel"]["items"]],
+                             [None, "ist Stranger Things – S05E08 – Kapitel acht: Zurück auf der richtigen Seite"])
+            # It holds for the next run too; one you do not want is hidden (and no longer counted).
+            main.run(server, settings)
+            self.assertEqual(main.read_json(main.STATE, {})["lists"][0]["playlist"], [1, 41])
+            hide = r["panel"]["items"][0]["buttons"][1]
+            self.assertEqual(hide["action"], "hide")
+            r = call("hide", hide["args"])
+            state = {x["name"]: x for x in main.read_json(main.STATE, {})["lists"]}
+            self.assertEqual((state["Popular"]["found"], state["Popular"]["total"], state["Popular"]["missing"]), (2, 2, []))
+            self.assertEqual(r["panel"]["items"][-1]["status"], "ausgeblendet")
+            self.assertIn("Fehlende zeigen", [b["label"] for b in call("panel")["items"][0]["buttons"]])
+            # Undone: missing again.
+            undo = r["panel"]["items"][0]["buttons"][0]
+            self.assertEqual(undo["action"], "forget")
+            r = call("forget", undo["args"])
+            self.assertEqual(r["message"], "„Stranger Things 5: The Finale (2025)“ zählt wieder als fehlend.")
+            self.assertEqual(r["collections"], {"Popular": [1], "Best": [5]})
+            self.assertEqual(main.read_json(main.STATE, {})["lists"][1]["playlist"], [5])
+            # While an update runs, the choice is kept and counts from the next one on.
+            main.write_json(main.PROGRESS, {"at": int(main.time.time()), "i": 1, "n": 2, "name": "Popular"})
+            r = call("assign", dict(about, id=41))
+            self.assertNotIn("collections", r)
+            self.assertTrue(r["message"].endswith("Eine Aktualisierung läuft: das gilt ab der nächsten."))
+            self.assertEqual(call("assign", dict(about, id=999))["error"], "Dieser Titel ist nicht mehr in deinen Mediatheken.")
 
     def test_a_click_updates_in_the_background_and_the_panel_asks_until_it_is_done(self):
         settings = {"lists": [{"name": "Oscars", "source": "oscar-best-picture"}]}
@@ -270,7 +334,10 @@ class Runs(unittest.TestCase):
         m = main.answer_call({"action": "missing", "admin": True, "body": {"lang": "de", "args": {"name": "Oscars"}}}, settings, {})["panel"]
         self.assertEqual(m["title"], "Oscars: fehlt dir")
         self.assertEqual(m["text"], "1 Titel dieser Liste sind nicht in deinen Mediatheken.")
-        self.assertEqual(m["items"], [{"title": "tt9999999", "href": "https://www.imdb.com/title/tt9999999/"}])
+        about = {"name": "Oscars", "key": "imdb:tt9999999", "title": "tt9999999"}
+        self.assertEqual(m["items"], [{"title": "tt9999999", "href": "https://www.imdb.com/title/tt9999999/",
+                                       "buttons": [{"label": "Habe ich …", "action": "pick", "args": about},
+                                                   {"label": "Ausblenden", "action": "hide", "args": about}]}])
         self.assertEqual(m["buttons"], [{"label": "Zurück", "action": "panel"}])
         # The page was closed in between: opening the panel hands them over.
         with mock.patch.object(main, "films_of", self.films):

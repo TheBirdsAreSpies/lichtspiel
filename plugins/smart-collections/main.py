@@ -17,6 +17,8 @@ Only titles in the library go in. The server puts them in each collection and ta
 plugin put there before that are no longer on the list; collections given by hand stay. A list
 taken out of the settings empties its collection once. Letterboxd films are looked up once (their
 TMDB and IMDb ids) and kept in cache.json; the last run is in state.json, both in the plugin's folder.
+A title of a list you have under another name (even as an episode) can be given by hand, or hidden,
+under "Show missing"; that is kept in choices.json, and the lists are matched again at once.
 Wikidata's answer is kept there too: asked again after a week, and used as it is while Wikidata
 does not answer (it may limit programs to one request a minute when it is busy).
 
@@ -46,7 +48,9 @@ CACHE = os.path.join(HERE, "cache.json")
 LOCK = os.path.join(HERE, ".collections.lock")
 PROGRESS = os.path.join(HERE, "progress.json")   # while an update started by a click runs
 PENDING = os.path.join(HERE, "pending.json")     # its result, until a call hands it to the server
+CHOICES = os.path.join(HERE, "choices.json")     # titles of lists you have under another name, or hid
 MISSING_KEPT = 2000             # the films of a list you do not have, kept to be shown
+SEARCH_SHOWN = 50               # titles of the library shown for a search
 STALE = 1200                   # a run not heard from for 20 minutes has stopped
 UA = "Lichtspiel-smart-collections/1.0"
 TIMEOUT = 30
@@ -96,6 +100,26 @@ WORDS = {
     "Update the collections first.": "Aktualisiere zuerst die Sammlungen.",
     "None of this list's titles are in your libraries.": "Keiner der Titel dieser Liste ist in deinen Mediatheken.",
     "This list could not be read at the last update.": "Diese Liste konnte bei der letzten Aktualisierung nicht gelesen werden.",
+    "I have it …": "Habe ich …",
+    "Hide": "Ausblenden",
+    "Undo": "Rückgängig",
+    "hidden": "ausgeblendet",
+    "is {label}": "ist {label}",
+    "Which of your titles is “{title}”?": "Welcher deiner Titel ist „{title}“?",
+    "Search your libraries, episodes too, and pick it. It then counts as this title in every list and plays in its place in the list's playlist (an episode goes in the playlist only, not in the collection).":
+        "Such in deinen Mediatheken, auch nach Episoden, und wähl ihn aus. Er zählt dann in jeder Liste als dieser Titel und läuft an seiner Stelle in der Playlist der Liste (eine Episode kommt nur in die Playlist, nicht in die Sammlung).",
+    "Title, or show and episode (e.g. Stranger Things S05E08)": "Titel, oder Serie und Episode (z. B. Stranger Things S05E08)",
+    "Search": "Suchen",
+    "This one": "Dieser",
+    "Nothing found.": "Nichts gefunden.",
+    "movie": "Film",
+    "TV show": "Serie",
+    "episode": "Episode",
+    "“{title}” is {label} now.": "„{title}“ ist jetzt {label}.",
+    "“{title}” is hidden now.": "„{title}“ ist jetzt ausgeblendet.",
+    "“{title}” counts as missing again.": "„{title}“ zählt wieder als fehlend.",
+    "This title is no longer in your libraries.": "Dieser Titel ist nicht mehr in deinen Mediatheken.",
+    "An update is running: this counts from the next one on.": "Eine Aktualisierung läuft: das gilt ab der nächsten.",
 }
 
 
@@ -318,13 +342,20 @@ def films_of(source, settings, cache, budget):
 
 # ---------------------------------------------------------------- matching
 
+def named(title):
+    """A title of the library as the panel names it: "Heat (1995)"."""
+    return "%s (%s)" % (title.get("title") or "?", title["year"]) if title.get("year") else str(title.get("title") or "?")
+
+
 def library_index(listing, settings):
     """The movies and TV shows of the chosen libraries, findable by TMDB id, IMDb id and title with
-    year. TMDB ids and titles are kept per kind ("movie" or "show"): TMDB numbers the two apart."""
+    year. TMDB ids and titles are kept per kind ("movie" or "show"): TMDB numbers the two apart.
+    The fourth part has every movie, show and episode by its id ({"type", "label"}): what a title of a
+    list can be given as by hand (see choices)."""
     wanted = {norm(x) for x in (settings.get("libraries") or []) if str(x).strip()}
     sections = {s.get("id"): s for s in listing.get("sections") or []}
     ok = {sid: s.get("kind") for sid, s in sections.items() if s.get("kind") in ("movie", "show") and (not wanted or norm(s.get("name")) in wanted)}
-    by_tmdb, by_imdb, by_name = {}, {}, {}
+    by_tmdb, by_imdb, by_name, known = {}, {}, {}, {}
     seen = set()
     for it in listing.get("items") or []:
         if it.get("version_of") or it.get("section_id") not in ok:
@@ -332,8 +363,12 @@ def library_index(listing, settings):
         # The listing has the episodes, each naming its show: a show goes in once, as itself.
         if it.get("type") == "movie" and ok[it["section_id"]] == "movie":
             kind, title = "movie", it
+            known[it["id"]] = {"type": "movie", "label": named(it)}
         elif it.get("type") == "episode" and ok[it["section_id"]] == "show" and isinstance(it.get("show"), dict) and it["show"].get("id"):
             kind, title = "show", it["show"]
+            se = "S%02dE%02d" % (it["season"], it["episode"]) if isinstance(it.get("season"), int) and isinstance(it.get("episode"), int) else ""
+            known[it["id"]] = {"type": "episode", "label": " – ".join(x for x in (str(title.get("title") or "?"), se, str(it.get("title") or "")) if x)}
+            known.setdefault(title["id"], {"type": "show", "label": named(title)})
         else:
             continue
         if title["id"] in seen:
@@ -345,12 +380,12 @@ def library_index(listing, settings):
         if ids.get("imdb"):
             by_imdb.setdefault(str(ids["imdb"]), []).append(title["id"])
         by_name.setdefault((kind, norm(title.get("title")), title.get("year")), []).append(title["id"])
-    return by_tmdb, by_imdb, by_name
+    return by_tmdb, by_imdb, by_name, known
 
 
 def titles_of(film, index):
     """The library ids of one title of a list (it may be there as several titles: in two libraries …)."""
-    by_tmdb, by_imdb, by_name = index
+    by_tmdb, by_imdb, by_name = index[:3]
     kind = film.get("kind") or "movie"
     return by_tmdb.get((kind, film.get("tmdb"))) or by_imdb.get(film.get("imdb")) or by_name.get((kind, norm(film.get("title")), film.get("year"))) or []
 
@@ -363,6 +398,65 @@ def match(films, index):
             if i not in out:
                 out.append(i)
     return out
+
+
+# ---------------------------------------------------------------- titles given by hand
+# A title of a list you have under another name (the finale of a show, shown in cinemas as a film, that you
+# have as its episode …) is given its title of the library by hand; one you do not want is hidden. These
+# choices hold for every list, by the title's ids: {key: {"title", "ids": [library id]} or {"title", "hidden": true}}.
+
+def keys_of(film):
+    """The keys a title of a list is known by, the surest first (a Letterboxd film gets its TMDB id
+    only once it was looked up, so its page's name counts too)."""
+    kind = film.get("kind") or "movie"
+    out = []
+    if film.get("tmdb"):
+        out.append("tmdb:%s:%s" % (kind, film["tmdb"]))
+    if film.get("imdb"):
+        out.append("imdb:%s" % film["imdb"])
+    if film.get("slug"):
+        out.append("letterboxd:%s" % film["slug"])
+    if film.get("title"):
+        out.append("title:%s:%s:%s" % (kind, norm(film["title"]), film.get("year") or ""))
+    return out
+
+
+def choice_of(film, choices):
+    return next((choices[k] for k in keys_of(film) if isinstance(choices.get(k), dict)), None)
+
+
+def compact(film):
+    """What is kept of a title of a list in state.json, to match it again without asking the list."""
+    return {k: film[k] for k in ("tmdb", "imdb", "slug", "title", "year", "kind") if film.get(k)}
+
+
+def report_of(name, source, films, index, choices):
+    """One list's part of state.json: its collection's ids, its playlist, and what you do not have."""
+    known = index[3]
+    ids, playlist, missing, chosen, hidden = [], [], [], [], 0
+    for f in films:
+        got = titles_of(f, index)
+        c = None if got else choice_of(f, choices)
+        if c and c.get("ids"):
+            got = [i for i in c["ids"] if i in known]
+        if got:
+            # An episode plays in the playlist, but a collection holds movies and shows.
+            for i in got:
+                if i not in ids and known.get(i, {}).get("type") != "episode":
+                    ids.append(i)
+            # The playlist takes one title of each film, so a film in two libraries plays once.
+            if got[0] not in playlist:
+                playlist.append(got[0])
+        elif c and c.get("hidden"):
+            hidden += 1
+        else:
+            missing.append(f)
+        if c and (got or c.get("hidden")):
+            chosen.append(dict(described(f), key=keys_of(f)[0], **({"label": known[got[0]]["label"]} if got else {"hidden": True})))
+    # Films of the list you have, not titles: a film there twice counts once.
+    return {"name": name, "source": source, "found": len(films) - len(missing) - hidden, "total": len(films) - hidden,
+            "missing": [dict(described(f), key=(keys_of(f) or [""])[0]) for f in missing[:MISSING_KEPT]], "chosen": chosen,
+            "ids": ids, "playlist": playlist, "films": [compact(f) for f in films]}
 
 
 def described(film):
@@ -401,18 +495,9 @@ def run(server, settings, progress=None):
             progress(i, len(lists), name)
         try:
             films = films_of(source, settings, cache, budget)
-            ids = match(films, index)
-            collections[name] = ids
-            # Films of the list you have, not titles: a film there twice counts once.
-            missing = [f for f in films if not titles_of(f, index)]
-            # The playlist takes one title of each film, so a film in two libraries plays once.
-            playlist = []
-            for f in films:
-                first = titles_of(f, index)[:1]
-                if first and first[0] not in playlist:
-                    playlist.append(first[0])
-            report.append({"name": name, "source": source, "found": len(films) - len(missing), "total": len(films),
-                           "missing": [described(f) for f in missing[:MISSING_KEPT]], "ids": ids, "playlist": playlist})
+            r = report_of(name, source, films, index, read_json(CHOICES, {}))
+            collections[name] = r["ids"]
+            report.append(r)
         except Exception as e:  # noqa: BLE001 — shown in the panel, the other lists go on
             # Not reachable: the collection is left as it is.
             report.append({"name": name, "source": source, "error": str(e)})
@@ -424,6 +509,37 @@ def run(server, settings, progress=None):
     managed = sorted({r["name"] for r in report})
     write_json(STATE, {"at": int(time.time()), "managed": managed, "lists": report})
     return {"collections": collections}, report
+
+
+def rematch(server, settings):
+    """After a title was given by hand or hidden: the lists of the last run matched again (with the
+    library as it is now, not asking the lists), and their collections for the server. None while
+    another run is busy (that one, or the next, takes the choice in)."""
+    if running():
+        return None
+    try:
+        os.mkdir(LOCK)
+    except FileExistsError:
+        return None
+    try:
+        state = read_json(STATE, {})
+        index = library_index(fetch_library(server), settings)
+        choices = read_json(CHOICES, {})
+        # A finished run not yet handed over: its collections (a list taken out is emptied) go along.
+        p = take_pending() or {}
+        collections = dict(p.get("collections") or {})
+        lists = []
+        for r in state.get("lists") or []:
+            if isinstance(r.get("films"), list) and not r.get("error"):
+                r = report_of(r["name"], r.get("source"), r["films"], index, choices)
+                collections[r["name"]] = r["ids"]
+            lists.append(r)
+        state["lists"] = lists
+        write_json(STATE, state)
+        return collections
+    finally:
+        with contextlib.suppress(OSError):
+            os.rmdir(LOCK)
 
 
 # ---------------------------------------------------------------- an update in the background
@@ -541,7 +657,7 @@ def panel(lang, settings, message=None):
             status = tr(lang, "{n} of {m} in your libraries", n=r["found"], m=r["total"])
         item = {"title": name, "subtitle": source, "status": status, "status_kind": "default" if r and not r.get("error") else None}
         if r and not r.get("error"):
-            item["buttons"] = ([{"label": tr(lang, "Show missing"), "action": "missing", "args": {"name": name}}] if r.get("missing") else []) + \
+            item["buttons"] = ([{"label": tr(lang, "Show missing"), "action": "missing", "args": {"name": name}}] if r.get("missing") or r.get("chosen") else []) + \
                 ([{"label": tr(lang, "Save as playlist"), "action": "playlist", "args": {"name": name}, "working": tr(lang, "Saving …")}] if r.get("ids") else [])
         items.append(item)
     text = tr(lang, "Updated {when}.", when=when(state["at"], lang)) if state.get("at") else tr(lang, "Not updated yet.")
@@ -560,10 +676,75 @@ def missing_panel(lang, name):
     text = tr(lang, "{n} titles of this list are not in your libraries.", n=left) if left else tr(lang, "Nothing is missing.")
     if left > len(films):
         text += " " + tr(lang, "The first {n} are shown.", n=len(films))
-    items = [{"title": "%s (%s)" % (f["title"], f["year"]) if f.get("year") else f.get("title") or "?", **({"href": f["link"]} if f.get("link") else {})}
+    def entry(f):
+        return {"title": named(f), **({"href": f["link"]} if f.get("link") else {})}
+
+    def about(f):
+        return {"name": name, "key": f.get("key"), "title": named(f)}
+    # Each with a button to give it your title of it (or to hide it); a state from before has no keys.
+    items = [dict(entry(f), **({"buttons": [{"label": tr(lang, "I have it …"), "action": "pick", "args": about(f)},
+                                            {"label": tr(lang, "Hide"), "action": "hide", "args": about(f)}]} if f.get("key") else {}))
              for f in films]
+    # Those given by hand, last: what they are, and a way back.
+    items += [dict(entry(f), status=tr(lang, "hidden") if f.get("hidden") else tr(lang, "is {label}", label=f.get("label")), status_kind="default",
+                   buttons=[{"label": tr(lang, "Undo"), "action": "forget", "args": about(f)}])
+              for f in (r or {}).get("chosen") or []]
     return {"title": tr(lang, "{name}: missing", name=name), "text": text, "items": items,
             "buttons": [{"label": tr(lang, "Back"), "action": "panel"}]}
+
+
+def pick_panel(lang, args, query, known):
+    """Which title of the library a title of a list is: a search in the libraries, episodes too."""
+    found = search(query, known) if query else []
+    items = [{"title": known[i]["label"], "subtitle": tr(lang, {"movie": "movie", "show": "TV show"}.get(known[i]["type"], "episode")),
+              "href": "#/item/%d" % i, "buttons": [{"label": tr(lang, "This one"), "action": "assign", "args": dict(args, id=i)}]}
+             for i in found[:SEARCH_SHOWN]]
+    text = tr(lang, "Search your libraries, episodes too, and pick it. It then counts as this title in every list and plays in its place in the list's playlist (an episode goes in the playlist only, not in the collection).")
+    if query and not found:
+        text += " " + tr(lang, "Nothing found.")
+    elif len(found) > SEARCH_SHOWN:
+        text += " " + tr(lang, "The first {n} are shown.", n=SEARCH_SHOWN)
+    return {"title": tr(lang, "Which of your titles is “{title}”?", title=args.get("title")), "text": text,
+            "input": {"placeholder": tr(lang, "Title, or show and episode (e.g. Stranger Things S05E08)"), "action": "find",
+                      "label": tr(lang, "Search"), "value": query, "args": args},
+            "items": items, "buttons": [{"label": tr(lang, "Back"), "action": "missing", "args": {"name": args.get("name")}}]}
+
+
+def search(query, known):
+    """The library's titles with every word of the query in their names: movies and shows first, then episodes."""
+    words = norm(query).split() or [""]
+    hits = [i for i, k in known.items() if all(w in " " + norm(k["label"]) for w in words)]
+    return sorted(hits, key=lambda i: (known[i]["type"] == "episode", known[i]["label"].lower()))
+
+
+def choose(lang, settings, server, action, args):
+    """A title given by hand ("assign"), hidden ("hide") or back to missing ("forget"); the lists
+    are matched again at once. Gives the answer, with the collections for the server."""
+    key, title = str(args.get("key") or ""), str(args.get("title") or "?")
+    if not key:
+        return {"error": "no key"}
+    choices = read_json(CHOICES, {})
+    if action == "assign":
+        known = library_index(fetch_library(server), settings)[3]
+        i = args.get("id")
+        if i not in known:
+            return {"error": tr(lang, "This title is no longer in your libraries.")}
+        choices[key] = {"title": title, "ids": [i]}
+        said = tr(lang, "“{title}” is {label} now.", title=title, label=known[i]["label"])
+    elif action == "hide":
+        choices[key] = {"title": title, "hidden": True}
+        said = tr(lang, "“{title}” is hidden now.", title=title)
+    else:
+        choices.pop(key, None)
+        said = tr(lang, "“{title}” counts as missing again.", title=title)
+    write_json(CHOICES, choices)
+    collections = rematch(server, settings)
+    if collections is None:
+        said += " " + tr(lang, "An update is running: this counts from the next one on.")
+    out = {"message": said, "panel": missing_panel(lang, str(args.get("name") or ""))}
+    if collections is not None:
+        out["collections"] = collections
+    return out
 
 
 def finished(lang):
@@ -609,11 +790,28 @@ def answer_call(data, settings, server):
     if not data.get("admin"):
         return {"error": tr(lang, "Only admins can see the smart collections.")}
     action = data.get("action")
-    if action not in ("panel", "update", "progress", "missing", "playlist"):
+    if action not in ("panel", "update", "progress", "missing", "playlist", "pick", "find", "assign", "hide", "forget"):
         return {"error": "unknown action %s" % action}
     args = body.get("args") if isinstance(body.get("args"), dict) else {}
     if action == "missing":
         return {"panel": missing_panel(lang, str(args.get("name") or ""))}
+    if action in ("pick", "find"):
+        # The search starts with the list's title (without its year).
+        query = str(body.get("query") or "").strip() if action == "find" else re.sub(r" \(\d{4}\)$", "", str(args.get("title") or ""))
+        try:
+            known = library_index(fetch_library(server), settings)[3]
+        except LookupError:
+            return {"error": tr(lang, "This plugin needs a server that lets plugins read the library.")}
+        except (OSError, ValueError) as e:
+            return {"error": tr(lang, "The library could not be read: {e}", e=e)}
+        return {"panel": pick_panel(lang, {k: args.get(k) for k in ("name", "key", "title")}, query, known)}
+    if action in ("assign", "hide", "forget"):
+        try:
+            return choose(lang, settings, server, action, args)
+        except LookupError:
+            return {"error": tr(lang, "This plugin needs a server that lets plugins read the library.")}
+        except (OSError, ValueError) as e:
+            return {"error": tr(lang, "The library could not be read: {e}", e=e)}
     done = finished(lang)
     if action == "playlist":
         out = playlist(lang, settings, str(args.get("name") or ""), done)

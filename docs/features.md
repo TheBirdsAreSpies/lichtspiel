@@ -375,7 +375,10 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   **Smart collections** fills collections in the movie and TV libraries from lists, once a day and on
   **Update now** (admins, under **Settings → Account**, with how many of each list you have; the
   update runs on in the background and shows which list it is on, and leaving the page loses nothing;
-  **Show missing** lists the titles of a list you don't have, each linked to its Letterboxd, IMDb or TMDB page;
+  **Show missing** lists the titles of a list you don't have, each linked to its Letterboxd, IMDb or TMDB page,
+  with **I have it …** to search your libraries (episodes too) for your title of it — a show's finale shown in
+  cinemas as a film that you have as the episode — which then counts in every list and plays in its place in the playlist
+  (an episode in the playlist only, not in the collection), and **Hide** for one you don't want; both can be undone there;
   **Save as playlist** makes the titles you have (a TV show with all its episodes) into a playlist "Smart collection: …" of the admin who clicks, in the list's order,
   each title once, filled anew when saved again):
   `imdb-top-250` (IMDb's Top 250 through its copy on Letterboxd, as IMDb blocks programs),
