@@ -93,7 +93,7 @@ class Panel(unittest.TestCase):
                         mock.patch.object(main, "fetch_library", lambda server: LIBRARY), mock.patch.object(main, "PAUSE", 0)]
         self.looked = []
 
-        def fake_get(url, *a):
+        def fake_get(url, *a, **kw):
             self.looked.append(url)
             return PAGES.get(url)
         self.patches.append(mock.patch.object(main, "get", fake_get))
@@ -153,11 +153,26 @@ class Panel(unittest.TestCase):
         self.assertEqual([l["name"] for l in d["lists"]], ["Beste Filme"])
 
     def test_letterboxd_down_is_said_and_tried_again(self):
-        def down(url, *a):
+        def down(url, *a, **kw):
             raise OSError("unreachable")
         self.call("upload", file=base64.b64encode(FULL).decode(), name="a.zip")
         with mock.patch.object(main, "get", down):
             self.assertIn("nicht erreichbar", self.call("lookup")["error"])
+        self.assertEqual(self.call("lookup")["message"], "Alle Filme nachgeschlagen.")
+
+    def test_too_many_requests_pauses_instead_of_waiting(self):
+        # A call must not wait on Letterboxd (a proxy in front cuts it at 60 s with a 504): it asks again later.
+        asked = []
+
+        def busy(url, *a, **kw):
+            asked.append(kw)
+            raise main.urllib.error.HTTPError(url, 429, "Too Many Requests", {}, None)
+        self.call("upload", file=base64.b64encode(FULL).decode(), name="a.zip")
+        with mock.patch.object(main, "get", busy):
+            r = self.call("lookup")
+        self.assertEqual(r["poll"], {"action": "lookup", "seconds": main.SLOW_DOWN_SECONDS})
+        self.assertIn("Pause", r["wait"])
+        self.assertTrue(all(kw.get("retry") is False for kw in asked))
         self.assertEqual(self.call("lookup")["message"], "Alle Filme nachgeschlagen.")
 
 

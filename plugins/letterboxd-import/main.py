@@ -38,7 +38,9 @@ USERS = os.path.join(HERE, "users")
 CACHE = os.path.join(HERE, "cache.json")
 UA = "Lichtspiel-letterboxd-import/1.0"
 TIMEOUT = 20
+LOOKUP_TIMEOUT = 10        # one film page; a call must end well before a proxy's 60 s
 WORK_SECONDS = 20          # lookups a call (the page asks again until all are done)
+SLOW_DOWN_SECONDS = 30     # Letterboxd said "too many requests": the page asks again after this
 WORKERS = 4
 PAUSE = 0.25
 MAX_FILE = 20 * 1024 * 1024
@@ -68,6 +70,7 @@ WORDS = {
     "Read: {n} films.": "Gelesen: {n} Filme.",
     "Looking the films up on Letterboxd: {n} of {m} …": "Schlage die Filme auf Letterboxd nach: {n} von {m} …",
     "All films looked up.": "Alle Filme nachgeschlagen.",
+    "Letterboxd asks for a pause; carrying on in a moment: {n} of {m} …": "Letterboxd bittet um eine Pause; gleich geht es weiter: {n} von {m} …",
     "Letterboxd could not be reached; {n} films are still to look up.": "Letterboxd war nicht erreichbar; {n} Filme sind noch nachzuschlagen.",
     "Nothing uploaded yet.": "Noch nichts hochgeladen.",
     "Forgotten.": "Vergessen.",
@@ -223,7 +226,8 @@ def parse_export(blob, filename=""):
 
 # ---------------------------------------------------------------- the web
 
-def get(url, accept="text/html"):
+def get(url, accept="text/html", timeout=TIMEOUT, retry=True):
+    """The page at `url` (None for 404). `retry`: waits and asks again on 429/503, else raises at once."""
     ctx = None
     host = urllib.parse.urlparse(url).hostname
     if url.startswith("https://") and host in ("127.0.0.1", "localhost", "::1"):
@@ -234,12 +238,12 @@ def get(url, accept="text/html"):
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": accept})
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT, context=ctx) as r:
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
                 return r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return None
-            if e.code in (429, 503) and attempt < 2:
+            if e.code in (429, 503) and attempt < 2 and retry:
                 time.sleep(5 * (attempt + 1))
                 continue
             raise
@@ -254,7 +258,8 @@ def fetch_library(server):
 
 def lookup(uri):
     """A Letterboxd film's TMDB and IMDb ids, from its page ({} when it has none)."""
-    text = get(uri) or ""
+    # No waiting here: a slow or busy Letterboxd ends the call early, and the page asks again.
+    text = get(uri, timeout=LOOKUP_TIMEOUT, retry=False) or ""
     tmdb = re.search(r'data-tmdb-id="(\d+)"', text)
     imdb = re.search(r"imdb\.com/title/(tt\d+)", text)
     out = {}
@@ -299,19 +304,23 @@ def to_look_up(data, cache, index):
 
 
 def look_up_some(uris, seconds=WORK_SECONDS):
-    """Looks films up for about `seconds`; gives ({uri: ids}, failures)."""
-    found, failed = {}, 0
+    """Looks films up for about `seconds` (at most `seconds` + LOOKUP_TIMEOUT, as nothing waits for a retry);
+    gives ({uri: ids}, failures, slowed): slowed when Letterboxd asked to slow down (429/503), which ends the call."""
+    found, failed, slowed = {}, 0, False
     start = time.time()
     with concurrent.futures.ThreadPoolExecutor(WORKERS) as pool:
         pending = list(uris)
-        while pending and time.time() - start < seconds and failed < 5:
+        while pending and time.time() - start < seconds and failed < 5 and not slowed:
             batch, pending = pending[:WORKERS], pending[WORKERS:]
             for uri, fut in [(u, pool.submit(lookup, u)) for u in batch]:
                 try:
                     found[uri] = fut.result()
+                except urllib.error.HTTPError as e:
+                    failed += 1
+                    slowed = slowed or e.code in (429, 503)
                 except Exception:  # noqa: BLE001 — tried again on the next call
                     failed += 1
-    return found, failed
+    return found, failed, slowed
 
 
 # ---------------------------------------------------------------- files
@@ -465,9 +474,13 @@ def answer_call(data, server):
         todo = to_look_up(mine, cache, index)
         total = len([f for f in mine["films"].values() if f.get("uri")])
         if action == "lookup" and todo:
-            found, failed = look_up_some(todo)
+            found, failed, slowed = look_up_some(todo)
             cache = add_to_cache(found)
             todo = to_look_up(mine, cache, index)
+            if slowed and todo:
+                # Letterboxd wants fewer requests: carry on after a pause instead of giving up.
+                return {"wait": tr(lang, "Letterboxd asks for a pause; carrying on in a moment: {n} of {m} …", n=total - len(todo), m=total),
+                        "poll": {"action": "lookup", "seconds": SLOW_DOWN_SECONDS}}
             if failed and not found:
                 return {"error": tr(lang, "Letterboxd could not be reached; {n} films are still to look up.", n=len(todo))}
         if todo:
