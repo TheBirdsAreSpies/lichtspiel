@@ -77,6 +77,10 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
       <RouterLink v-for="s in session.sections" :key="s.id" :to="'/library/' + s.id" class="nav" active-class="on">
         <Icon :name="icon(s.type)" /><span>{{ s.title }}</span>
       </RouterLink>
+      <template v-if="session.me && session.me.admin">
+        <div class="nav-head">{{ t('Server') }}</div>
+        <RouterLink to="/users" class="nav" active-class="on"><Icon name="people" /><span>{{ t('Users & invites') }}</span></RouterLink>
+      </template>
       <div class="nav-head"></div>
       <RouterLink to="/settings" class="nav" active-class="on"><Icon name="settings" /><span>{{ t('Settings') }}</span></RouterLink>
     </nav>

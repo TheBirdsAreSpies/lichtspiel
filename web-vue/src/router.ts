@@ -11,6 +11,7 @@ export const router = createRouter({
     { path: '/forgot', name: 'forgot', component: () => import('./views/AuthView.vue'), meta: { open: true, signedOut: true } },
     { path: '/reset/:code', name: 'reset', component: () => import('./views/AuthView.vue'), meta: { open: true } },
     { path: '/invite/:code', name: 'invite', component: () => import('./views/AuthView.vue'), meta: { open: true, signedOut: true } },
+    { path: '/users', name: 'users', component: () => import('./views/UsersView.vue'), meta: { admin: true } },
     { path: '/link/:code?', name: 'link', component: () => import('./views/LinkView.vue'), props: true },
     { path: '/library/:id', name: 'library', component: () => import('./views/LibraryView.vue'), props: true },
     { path: '/item/:id', name: 'item', component: () => import('./views/ItemView.vue'), props: true },
@@ -30,6 +31,7 @@ export const router = createRouter({
 router.beforeEach(to => {
   if (!session.me && !to.meta.open) return { name: 'login', query: to.fullPath !== '/' ? { next: to.fullPath } : {} };
   if (session.me && (to.name === 'login' || to.meta.signedOut)) return { name: 'home' };
+  if (to.meta.admin && !(session.me && session.me.admin)) return { name: 'home' };
 });
 
 // A part of the app that is no longer there: the server got a new version while this page was open (its
