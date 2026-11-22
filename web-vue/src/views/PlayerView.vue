@@ -5,7 +5,7 @@
 // Progress goes to the server every 10 s and on pause and leaving (/:/timeline). An episode goes on with the next.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api, get, list, session, ticket, withTicket, type Item, type Stream, type Subtitle } from '../api';
+import { api, get, list, pref, savePref, ticket, withTicket, type Item, type Stream, type Subtitle } from '../api';
 import { fmtTime, langName, lang2, resumeAt } from '../format';
 import { t } from '../i18n';
 import Icon from '../components/Icon.vue';
@@ -49,7 +49,6 @@ const subLine = computed(() => {
   const i = it.value; if (!i) return '';
   return i.type === 'episode' ? `${t('S{n}', { n: i.parentIndex || 0 })}${t('E{n}', { n: i.index || 0 })} · ${i.title}` : i.year ? String(i.year) : '';
 });
-const prefs = () => (session.me && session.me.prefs) || {};
 const subName = (s: Subtitle, i: number) => [s.language ? langName(s.language) : '', s.title, s.forced ? t('forced') : '', s.sdh ? 'SDH' : ''].filter(Boolean).join(' · ') || t('Subtitles {n}', { n: i + 1 });
 const audioName = (a: Stream) => [a.language ? langName(a.language) : '', String(a.codec || '').toUpperCase(), a.channels === 6 ? '5.1' : a.channels === 8 ? '7.1' : a.channels === 2 ? t('Stereo') : '', a.title || ''].filter(Boolean).join(' · ');
 
@@ -65,15 +64,15 @@ async function load(at: number) {
   const seq = ++loadSeq;
   waiting.value = true;
   // Settings of the account (Settings → Web in the classic app): quality, and a video not bigger than it plays as it is.
-  let q = prefs().quality || 'original';
+  let q = pref('quality', 'original');
   const want = Number((/^(\d+)p/.exec(q) || [])[1]) || 0, have = Number(media.value && media.value.height) || 0;
-  if (want && have && have <= want && prefs().keepSmall !== '0') q = 'original';
+  if (want && have && have <= want && pref('keepSmall', '1') !== '0') q = 'original';
   const extra = (CODECS ? `&videoCodecs=${CODECS}` : '') + (audio.value !== null ? `&audio=${audio.value}` : '');
   const d = await get<{ method: 'direct' | 'remux' | 'transcode', allowed: boolean }>(`/library/metadata/${i.id}/decision?quality=${q}${extra}`);
   tk = await ticket('item=' + i.id);
   if (seq !== loadSeq) return;
   let m = audio.value !== null && d.method === 'direct' ? 'remux' : d.method;
-  const noDirect = prefs().directPlay === '0' && m === 'direct' && d.allowed;
+  const noDirect = pref('directPlay', '1') === '0' && m === 'direct' && d.allowed;
   if (noDirect) m = 'transcode';
   method.value = m;
   if (m === 'direct') {
@@ -106,13 +105,52 @@ function addSubtitles() {
 }
 function showSub() {
   const v = video.value; if (!v) return;
-  Array.from(v.textTracks).forEach((tr, i) => { tr.mode = i === sub.value ? 'showing' : 'disabled'; });
+  Array.from(v.textTracks).forEach((tr, i) => {
+    tr.mode = i === sub.value ? 'showing' : 'disabled';
+    // Settings → Subtitle position: the lines sit higher than the bottom.
+    tr.oncuechange = () => {
+      const up = Number(pref('subLift', '0')) || 0;
+      if (up) for (const c of Array.from(tr.activeCues || []) as VTTCue[]) { c.snapToLines = true; c.line = -(1 + up); }
+    };
+  });
 }
+
+// The audio and subtitles a video starts with (Settings → Playback), as in the classic app: the preferred
+// audio language; the subtitle language picked last time, else the subtitle mode decides (always, or with
+// foreign audio) and forced subtitles come on with audio in the preferred language.
+function pickSub(lang: string, sdh: string, forced: boolean) {
+  const all = subs.value.map((s, i) => ({ s, i })).filter(x => lang2(x.s.language) === lang);
+  let pool = forced ? all.filter(x => x.s.forced) : all.filter(x => !x.s.forced);
+  if (!forced && !pool.length) pool = all;
+  if (!pool.length) return -1;
+  const rank = (x: { s: Subtitle }) => (sdh === 'prefer' ? (x.s.sdh ? 0 : 1) : sdh === 'avoid' ? (x.s.sdh ? 1 : 0) : 0);
+  return pool.map(x => [rank(x), x.i]).sort((p, q) => p[0] - q[0] || p[1] - q[1])[0][1];
+}
+function chooseTracks() {
+  const prefAudio = pref('audioLang');
+  const at = prefAudio ? audios.value.findIndex(a => lang2(a.language) === prefAudio) : -1;
+  if (at > 0) audio.value = audios.value[at].index ?? null;
+  const last = pref('subLang');
+  sub.value = last ? subs.value.findIndex(s => (s.language || '') === last && !s.forced) : -1;
+  const mode = pref('subMode', 'manual'), want = pref('subPrefLang');
+  if (sub.value < 0 && want) {
+    const playing = audios.value[at > 0 ? at : 0];
+    const foreign = !playing || !playing.language || lang2(playing.language) !== want;
+    if (mode !== 'manual' && (mode === 'always' || foreign)) sub.value = pickSub(want, pref('subSdh', 'any'), false);
+    else if (!foreign && pref('subForced', '1') === '1') sub.value = pickSub(want, 'any', true);
+  }
+}
+// Size, colour and background of the subtitles, as CSS variables for video::cue.
+const cueStyle = computed(() => ({
+  '--cue': pref('subSize', '100') + '%',
+  '--cue-color': pref('subColor', '#ffffff'),
+  '--cue-bg': pref('subBg', '1') === '1' ? 'rgba(0,0,0,.55)' : 'transparent',
+}));
 function setSub(i: number) {
   sub.value = i; menu.value = '';
   showSub();
   const s = subs.value[i];
-  api('POST', '/api/me/prefs', { subLang: s ? s.language || '' : '' }).catch(() => {});
+  savePref('subLang', s ? s.language || '' : '').catch(() => {});
 }
 function setAudio(a: Stream, i: number) {
   menu.value = '';
@@ -221,10 +259,7 @@ onMounted(async () => {
   try {
     it.value = list<Item>(await get('/library/metadata/' + props.id))[0] || null;
     if (!it.value) { error.value = t('Not found'); return; }
-    // The language chosen last time: its audio track, and subtitles in the language picked last.
-    const p = prefs();
-    if (p.audioLang) { const at = audios.value.findIndex(a => lang2(a.language) === p.audioLang); if (at > 0) audio.value = audios.value[at].index ?? null; }
-    if (p.subLang) sub.value = subs.value.findIndex(s => (s.language || '') === p.subLang && !s.forced);
+    chooseTracks();
     await load(Number(route.query.t) || 0);
     timer = window.setInterval(() => { if (!paused.value) report('playing'); }, 10000);
   } catch (e) { error.value = (e as Error).message; waiting.value = false; }
@@ -245,7 +280,7 @@ const methodName = computed(() => ({ direct: t('direct play'), remux: t('repacka
 </script>
 
 <template>
-  <div ref="box" class="player" :class="{ idle }" @mousemove="wake" @click.self="toggle">
+  <div ref="box" class="player" :class="{ idle }" :style="cueStyle" @mousemove="wake" @click.self="toggle">
     <video ref="video" playsinline @click="toggle"></video>
     <div v-if="waiting && !error" class="spinner" aria-hidden="true"></div>
     <div v-if="error || stopped" class="p-msg">

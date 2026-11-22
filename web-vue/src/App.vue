@@ -34,7 +34,7 @@ watch(() => route.fullPath, () => { sideOpen.value = false; menuOpen.value = fal
 
 function chooseLang(code: string) {
   setLang(code);
-  savePref('lang', code);
+  savePref('lang', code).catch(() => {});
 }
 async function out() {
   await signOut();
@@ -63,6 +63,7 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
               <option v-for="(p, code) in packs" :key="code" :value="code">{{ p.name }}</option>
             </select>
           </label>
+          <RouterLink class="menu-row" to="/settings">{{ t('Settings') }}</RouterLink>
           <a class="menu-row" href="/">{{ t('Classic web app') }}</a>
           <button class="menu-row" role="menuitem" @click="out">{{ t('Sign out') }}</button>
         </div>
@@ -76,6 +77,8 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
       <RouterLink v-for="s in session.sections" :key="s.id" :to="'/library/' + s.id" class="nav" active-class="on">
         <Icon :name="icon(s.type)" /><span>{{ s.title }}</span>
       </RouterLink>
+      <div class="nav-head"></div>
+      <RouterLink to="/settings" class="nav" active-class="on"><Icon name="settings" /><span>{{ t('Settings') }}</span></RouterLink>
     </nav>
     <div v-if="sideOpen" class="scrim" @click="sideOpen = false"></div>
     <main class="main" @click="menuOpen = false">

@@ -141,7 +141,7 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .plot { max-width: 760px; }
 .tag { display: inline-block; padding: 3px 10px; margin: 6px 6px 0 0; border-radius: 999px; background: var(--panel2); font-size: 13px; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin-top: 14px; }
-.tabs { display: flex; gap: 6px; overflow-x: auto; margin: 32px 0 14px; }
+.tabs { display: flex; gap: 6px; overflow-x: auto; margin: 32px 0 14px; align-items: center; scrollbar-width: none; }
 .tabs button { background: none; border: 0; border-radius: 999px; padding: 7px 16px; white-space: nowrap; color: var(--dim); }
 .tabs button.on { background: var(--panel2); color: var(--text); font-weight: 600; }
 .episodes { display: flex; flex-direction: column; gap: 4px; margin-top: 18px; }
@@ -192,7 +192,7 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .p-msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(0,0,0,.8); z-index: 2; text-align: center; padding: 20px; }
 .spinner { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border: 4px solid rgba(255,255,255,.2); border-top-color: #fff; border-radius: 50%; animation: spin .9s linear infinite; pointer-events: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
-video::cue { background: rgba(0,0,0,.55); font-size: 110%; }
+video::cue { background: var(--cue-bg, rgba(0,0,0,.55)); color: var(--cue-color, #fff); font-size: calc(1.1 * var(--cue, 100%)); }
 
 /* ---------- boxes over the page */
 .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -262,6 +262,31 @@ a.person:hover b { color: var(--accent); }
 .li-thumb.tall { width: 44px; height: 66px; }
 .note { margin-top: 24px; }
 
+/* ---------- settings */
+.settings { max-width: 900px; }
+.admin-link { margin-left: auto; font-size: 14px; padding: 6px 12px; white-space: nowrap; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; margin-bottom: 18px; }
+.panel h2 { margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+.form { display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 12px 18px; align-items: start; }
+.form > label { padding-top: 9px; color: var(--dim); }
+.form > .val { padding-top: 9px; }
+.form input:not([type=color]), .form select { width: 100%; max-width: 360px; }
+.hint { font-size: 13px; margin: 4px 0 0; max-width: 520px; }
+.saved { margin-left: 10px; font-size: 13px; }
+.small { font-size: 13px; }
+.qr { width: 220px; height: 220px; border-radius: 8px; overflow: hidden; background: #fff; }
+.qr svg { width: 100%; height: 100%; display: block; }
+.secret { user-select: all; font-size: 16px; background: var(--panel2); padding: 4px 8px; border-radius: 6px; }
+input.code { width: 130px; }
+.big-code { font-size: 32px; font-weight: 700; letter-spacing: 4px; margin: 12px 0; user-select: all; }
+.devices { display: flex; flex-direction: column; }
+.device { display: flex; gap: 14px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.device:first-child { border-top: 0; }
+.tag.here { background: var(--accent); color: var(--accent-text); margin-left: 8px; }
+input.color { width: 60px; height: 38px; padding: 2px; }
+.sub-sample { margin-top: 18px; padding: 40px 20px; border-radius: 8px; text-align: center; background: linear-gradient(135deg, #3b4a5c, #6b5b45); }
+.sub-sample span { display: inline-block; padding: 2px 8px; }
+
 /* ---------- phones */
 @media (max-width: 760px) {
   :root { --card: 110px; --top: 56px; }
@@ -280,6 +305,9 @@ a.person:hover b { color: var(--accent); }
   .ep .ep-plot { display: none; }
   .row-arrows, .vol { display: none; }
   .grid { gap: 16px 10px; }
+  .form { grid-template-columns: 1fr; gap: 4px; }
+  .form > label { padding-top: 10px; }
+  .panel { padding: 16px; }
   .fpanel { position: fixed; inset: var(--top) 0 0 0; width: auto; height: auto; border-radius: 0; flex-direction: column; flex-wrap: nowrap; }
   .fp-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); flex: none; }
   .fp-left { flex: 0 0 auto; height: auto; max-height: 38%; border-right: 0; border-bottom: 1px solid var(--line); }

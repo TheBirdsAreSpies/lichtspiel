@@ -11,6 +11,7 @@ export const router = createRouter({
     { path: '/item/:id', name: 'item', component: () => import('./views/ItemView.vue'), props: true },
     { path: '/search', name: 'search', component: () => import('./views/SearchView.vue') },
     { path: '/person/:id', name: 'person', component: () => import('./views/PersonView.vue'), props: true },
+    { path: '/settings/:tab?', name: 'settings', component: () => import('./views/SettingsView.vue'), props: true },
     { path: '/watchlist', name: 'watchlist', component: () => import('./views/WatchlistView.vue') },
     { path: '/playlists', name: 'playlists', component: () => import('./views/PlaylistsView.vue') },
     { path: '/playlist/:id', name: 'playlist', component: () => import('./views/PlaylistView.vue'), props: true },
@@ -24,4 +25,18 @@ export const router = createRouter({
 router.beforeEach(to => {
   if (!session.me && !to.meta.open) return { name: 'login', query: to.fullPath !== '/' ? { next: to.fullPath } : {} };
   if (session.me && to.name === 'login') return { name: 'home' };
+});
+
+// A part of the app that is no longer there: the server got a new version while this page was open (its
+// files have new names). Loading the page again gets the new version; once a minute at most, so a part
+// that is really missing does not reload the page over and over.
+router.onError((err, to) => {
+  if (!/dynamically imported module|Importing a module script failed|error loading dynamically/i.test(String(err && (err as Error).message))) return;
+  try {
+    const last = Number(sessionStorage.getItem('vue-reloaded') || 0);
+    if (Date.now() - last < 60000) return;
+    sessionStorage.setItem('vue-reloaded', String(Date.now()));
+  } catch { /* storage blocked: try once anyway */ }
+  window.location.hash = '#' + to.fullPath;
+  window.location.reload();
 });

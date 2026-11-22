@@ -26,7 +26,10 @@ export interface Playlist {
 export interface Group { title: string, thumb?: string, childCount: number, viewedLeafCount?: number }
 export interface Hub { hubIdentifier: string, title: string, Metadata?: Item[] }
 export interface Section { id: number, key: string, title: string, type: string, count?: number }
-export interface Me { id: number, username: string, display_name?: string, admin: boolean, prefs?: Record<string, string> }
+export interface Me {
+  id: number, username: string, display_name?: string, full_name?: string, email?: string, two_factor?: boolean, admin: boolean,
+  prefs?: Record<string, string>,
+}
 export interface Status { name: string, version: string, build?: string, setup_needed: boolean, mail?: boolean }
 export type Container<K extends string, T> = { MediaContainer: { [k in K]?: T[] } & { totalSize?: number, size?: number } };
 
@@ -145,8 +148,14 @@ export async function signOut() {
   forgetToken();
 }
 
-/** Settings that follow the person from browser to browser (POST /api/me/prefs). */
+/** Settings that follow the person from browser to browser (POST /api/me/prefs); they count here at once. */
 export function savePref(key: string, value: string | null) {
-  if (!session.me) return;
-  api('POST', '/api/me/prefs', { [key]: value }).catch(() => {});
+  const me = session.me;
+  if (!me) return Promise.resolve();
+  const prefs = { ...(me.prefs || {}) };
+  if (value === null) delete prefs[key]; else prefs[key] = value;
+  me.prefs = prefs;
+  return api('POST', '/api/me/prefs', { [key]: value }).then(() => {});
 }
+/** One of those settings, or def when it was never set. */
+export const pref = (key: string, def = '') => (session.me && session.me.prefs && key in session.me.prefs ? session.me.prefs[key] : def);
