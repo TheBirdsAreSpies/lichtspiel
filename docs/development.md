@@ -32,6 +32,7 @@ Some server tests need ffmpeg on the PATH and skip themselves without it.
 
 - Don't run `cargo fmt` over the tree. The code is not rustfmt-formatted; match the style around you.
 - Lock order: take `store` before `db` (only `save` takes both). Call `app.save()` after a change.
+- Keep `db` locked only briefly: every request waits for it. Held over a second, the server log says "the library was locked for … by file:line" (`src/server/held.rs`).
 - Items and watch states live in `Tracked` maps. Change them through that API; going around it does not compile.
 - A new API route needs its match arm in the fitting group in `src/api/routes/` (`public.rs` for addresses open to everyone, otherwise `account.rs`, `libraries.rs`, `items.rs` …; the groups are tried in the order listed in `route()`) and a line in `ROUTES` (`src/api/routes/docs.rs`); `ROUTES` is the API documentation.
 - Web text: the English string is the key (`t('Sign in')`). Add the German text to `web/lang/de.js` whenever you add or change UI text.

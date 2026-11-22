@@ -9,6 +9,7 @@
 //! and bundled (the plugins shipped with the server).
 
 mod background;
+mod held;
 mod bundled;
 mod http;
 mod jobs;
@@ -18,6 +19,7 @@ mod serve;
 mod views;
 
 pub use background::*;
+pub use held::HeldMutex;
 use bundled::install_bundled_plugins;
 pub use http::*;
 pub use matching::*;
@@ -136,7 +138,7 @@ pub struct App {
     pub data_dir: PathBuf,
     /// The library file. Locked before `db` when both are needed (only `save` does).
     pub store: Mutex<Store>,
-    pub db: Mutex<Db>,
+    pub db: HeldMutex<Db>,
     pub plugins: Mutex<Plugins>,
     pub hls: Mutex<HashMap<String, HlsSession>>,
     pub progressive: Mutex<HashMap<String, Playing>>,
@@ -261,7 +263,7 @@ impl App {
         let app = Arc::new(App {
             data_dir: data_dir.to_path_buf(),
             store: Mutex::new(store),
-            db: Mutex::new(db),
+            db: HeldMutex::new(db),
             plugins: Mutex::new(plugins),
             hls: Mutex::new(HashMap::new()),
             progressive: Mutex::new(HashMap::new()),
