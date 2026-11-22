@@ -4,6 +4,7 @@
 import { onMounted, ref } from 'vue';
 import { api, get } from '../../api';
 import { lang, t } from '../../i18n';
+import LinkForm from '../LinkForm.vue';
 import Modal from '../Modal.vue';
 
 interface Token { id: string, device?: string, last_device?: string, last_used?: number, last_ip?: string, created_at: number, current?: boolean }
@@ -52,5 +53,7 @@ const when = (s?: number) => (s ? new Date(s * 1000).toLocaleString(lang.value, 
         <button @click="asking = null">{{ t('Cancel') }}</button>
       </template>
     </Modal>
+    <h2 class="gap-top">{{ t('Sign in a device') }}</h2>
+    <LinkForm />
   </section>
 </template>

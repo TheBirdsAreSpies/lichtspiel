@@ -241,6 +241,15 @@ video::cue { background: var(--cue-bg, rgba(0,0,0,.55)); color: var(--cue-color,
 .modal .actions { justify-content: flex-end; }
 input.full { width: 100%; }
 .ok-msg { color: var(--accent); font-weight: 600; }
+.ok { color: var(--accent); }
+.gap-top { margin-top: 28px; }
+.narrow { max-width: 560px; }
+a.btn.wide { width: 100%; justify-content: center; margin-top: 10px; text-decoration: none; }
+.auth-box.center { text-align: center; }
+.qr { width: 220px; height: 220px; margin: 12px auto; border-radius: 8px; overflow: hidden; background: #fff; }
+.qr svg { width: 100%; height: 100%; display: block; }
+.big-code { font-size: 48px; font-weight: 700; letter-spacing: 10px; margin: 6px 0; }
+.code-input { font-size: 28px; letter-spacing: 6px; text-transform: uppercase; text-align: center; width: 9ch; padding: 6px 8px; }
 .pick-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; margin-top: 10px; }
 .pick { border: 0; background: none; border-radius: 8px; text-align: left; justify-content: space-between; }
 .pick:hover { background: var(--panel2); }

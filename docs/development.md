@@ -35,7 +35,8 @@ Some server tests need ffmpeg on the PATH and skip themselves without it.
 
 `web-vue/` is a second web app next to `web/`, served at `/vue/` (hash addresses: `/vue/#/item/12`).
 It talks to the same JSON API and keeps the sign-in under the same keys as `web/`, so both share it.
-So far it has signing in (password, two-step code, home profiles, first setup), home, libraries with
+So far it has signing in (password, two-step code, home profiles, first setup, with the phone by a code,
+a forgotten password, invites; and signing in another device, `#/link/CODE`), home, libraries with
 their filters (`?f.genre=…`, `web-vue/src/filters.ts`; advanced rules as `?rules=[…]`) and collections, a title's page (with "Add to …"
 a playlist or collection, the choice of version, and "Edit details" for the owner), people, search, the player (with quality, speed, night mode, chapters, a still preview on the seek bar, skipping
 intro, recap and credits, the countdown to the next episode, "Are you still watching?", the sleep timer,

@@ -101,6 +101,10 @@ const shown = (p: Profile) => p.display_name || p.username;
 
       <button class="primary wide" type="submit" :disabled="busy">{{ setup ? t('Create account') : t('Sign in') }}</button>
       <p v-if="error" class="err">{{ error }}</p>
+      <template v-if="!setup && !needsCode">
+        <RouterLink to="/login/code" class="btn wide">{{ t('Sign in with your phone') }}</RouterLink>
+        <p v-if="session.status && session.status.mail" class="or"><RouterLink to="/forgot">{{ t('Forgot your password?') }}</RouterLink></p>
+      </template>
       <div class="auth-foot">
         <a href="/" class="dim">{{ t('Classic web app') }}</a>
         <select :value="lang" :aria-label="t('Language')" @change="setLang(($event.target as HTMLSelectElement).value)">
