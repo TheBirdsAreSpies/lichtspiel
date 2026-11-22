@@ -146,12 +146,19 @@ pub fn thumb(app: &Arc<App>, user: &User, iid: &str, width: Option<u32>) -> Resp
 /// Posters, backgrounds and seek-bar pictures made with ffmpeg at the same time: a page of new titles
 /// waits its turn instead of starting a hundred ffmpeg processes at once.
 pub const PICTURES_AT_ONCE: usize = 3;
-pub(super) static PICTURES: (std::sync::Mutex<usize>, std::sync::Condvar) = (std::sync::Mutex::new(0), std::sync::Condvar::new());
+pub(super) static PICTURES: Slots = (std::sync::Mutex::new(0), std::sync::Condvar::new());
+/// How many pictures are being made, and the signal that one is done.
+pub(super) type Slots = (std::sync::Mutex<usize>, std::sync::Condvar);
 
 /// Runs ffmpeg with `args(tmp)` to make the picture `out`. It is written under a name of its own and
 /// renamed when done, so nobody reads a half-written file. False when ffmpeg failed or no turn came within 20 s.
 pub fn make_picture(ffmpeg: &str, out: &Path, args: impl FnOnce(&str) -> Vec<String>) -> bool {
-    let (count, freed) = &PICTURES;
+    make_picture_in(&PICTURES, ffmpeg, out, args)
+}
+
+/// make_picture() with turns from `slots` (a test has its own, so other tests making pictures at the same time do not take its turns).
+fn make_picture_in(slots: &Slots, ffmpeg: &str, out: &Path, args: impl FnOnce(&str) -> Vec<String>) -> bool {
+    let (count, freed) = slots;
     {
         let n = count.lock().unwrap_or_else(|e| e.into_inner());
         let (mut n, waited) = freed.wait_timeout_while(n, Duration::from_secs(20), |n| *n >= PICTURES_AT_ONCE).unwrap_or_else(|e| e.into_inner());
@@ -335,13 +342,18 @@ mod picture_tests {
     use super::*;
 
     /// A stand-in "ffmpeg" (a shell script) in a fresh folder; `$out` is its last argument (the picture).
+    /// The script is written by a `sh` of its own, not by this process: a process another test starts
+    /// at that moment would take along this process's open script and running it would fail with
+    /// "Text file busy" (Linux).
     fn fake_ffmpeg(name: &str, script: &str) -> (PathBuf, String) {
+        use std::io::Write;
         let root = std::env::temp_dir().join(format!("lichtspiel-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let ff = root.join("ffmpeg.sh");
-        std::fs::write(&ff, format!("#!/bin/sh\nfor out; do :; done\n{script}\n")).unwrap();
-        std::fs::set_permissions(&ff, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        let mut sh = Command::new("sh").args(["-c", "cat > \"$0\" && chmod 755 \"$0\""]).arg(&ff).stdin(Stdio::piped()).spawn().unwrap();
+        sh.stdin.take().unwrap().write_all(format!("#!/bin/sh\nfor out; do :; done\n{script}\n").as_bytes()).unwrap();
+        assert!(sh.wait().unwrap().success());
         (root, ff.to_string_lossy().to_string())
     }
 
@@ -366,9 +378,11 @@ mod picture_tests {
     #[test]
     fn pictures_are_made_a_few_at_a_time() {
         let (root, ff) = fake_ffmpeg("many-pictures", "d=$(dirname \"$0\")/running; mkdir -p \"$d\"; touch \"$d/$$\"; ls \"$d\" | wc -l >> \"$d.log\"; sleep 0.3; rm \"$d/$$\"; printf x > \"$out\"");
+        // Turns of their own: other tests make pictures at the same time (with a real ffmpeg, slow on a busy machine).
+        let slots: &'static Slots = Box::leak(Box::new((std::sync::Mutex::new(0), std::sync::Condvar::new())));
         let makers: Vec<_> = (0..9).map(|n| {
             let (ff, out) = (ff.clone(), root.join(format!("1-{n}.jpg")));
-            std::thread::spawn(move || make_frame(&ff, "x.mkv", n as f64, &out))
+            std::thread::spawn(move || make_picture_in(slots, &ff, &out, |tmp| vec![format!("-ss {n}"), tmp.to_string()]))
         }).collect();
         for m in makers { assert!(m.join().unwrap()); }
         let most = std::fs::read_to_string(root.join("running.log")).unwrap().lines().filter_map(|l| l.trim().parse::<usize>().ok()).max().unwrap();
