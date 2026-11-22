@@ -12,6 +12,7 @@ export const router = createRouter({
     { path: '/reset/:code', name: 'reset', component: () => import('./views/AuthView.vue'), meta: { open: true } },
     { path: '/invite/:code', name: 'invite', component: () => import('./views/AuthView.vue'), meta: { open: true, signedOut: true } },
     { path: '/users', name: 'users', component: () => import('./views/UsersView.vue'), meta: { admin: true } },
+    { path: '/plugins', name: 'plugins', component: () => import('./views/PluginsView.vue'), meta: { admin: true } },
     { path: '/link/:code?', name: 'link', component: () => import('./views/LinkView.vue'), props: true },
     { path: '/library/:id', name: 'library', component: () => import('./views/LibraryView.vue'), props: true },
     { path: '/item/:id', name: 'item', component: () => import('./views/ItemView.vue'), props: true },

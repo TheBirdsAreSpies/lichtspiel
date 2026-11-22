@@ -588,6 +588,8 @@ I18N.add('de', 'Deutsch', {
     'Pictures': 'Bilder',
     'Field': 'Feld',
     'Operator': 'Bedingung',
+    'Replace': 'Ersetzen',
+    'Replace plugin': 'Plugin ersetzen',
     'Background': 'Hintergrund',
     'Logo': 'Logo',
     'Square poster': 'Quadrat-Poster',

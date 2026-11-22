@@ -339,6 +339,14 @@ input.short, .form input.short { width: 140px; }
 .block { display: block; }
 .nowrap { white-space: nowrap; }
 .panel.inner { background: var(--panel2); margin: 14px 0 0; }
+.plugin-head { display: flex; gap: 6px 12px; align-items: center; flex-wrap: wrap; }
+.plugin-head b { font-size: 17px; }
+.plugin-switch { display: flex; gap: 12px; align-items: center; margin-left: auto; }
+.mono, textarea.mono { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+.form textarea { width: 100%; padding: 8px 10px; }
+.break { word-break: break-all; }
+code.ev { margin: 0 6px 6px 0; display: inline-block; }
+.btn.disabled { opacity: .5; pointer-events: none; }
 .saved { margin-left: 10px; font-size: 13px; }
 .small { font-size: 13px; }
 .qr { width: 220px; height: 220px; border-radius: 8px; overflow: hidden; background: #fff; }
