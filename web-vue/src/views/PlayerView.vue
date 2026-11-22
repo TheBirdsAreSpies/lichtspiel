@@ -6,9 +6,10 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, get, list, session, ticket, withTicket, type Item, type Stream, type Subtitle } from '../api';
-import { fmtTime, langName, lang2 } from '../format';
+import { fmtTime, langName, lang2, resumeAt } from '../format';
 import { t } from '../i18n';
 import Icon from '../components/Icon.vue';
+import { nextInQueue, queue } from '../queue';
 
 const props = defineProps<{ id: string }>();
 const route = useRoute();
@@ -154,6 +155,9 @@ function report(state: 'playing' | 'paused' | 'stopped') {
     }).catch(() => {});
 }
 
+// Not started from a playlist: what was left of one is forgotten.
+if (!route.query.queue) queue.items = [];
+
 // After an episode: the next one in its season, then the first of the next season.
 async function nextEpisode(): Promise<Item | null> {
   const i = it.value; if (!i || i.type !== 'episode' || !i.grandparentRatingKey) return null;
@@ -165,7 +169,10 @@ let done = false; // the end was reported already (not again when leaving)
 async function ended() {
   done = true;
   await report('stopped');
-  const next = await nextEpisode();
+  const fromQueue = nextInQueue();
+  if (fromQueue) { router.replace({ name: 'play', params: { id: fromQueue.id }, query: { t: String(Math.floor(resumeAt(fromQueue))), queue: '1' } }); return; }
+  // The end of a playlist: it stops there, also after an episode.
+  const next = route.query.queue ? null : await nextEpisode();
   if (next) router.replace({ name: 'play', params: { id: next.id }, query: { t: '0' } });
   else close();
 }

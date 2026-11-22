@@ -43,10 +43,10 @@ Collected on 2026-11-22.
 
 ### Vue web app (`web-vue/`, branch `feat/vue-frontend`)
 
-- **Still missing there** (only in `web/` so far): playlists and collections, watchlist page, library
-  filters beyond "unwatched", person pages, settings, the dashboard, users and invites, plugins,
-  downloads, Chromecast, watch together, sign-in with a code, picture subtitles (burned in), movies
-  split over several files, merged versions, editing details.
+- **Still missing there** (only in `web/` so far): new smart playlists and their rules (the button
+  opens the classic app), library filters beyond "unwatched", person pages, settings, the dashboard,
+  users and invites, plugins, downloads, Chromecast, watch together, sign-in with a code, picture
+  subtitles (burned in), movies split over several files, merged versions, editing details.
 
 ### Server
 

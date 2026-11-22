@@ -1920,6 +1920,10 @@ I18N.add('de', 'Deutsch', {
     'Position': 'Position',
     'This video can’t be played here.': 'Dieses Video kann hier nicht abgespielt werden.',
     '▶ Resume': '▶ Fortsetzen',
+    'Add': 'Hinzufügen',
+    'Create': 'Anlegen',
+    'Owner': 'Besitzer',
+    'Your watchlist is empty. Use “Add to watchlist” on the page of a movie or show.': 'Deine Watchlist ist leer. Nutze „Zur Watchlist hinzufügen“ auf der Seite eines Films oder einer Serie.',
     'Sign out on this device?': 'Auf diesem Gerät abmelden?',
 
     // ---------- e-mail, forgot password

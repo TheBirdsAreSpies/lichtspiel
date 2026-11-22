@@ -70,6 +70,8 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
     </header>
     <nav class="side" :aria-label="t('Libraries')">
       <RouterLink to="/" class="nav" exact-active-class="on"><Icon name="home" /><span>{{ t('Home') }}</span></RouterLink>
+      <RouterLink to="/watchlist" class="nav" active-class="on"><Icon name="mark" /><span>{{ t('Watchlist') }}</span></RouterLink>
+      <RouterLink to="/playlists" class="nav" :class="{ on: route.name === 'playlist' }" active-class="on"><Icon name="playlist" /><span>{{ t('Playlists') }}</span></RouterLink>
       <div class="nav-head">{{ t('Libraries') }}</div>
       <RouterLink v-for="s in session.sections" :key="s.id" :to="'/library/' + s.id" class="nav" active-class="on">
         <Icon :name="icon(s.type)" /><span>{{ s.title }}</span>

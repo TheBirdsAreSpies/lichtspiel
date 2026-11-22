@@ -1,6 +1,6 @@
 // Numbers, times and names as they are shown.
 import { lang, t } from './i18n';
-import type { Item } from './api';
+import type { Item, Playlist } from './api';
 
 export function fmtDur(ms?: number): string {
   if (!ms) return '';
@@ -44,3 +44,8 @@ export function cardLines(it: Item): [string, string] {
   if (it.type === 'show') return [it.title, t('{n} episodes', { n: it.leafCount || 0 })];
   return [it.title, [it.year, it.editionTitle].filter(Boolean).join(' · ')];
 }
+
+/** A playlist's kind as shown: normal, smart, default. */
+export const kindName = (k: string) => ({ manual: t('normal'), smart: t('smart'), default: t('default') }[k] || k);
+/** The server's default playlists have English names, shown in the chosen language. */
+export const plTitle = (pl: Playlist) => (pl.default ? t(pl.title) : pl.title);

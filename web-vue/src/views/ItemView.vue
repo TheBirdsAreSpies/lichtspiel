@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router';
 import { api, get, list, picture, type Hub, type Item, type Person } from '../api';
 import { fmtDur, fmtTime, isPlayable, isWatched, resumeAt, seasonTitle } from '../format';
 import { lang, t } from '../i18n';
+import AddToDialog from '../components/AddToDialog.vue';
 import Icon from '../components/Icon.vue';
 import PosterRow from '../components/PosterRow.vue';
 
@@ -18,6 +19,7 @@ const episodes = ref<Item[]>([]);
 const top = ref<Item | null>(null);
 const related = ref<Hub[]>([]);
 const error = ref('');
+const adding = ref(false);
 
 async function load() {
   error.value = '';
@@ -86,6 +88,8 @@ async function toggleWatchlist() {
   await api('PUT', `/api/items/${i.id}/watchlist`, { watchlist: !i.watchlist });
   i.watchlist = !i.watchlist;
 }
+// The collections it is in, each a link to its library filtered to it.
+const collections = computed(() => (x.value.collections || []).filter(Boolean));
 const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('');
 </script>
 
@@ -110,9 +114,13 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
           <p v-if="it.tagline" class="tagline">{{ it.tagline }}</p>
           <p v-if="it.summary" class="plot">{{ it.summary }}</p>
           <div v-if="it.genres && it.genres.length"><span v-for="g in it.genres" :key="g" class="tag">{{ g }}</span></div>
-          <div v-if="crew.length || it.studio" class="kv">
+          <div v-if="crew.length || it.studio || collections.length" class="kv">
             <template v-for="[k, v] in crew" :key="k"><div class="dim">{{ k }}</div><div>{{ v.join(', ') }}</div></template>
             <template v-if="it.studio"><div class="dim">{{ it.type === 'show' ? t('Network') : t('Studio') }}</div><div>{{ it.studio }}</div></template>
+            <template v-if="collections.length && it.librarySectionID">
+              <div class="dim">{{ t('Collections') }}</div>
+              <div><template v-for="(c, i) in collections" :key="c"><template v-if="i">, </template><RouterLink :to="{ path: '/library/' + it.librarySectionID, query: { collection: c } }" class="link">{{ c }}</RouterLink></template></div>
+            </template>
           </div>
           <div class="actions">
             <button v-if="isPlayable(it) && it.missing" class="big" disabled>{{ t('Unavailable') }}</button>
@@ -125,6 +133,7 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
             <button class="iconbtn round" :class="{ on: isWatched(it) }" :title="isWatched(it) ? t('Mark as unwatched') : t('Mark as watched')" @click="toggleWatched"><Icon name="check" /></button>
             <button class="iconbtn round" :class="{ on: it.favorite }" :title="it.favorite ? t('Remove from favorites') : t('Add to favorites')" @click="toggleFavorite"><Icon :name="it.favorite ? 'heart' : 'heartOff'" /></button>
             <button class="iconbtn round" :class="{ on: it.watchlist }" :title="it.watchlist ? t('Remove from watchlist') : t('Add to watchlist')" @click="toggleWatchlist"><Icon :name="it.watchlist ? 'mark' : 'markOff'" /></button>
+            <button v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" class="iconbtn round" :title="t('Add to …')" :aria-label="t('Add to …')" @click="adding = true"><Icon name="playlistAdd" /></button>
           </div>
         </div>
       </div>
@@ -161,6 +170,7 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
         </div>
       </section>
       <PosterRow v-for="h in related" :key="h.hubIdentifier + h.title" :title="t(h.title)" :items="h.Metadata || []" />
+      <AddToDialog v-if="adding" :item="it" @close="adding = false" @changed="load" />
     </template>
   </div>
 </template>

@@ -15,9 +15,15 @@ export interface Item {
   duration?: number, viewOffset?: number, viewCount?: number, leafCount?: number, viewedLeafCount?: number,
   index?: number, parentIndex?: number, parentTitle?: string, grandparentTitle?: string, parentRatingKey?: string,
   grandparentRatingKey?: string, grandparentThumb?: string, genres?: string[], contentRating?: string, rating?: number,
-  studio?: string, editionTitle?: string, missing?: boolean, favorite?: boolean, watchlist?: boolean, updatedAt?: number,
-  Media?: Media[], extra?: { cast?: Person[], directors?: string[], writers?: string[], creators?: string[], original_title?: string },
+  studio?: string, editionTitle?: string, missing?: boolean, librarySectionID?: number, squareThumb?: string, favorite?: boolean, watchlist?: boolean, updatedAt?: number,
+  Media?: Media[], extra?: { cast?: Person[], directors?: string[], writers?: string[], creators?: string[], original_title?: string, collections?: string[] },
 }
+export interface Playlist {
+  id: number, title: string, summary?: string, kind: 'manual' | 'smart' | 'default', smart?: boolean, default?: boolean,
+  leafCount: number, duration?: number, thumbs?: string[], owner?: string, shared?: boolean, pinned?: boolean, editable?: boolean,
+}
+/** A collection or category of a library (GET /library/sections/{id}/collections). */
+export interface Group { title: string, thumb?: string, childCount: number, viewedLeafCount?: number }
 export interface Hub { hubIdentifier: string, title: string, Metadata?: Item[] }
 export interface Section { id: number, key: string, title: string, type: string, count?: number }
 export interface Me { id: number, username: string, display_name?: string, admin: boolean, prefs?: Record<string, string> }
