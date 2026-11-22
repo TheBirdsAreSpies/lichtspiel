@@ -1,5 +1,7 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../api.dart';
+import '../widgets/pick.dart';
 import '../widgets/poster.dart';
 import 'edit.dart';
 import 'downloads.dart';
@@ -509,6 +511,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return null;
   }
 
+  /// The dice: one title at random from what the filters leave.
+  Future<void> randomPick() async {
+    if (total < 1) return;
+    try {
+      final r = await widget.api.list(sectionId, q, start: Random().nextInt(total), size: 1);
+      if (!mounted || r.items.isEmpty) return;
+      await randomDialog(context, widget.api, r.items.first, randomPick);
+    } catch (e) {
+      say(errorText(e));
+    }
+  }
+
   void setSort(String f) {
     sortField = f;
     desc = !_sortAsc.contains(f);
@@ -623,7 +637,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
               CheckedPopupMenuItem(value: '<desc>', checked: desc, child: const Text('Absteigend')),
             ],
           ),
-          IconButton(tooltip: 'Jahr und Dateityp', onPressed: openMore, icon: Badge(isLabelVisible: nMore > 0, label: Text('$nMore'), child: const Icon(Icons.tune))),
+          if (total > 1) IconButton(tooltip: 'Zufällig einen auswählen', onPressed: randomPick, icon: const Icon(Icons.casino_outlined)),
+          IconButton(tooltip: 'Jahr und Dateityp', onPressed: openMore,icon: Badge(isLabelVisible: nMore > 0, label: Text('$nMore'), child: const Icon(Icons.tune))),
         ]),
       ]),
     );
@@ -652,6 +667,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           },
           icon: Icon(desc ? Icons.arrow_downward : Icons.arrow_upward),
         ),
+        if (total > 1) IconButton(tooltip: 'Zufällig einen auswählen', onPressed: randomPick, icon: const Icon(Icons.casino_outlined)),
         SizedBox(width: 170, child: _field(search, 'Nach Titel filtern', icon: Icons.search)),
         SizedBox(width: 90, child: _field(from, 'Jahr ab', number: true)),
         SizedBox(width: 90, child: _field(to, 'Jahr bis', number: true)),

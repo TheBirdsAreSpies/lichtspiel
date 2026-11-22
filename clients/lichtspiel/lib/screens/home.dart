@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../widgets/bar.dart';
+import '../widgets/pick.dart';
 import '../widgets/poster.dart';
 import '../widgets/states.dart';
 import 'calendar.dart';
@@ -136,6 +137,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 // After continue watching and the watchlist, like in the web app.
                 final comingAt = hubs.indexWhere((h) => !['continueWatching', 'watchlist'].contains(h['hubIdentifier']));
                 final before = comingAt < 0 ? hubs : hubs.sublist(0, comingAt), after = comingAt < 0 ? const <Map<String, dynamic>>[] : hubs.sublist(comingAt);
+                // "Etwas Kurzes" sits on the first row it picks from (continue watching, else the watchlist).
+                final shortOn = hubs.where((h) => ['continueWatching', 'watchlist'].contains(h['hubIdentifier']) && ((h['Metadata'] as List?) ?? const []).isNotEmpty).firstOrNull;
                 return RefreshIndicator(
                   onRefresh: reload,
                   child: ListView(padding: const EdgeInsets.symmetric(vertical: 12), children: [
@@ -150,9 +153,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                       ]),
                     ),
-                    for (final hub in before) _row(context, api, hub),
+                    for (final hub in before) _row(context, api, hub, short: hub == shortOn),
                     if (coming.isNotEmpty) ComingRow(api: api, entries: coming),
-                    for (final hub in after) _row(context, api, hub),
+                    for (final hub in after) _row(context, api, hub, short: hub == shortOn),
                     if (hubs.isEmpty) const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Noch nichts da. Die Bibliotheken werden evtl. noch gescannt.'))),
                   ]),
                 );
@@ -161,11 +164,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _row(BuildContext context, Api api, Map<String, dynamic> hub) {
+  Widget _row(BuildContext context, Api api, Map<String, dynamic> hub, {bool short = false}) {
     final items = ((hub['Metadata'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e)).toList();
     if (items.isEmpty) return const SizedBox.shrink();
+    final title = Text('${hub['title']}', style: Theme.of(context).textTheme.titleMedium);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(padding: const EdgeInsets.fromLTRB(16, 20, 16, 8), child: Text('${hub['title']}', style: Theme.of(context).textTheme.titleMedium)),
+      short
+          ? Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+              child: Row(children: [
+                Expanded(child: title),
+                TextButton.icon(onPressed: () => shortDialog(context, api), icon: const Icon(Icons.timer_outlined, size: 18), label: const Text('Etwas Kurzes')),
+              ]),
+            )
+          : Padding(padding: const EdgeInsets.fromLTRB(16, 20, 16, 8), child: title),
       SizedBox(
         height: 280,
         child: ListView.separated(

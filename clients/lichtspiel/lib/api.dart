@@ -360,6 +360,9 @@ class Api {
 
   Future<List<Map<String, dynamic>>> watchlist(Map<String, String> q) async => metadata(await get('/api/watchlist?${query(q)}'));
 
+  /// "Etwas Kurzes": what fits into [minutes] (the time left counts), from what is being watched and the watchlist.
+  Future<List<Map<String, dynamic>>> short(int minutes) async => metadata(await get('/api/short?minutes=$minutes'));
+
   Future<List<Map<String, dynamic>>> playlists({String owner = '', String kind = '', String sort = 'pinned:desc,title', String section = ''}) async =>
       metadata(await get('/playlists?${query({if (owner.isNotEmpty) 'owner': owner, if (kind.isNotEmpty) 'kind': kind, if (section.isNotEmpty) 'section': section, 'sort': sort})}'));
 
