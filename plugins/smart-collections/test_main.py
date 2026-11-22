@@ -174,6 +174,8 @@ class Runs(unittest.TestCase):
                 out, report = main.run({}, {"lists": [{"name": "Oscars", "source": "oscar-best-picture"}]})
             self.assertEqual(out["collections"]["Oscars"], [1, 7])
             self.assertEqual((report[0]["found"], report[0]["total"]), (1, 2))
+            # The playlist plays it once.
+            self.assertEqual(report[0]["playlist"], [1])
             out, _ = main.run({}, {"lists": [{"name": "Oscars", "source": "oscar-best-picture"}]})
             self.assertEqual(out["collections"], {"Oscars": [1]})
 
@@ -217,8 +219,9 @@ class Runs(unittest.TestCase):
                                            {"label": "Als Playlist speichern", "action": "playlist", "args": {"name": "Oscars"}, "working": "Wird gespeichert …"}])
         # The list as a playlist: the titles you have, in the list's order.
         pl = main.answer_call({"action": "playlist", "admin": True, "body": {"lang": "de", "args": {"name": "Oscars"}}}, settings, {})
-        self.assertEqual(pl["save_playlist"], {"title": "Oscars", "summary": "Aus den smarten Sammlungen", "ids": [1]})
-        self.assertIn("error", main.answer_call({"action": "playlist", "admin": True, "body": {"args": {"name": "Gibt es nicht"}}}, settings, {}))
+        self.assertEqual(pl["save_playlist"], {"title": "Smarte Sammlung: Oscars", "summary": "Aus den smarten Sammlungen", "ids": [1]})
+        self.assertEqual(main.answer_call({"action": "playlist", "admin": True, "body": {"args": {"name": "Gibt es nicht"}}}, settings, {})["error"],
+                         "Update the collections first.")
         m = main.answer_call({"action": "missing", "admin": True, "body": {"lang": "de", "args": {"name": "Oscars"}}}, settings, {})["panel"]
         self.assertEqual(m["title"], "Oscars: fehlt dir")
         self.assertEqual(m["text"], "1 Filme dieser Liste sind nicht in deinen Mediatheken.")
@@ -230,6 +233,19 @@ class Runs(unittest.TestCase):
         p = call("panel")
         self.assertEqual(p["collections"], {"Oscars": [1]})
         self.assertTrue(p["text"].startswith("Aktualisiert: 1 Sammlungen."))
+        # The first call after a run is a playlist: it hands the collections over too.
+        with mock.patch.object(main, "films_of", self.films):
+            main.update_in_background(settings, {"library": "x"})
+        pl = main.answer_call({"action": "playlist", "admin": True, "body": {"lang": "de", "args": {"name": "Oscars"}}}, settings, {})
+        self.assertEqual((pl["collections"], pl["message"]), ({"Oscars": [1]}, "Aktualisiert: 1 Sammlungen."))
+        self.assertEqual(pl["save_playlist"]["ids"], [1])
+        # A list none of whose films you have, or one that could not be read, says so.
+        lists = main.read_json(main.STATE, {})
+        lists["lists"] = [{"name": "Leer", "found": 0, "total": 3, "ids": [], "playlist": []}, {"name": "Down", "error": "x"}]
+        main.write_json(main.STATE, lists)
+        said = lambda name: main.answer_call({"action": "playlist", "admin": True, "body": {"lang": "de", "args": {"name": name}}}, settings, {})["error"]
+        self.assertEqual(said("Leer"), "Keiner der Filme dieser Liste ist in deinen Mediatheken.")
+        self.assertEqual(said("Down"), "Diese Liste konnte bei der letzten Aktualisierung nicht gelesen werden.")
         # A run that failed says why.
         with mock.patch.object(main, "fetch_library", mock.Mock(side_effect=LookupError())):
             main.update_in_background(settings, {})

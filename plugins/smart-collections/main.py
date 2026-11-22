@@ -86,6 +86,10 @@ WORDS = {
     "Save as playlist": "Als Playlist speichern",
     "Saving …": "Wird gespeichert …",
     "From the smart collections": "Aus den smarten Sammlungen",
+    "Smart collection: {name}": "Smarte Sammlung: {name}",
+    "Update the collections first.": "Aktualisiere zuerst die Sammlungen.",
+    "None of this list's films are in your libraries.": "Keiner der Filme dieser Liste ist in deinen Mediatheken.",
+    "This list could not be read at the last update.": "Diese Liste konnte bei der letzten Aktualisierung nicht gelesen werden.",
 }
 
 
@@ -352,8 +356,14 @@ def run(server, settings, progress=None):
             collections[name] = ids
             # Films of the list you have, not titles: a film there twice counts once.
             missing = [f for f in films if not titles_of(f, index)]
+            # The playlist takes one title of each film, so a film in two libraries plays once.
+            playlist = []
+            for f in films:
+                first = titles_of(f, index)[:1]
+                if first and first[0] not in playlist:
+                    playlist.append(first[0])
             report.append({"name": name, "source": source, "found": len(films) - len(missing), "total": len(films),
-                           "missing": [described(f) for f in missing[:MISSING_KEPT]], "ids": ids})
+                           "missing": [described(f) for f in missing[:MISSING_KEPT]], "ids": ids, "playlist": playlist})
         except Exception as e:  # noqa: BLE001 — shown in the panel, the other lists go on
             # Not reachable: the collection is left as it is.
             report.append({"name": name, "source": source, "error": str(e)})
@@ -519,6 +529,31 @@ def finished(lang):
     return None, tr(lang, "The update stopped: {e}", e=p.get("error")), True
 
 
+def playlist(lang, settings, name, done):
+    """The titles of the list you have, in the list's order, as a playlist of whoever clicked
+    (filled anew when saved again; it does not follow the list by itself). Its name has a prefix,
+    so it never fills a playlist of yours that happens to have the list's name. `done` is a just
+    finished update's result (see finished()), told along with the answer."""
+    r = next((r for r in read_json(STATE, {}).get("lists") or [] if r.get("name") == name), None)
+    said, failed = (done[1], done[2]) if done else (None, False)
+    shown = panel(lang, settings, None if failed else said)
+    if r is None:
+        error = tr(lang, "Update the collections first.")
+    elif r.get("error"):
+        error = tr(lang, "This list could not be read at the last update.")
+    elif not (r.get("playlist") or r.get("ids")):
+        error = tr(lang, "None of this list's films are in your libraries.")
+    else:
+        # A state from before the "playlist" field has only the ids.
+        out = {"save_playlist": {"title": tr(lang, "Smart collection: {name}", name=name),
+                                 "summary": tr(lang, "From the smart collections"), "ids": r.get("playlist") or r["ids"]},
+               "panel": shown}
+        if said:
+            out["message"] = said
+        return out
+    return {"error": error + (" " + said if said else ""), "panel": shown}
+
+
 def answer_call(data, settings, server):
     body = data.get("body") if isinstance(data.get("body"), dict) else {}
     lang = body.get("lang") or "en"
@@ -530,16 +565,12 @@ def answer_call(data, settings, server):
     args = body.get("args") if isinstance(body.get("args"), dict) else {}
     if action == "missing":
         return {"panel": missing_panel(lang, str(args.get("name") or ""))}
-    if action == "playlist":
-        # The titles of the list you have, in the list's order, as a playlist of whoever clicked
-        # (filled anew when saved again; it does not follow the list by itself).
-        name = str(args.get("name") or "")
-        r = next((r for r in read_json(STATE, {}).get("lists") or [] if r.get("name") == name and r.get("ids")), None)
-        if r is None:
-            return {"error": tr(lang, "Not updated yet.")}
-        return {"save_playlist": {"title": name, "summary": tr(lang, "From the smart collections"), "ids": r["ids"]},
-                "panel": panel(lang, settings)}
     done = finished(lang)
+    if action == "playlist":
+        out = playlist(lang, settings, str(args.get("name") or ""), done)
+        if done and done[0] is not None:
+            out["collections"] = done[0]
+        return out
     if done:
         # The collections go to the server with whichever call comes first after the run.
         collections, said, failed = done
