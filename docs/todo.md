@@ -53,3 +53,5 @@ Collected on 2026-11-22.
 ### Parked
 
 - **Cinema trailers** before a movie — undecided, see the options discussed on 2026-11-05.
+- **Photos, live TV and DVR** — not needed for now; the plan is in
+  [plans/photos-and-live-tv.md](plans/photos-and-live-tv.md).
