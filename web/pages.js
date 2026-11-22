@@ -1294,8 +1294,21 @@ async function settingsPage(tab, qs) {
   if (tab === 'search') {
     const q = (new URLSearchParams(qs || '').get('q') || '').trim().toLowerCase();
     const found = Object.keys(panels).map(k => [k, (panels[k] || []).filter(el => el && el.textContent && q && el.textContent.toLowerCase().includes(q))]).filter(([, rows]) => rows.length);
+    // Plugins too, by name, id and description: they live on pages of their own (Manage → Plugins, their panel).
+    /** @type {any[]} */
+    let plugins = [];
+    try { plugins = q ? (await GET('/api/plugins')).plugins.filter(p => [p.name, p.id, p.description].some(s => (s || '').toLowerCase().includes(q))) : []; } catch (e) { /* only the settings then */ }
+    const pluginHits = plugins.length ? h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, h('a', { href: '#/plugins' }, t('Plugins'))),
+      plugins.map(p => h('div', { style: 'margin:10px 0' },
+        h('div', { style: 'display:flex;gap:12px;align-items:center;flex-wrap:wrap' }, h('b', {}, p.name), h('span', { class: p.enabled ? 'ok' : 'dim' }, p.enabled ? t('on') : t('off')),
+          h('a', { href: '#/plugins' }, t('Plugin settings')),
+          p.enabled && p.user_panel && p.placement !== 'settings' ? h('a', { href: '#/plugin/' + p.id }, t('Open its page')) : null,
+          p.enabled && p.user_panel && p.placement !== 'sidebar' ? h('a', { href: '#/settings/account' }, t('Settings → Account')) : null),
+        p.description ? h('div', { class: 'dim' }, p.description) : null))) : null;
     return set(h('h1', {}, t('Settings')), nav(tab),
-      found.length ? found.map(([k, rows]) => h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, h('a', { href: '#/settings/' + k }, t(titles[k]))), rows)) : h('div', { class: 'empty' }, t('No setting matches “{q}”.', { q })),
+      found.length ? found.map(([k, rows]) => h('div', { class: 'panel' }, h('h2', { style: 'margin-top:0' }, h('a', { href: '#/settings/' + k }, t(titles[k]))), rows)) : null,
+      pluginHits,
+      found.length || pluginHits ? null : h('div', { class: 'empty' }, t('No setting matches “{q}”.', { q })),
       found.length ? saveBar : null);
   }
   set(h('h1', {}, t('Settings')), nav(tab),

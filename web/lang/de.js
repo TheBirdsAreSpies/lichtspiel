@@ -203,6 +203,8 @@ I18N.add('de', 'Deutsch', {
     'Maintenance': 'Wartung',
     'Search the settings…': 'Einstellungen durchsuchen…',
     'No setting matches “{q}”.': 'Keine Einstellung passt zu „{q}“.',
+    'Plugin settings': 'Plugin-Einstellungen',
+    'Open its page': 'Seite öffnen',
     'Rotten Tomatoes audience': 'Rotten Tomatoes Publikum',
     'The video stopped before its end. Your place was saved.': 'Das Video hat vor seinem Ende aufgehört. Die Stelle ist gespeichert.',
     'Devices': 'Geräte',
