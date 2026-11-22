@@ -1,7 +1,8 @@
 # Lichtspiel
 
-**Lichtspiel** (from the old German word *Lichtspielhaus*, cinema) is a self-hosted streaming server for your own videos, made to run on a Synology NAS (or any
-Linux/Windows machine).
+**Lichtspiel** (from the old German word *Lichtspielhaus*, cinema) is a self-hosted streaming server for your own videos. It runs
+anywhere Docker runs (a Synology or other NAS, a Linux server, a Raspberry Pi; images for Intel/AMD and
+ARM), or as a single program on Windows or Linux.
 
 ## What it does
 
@@ -58,7 +59,7 @@ On a computer, the very first start opens the web app in your browser so you can
 owner account. A small desktop **status window** (home rows, what's playing, playlists,
 users, plugins) is **optional**: start the server with `--console` to get it. Clicking
 **Open web app**, a poster, a menu entry or a card in it opens that page in the browser. The
-Synology/Docker version has no window; you just use the web app.
+Docker version has no window; you just use the web app.
 
 Pictures of the web app pages are in `shots/web-*.png` (made by the self-test with a real
 browser), and the status window is in `shots/now.png`.
@@ -69,6 +70,10 @@ browser), and the status window is in `shots/now.png`.
   the NAS, check the paths in `docker-compose.yml`, create a project from it and open
   `http://<your-nas-ip>:8484`. Step by step, with automatic deploys from Gitea:
   [docs/install.md](docs/install.md).
+- **Any other Docker host:** put your folders, user and groups in a `.env` file next to
+  `docker-compose.yml` and run `docker compose up -d`, or use the ready-made image
+  `ghcr.io/thebirdsarespies/lichtspiel`:
+  [docs/install.md](docs/install.md#any-other-docker-host).
 - **Windows, for trying it out:** install ffmpeg, `cargo build --release`, run
   `target\release\lichtspiel-server.exe` and open `http://localhost:8484`. Options:
   [docs/install.md](docs/install.md#run-it-on-windows-for-trying-it-out).
@@ -78,7 +83,7 @@ browser), and the status window is in `shots/now.png`.
 | Page | What is in it |
 |---|---|
 | [docs/features.md](docs/features.md) | Every feature in detail: player, playlists, filters, downloads, dashboard, trash, Trakt … |
-| [docs/install.md](docs/install.md) | Synology install, automatic build and deploy (Gitea), running on Windows, command-line options |
+| [docs/install.md](docs/install.md) | Synology install, any other Docker host, automatic build and deploy (Gitea), running on Windows, command-line options |
 | [docs/remote-access.md](docs/remote-access.md) | Reaching it from outside: reverse proxy, HTTPS, redirect, relay |
 | [docs/metadata.md](docs/metadata.md) | Where movie and show details come from; naming files the Plex way; extras and trailers; `.lichtspielignore` |
 | [docs/watching.md](docs/watching.md) | When something counts as watched, credits and intro detection, theme music, deep analysis |

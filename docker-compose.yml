@@ -1,4 +1,7 @@
 # Synology: Container Manager → Project → Create → paste this file.
+# Any other Docker host (Linux server, Unraid, TrueNAS, a Raspberry Pi …): the defaults below are for a
+# Synology; put your own paths, user and groups in a .env file next to this one (docs/install.md,
+# "Any other Docker host").
 # Change the two folders after ":-" in the first two "volumes" lines to your own shared folders.
 # This is the only description of the container: the automatic deploy (.gitea/workflows/deploy.yml)
 # starts it from this file too, with `docker compose up`. A change here applies to both. The deploy
@@ -39,9 +42,10 @@ services:
     group_add:
       # The videos: a Synology shared folder usually grants only "administrators" (group 101), not
       # "users", so the server (uid 1026, group 100) is refused and everything shows as missing. The
-      # group joins it for reading; the folder is mounted read-only above. If "users" may read the
-      # videos, remove this line.
-      - "101"
+      # group joins it for reading; the folder is mounted read-only above. On another host, set
+      # LICHTSPIEL_VIDEO_GROUP (in .env) to the group that may read the videos (`ls -n` on the folder),
+      # or to the user's own group if that is enough.
+      - "${LICHTSPIEL_VIDEO_GROUP:-101}"
       # The graphics chip: the user needs its group, the number from `ls -n /dev/dri` (the group of
       # renderD128). Set LICHTSPIEL_GPU_GROUP to it (in .env); without it ffmpeg converts on the
       # processor. The deploy looks the number up by itself. (100 is the user's own group anyway.)

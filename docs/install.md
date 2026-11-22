@@ -1,6 +1,6 @@
 # Install and run
 
-On a Synology with Container Manager, with automatic deploys from Gitea, or on Windows for trying it out. To reach the server from outside your home, see [remote-access.md](remote-access.md). Back to the [README](../README.md).
+On a Synology with Container Manager, on any other Docker host, with automatic deploys from Gitea, or on Windows for trying it out. To reach the server from outside your home, see [remote-access.md](remote-access.md). Back to the [README](../README.md).
 
 ## Install on the Synology (Container Manager)
 
@@ -53,6 +53,35 @@ docker compose up -d --no-build
 
 The same two lines update it to the newest release. Without `--no-build` Docker builds from the
 source instead.
+
+## Any other Docker host
+
+Lichtspiel is an ordinary Docker image, so it runs on any machine with Docker and Docker Compose:
+a Linux server, Unraid, TrueNAS, a QNAP, a Raspberry Pi 4/5 (64-bit) and so on. Only the defaults in
+`docker-compose.yml` are made for a Synology (`/volume1/…`, user `1026:100`, group `101`); change
+them in a `.env` file next to it instead of editing the file:
+
+```
+LICHTSPIEL_IMAGE=ghcr.io/thebirdsarespies/lichtspiel:latest   # leave out to build from the source
+LICHTSPIEL_CONFIG=/srv/lichtspiel        # database, settings, plugins; the user below must own it
+LICHTSPIEL_MEDIA=/srv/videos             # your videos, mounted read-only as /media
+LICHTSPIEL_USER=1000:1000                # uid:gid the server runs as (`id` shows yours)
+LICHTSPIEL_VIDEO_GROUP=1000              # a group that may read the videos (`ls -n` on the folder)
+LICHTSPIEL_GPU_GROUP=105                 # the group of /dev/dri/renderD128 (`ls -n /dev/dri`)
+LICHTSPIEL_PORT=8484
+```
+
+Then, in that folder:
+
+```
+mkdir -p /srv/lichtspiel && sudo chown 1000:1000 /srv/lichtspiel
+docker compose pull && docker compose up -d --no-build   # or `docker compose up -d --build`
+```
+
+and open `http://<host>:8484`. Without an Intel/AMD graphics chip (no `/dev/dri`, e.g. a Raspberry
+Pi) delete the `devices:` lines, otherwise the container does not start; videos are then converted
+on the processor. Steps 5–8 of the Synology install (owner account, libraries, scanning, hardware
+acceleration) are the same everywhere.
 
 ### Automatic build and deploy (Gitea)
 
