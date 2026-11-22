@@ -1,6 +1,6 @@
 # Checks on GitHub: the server's tests, the web app's lint and type check, the plugins' tests and the
-# app's analyze and tests. Nothing is deployed from here: the NAS deploys from Forgejo
-# (.gitea/workflows/deploy.yml). Forgejo does not run this file: it reads .gitea/workflows, which exists.
+# app's analyze and tests. Nothing is deployed from here: the NAS deploys from Gitea
+# (.gitea/workflows/deploy.yml). Gitea does not run this file: it reads .gitea/workflows, which exists.
 name: CI
 
 on:
