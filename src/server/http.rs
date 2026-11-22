@@ -68,6 +68,46 @@ pub fn web_script(body: &str, params: &[(String, String)]) -> Resp {
 }
 
 
+/// A file of the Vue web app (/vue/…, see VUE_FILES). Its page for the address itself and index.html: checked with
+/// the server each time, as it names the current scripts. Those (assets/, with a fingerprint in the name)
+/// are kept for good. Without a build, the page says how to make one.
+pub fn vue_file(rest: &[&str]) -> Resp {
+    let path = rest.join("/");
+    let page = path.is_empty() || path == "index.html";
+    let Some((_, body)) = VUE_FILES.iter().find(|f| f.0 == if page { "index.html" } else { path.as_str() }) else {
+        if !page { return bytes(404, "text/plain; charset=utf-8", b"Not found".to_vec()); }
+        let note = "<!doctype html><meta charset=utf-8><title>Lichtspiel</title><body style=\"font-family:sans-serif;padding:2em\">\
+            <h1>The Vue web app is not built</h1><p>Run <code>npm ci</code> and <code>npm run build</code> in <code>web-vue/</code>, then build the server again. \
+            The usual web app is at <a href=\"/\">/</a>.</p>";
+        return bytes(200, "text/html; charset=utf-8", note.as_bytes().to_vec());
+    };
+    let ext = path.rsplit('.').next().unwrap_or("");
+    let ctype = if page { "text/html; charset=utf-8" } else {
+        match ext {
+            "js" | "mjs" => "text/javascript; charset=utf-8",
+            "css" => "text/css; charset=utf-8",
+            "svg" => "image/svg+xml",
+            "png" => "image/png",
+            "ico" => "image/x-icon",
+            "woff2" => "font/woff2",
+            "json" | "map" => "application/json",
+            "webmanifest" => "application/manifest+json",
+            _ => "application/octet-stream",
+        }
+    };
+    let mut r = bytes(200, ctype, body.to_vec());
+    if page {
+        // Like the usual web app's (web_csp), without inline scripts, Cast or YouTube: the build has none.
+        r.add_header(header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src * data: blob:; \
+            media-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"));
+        r.add_header(header("Cache-Control", "no-cache"));
+    } else {
+        r.add_header(header("Cache-Control", if path.starts_with("assets/") { "public, max-age=31536000, immutable" } else { "no-cache" }));
+    }
+    r
+}
+
+
 /// Standard base64 (with padding).
 pub fn b64(data: &[u8]) -> String {
     const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

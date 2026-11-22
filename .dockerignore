@@ -6,3 +6,6 @@ data
 clients
 .evidence
 **/__pycache__
+node_modules
+web-vue/node_modules
+web-vue/dist

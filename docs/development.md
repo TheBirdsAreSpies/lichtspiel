@@ -9,6 +9,7 @@ For developers: where things are, how to build and test, and the conventions. Wh
 | `src/` | The Rust server (one binary, `lichtspiel-server`), including the built-in Trakt sync (`src/connect/trakt.rs`) |
 | `vendor/tiny_http/` | The HTTP library, copied in and patched (header limits and a 30 s header deadline; look for `lichtspiel:` comments) |
 | `web/` | The web app, plain JS with no build step, compiled into the binary |
+| `web-vue/` | The Vue web app at `/vue/` (Vue 3, TypeScript, Vite); its build (`web-vue/dist`) is compiled into the binary |
 | `clients/lichtspiel/` | The Flutter app (Windows, Android, macOS, iOS/iPadOS) |
 | `plugins/` | Bundled Python plugins (`nfo-reader`, `webhook-notify`, `subtitles`, `wishlist`, `library-doctor`, `cleanup`, `smart-collections`, `letterboxd-import`, `anime-details`, `smart-home`, `new-digest`, `push-notify`, `scrobble-more`, `wrapped`) |
 | `Dockerfile`, `docker-compose.yml`, `.gitea/workflows/deploy.yml` | The image, the Synology setup, and the automatic deploy |
@@ -25,8 +26,25 @@ For developers: where things are, how to build and test, and the conventions. Wh
 | Client lint | `flutter analyze` in `clients/lichtspiel` |
 | One plugin's tests | `python3 -I -m unittest discover -s plugins/<name>` |
 | Web app lint and type check | `npm install` once, then `npm run check` (ESLint, and TypeScript checking the plain JS with `web/tsconfig.json` and `web/globals.d.ts`; nothing is built, the files are served as they are; there is no web test suite) |
+| Vue web app: build | `npm ci` once, then `npm run build` in `web-vue` (vue-tsc, then Vite into `web-vue/dist`); `npm run check` only type checks |
+| Vue web app: develop | `npm run dev` in `web-vue`: Vite with live reload, passing the API on to a running server (`LICHTSPIEL_URL`, default `http://localhost:8484`) |
 
 Some server tests need ffmpeg on the PATH and skip themselves without it.
+
+### The Vue web app
+
+`web-vue/` is a second web app next to `web/`, served at `/vue/` (hash addresses: `/vue/#/item/12`).
+It talks to the same JSON API and keeps the sign-in under the same keys as `web/`, so both share it.
+So far it has signing in (password, two-step code, home profiles, first setup), home, libraries,
+a title's page, search and the player; the rest is still only in `web/` (see [todo.md](todo.md)).
+
+- `build.rs` puts every file of `web-vue/dist` into the program (`VUE_FILES`, served by `vue_file` in
+  `src/server/http.rs`). Build the Vue app first, then the server. Without a build `/vue/` says how
+  to make one, so `cargo build` needs no Node. The Docker build has a Node stage that builds it.
+- Text works as in `web/`: the English string is the key (`t('Sign in')`, `web-vue/src/i18n.ts`), and
+  the German text goes into the **same** `web/lang/de.js`; Vite reads it at build time
+  (`vite.config.ts`). So a change there needs a new build of both.
+- Pictures, video and subtitles carry a ticket (`picture()`, `ticket()` in `web-vue/src/api.ts`), as in `web/`.
 
 ## Conventions
 

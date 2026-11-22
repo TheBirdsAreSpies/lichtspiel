@@ -1,6 +1,16 @@
 # Lichtspiel for Synology (Container Manager) or any Docker host.
 # Builds for the machine it runs on (Intel/AMD x86_64 or ARM64 Synology models).
 
+# The Vue web app (web-vue/, served at /vue/): built here, its dist/ goes into the program below.
+# It reads the language packs of web/lang at build time.
+FROM node:22-slim AS web
+WORKDIR /src/web-vue
+COPY web-vue/package.json web-vue/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/lang ../web/lang
+COPY web-vue ./
+RUN npm run build
+
 FROM rust:1-slim-bookworm AS build
 # What the tests need (ffmpeg, python3). Installed first, before any file is copied, so this layer
 # stays cached: after a code change only the program itself is compiled again, not downloaded again.
@@ -18,11 +28,12 @@ RUN mkdir src && echo 'fn main() {}' > src/main.rs \
  && rm -rf src
 COPY src ./src
 COPY web ./web
+COPY --from=web /src/web-vue/dist ./web-vue/dist
 # The commit the image is built from (shown in the web app; the Gitea workflow passes it).
 ARG GIT_SHA=
 # The status window is left out: a NAS has no screen. (touch: the copied files are older than the
-# empty program built above, and cargo would take it for up to date.)
-RUN touch src/main.rs && cargo build --release --locked --no-default-features
+# empty program built above, and cargo would take it for up to date; the same for the Vue build.)
+RUN touch src/main.rs && find web-vue/dist -exec touch {} + && cargo build --release --locked --no-default-features
 
 # `docker build --target test .` runs the tests (the automatic build on Gitea does this first).
 FROM build AS test

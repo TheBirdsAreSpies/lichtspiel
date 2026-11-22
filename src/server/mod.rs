@@ -78,6 +78,8 @@ pub const WEB_I18N_JS: &str = include_str!("../../web/i18n.js");
 /// To add a language: put its file in web/lang, list it here and add a
 /// <script> line for it in index.html.
 pub const WEB_LANGS: &[(&str, &str)] = &[("de.js", include_str!("../../web/lang/de.js"))];
+// The Vue web app's built files (web-vue/dist), served at /vue/: VUE_FILES, made by build.rs.
+include!(concat!(env!("OUT_DIR"), "/vue_files.rs"));
 
 pub type Resp = Response<Box<dyn Read + Send>>;
 

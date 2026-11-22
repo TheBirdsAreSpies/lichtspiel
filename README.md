@@ -52,6 +52,10 @@ phone, tablet, smart-TV browser). There you browse Movies and TV Shows, play vid
 playlists and smart playlists, invite people, switch plugins on and off and change settings.
 Nothing needs installing on the devices you watch on.
 
+A second, newer web app built with **Vue** is at `http://<server>:8484/vue/` (in the works: so
+far signing in, home, libraries, a title's page, search and the player; everything else is still in
+the web app above). Both share the sign-in.
+
 There is also an **app** for Windows, Android, macOS, iPhone and iPad (Flutter, English
 and German): see [clients/lichtspiel/README.md](clients/lichtspiel/README.md).
 
@@ -99,6 +103,7 @@ browser), and the status window is in `shots/now.png`.
 |---|---|
 | `src/` | the server (Rust) |
 | `web/` | the web app (one page, plain HTML + JavaScript, built into the server) |
+| `web-vue/` | the Vue web app at `/vue/` (Vue 3 + TypeScript, built with Vite; the build goes into the server) |
 | `clients/lichtspiel/` | the app for Windows, Android, macOS and iOS (Flutter) |
 | `plugins/` | the bundled plugins (each copied into the data folder once; one deleted there stays deleted) |
 | `vendor/tiny_http/` | the HTTP library, copied in and patched |

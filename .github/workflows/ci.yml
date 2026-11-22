@@ -1,4 +1,4 @@
-# Checks on GitHub: the server's tests, the web app's lint and type check, the plugins' tests and the
+# Checks on GitHub: the server's tests, the web app's lint and type check, the Vue web app's build, the plugins' tests and the
 # app's analyze and tests. Nothing is deployed from here: the NAS deploys from Gitea
 # (.gitea/workflows/deploy.yml). Gitea does not run this file: it reads .gitea/workflows, which exists.
 name: CI
@@ -40,6 +40,23 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+
+  web-vue:
+    name: Vue web app type check and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-vue
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-vue/package-lock.json
+      - run: npm ci
+      # vue-tsc, then Vite (which also reads the language packs of web/lang).
+      - run: npm run build
 
   plugins:
     name: Plugin tests

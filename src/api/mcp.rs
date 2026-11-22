@@ -431,7 +431,7 @@ fn call_tool(app: &Arc<App>, ctx: &Ctx, name: &str, args: &Value) -> Result<Valu
 fn blocked_path(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
     p == "/mcp" || p.starts_with("/mcp/") || p.starts_with("/video/") || p.starts_with("/library/parts/") || p.starts_with("/web/")
-        || p == "/" || p.contains("/file") || p.ends_with("/thumb") || p.ends_with("/art") || p.ends_with("/theme") || p.contains("/download")
+        || p == "/vue" || p.starts_with("/vue/") || p == "/" || p.contains("/file") || p.ends_with("/thumb") || p.ends_with("/art") || p.ends_with("/theme") || p.contains("/download")
         || p.ends_with(".m3u8") || p.ends_with(".mp4")
 }
 

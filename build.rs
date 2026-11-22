@@ -32,6 +32,7 @@ fn main() {
     println!("cargo:rustc-env=LICHTSPIEL_BUILD={build}");
     let built = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     println!("cargo:rustc-env=LICHTSPIEL_BUILT_AT={built}");
+    vue_files();
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
@@ -58,6 +59,37 @@ fn main() {
     match std::fs::rename(&exe, &dest) {
         Ok(()) => println!("cargo:warning=lichtspiel-server.exe is running; it was moved to {} so the new build can be written (restart the server to use it)", dest.display()),
         Err(e) => println!("cargo:warning=lichtspiel-server.exe is running and could not be moved aside ({e}); stop the server and build again"),
+    }
+}
+
+/// The Vue web app (web-vue/, served at /vue/): every file `npm run build` put in web-vue/dist goes into
+/// the program, as VUE_FILES in $OUT_DIR/vue_files.rs ([(path, bytes)], paths with "/"). Without a build the
+/// list is empty and /vue/ says how to make one, so `cargo build` needs no Node. The folder is made when it
+/// is missing, so cargo has something to watch and notices the first build.
+fn vue_files() {
+    let root = Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("web-vue").join("dist");
+    let _ = std::fs::create_dir_all(&root);
+    println!("cargo:rerun-if-changed=web-vue/dist");
+    let mut files = Vec::new();
+    collect(&root, &root, &mut files);
+    files.sort();
+    let mut code = String::from("pub static VUE_FILES: &[(&str, &[u8])] = &[\n");
+    for (rel, abs) in files {
+        code.push_str(&format!("    ({rel:?}, include_bytes!({:?})),\n", abs.display().to_string()));
+    }
+    code.push_str("];\n");
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("vue_files.rs");
+    std::fs::write(out, code).unwrap();
+}
+
+fn collect(root: &Path, dir: &Path, files: &mut Vec<(String, PathBuf)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.is_dir() { collect(root, &p, files); continue; }
+        let rel = p.strip_prefix(root).unwrap().components().map(|c| c.as_os_str().to_string_lossy().to_string()).collect::<Vec<_>>().join("/");
+        // (A .gitkeep or the like is not part of the app.)
+        if !rel.starts_with('.') { files.push((rel, p)); }
     }
 }
 

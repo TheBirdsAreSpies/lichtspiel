@@ -19,6 +19,8 @@ pub(super) fn routes(app: &Arc<App>, ctx: &Ctx, m: &str, segs: &[&str]) -> Optio
                 None => fail(404, "Not found"),
             };
         }
+        // The Vue web app (web-vue/), next to the usual one.
+        ("GET", ["vue", rest @ ..]) => return crate::server::vue_file(rest),
         ("GET", []) | ("GET", ["web", ..]) | ("GET", ["index.html"]) => {
             // The server's own name goes in right away, so a reload does not show
             // "Lichtspiel" first and swap it for the name a moment later.

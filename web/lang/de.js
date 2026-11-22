@@ -1915,6 +1915,11 @@ I18N.add('de', 'Deutsch', {
     'Videos': 'Videos',
     'Other': 'Sonstiges',
     'Menu': 'Menü',
+    // ---------- the Vue web app (web-vue/, at /vue/)
+    'Classic web app': 'Klassische Web-App',
+    'Position': 'Position',
+    'This video can’t be played here.': 'Dieses Video kann hier nicht abgespielt werden.',
+    '▶ Resume': '▶ Fortsetzen',
     'Sign out on this device?': 'Auf diesem Gerät abmelden?',
 
     // ---------- e-mail, forgot password
