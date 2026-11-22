@@ -135,6 +135,51 @@ class Lists(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unknown source"):
                 main.films_of(bad, {}, {}, [0])
 
+    def test_tv_shows_are_found_through_their_episodes_and_kept_apart_from_movies(self):
+        def ep(id, show, section=3, **kw):
+            return {"id": id, "type": "episode", "title": "Pilot", "section_id": section, "ids": {"tmdb": 9000 + id}, "show": show, **kw}
+        bb = {"id": 20, "title": "Breaking Bad", "year": 2008, "ids": {"tmdb": 1396, "imdb": "tt0903747"}}
+        dark = {"id": 21, "title": "Dark", "year": 2017, "ids": {}}
+        same_number = {"id": 22, "title": "Some Show", "year": 2001, "ids": {"tmdb": 238}}
+        lib = dict(LIBRARY, items=LIBRARY["items"] + [ep(30, bb), ep(31, bb), ep(32, dark), ep(33, same_number), ep(34, bb, version_of=30),
+                                                     ep(35, {"id": 23, "title": "Elsewhere", "year": 2000, "ids": {"tmdb": 5}}, section=1)])
+        index = main.library_index(lib, {})
+        shows = [{"kind": "show", "tmdb": 1396}, {"imdb": "tt0903747"}, {"kind": "show", "title": "Dark", "year": 2017},
+                 {"kind": "show", "tmdb": 238}, {"kind": "show", "tmdb": 5}, {"title": "Dark", "year": 2017}]
+        # A show once (not each episode); TMDB's movie 238 is not its show 238; an episode in a movie library is not a show;
+        # a title with no kind is a movie.
+        self.assertEqual([main.titles_of(f, index) for f in shows], [[20], [20], [21], [22], [], []])
+        self.assertEqual(main.titles_of({"tmdb": 238}, index), [1])
+        # Only the libraries named.
+        self.assertEqual(main.match(shows, main.library_index(lib, {"libraries": ["Filme"]})), [])
+        self.assertEqual(main.match(shows, main.library_index(lib, {"libraries": ["serien"]})), [20, 21, 22])
+        self.assertEqual(main.described({"kind": "show", "tmdb": 1396, "title": "Breaking Bad"})["link"], "https://www.themoviedb.org/tv/1396")
+
+    def test_tmdb_charts_for_tv_and_a_tmdb_list_with_movies_and_shows(self):
+        asked = []
+
+        def fake_get(url, accept="text/html", headers=None):
+            asked.append(url)
+            if "/tv/popular" in url:
+                return '{"results": [{"id": 1396, "name": "Breaking Bad", "first_air_date": "2008-01-20"}]}' if "page=1&" in url else '{"results": []}'
+            if "/list/42" in url:
+                page = int(main.re.search(r"page=(\d+)", url).group(1))
+                return ('{"total_pages": 2, "items": [{"media_type": "movie", "id": 238, "title": "The Godfather", "release_date": "1972-03-14"}, '
+                        '{"media_type": "person", "id": 7}]}' if page == 1 else
+                        '{"total_pages": 2, "items": [{"media_type": "tv", "id": 1396, "name": "Breaking Bad", "first_air_date": ""}]}')
+            return None
+        with mock.patch.object(main, "get", fake_get):
+            self.assertEqual(main.films_of("tmdb-tv-popular", {"tmdb_api_key": "k"}, {}, [0]),
+                             [{"tmdb": 1396, "title": "Breaking Bad", "year": 2008, "kind": "show"}])
+            self.assertEqual(len(asked), 5)
+            self.assertEqual(main.films_of("https://www.themoviedb.org/list/42-my-favourites", {"tmdb_api_key": "k"}, {}, [0]),
+                             [{"tmdb": 238, "title": "The Godfather", "year": 1972}, {"tmdb": 1396, "title": "Breaking Bad", "year": None, "kind": "show"}])
+            self.assertEqual(len(asked), 7)
+        with self.assertRaisesRegex(ValueError, "TMDB key"):
+            main.films_of("https://www.themoviedb.org/list/42", {}, {}, [0])
+        with self.assertRaisesRegex(ValueError, "unknown source"):
+            main.films_of("https://www.themoviedb.org/movie/42", {"tmdb_api_key": "k"}, {}, [0])
+
 
 class Runs(unittest.TestCase):
     def setUp(self):
@@ -224,7 +269,7 @@ class Runs(unittest.TestCase):
                          "Update the collections first.")
         m = main.answer_call({"action": "missing", "admin": True, "body": {"lang": "de", "args": {"name": "Oscars"}}}, settings, {})["panel"]
         self.assertEqual(m["title"], "Oscars: fehlt dir")
-        self.assertEqual(m["text"], "1 Filme dieser Liste sind nicht in deinen Mediatheken.")
+        self.assertEqual(m["text"], "1 Titel dieser Liste sind nicht in deinen Mediatheken.")
         self.assertEqual(m["items"], [{"title": "tt9999999", "href": "https://www.imdb.com/title/tt9999999/"}])
         self.assertEqual(m["buttons"], [{"label": "Zurück", "action": "panel"}])
         # The page was closed in between: opening the panel hands them over.
@@ -244,7 +289,7 @@ class Runs(unittest.TestCase):
         lists["lists"] = [{"name": "Leer", "found": 0, "total": 3, "ids": [], "playlist": []}, {"name": "Down", "error": "x"}]
         main.write_json(main.STATE, lists)
         said = lambda name: main.answer_call({"action": "playlist", "admin": True, "body": {"lang": "de", "args": {"name": name}}}, settings, {})["error"]
-        self.assertEqual(said("Leer"), "Keiner der Filme dieser Liste ist in deinen Mediatheken.")
+        self.assertEqual(said("Leer"), "Keiner der Titel dieser Liste ist in deinen Mediatheken.")
         self.assertEqual(said("Down"), "Diese Liste konnte bei der letzten Aktualisierung nicht gelesen werden.")
         # A run that failed says why.
         with mock.patch.object(main, "fetch_library", mock.Mock(side_effect=LookupError())):

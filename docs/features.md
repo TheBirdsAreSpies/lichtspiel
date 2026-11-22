@@ -372,18 +372,21 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   without season or number, and titles for which no details were found online. Each entry links
   to its title and can be ignored; `skip_libraries` leaves libraries out by name (an anime
   library in Japanese …).
-  **Smart collections** fills collections in the movie libraries from lists, once a day and on
+  **Smart collections** fills collections in the movie and TV libraries from lists, once a day and on
   **Update now** (admins, under **Settings → Account**, with how many of each list you have; the
   update runs on in the background and shows which list it is on, and leaving the page loses nothing;
-  **Show missing** lists the films of a list you don't have, each linked to its Letterboxd, IMDb or TMDB page;
-  **Save as playlist** makes the films you have into a playlist "Smart collection: …" of the admin who clicks, in the list's order,
-  each film once, filled anew when saved again):
+  **Show missing** lists the titles of a list you don't have, each linked to its Letterboxd, IMDb or TMDB page;
+  **Save as playlist** makes the titles you have (a TV show with all its episodes) into a playlist "Smart collection: …" of the admin who clicks, in the list's order,
+  each title once, filled anew when saved again):
   `imdb-top-250` (IMDb's Top 250 through its copy on Letterboxd, as IMDb blocks programs),
-  `oscar-best-picture` (Wikidata), `tmdb-popular` and `tmdb-top-rated` (100 each, with a
-  `tmdb_api_key` in the plugin's settings) and any public Letterboxd list or watchlist by its
+  `oscar-best-picture` (Wikidata), `tmdb-popular` and `tmdb-top-rated` (100 movies each),
+  `tmdb-tv-popular` and `tmdb-tv-top-rated` (100 TV shows each) and any public TMDB list by its address,
+  movies and TV shows mixed (the TMDB ones with a `tmdb_api_key` in the plugin's settings), and any public Letterboxd list or watchlist by its
   address (or its boxd.it share link) — the lists are a table in the plugin's settings (a name and a source per line, the
   sources offered to pick), `libraries` by name
-  (empty = every movie library). Titles are found by TMDB or IMDb id, else by title and year; only
+  (empty = every movie and TV library). Titles are found by TMDB or IMDb id, else by title and year
+  (a TV show by the show's ids, not its episodes'; TMDB numbers movies and shows apart, so a movie
+  never stands in for a show with the same number); only
   titles you have go in. A collection the plugin filled keeps up with its list (titles that leave
   the list leave it), a title put in it by hand stays, and downloading details again does not
   remove it. A list taken out of the settings empties its collection. A list that cannot be read

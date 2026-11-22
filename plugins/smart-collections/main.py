@@ -1,13 +1,17 @@
 """Smart collections plugin (like Kometa's collections).
 
-Once a day and when an admin asks, fills collections in the movie libraries from lists:
+Once a day and when an admin asks, fills collections in the movie and TV libraries from lists:
 
 - "imdb-top-250": IMDb's Top 250 (IMDb blocks programs, so its copy on Letterboxd, kept up to date
   by Letterboxd: letterboxd.com/dave/list/imdb-top-250),
 - "oscar-best-picture": the winners of the Academy Award for Best Picture (Wikidata),
-- "tmdb-popular" / "tmdb-top-rated": TMDB's 100 most popular / best rated movies (needs a TMDB key
-  in the settings),
+- "tmdb-popular" / "tmdb-top-rated": TMDB's 100 most popular / best rated movies, and
+  "tmdb-tv-popular" / "tmdb-tv-top-rated" the same for TV shows (these need a TMDB key in the settings),
+- any public TMDB list by its address, movies and TV shows mixed (needs the TMDB key too),
 - any public Letterboxd list or watchlist, by its address (or its boxd.it short link).
+
+A TV show is found by the show's ids (each episode in the library names its show); TMDB numbers
+movies and TV shows apart, so each title of a list says which of the two it is ("kind").
 
 Only titles in the library go in. The server puts them in each collection and takes out titles the
 plugin put there before that are no longer on the list; collections given by hand stay. A list
@@ -56,6 +60,8 @@ PRESETS = {
     "oscar-best-picture": ("wikidata", "Q102427"),
     "tmdb-popular": ("tmdb", "/movie/popular"),
     "tmdb-top-rated": ("tmdb", "/movie/top_rated"),
+    "tmdb-tv-popular": ("tmdb", "/tv/popular"),
+    "tmdb-tv-top-rated": ("tmdb", "/tv/top_rated"),
 }
 
 WORDS = {
@@ -79,7 +85,7 @@ WORDS = {
     "The update stopped: {e}": "Die Aktualisierung ist abgebrochen: {e}",
     "Show missing": "Fehlende zeigen",
     "{name}: missing": "{name}: fehlt dir",
-    "{n} films of this list are not in your libraries.": "{n} Filme dieser Liste sind nicht in deinen Mediatheken.",
+    "{n} titles of this list are not in your libraries.": "{n} Titel dieser Liste sind nicht in deinen Mediatheken.",
     "Nothing is missing.": "Es fehlt nichts.",
     "The first {n} are shown.": "Die ersten {n} werden gezeigt.",
     "Back": "Zurück",
@@ -88,7 +94,7 @@ WORDS = {
     "From the smart collections": "Aus den smarten Sammlungen",
     "Smart collection: {name}": "Smarte Sammlung: {name}",
     "Update the collections first.": "Aktualisiere zuerst die Sammlungen.",
-    "None of this list's films are in your libraries.": "Keiner der Filme dieser Liste ist in deinen Mediatheken.",
+    "None of this list's titles are in your libraries.": "Keiner der Titel dieser Liste ist in deinen Mediatheken.",
     "This list could not be read at the last update.": "Diese Liste konnte bei der letzten Aktualisierung nicht gelesen werden.",
 }
 
@@ -147,7 +153,8 @@ def fetch_library(server):
 
 
 # ---------------------------------------------------------------- the lists
-# Each gives a list of films: {"tmdb", "imdb", "title", "year"} (any of them may be missing).
+# Each gives a list of titles: {"tmdb", "imdb", "title", "year"} (any of them may be missing), and
+# "kind": "show" for a TV show (no kind: a movie).
 
 def letterboxd_films(url, cache, budget):
     """The films of a Letterboxd list (all its pages), with ids from each film's page (cached)."""
@@ -237,19 +244,45 @@ def ask_wikidata(award):
     return out
 
 
+def tmdb_get(path, page, key):
+    """One page of TMDB's API, with the key as it was given: a read token (eyJ…) or an API key."""
+    if key.startswith("eyJ"):
+        text = get("https://api.themoviedb.org/3%s?page=%d" % (path, page), "application/json", {"Authorization": "Bearer " + key})
+    else:
+        text = get("https://api.themoviedb.org/3%s?page=%d&api_key=%s" % (path, page, urllib.parse.quote(key)), "application/json")
+    return json.loads(text or "{}")
+
+
+def tmdb_title(m, show):
+    """A movie or TV show of TMDB's answers (a show has a name and a first air date instead)."""
+    date = m.get("first_air_date" if show else "release_date") or ""
+    out = {"tmdb": m.get("id"), "title": m.get("name" if show else "title"), "year": int(date[:4]) if date[:4].isdigit() else None}
+    if show:
+        out["kind"] = "show"
+    return out
+
+
 def tmdb_list(path, key):
+    """One of TMDB's charts (5 pages, 100 titles): movies, or TV shows for a /tv/ address."""
+    show = path.startswith("/tv/")
+    return [tmdb_title(m, show) for page in range(1, 6) for m in tmdb_get(path, page, key).get("results") or []]
+
+
+def tmdb_user_list(list_id, key):
+    """A public TMDB list, movies and TV shows mixed, in its order (people are left out)."""
     out = []
-    for page in range(1, 6):
-        if key.startswith("eyJ"):
-            text = get("https://api.themoviedb.org/3%s?page=%d" % (path, page), "application/json", {"Authorization": "Bearer " + key})
-        else:
-            text = get("https://api.themoviedb.org/3%s?page=%d&api_key=%s" % (path, page, urllib.parse.quote(key)), "application/json")
-        for m in json.loads(text or "{}").get("results") or []:
-            out.append({"tmdb": m.get("id"), "title": m.get("title"), "year": int(m["release_date"][:4]) if (m.get("release_date") or "")[:4].isdigit() else None})
+    for page in range(1, LETTERBOXD_PAGES + 1):
+        data = tmdb_get("/list/%s" % list_id, page, key)
+        for m in data.get("items") or data.get("results") or []:
+            if m.get("media_type") in ("movie", "tv"):
+                out.append(tmdb_title(m, m["media_type"] == "tv"))
+        if page >= (data.get("total_pages") or 1):
+            break
     return out
 
 
 LETTERBOXD_LIST = r"^https://(www\.)?letterboxd\.com/[^/]+/(list/[^/]+|watchlist)/?"
+TMDB_LIST = r"^https://(www\.)?themoviedb\.org/list/(\d+)"
 
 
 def unshorten(url):
@@ -268,42 +301,58 @@ def films_of(source, settings, cache, budget):
         source = unshorten(source) or source
     if kind is None and re.match(LETTERBOXD_LIST, source):
         kind, arg = "letterboxd", source
+    tmdb = re.match(TMDB_LIST, source) if kind is None else None
+    if tmdb:
+        kind, arg = "tmdb-list", tmdb.group(2)
     if kind == "letterboxd":
         return letterboxd_films(arg, cache, budget)
     if kind == "wikidata":
         return wikidata_award(arg, cache)
-    if kind == "tmdb":
+    if kind in ("tmdb", "tmdb-list"):
         key = str(settings.get("tmdb_api_key") or "").strip()
         if not key:
             raise ValueError("needs a TMDB key in the settings")
-        return tmdb_list(arg, key)
+        return tmdb_list(arg, key) if kind == "tmdb" else tmdb_user_list(arg, key)
     raise ValueError("unknown source")
 
 
 # ---------------------------------------------------------------- matching
 
 def library_index(listing, settings):
-    """The movies of the chosen libraries, findable by TMDB id, IMDb id and title with year."""
+    """The movies and TV shows of the chosen libraries, findable by TMDB id, IMDb id and title with
+    year. TMDB ids and titles are kept per kind ("movie" or "show"): TMDB numbers the two apart."""
     wanted = {norm(x) for x in (settings.get("libraries") or []) if str(x).strip()}
     sections = {s.get("id"): s for s in listing.get("sections") or []}
-    ok = {sid for sid, s in sections.items() if s.get("kind") == "movie" and (not wanted or norm(s.get("name")) in wanted)}
+    ok = {sid: s.get("kind") for sid, s in sections.items() if s.get("kind") in ("movie", "show") and (not wanted or norm(s.get("name")) in wanted)}
     by_tmdb, by_imdb, by_name = {}, {}, {}
+    seen = set()
     for it in listing.get("items") or []:
-        if it.get("type") != "movie" or it.get("version_of") or it.get("section_id") not in ok:
+        if it.get("version_of") or it.get("section_id") not in ok:
             continue
-        ids = it.get("ids") or {}
+        # The listing has the episodes, each naming its show: a show goes in once, as itself.
+        if it.get("type") == "movie" and ok[it["section_id"]] == "movie":
+            kind, title = "movie", it
+        elif it.get("type") == "episode" and ok[it["section_id"]] == "show" and isinstance(it.get("show"), dict) and it["show"].get("id"):
+            kind, title = "show", it["show"]
+        else:
+            continue
+        if title["id"] in seen:
+            continue
+        seen.add(title["id"])
+        ids = title.get("ids") or {}
         if str(ids.get("tmdb") or "").isdigit():
-            by_tmdb.setdefault(int(ids["tmdb"]), []).append(it["id"])
+            by_tmdb.setdefault((kind, int(ids["tmdb"])), []).append(title["id"])
         if ids.get("imdb"):
-            by_imdb.setdefault(str(ids["imdb"]), []).append(it["id"])
-        by_name.setdefault((norm(it.get("title")), it.get("year")), []).append(it["id"])
+            by_imdb.setdefault(str(ids["imdb"]), []).append(title["id"])
+        by_name.setdefault((kind, norm(title.get("title")), title.get("year")), []).append(title["id"])
     return by_tmdb, by_imdb, by_name
 
 
 def titles_of(film, index):
-    """The library ids of one film (it may be there as several titles: in two libraries …)."""
+    """The library ids of one title of a list (it may be there as several titles: in two libraries …)."""
     by_tmdb, by_imdb, by_name = index
-    return by_tmdb.get(film.get("tmdb")) or by_imdb.get(film.get("imdb")) or by_name.get((norm(film.get("title")), film.get("year"))) or []
+    kind = film.get("kind") or "movie"
+    return by_tmdb.get((kind, film.get("tmdb"))) or by_imdb.get(film.get("imdb")) or by_name.get((kind, norm(film.get("title")), film.get("year"))) or []
 
 
 def match(films, index):
@@ -317,13 +366,13 @@ def match(films, index):
 
 
 def described(film):
-    """A film of a list you do not have, as the panel shows it: its title, year and a page about it."""
+    """A title of a list you do not have, as the panel shows it: its title, year and a page about it."""
     if film.get("slug"):
         link = "https://letterboxd.com/film/%s/" % urllib.parse.quote(film["slug"])
     elif film.get("imdb"):
         link = "https://www.imdb.com/title/%s/" % urllib.parse.quote(str(film["imdb"]))
     elif film.get("tmdb"):
-        link = "https://www.themoviedb.org/movie/%s" % film["tmdb"]
+        link = "https://www.themoviedb.org/%s/%s" % ("tv" if film.get("kind") == "show" else "movie", film["tmdb"])
     else:
         link = None
     return {"title": film.get("title") or film.get("imdb") or "?", "year": film.get("year"), "link": link}
@@ -508,7 +557,7 @@ def missing_panel(lang, name):
     r = next((r for r in read_json(STATE, {}).get("lists") or [] if r.get("name") == name), None)
     films = (r or {}).get("missing") or []
     left = (r or {}).get("total", 0) - (r or {}).get("found", 0)
-    text = tr(lang, "{n} films of this list are not in your libraries.", n=left) if left else tr(lang, "Nothing is missing.")
+    text = tr(lang, "{n} titles of this list are not in your libraries.", n=left) if left else tr(lang, "Nothing is missing.")
     if left > len(films):
         text += " " + tr(lang, "The first {n} are shown.", n=len(films))
     items = [{"title": "%s (%s)" % (f["title"], f["year"]) if f.get("year") else f.get("title") or "?", **({"href": f["link"]} if f.get("link") else {})}
@@ -542,7 +591,7 @@ def playlist(lang, settings, name, done):
     elif r.get("error"):
         error = tr(lang, "This list could not be read at the last update.")
     elif not (r.get("playlist") or r.get("ids")):
-        error = tr(lang, "None of this list's films are in your libraries.")
+        error = tr(lang, "None of this list's titles are in your libraries.")
     else:
         # A state from before the "playlist" field has only the ids.
         out = {"save_playlist": {"title": tr(lang, "Smart collection: {name}", name=name),
