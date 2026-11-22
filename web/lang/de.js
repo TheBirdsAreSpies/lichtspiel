@@ -1923,6 +1923,9 @@ I18N.add('de', 'Deutsch', {
     'Add': 'Hinzufügen',
     'Create': 'Anlegen',
     'Owner': 'Besitzer',
+    'Add a TMDB API key in the settings to load details about people': 'Trage in den Einstellungen einen TMDB-API-Schlüssel ein, um Details zu Personen zu laden',
+    'Details about people are switched off in the settings': 'Details zu Personen sind in den Einstellungen ausgeschaltet',
+    'No person of that name found at TMDB': 'Bei TMDB wurde niemand mit diesem Namen gefunden',
     'Your watchlist is empty. Use “Add to watchlist” on the page of a movie or show.': 'Deine Watchlist ist leer. Nutze „Zur Watchlist hinzufügen“ auf der Seite eines Films oder einer Serie.',
     'Sign out on this device?': 'Auf diesem Gerät abmelden?',
 

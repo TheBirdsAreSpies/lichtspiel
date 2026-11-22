@@ -15,7 +15,7 @@ export interface Item {
   duration?: number, viewOffset?: number, viewCount?: number, leafCount?: number, viewedLeafCount?: number,
   index?: number, parentIndex?: number, parentTitle?: string, grandparentTitle?: string, parentRatingKey?: string,
   grandparentRatingKey?: string, grandparentThumb?: string, genres?: string[], contentRating?: string, rating?: number,
-  studio?: string, editionTitle?: string, missing?: boolean, librarySectionID?: number, squareThumb?: string, favorite?: boolean, watchlist?: boolean, updatedAt?: number,
+  studio?: string, editionTitle?: string, missing?: boolean, librarySectionID?: number, squareThumb?: string, role?: string, favorite?: boolean, watchlist?: boolean, updatedAt?: number,
   Media?: Media[], extra?: { cast?: Person[], directors?: string[], writers?: string[], creators?: string[], original_title?: string, collections?: string[] },
 }
 export interface Playlist {

@@ -1,12 +1,15 @@
 <script setup lang="ts">
-// A library: every title as a grid of posters, loaded page by page while scrolling, with sorting, a
-// filter for what is not watched yet and a search inside the library. The choice is kept per library.
+// A library: every title as a grid of posters, loaded page by page while scrolling, with sorting, the
+// filters of the library (in the address: ?f.genre=Drama) and a search inside the library. Sorting and
+// filters are kept per library and come back on the next visit.
 // The tab "Collections" shows its collections (film series and the ones made by hand); one opens as the
 // library filtered to it (?collection=…).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { get, list, picture, session, type Group, type Item } from '../api';
+import { chipLabel, fromQuery } from '../filters';
 import { t } from '../i18n';
+import FilterButton from '../components/FilterButton.vue';
 import PosterCard from '../components/PosterCard.vue';
 
 const props = defineProps<{ id: string }>();
@@ -21,7 +24,7 @@ const collection = computed(() => (typeof route.query.collection === 'string' ? 
 const section = computed(() => session.sections.find(s => String(s.id) === props.id));
 const kept = (() => { try { return JSON.parse(localStorage.getItem('vue-lib:' + props.id) || '{}'); } catch { return {}; } })();
 const sort = ref<string>(kept.sort || 'title:asc');
-const unwatched = ref<boolean>(!!kept.unwatched);
+const active = computed(() => fromQuery(route.query));
 const q = ref('');
 const items = ref<Item[]>([]);
 const total = ref<number | null>(null);
@@ -32,7 +35,7 @@ let seq = 0;
 
 function url(start: number) {
   const p = new URLSearchParams({ sort: sort.value, start: String(start), size: String(PAGE) });
-  if (unwatched.value) p.set(section.value && section.value.type === 'show' ? 'unwatched_leaves' : 'unwatched', '1');
+  for (const [f, v] of Object.entries(active.value)) p.set(f, v);
   if (q.value.trim()) p.set('q', q.value.trim());
   if (collection.value) p.set('collection', collection.value);
   return `/library/sections/${props.id}/all?${p}`;
@@ -54,11 +57,35 @@ async function more() {
 
 function restart() {
   seq++; items.value = []; total.value = null; loading.value = false; error.value = '';
-  try { localStorage.setItem('vue-lib:' + props.id, JSON.stringify({ sort: sort.value, unwatched: unwatched.value })); } catch { /* none */ }
+  // (Not while the collections show: their address has no filters, and the kept ones stay.)
+  if (!tab.value) try { localStorage.setItem('vue-lib:' + props.id, JSON.stringify({ sort: sort.value, filters: active.value })); } catch { /* none */ }
   more();
 }
 let typing = 0;
-watch([sort, unwatched, collection], restart);
+watch([sort, () => JSON.stringify(active.value), collection], restart);
+
+/** Puts a filter on (or takes it off with ''); the collections tab gives way to the titles. */
+function setFilter(f: string, v: string) {
+  const q: Record<string, string> = {};
+  for (const [k, x] of Object.entries(route.query)) if (typeof x === 'string' && k !== 'tab' && k !== 'f.' + f) q[k] = x;
+  if (v) q['f.' + f] = v;
+  router.replace({ query: q });
+}
+/** The kept filters as an address query, for going back from the collections to the titles. */
+function keptQuery(): Record<string, string> {
+  let f: Record<string, string> = {};
+  try { f = JSON.parse(localStorage.getItem('vue-lib:' + props.id) || '{}').filters || {}; } catch { /* none */ }
+  return Object.fromEntries(Object.entries(f).map(([k, v]) => ['f.' + k, v]));
+}
+function clearFilters() {
+  const q: Record<string, string> = {};
+  for (const [k, x] of Object.entries(route.query)) if (typeof x === 'string' && !k.startsWith('f.')) q[k] = x;
+  router.replace({ query: q });
+}
+// Opened without a choice: the filters of the last visit come back (an older "unwatched" tick too).
+const saved: Record<string, string> = kept.filters || (kept.unwatched ? { [section.value && section.value.type === 'show' ? 'unwatched_leaves' : 'unwatched']: 'true' } : {});
+const restoring = !tab.value && !collection.value && !Object.keys(active.value).length && Object.keys(saved).length > 0;
+if (restoring) router.replace({ query: Object.fromEntries(Object.entries(saved).map(([k, v]) => ['f.' + k, v])) });
 watch(q, () => { clearTimeout(typing); typing = window.setTimeout(restart, 300); });
 
 const inView = () => { const el = sentinel.value; return !!el && el.getBoundingClientRect().top < innerHeight + 600; };
@@ -68,7 +95,8 @@ function watchEnd() {
   io = new IntersectionObserver(e => { if (e.some(x => x.isIntersecting)) more(); }, { rootMargin: '600px' });
   if (sentinel.value) io.observe(sentinel.value);
 }
-onMounted(() => { if (tab.value) loadGroups(); else { more(); watchEnd(); } });
+// (While the kept filters are being put into the address, the page waits for them.)
+onMounted(() => { if (tab.value) loadGroups(); else { if (!restoring) more(); watchEnd(); } });
 onBeforeUnmount(() => { if (io) io.disconnect(); });
 
 // ---- collections
@@ -107,11 +135,11 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
           <select v-model="sort" :aria-label="t('Sort')">
             <option v-for="[v, l] in SORTS" :key="v" :value="v">{{ t(l) }}</option>
           </select>
-          <label class="chk"><input v-model="unwatched" type="checkbox"> {{ t('Unwatched') }}</label>
+          <FilterButton :url="`/library/sections/${id}/filters`" :active="active" :remember-key="'vue-libFilter:' + id" @set="setFilter" />
         </div>
       </div>
       <div v-if="!collection" class="tabs flat">
-        <button :class="{ on: !tab }" @click="router.replace({ query: {} })">{{ t('Library') }}</button>
+        <button :class="{ on: !tab }" @click="router.replace({ query: keptQuery() })">{{ t('Library') }}</button>
         <button :class="{ on: tab }" @click="router.replace({ query: { tab: 'collections' } })">{{ t('Collections') }}</button>
       </div>
       <p v-if="error" class="err">{{ error }}</p>
@@ -131,6 +159,10 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
         <p v-else class="empty">{{ t('No collections yet. Film series are added when details are downloaded; add your own under Edit details → Collections.') }}</p>
       </template>
       <template v-else>
+      <div v-if="Object.keys(active).length" class="chips">
+        <button v-for="(v, f) in active" :key="f" class="chip" :title="t('Remove this filter')" @click="setFilter(String(f), '')">{{ chipLabel(String(f), v) }} <span aria-hidden="true">×</span></button>
+        <button v-if="Object.keys(active).length > 1" class="linkbtn" @click="clearFilters">{{ t('Clear filters') }}</button>
+      </div>
       <div class="grid">
         <PosterCard v-for="it in items" :key="it.id" :item="it" />
         <template v-if="loading && !items.length"><div v-for="n in 12" :key="n" class="card ph"><div class="poster skel"></div></div></template>

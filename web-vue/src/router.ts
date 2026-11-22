@@ -10,6 +10,7 @@ export const router = createRouter({
     { path: '/library/:id', name: 'library', component: () => import('./views/LibraryView.vue'), props: true },
     { path: '/item/:id', name: 'item', component: () => import('./views/ItemView.vue'), props: true },
     { path: '/search', name: 'search', component: () => import('./views/SearchView.vue') },
+    { path: '/person/:id', name: 'person', component: () => import('./views/PersonView.vue'), props: true },
     { path: '/watchlist', name: 'watchlist', component: () => import('./views/WatchlistView.vue') },
     { path: '/playlists', name: 'playlists', component: () => import('./views/PlaylistsView.vue') },
     { path: '/playlist/:id', name: 'playlist', component: () => import('./views/PlaylistView.vue'), props: true },

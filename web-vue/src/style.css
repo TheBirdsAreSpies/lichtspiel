@@ -227,6 +227,41 @@ button.danger:hover { background: rgba(255,90,90,.15); }
 .li-thumb { width: 54px; height: 54px; flex: none; border-radius: 6px; overflow: hidden; background: var(--panel2); }
 .li-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
+/* ---------- library filters */
+.fbtn-wrap { position: relative; }
+.fbtn.on { border-color: var(--accent); color: var(--accent); }
+.fpanel { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; display: flex; flex-wrap: wrap; width: min(600px, calc(100vw - 24px)); height: min(460px, calc(100vh - 160px));
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 12px 32px rgba(0,0,0,.5); overflow: hidden; }
+.fp-head { display: none; }
+.fp-left { flex: 0 0 220px; height: 100%; overflow: auto; padding: 6px; border-right: 1px solid var(--line); overscroll-behavior: contain; }
+.fp-left hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+.fp-right { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; padding: 10px; gap: 8px; }
+.fp-values { flex: 1; overflow: auto; overscroll-behavior: contain; }
+.fp-item, .fp-val { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+.fp-item:hover, .fp-val:hover, .fp-item.cur { background: var(--panel2); }
+.fp-item.on span, .fp-val.on span { color: var(--accent); }
+.fp-item span, .fp-val span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: -6px 0 18px; }
+.chip { border-radius: 999px; padding: 4px 12px; font-size: 13px; border-color: var(--accent); gap: 8px; }
+.chip span { color: var(--dim); }
+.linkbtn { background: none; border: 0; color: var(--dim); text-decoration: underline; padding: 4px; font-size: 13px; }
+
+/* ---------- a person */
+a.person:hover b { color: var(--accent); }
+.person-head { margin: 0 0 28px; }
+.person-head .poster .initials { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 54px; color: var(--dim); }
+.bio { white-space: pre-line; }
+.role { font-size: 12px; margin-top: 2px; }
+.photo { padding: 0; border: 0; background: none; flex: none; }
+.photo img { height: 200px; border-radius: 6px; display: block; }
+.photo-big { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto; border-radius: 8px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 5px 12px; font-size: 13px; background: none; }
+.seg button.on { background: var(--panel2); color: var(--accent); }
+.faded { opacity: .55; }
+.li-thumb.tall { width: 44px; height: 66px; }
+.note { margin-top: 24px; }
+
 /* ---------- phones */
 @media (max-width: 760px) {
   :root { --card: 110px; --top: 56px; }
@@ -245,6 +280,11 @@ button.danger:hover { background: rgba(255,90,90,.15); }
   .ep .ep-plot { display: none; }
   .row-arrows, .vol { display: none; }
   .grid { gap: 16px 10px; }
+  .fpanel { position: fixed; inset: var(--top) 0 0 0; width: auto; height: auto; border-radius: 0; flex-direction: column; flex-wrap: nowrap; }
+  .fp-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); flex: none; }
+  .fp-left { flex: 0 0 auto; height: auto; max-height: 38%; border-right: 0; border-bottom: 1px solid var(--line); }
+  .fp-right { height: auto; flex: 1; min-height: 0; }
+  .photo img { height: 140px; }
   .li { gap: 4px; padding: 6px 2px; }
   .li .grow { margin-left: 6px; font-size: 14px; }
   .li-thumb { width: 44px; height: 44px; }

@@ -161,12 +161,12 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
       <section v-if="cast.length" class="row">
         <div class="row-head"><h2>{{ t('Cast') }}</h2></div>
         <div class="strip">
-          <div v-for="(p, i) in cast" :key="i" class="person">
+          <RouterLink v-for="(p, i) in cast" :key="i" class="person" :to="{ path: '/person/' + encodeURIComponent(p.key || 'byname'), query: { name: p.name || '' } }">
             <img v-if="p.thumb || p.photo" :src="p.thumb ? picture(p.thumb) : p.photo" alt="" loading="lazy" referrerpolicy="no-referrer">
             <div v-else class="initials">{{ initials(p.name) }}</div>
             <b>{{ p.name }}</b>
             <div v-if="p.role" class="dim">{{ p.role }}</div>
-          </div>
+          </RouterLink>
         </div>
       </section>
       <PosterRow v-for="h in related" :key="h.hubIdentifier + h.title" :title="t(h.title)" :items="h.Metadata || []" />

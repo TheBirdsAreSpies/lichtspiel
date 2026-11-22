@@ -53,8 +53,8 @@ playlists and smart playlists, invite people, switch plugins on and off and chan
 Nothing needs installing on the devices you watch on.
 
 A second, newer web app built with **Vue** is at `http://<server>:8484/vue/` (in the works: so
-far signing in, home, libraries with their collections, a title's page, search, the player, the
-watchlist and playlists; everything else is still in the web app above). Both share the sign-in.
+far signing in, home, libraries with their filters and collections, a title's page, people, search,
+the player, the watchlist and playlists; everything else is still in the web app above). Both share the sign-in.
 
 There is also an **app** for Windows, Android, macOS, iPhone and iPad (Flutter, English
 and German): see [clients/lichtspiel/README.md](clients/lichtspiel/README.md).
