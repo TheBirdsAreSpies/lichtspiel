@@ -4,7 +4,7 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { picture, type Item } from '../api';
-import { cardLines, isPlayable, isWatched, resumeAt } from '../format';
+import { cardLines, isPlayable, resumeAt, showSeen } from '../format';
 import { t } from '../i18n';
 import Icon from './Icon.vue';
 
@@ -24,12 +24,12 @@ function play() {
 </script>
 
 <template>
-  <RouterLink :to="'/item/' + it.id" class="card" :class="{ wide, watched: isWatched(it), missing: it.missing }">
+  <RouterLink :to="'/item/' + it.id" class="card" :class="{ wide, watched: showSeen(it), missing: it.missing }">
     <div class="poster">
       <img v-if="src" :src="src" :srcset="srcset" sizes="(max-width:760px) 34vw, 180px" loading="lazy" alt="" @load="($event.target as HTMLElement).classList.add('in')">
       <div v-if="progress > 0" class="bar"><i :style="{ width: progress * 100 + '%' }"></i></div>
       <span v-if="unseen > 0" class="badge">{{ unseen }}</span>
-      <span v-if="isWatched(it)" class="seen" :title="t('Watched')"><Icon name="check" /></span>
+      <span v-if="showSeen(it)" class="seen" :title="t('Watched')"><Icon name="check" /></span>
       <button v-if="isPlayable(it) && !it.missing" class="play" :title="t('Play')" :aria-label="t('Play')" @click.prevent.stop="play"><Icon name="play" /></button>
     </div>
     <div class="t" :title="lines[0]">{{ lines[0] }}</div>

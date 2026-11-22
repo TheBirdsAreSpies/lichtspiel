@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// Settings: your own (account, playback, devices, Trakt, the watchlist feed), one tab each (/settings/<tab>).
+// Settings: your own (account, playback, devices, Trakt, the watchlist feed; the owner also webhooks), one tab
+// each (/settings/<tab>).
 // The server's settings are for the owner, on their own page (/server).
 import { computed } from 'vue';
 import { session } from '../api';
@@ -9,12 +10,14 @@ import DevicesPanel from '../components/settings/DevicesPanel.vue';
 import FeedPanel from '../components/settings/FeedPanel.vue';
 import PlaybackPanel from '../components/settings/PlaybackPanel.vue';
 import TraktPanel from '../components/settings/TraktPanel.vue';
+import WebhooksPanel from '../components/settings/WebhooksPanel.vue';
 import PluginPanel from '../components/PluginPanel.vue';
 import { panels } from '../plugins';
 
 const props = defineProps<{ tab?: string }>();
-const TABS: [string, string][] = [['account', 'Account'], ['playback', 'Playback'], ['devices', 'Devices'], ['trakt', 'Trakt'], ['feed', 'Watchlist feed']];
-const tab = computed(() => (TABS.some(([k]) => k === props.tab) ? props.tab : 'account'));
+const ALL: [string, string][] = [['account', 'Account'], ['playback', 'Playback'], ['devices', 'Devices'], ['trakt', 'Trakt'], ['feed', 'Watchlist feed'], ['webhooks', 'Webhooks']];
+const TABS = computed(() => ALL.filter(([k]) => k !== 'webhooks' || (session.me && session.me.admin)));
+const tab = computed(() => (TABS.value.some(([k]) => k === props.tab) ? props.tab : 'account'));
 </script>
 
 <template>
@@ -33,6 +36,7 @@ const tab = computed(() => (TABS.some(([k]) => k === props.tab) ? props.tab : 'a
     <PlaybackPanel v-else-if="tab === 'playback'" />
     <DevicesPanel v-else-if="tab === 'devices'" />
     <TraktPanel v-else-if="tab === 'trakt'" />
+    <WebhooksPanel v-else-if="tab === 'webhooks'" />
     <FeedPanel v-else />
   </div>
 </template>

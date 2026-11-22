@@ -14,6 +14,7 @@ export const router = createRouter({
     { path: '/together/:code', name: 'together', component: () => import('./views/TogetherView.vue'), props: true },
     { path: '/downloads', name: 'downloads', component: () => import('./views/DownloadsView.vue') },
     { path: '/server/:tab?', name: 'server', component: () => import('./views/ServerSettingsView.vue'), props: true, meta: { admin: true } },
+    { path: '/reports', name: 'reports', component: () => import('./views/ReportsView.vue'), meta: { admin: true } },
     { path: '/dashboard', name: 'dashboard', component: () => import('./views/DashboardView.vue'), meta: { admin: true } },
     { path: '/users', name: 'users', component: () => import('./views/UsersView.vue'), meta: { admin: true } },
     { path: '/plugins', name: 'plugins', component: () => import('./views/PluginsView.vue'), meta: { admin: true } },

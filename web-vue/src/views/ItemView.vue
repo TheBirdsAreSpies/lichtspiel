@@ -10,6 +10,7 @@ import AddToDialog from '../components/AddToDialog.vue';
 import EditDetails from '../components/EditDetails.vue';
 import DownloadDialog from '../components/DownloadDialog.vue';
 import TogetherDialog from '../components/TogetherDialog.vue';
+import ReportDialog from '../components/ReportDialog.vue';
 import Icon from '../components/Icon.vue';
 import PosterRow from '../components/PosterRow.vue';
 
@@ -26,6 +27,7 @@ const adding = ref(false);
 const editing = ref(false);
 const downloading = ref(false);
 const together = ref(false);
+const reporting = ref(false);
 
 async function load() {
   error.value = '';
@@ -168,6 +170,7 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
             <button v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" class="iconbtn round" :title="t('Add to …')" :aria-label="t('Add to …')" @click="adding = true"><Icon name="playlistAdd" /></button>
             <button v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" class="iconbtn round" :title="t('Watch together')" :aria-label="t('Watch together')" @click="together = true"><Icon name="people" /></button>
             <button v-if="session.me?.can_download && ['movie', 'show', 'season', 'episode'].includes(it.type)" class="iconbtn round" :title="t('Download…')" :aria-label="t('Download…')" @click="downloading = true"><Icon name="download" /></button>
+            <button v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" class="iconbtn round" :title="t('Report a problem')" :aria-label="t('Report a problem')" @click="reporting = true"><Icon name="flag" /></button>
             <button v-if="session.me?.admin && it.type !== 'clip'" class="iconbtn round" :title="t('Edit details')" :aria-label="t('Edit details')" @click="editing = true"><Icon name="edit" /></button>
           </div>
         </div>
@@ -208,6 +211,7 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
       <AddToDialog v-if="adding" :item="it" @close="adding = false" @changed="load" />
       <DownloadDialog v-if="downloading" :item="it" @close="downloading = false" />
       <TogetherDialog v-if="together" :item="it" @close="together = false" />
+      <ReportDialog v-if="reporting" :item="it" @close="reporting = false" />
       <EditDetails v-if="editing" :id="it.id" @close="editing = false" @saved="load" />
     </template>
   </div>

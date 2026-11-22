@@ -98,6 +98,7 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
         <RouterLink to="/dashboard" class="nav" active-class="on"><Icon name="dashboard" /><span>{{ t('Dashboard') }}</span></RouterLink>
         <RouterLink to="/server" class="nav" :class="{ on: route.name === 'server' }" active-class="on"><Icon name="dns" /><span>{{ t('Server settings') }}</span></RouterLink>
         <RouterLink to="/users" class="nav" active-class="on"><Icon name="people" /><span>{{ t('Users & invites') }}</span></RouterLink>
+        <RouterLink to="/reports" class="nav" active-class="on"><Icon name="flag" /><span>{{ t('Reported problems') }}</span></RouterLink>
         <RouterLink to="/plugins" class="nav" active-class="on"><Icon name="extension" /><span>{{ t('Plugins') }}</span></RouterLink>
       </template>
       <div class="nav-head"></div>

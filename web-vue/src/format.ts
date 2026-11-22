@@ -34,6 +34,11 @@ export const seasonTitle = (s?: string) => (/^(Season \d+|Specials)$/.test(s || 
 
 export const isPlayable = (it: Item) => ['movie', 'episode', 'clip'].includes(it.type);
 
+/** Whether a poster shows the watched mark: watched, and of a kind chosen under Settings → Playback. */
+export const showSeen = (it: Item) => {
+  const mark = pref('watchedMark', 'all');
+  return mark !== 'none' && (mark === 'all' || (mark === 'movies') === (it.type === 'movie')) && isWatched(it);
+};
 export const isWatched = (it: Item) => (it.leafCount ? (it.viewedLeafCount || 0) >= it.leafCount : (it.viewCount || 0) > 0);
 
 const L3: Record<string, string> = { ger: 'de', deu: 'de', eng: 'en', fre: 'fr', fra: 'fr', spa: 'es', ita: 'it', jpn: 'ja', por: 'pt', rus: 'ru',
