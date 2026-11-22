@@ -5,6 +5,46 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
 - **Movies and TV shows kept apart** — each library is either Movies, TV Shows or Other
   videos. TV shows are grouped show → season → episode automatically from file names like
   `Show Name/Season 1/Show Name - S01E02.mkv`, `1x02` or `Episode 2`.
+- **Music** — a library can also be Music: artists → albums → songs. Albums know whether they
+  are live albums, singles, EPs or compilations, and albums and songs can be filtered by that,
+  by artist and by album. New albums get a row on the home page, the search finds songs and
+  albums by their artist, and an artist or album plays or shuffles as a whole. **Lyrics** follow
+  the song in the player (the **Y** key), from an `.lrc` file next to it or the song's tags.
+  Playlists take songs, and smart playlists have rules for artist, album and track number.
+- **Finding files** — new, changed and removed files are noticed by themselves (checked every
+  60 seconds, a file only once it has been copied completely), or scanned on a timer (each
+  library can have its own interval), or with **Scan library files**, also for one folder only.
+  The top bar shows how far a scan is and names the videos found so far. Several files of the
+  same movie or episode become **versions** of one title (choose one on its page); titles can
+  also be put together by hand (**Merge into one…** for picked posters) and split again. Names
+  like "Affe im Menschen, Der" are read as "Der Affe im Menschen", and a `.lichtspielignore` file
+  leaves files out. Details: [libraries.md](libraries.md), [metadata.md](metadata.md#naming-files-the-plex-way).
+- **Details from the internet** — plot, cast, pictures, ratings (IMDb, Rotten Tomatoes,
+  Metacritic, TMDB) and trailers, from TMDB with a key, else from Wikidata / Wikipedia and
+  TVmaze; plots from IMDb with an OMDb key; the language per server or per library; what is
+  downloaded (cast, actor photos, person details, pictures, episodes, ratings) under **Settings →
+  Metadata agents**. **Fix match…** searches by title and year (also with other spellings of
+  umlauts and accents) or by IMDb / TMDB id, **Unmatch** takes a match away, and `{imdb-…}`,
+  `{tmdb-…}`, `{tvdb-…}` in a name match exactly. Details: [metadata.md](metadata.md).
+- **Edit details** (owner; the pencil on a poster, or for several picked titles at once) — tabs
+  for title, sort title, original title, dates, summary, credits and countries; tags (genres,
+  labels, collections); pictures (poster, background, logo, square poster: upload or an
+  address); **Markers** (intro and credits by hand); and advanced settings per title (its details
+  language, credits detection). Fields changed by hand are locked against the next download.
+- **Title pages** — a banner picture, the scores with the sites' marks, your rating in half
+  stars, the cast (each actor's page has the biography, birth, more photos, which open large, and
+  the filmography as a list or grid, marking what is in your libraries), every audio track with
+  language, codec and channels, readable file info, a **chapters** row with pictures, extras and
+  trailers, links to IMDb, TMDB, Letterboxd, Wikipedia …, the edition (`{edition-…}`, also under
+  the poster) and for a movie the other films of its **series**; at the end of a film the next
+  unwatched one of the series is offered. A film series becomes a collection once enough of it is
+  there (**Settings → Library settings**). A show's page has its seasons as tabs with the episodes
+  as cards; an episode whose file is gone is marked.
+- **Skip intro, Skip recap, Skip credits, What happened so far** — intros are found by
+  comparing the sound of a season's episodes, recaps by comparing an episode's start with the
+  episodes before it, end credits from the chapters or by looking at the picture; a video counts
+  as watched at the credits. Details, with **theme music** on a title's page, the **subtitle
+  timing** and **deep analysis**: [watching.md](watching.md).
 - **Plays every video container** — mkv, avi, mp4, ts, m2ts, wmv, flv, vob, webm, mov and
   about 40 more. Files a browser can play are sent as they are (with seeking); everything else
   is converted on the fly (H.264/AAC) by ffmpeg, as a progressive MP4 or as HLS. Quality
@@ -26,7 +66,18 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   **Skip credits** / **Next episode**; at the end the next episode (or what is queued) starts
   after a 10-second countdown. Keyboard: Space/K, ←/→ (Shift: 1 min), ↑/↓, M, F, P, C, N, 0–9,
   < > — **?** lists them all. Media keys and the lock screen work too. `#/play/<id>?t=90` is a
-  link that starts playing.
+  link that starts playing. After three episodes in a row without any input it asks **Are you
+  still watching?**.
+- **Sound and subtitles** — a preferred audio and subtitle language, subtitles for the hard of
+  hearing (SDH) preferred or avoided, forced subtitles with audio in your language, a subtitle
+  mode (by hand, with foreign audio, always), size, colour, background and position (**Settings →
+  Web**, kept with the account). Picture-based subtitles (Blu-ray, DVD) are burned into the
+  video. **Level the volume** brings quiet and loud videos to a similar loudness (the server
+  measures them in the maintenance window), voices are lifted when surround sound is mixed down to
+  stereo, and HDR video is tone mapped to normal colours when it is converted.
+- **Pre-roll and trailers** — pre-roll videos play before every movie (one at random, all in
+  order, or always the first; they can be skipped). **▶ Trailer** plays a trailer file or an
+  online one from YouTube (also English ones, and red band ones if allowed: **Settings → Extras**).
 - **Chromecast** — in Chrome and Edge the player has a cast button when a Chromecast (or a TV
   with Chromecast built in) is on the network. The TV goes on from the same place with Google's
   standard player; the browser becomes its remote control: play / pause, the seek bar, ±10 / 30 s,
@@ -45,6 +96,17 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   owner, title, size, shared, pinned) and sorted (title, last changed, size, length …); the
   contents of any playlist can be filtered and sorted again. Both the playlists and the contents
   of one can be shown as a list or as posters (kept per browser).
+  The **queue** (Add to queue in a "⋯" menu or for picked posters) can be looked at, reordered and
+  cleared; **Smart shuffle** keeps the same show or artist from coming twice in a row.
+- **Browsing a library** — sort by many fields in either direction (articles like "The" or "Der"
+  ignored if you like, the sorted-by value shown under the posters), a **letter bar** to jump,
+  a **poster size** slider, watched posters dimmed (which kinds get the watched mark: **Settings →
+  Watched indicator**), the state of each library page remembered, and going back returns to the
+  same place. Picking several posters (the circle on a poster, Ctrl-click or a long press) gives a
+  bar to play, shuffle, queue, mark watched, add to the watchlist or a playlist, edit, refresh,
+  analyze or merge them; **Add to …** is a dialog with a search. Huge libraries scroll smoothly,
+  the next posters are fetched ahead, and the arrow keys move from poster to poster and row to row
+  like on a TV. Phones get a bar at the bottom and a compact library bar.
 - **Library filters** — filters on every library page (29 for movies,
   14 for shows, 18 for episodes): genre, year, decade, age rating, collection, director, actor,
   writer, producer, country, studio / network, resolution (16k … SD),
@@ -139,6 +201,13 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   *May delete files* under Users & invites — get **Delete** in a poster's "⋯" menu. It deletes the
   movie's or episode's files (a season or show: all its episodes) from disk; only files inside the
   library's folders are touched.
+- **The home page** — opens with a banner of what to watch, then rows: Continue Watching, the
+  watchlist, Coming soon, recently added (new episodes shown as their show if you like), the
+  rows below and more. **Customize home** hides and reorders the rows and turns the banner off,
+  per person. A title can be taken off Continue Watching without marking it watched (it comes back
+  when watched again); how many weeks and items it covers, and whether season premieres join,
+  are under **Settings → Library settings**. Each movie or TV library also has a **Recommended**
+  page with rows of its own.
 - **Because you watched …** — the home page has a row of titles like the movie or show you watched
   last, and a movie or TV library's **Recommended** page has two (for the last two). Only titles
   you have not begun, the most alike first (genres, collection, director, actors, year as for
@@ -179,6 +248,55 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   is the same whether or not the name exists, and the link always uses the address set for invite
   links (or the home network address), never the one the request came with. Plugins with
   `"sends_mail": true` in their plugin.json get the same server as `server.smtp`.
+- **Your account** — a full name (shown to others instead of the user name), **two-step
+  sign-in** with an authenticator app (set up with a QR code; an admin can switch it off for
+  someone, and `--reset-2fa NAME` on the command line when the only admin lost the phone),
+  *Sign in automatically* or be signed out when the browser closes, and **Devices**: every
+  browser, app and script signed in, with when and from where, each one can be signed out.
+  Tokens for scripts are made and rotated on the **API** page. The watchlist is also an **RSS
+  feed** with a private address (**Settings → Watchlist feed**). Admins can also add people
+  directly, without an invite (name and password chosen by the admin).
+- **Appearance** — light, dark or OLED (pure black), following the device by default, and an
+  accent colour (rose, amber, blue, green, red, violet), changed on the spot from the user menu at
+  the top; 12- or 24-hour time; *Remember the last page*. These and the player's settings are kept
+  with the account, so they follow you to another browser. Admins can search all settings (and
+  plugins) from the box on the settings page.
+- **Outside the home network** — a limit on how many videos one person plays at once from
+  outside and on the bitrate there (converted to stay below it), paused playback ended after a
+  while, networks counted as home (a VPN), networks that need no sign-in, trusted reverse
+  proxies, one network card only, and apps on the home network finding the server by themselves
+  (GDM). HTTPS with a certificate, an http → https port and a relay for when no port can be
+  forwarded: [remote-access.md](remote-access.md).
+- **Converting** (**Settings → Transcoder**) — shows whether ffmpeg is there and which hardware
+  encoders work; hardware acceleration automatic, off, VAAPI, Quick Sync or NVIDIA, with a choice
+  of graphics device; quality or speed first; separate limits for conversions on the graphics chip
+  and on the processor; folders for live conversions and converted downloads; and a switch that
+  turns conversion off. Per browser: a default quality, *play smaller videos in original quality*
+  and *direct play* on or off. **Optimized versions** made with **Optimize** are listed under
+  **Maintenance**, where they can be deleted.
+- **Maintenance** — scheduled tasks run only inside a maintenance window (**Settings → Scheduled
+  tasks**): a backup of the library file every 3 days (to a folder of your choice, as many kept as
+  you like; back up now and restore under **Maintenance**), optimizing the library file and
+  clearing old cache files every week, measuring loudness, deep analysis, theme music, subtitle
+  timing, seek-bar and chapter pictures made ahead of time and reading all libraries again every 3
+  days. **Maintenance** also has the server log (kept in `server.log`, to read and download), a
+  report to download for troubleshooting and a copy of the library file. The activity bar at the
+  top shows what runs in the background; a click lists the running job, what waits and what is
+  planned, and the running job can be cancelled. **Reported problems** lists what people reported
+  from a title's menu.
+- **Plex** — **Sync with Plex** keeps watched state, resume points and ratings in step with a
+  running Plex server (both ways, or one way), and takes over Plex's matches and its intro and
+  credits markers where this server has none. **Import from your old server** brings over the
+  libraries, watched state, play history, resume points, ratings, markers, edited details, cast
+  and playlists from its database. Details: [libraries.md](libraries.md).
+- **The app** — Lichtspiel for Windows, Android (also Fire TV), macOS, iPhone and iPad (Flutter,
+  German), with nearly everything of the web app: browsing with filters, the player with all its
+  settings, watchlist, playlists, downloads, watch together, statistics, the calendar, plugins'
+  panels and the admin pages. It finds servers on the home network, keeps its token in the
+  system's keychain, signs in with a code (also as a QR code) and has the same themes and accent
+  colours; on a phone the main screens are in a bar at the bottom and a long press on a poster
+  opens its menu. See [clients/lichtspiel/README.md](../clients/lichtspiel/README.md). The server
+  itself has an optional desktop status window (`--console`).
 - **Plugins (mods)** — drop a folder into the `plugins` folder; plugins can fill in movie
   details, react to events (new item, playback, invites …) and add their own API calls. A plugin with
   a panel shows it under **Settings → Account** or as a page of its own in the left menu
