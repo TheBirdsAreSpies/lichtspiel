@@ -7,5 +7,7 @@ __pycache__/
 .DS_Store
 plugins/*/state.json
 plugins/*/cache.json
+plugins/*/progress.json
+plugins/*/pending.json
 plugins/letterboxd-import/users/
 node_modules/

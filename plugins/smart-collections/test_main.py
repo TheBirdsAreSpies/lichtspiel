@@ -104,7 +104,8 @@ class Lists(unittest.TestCase):
             self.assertEqual(main.films_of("https://letterboxd.com/anna/watchlist/", {}, {}, [0]), [{"url": "https://letterboxd.com/anna/watchlist/"}])
         with self.assertRaisesRegex(ValueError, "TMDB key"):
             main.films_of("tmdb-popular", {}, {}, [0])
-            # A boxd.it share link is followed to the list it leads to.
+        # A boxd.it share link is followed to the list it leads to.
+        with mock.patch.object(main, "letterboxd_films", lambda url, c, b: [{"url": url}]):
             with mock.patch.object(main, "unshorten", lambda u: "https://letterboxd.com/a/list/b/" if "boxd.it" in u else None):
                 self.assertEqual(main.films_of("https://boxd.it/bAS2M", {}, {}, [0]), [{"url": "https://letterboxd.com/a/list/b/"}])
             with mock.patch.object(main, "unshorten", lambda u: "https://evil.example/x" if "boxd.it" in u else None):
@@ -119,7 +120,8 @@ class Lists(unittest.TestCase):
 class Runs(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
-        self.patches = [mock.patch.object(main, n, os.path.join(self.dir, f)) for n, f in (("STATE", "state.json"), ("CACHE", "cache.json"), ("LOCK", ".lock"))]
+        self.patches = [mock.patch.object(main, n, os.path.join(self.dir, f)) for n, f in (("STATE", "state.json"), ("CACHE", "cache.json"), ("LOCK", ".lock"),
+                                                                                          ("PROGRESS", "progress.json"), ("PENDING", "pending.json"))]
         self.patches.append(mock.patch.object(main, "fetch_library", lambda server: LIBRARY))
         for p in self.patches:
             p.start()
@@ -156,16 +158,53 @@ class Runs(unittest.TestCase):
             out, _ = main.run({}, {"lists": [{"name": "Oscars", "source": "oscar-best-picture"}]})
             self.assertEqual(out["collections"], {"Oscars": [1]})
 
-    def test_the_panel_shows_each_list_and_updates_on_a_click(self):
+    def test_a_click_updates_in_the_background_and_the_panel_asks_until_it_is_done(self):
         settings = {"lists": [{"name": "Oscars", "source": "oscar-best-picture"}]}
-        call = lambda action, admin=True: main.answer_call({"action": action, "admin": admin, "body": {"lang": "de"}}, settings, {})
+        call = lambda action, admin=True: main.answer_call({"action": action, "admin": admin, "body": {"lang": "de"}}, settings, {"library": "x"})
         self.assertIn("error", call("panel", admin=False))
         self.assertEqual(call("panel")["items"][0]["status"], "Noch nicht aktualisiert.")
-        with mock.patch.object(main, "films_of", self.films):
+        started = []
+        with mock.patch.object(main.subprocess, "Popen") as popen:
             r = call("update")
+            started.append(popen.call_args)
+            # Clicked again while it runs: no second run, only its progress.
+            self.assertEqual(call("update")["poll"], {"action": "progress", "seconds": 5})
+            self.assertEqual(popen.call_count, 1)
+        self.assertEqual(r, {"wait": "Die Sammlungen werden aktualisiert …", "poll": {"action": "progress", "seconds": 5}})
+        self.assertEqual(started[0].args[0][-1], "--update")
+        self.assertTrue(call("panel")["text"].startswith("Eine Aktualisierung läuft."))
+        # The run itself (what the started process does), stopped half way to see its progress.
+        seen = []
+        real_run = main.run
+
+        def run_and_look(server, s, progress=None):
+            def told(i, n, name):
+                progress(i, n, name)
+                seen.append(call("progress")["wait"])
+            return real_run(server, s, told)
+        with mock.patch.object(main, "films_of", self.films), mock.patch.object(main, "run", run_and_look):
+            main.update_in_background(settings, {"library": "x"})
+        self.assertEqual(seen, ["Wird aktualisiert: Liste 1 von 1 (Oscars) …"])
+        # Done: the next call hands the collections to the server, once.
+        r = call("progress")
         self.assertEqual(r["collections"], {"Oscars": [1]})
+        self.assertEqual(r["message"], "Aktualisiert: 1 Sammlungen.")
         self.assertEqual(r["panel"]["items"][0]["status"], "1 von 2 in deinen Mediatheken")
-        self.assertTrue(r["panel"]["text"].startswith("Aktualisiert: 1 Sammlungen."))
+        self.assertNotIn("poll", r)
+        self.assertNotIn("collections", call("panel"))
+        # The page was closed in between: opening the panel hands them over.
+        with mock.patch.object(main, "films_of", self.films):
+            main.update_in_background(settings, {"library": "x"})
+        p = call("panel")
+        self.assertEqual(p["collections"], {"Oscars": [1]})
+        self.assertTrue(p["text"].startswith("Aktualisiert: 1 Sammlungen."))
+        # A run that failed says why.
+        with mock.patch.object(main, "fetch_library", mock.Mock(side_effect=LookupError())):
+            main.update_in_background(settings, {})
+        self.assertEqual(call("progress")["error"], "Dieses Plugin braucht einen Server, der Plugins die Mediathek lesen lässt.")
+        # A run not heard from for 20 minutes has stopped.
+        main.write_json(main.PROGRESS, {"at": 0, "i": 1, "n": 1, "name": "Oscars"})
+        self.assertIsNone(main.running())
         self.assertEqual(main.answer_call({"action": "panel", "admin": True, "body": {"lang": "de"}}, {"lists": []}, {})["buttons"], [])
 
 

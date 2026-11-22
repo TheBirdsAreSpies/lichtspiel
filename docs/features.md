@@ -373,7 +373,8 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   to its title and can be ignored; `skip_libraries` leaves libraries out by name (an anime
   library in Japanese …).
   **Smart collections** fills collections in the movie libraries from lists, once a day and on
-  **Update now** (admins, under **Settings → Account**, with how many of each list you have):
+  **Update now** (admins, under **Settings → Account**, with how many of each list you have; the
+  update runs on in the background and shows which list it is on, and leaving the page loses nothing):
   `imdb-top-250` (IMDb's Top 250 through its copy on Letterboxd, as IMDb blocks programs),
   `oscar-best-picture` (Wikidata), `tmdb-popular` and `tmdb-top-rated` (100 each, with a
   `tmdb_api_key` in the plugin's settings) and any public Letterboxd list or watchlist by its

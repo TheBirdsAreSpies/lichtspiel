@@ -15,6 +15,12 @@ taken out of the settings empties its collection once. Letterboxd films are look
 TMDB and IMDb ids) and kept in cache.json; the last run is in state.json, both in the plugin's folder.
 Wikidata's answer is kept there too: asked again after a week, and used as it is while Wikidata
 does not answer (it may limit programs to one request a minute when it is busy).
+
+"Update now" can take minutes (a long Letterboxd list looked up for the first time), longer than a
+reverse proxy waits for an answer. So the click starts the run as a process of its own and answers at
+once; the panel then asks for its progress ("progress") until it is done. The finished run's
+collections wait in pending.json for the next call ("progress" or "panel"), which hands them to the
+server; a page closed in between loses nothing.
 """
 import contextlib
 import html
@@ -22,6 +28,7 @@ import json
 import os
 import re
 import ssl
+import subprocess
 import sys
 import time
 import unicodedata
@@ -33,6 +40,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(HERE, "state.json")
 CACHE = os.path.join(HERE, "cache.json")
 LOCK = os.path.join(HERE, ".collections.lock")
+PROGRESS = os.path.join(HERE, "progress.json")   # while an update started by a click runs
+PENDING = os.path.join(HERE, "pending.json")     # its result, until a call hands it to the server
+STALE = 1200                    # a run not heard from for 20 minutes has stopped
 UA = "Lichtspiel-smart-collections/1.0"
 TIMEOUT = 30
 LETTERBOXD_PAGES = 20          # at most 2,000 films a list
@@ -61,6 +71,11 @@ WORDS = {
     "error": "Fehler",
     "needs a TMDB key in the settings": "braucht einen TMDB-Key in den Einstellungen",
     "unknown source": "unbekannte Quelle",
+    "Updating the collections …": "Die Sammlungen werden aktualisiert …",
+    "Updating: list {i} of {n} ({name}) …": "Wird aktualisiert: Liste {i} von {n} ({name}) …",
+    "An update is running.": "Eine Aktualisierung läuft.",
+    "The update could not be started: {e}": "Die Aktualisierung konnte nicht gestartet werden: {e}",
+    "The update stopped: {e}": "Die Aktualisierung ist abgebrochen: {e}",
 }
 
 
@@ -290,15 +305,19 @@ def lists_of(settings):
     return out
 
 
-def run(server, settings):
-    """Looks every list up and gives the server's answer {"collections": {name: [ids]}} and the state."""
+def run(server, settings, progress=None):
+    """Looks every list up and gives the server's answer {"collections": {name: [ids]}} and the state.
+    `progress(i, n, name)` is told before each list."""
     listing = fetch_library(server)
     index = library_index(listing, settings)
     cache = read_json(CACHE, {})
     budget = [NEW_LOOKUPS]
     old = read_json(STATE, {})
     collections, report = {}, []
-    for name, source in lists_of(settings):
+    lists = lists_of(settings)
+    for i, (name, source) in enumerate(lists, 1):
+        if progress:
+            progress(i, len(lists), name)
         try:
             films = films_of(source, settings, cache, budget)
             ids = match(films, index)
@@ -317,6 +336,58 @@ def run(server, settings):
     managed = sorted({r["name"] for r in report})
     write_json(STATE, {"at": int(time.time()), "managed": managed, "lists": report})
     return {"collections": collections}, report
+
+
+# ---------------------------------------------------------------- an update in the background
+
+def running():
+    """The progress of an update started by a click, while it runs ({"at", "i", "n", "name"}), else None."""
+    p = read_json(PROGRESS, None)
+    if isinstance(p, dict) and time.time() - p.get("at", 0) < STALE:
+        return p
+    return None
+
+
+def start_update(settings, server):
+    """Starts `main.py --update` as a process of its own, which outlives this call."""
+    write_json(PROGRESS, {"at": int(time.time()), "i": 0, "n": len(lists_of(settings)), "name": ""})
+    kw = {"creationflags": 0x00000008 | 0x00000200} if os.name == "nt" else {"start_new_session": True}  # detached
+    try:
+        p = subprocess.Popen([sys.executable, os.path.abspath(__file__), "--update"], cwd=HERE, stdin=subprocess.PIPE,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
+        # The settings and the server's addresses (with the key to the library) go in on stdin, not on disk.
+        p.stdin.write(json.dumps({"settings": settings, "server": server}).encode("utf-8"))
+        p.stdin.close()
+    except OSError:
+        with contextlib.suppress(OSError):
+            os.remove(PROGRESS)
+        raise
+
+
+def update_in_background(settings, server):
+    """The run started by start_update: its result goes to pending.json."""
+    def progress(i, n, name):
+        write_json(PROGRESS, {"at": int(time.time()), "i": i, "n": n, "name": name})
+        with contextlib.suppress(OSError):
+            os.utime(LOCK)     # a long run is not taken for a stale one
+    try:
+        with locked():
+            out, report = run(server, settings, progress)
+        write_json(PENDING, {"collections": out["collections"], "updated": len([r for r in report if not r.get("error")])})
+    except Exception as e:  # noqa: BLE001 — shown to the admin when the panel asks
+        write_json(PENDING, {"error": str(e) if not isinstance(e, LookupError) else "LookupError"})
+    finally:
+        with contextlib.suppress(OSError):
+            os.remove(PROGRESS)
+
+
+def take_pending():
+    """The finished update's result, taken out of pending.json (it is handed to the server once)."""
+    p = read_json(PENDING, None)
+    if p is not None:
+        with contextlib.suppress(OSError):
+            os.remove(PENDING)
+    return p if isinstance(p, dict) else None
 
 
 # ---------------------------------------------------------------- files
@@ -384,7 +455,21 @@ def panel(lang, settings, message=None):
     text = tr(lang, "Updated {when}.", when=when(state["at"], lang)) if state.get("at") else tr(lang, "Not updated yet.")
     if message:
         text = message + " " + text
+    if running():
+        text = tr(lang, "An update is running.") + " " + text
     return {"title": tr(lang, "Smart collections"), "text": text, "items": items, "buttons": buttons}
+
+
+def finished(lang):
+    """A finished update's result: (its collections or None, what to tell the admin, whether that is an error)."""
+    p = take_pending()
+    if p is None:
+        return None
+    if "collections" in p:
+        return p["collections"], tr(lang, "Updated: {n} collections.", n=p.get("updated", 0)), False
+    if p.get("error") == "LookupError":
+        return None, tr(lang, "This plugin needs a server that lets plugins read the library."), True
+    return None, tr(lang, "The update stopped: {e}", e=p.get("error")), True
 
 
 def answer_call(data, settings, server):
@@ -393,24 +478,40 @@ def answer_call(data, settings, server):
     if not data.get("admin"):
         return {"error": tr(lang, "Only admins can see the smart collections.")}
     action = data.get("action")
+    if action not in ("panel", "update", "progress"):
+        return {"error": "unknown action %s" % action}
+    done = finished(lang)
+    if done:
+        # The collections go to the server with whichever call comes first after the run.
+        collections, said, failed = done
+        if action == "panel":
+            out = panel(lang, settings, said)
+        else:
+            out = {"error" if failed else "message": said, "panel": panel(lang, settings, None if failed else said)}
+        if collections is not None:
+            out["collections"] = collections
+        return out
     if action == "panel":
         return panel(lang, settings)
-    if action == "update":
+    p = running()
+    if p is None and action == "update":
         try:
-            with locked():
-                out, report = run(server, settings)
-        except LookupError:
-            return {"error": tr(lang, "This plugin needs a server that lets plugins read the library.")}
-        except Exception as e:  # noqa: BLE001 — shown to the admin
-            return {"error": tr(lang, "The library could not be read: {e}", e=e)}
-        out["panel"] = panel(lang, settings, tr(lang, "Updated: {n} collections.", n=len([r for r in report if not r.get("error")])))
-        return out
-    return {"error": "unknown action %s" % action}
+            start_update(settings, server)
+        except OSError as e:
+            return {"error": tr(lang, "The update could not be started: {e}", e=e)}
+        p = running()
+    if p is None:
+        return {"panel": panel(lang, settings)}
+    wait = tr(lang, "Updating: list {i} of {n} ({name}) …", i=p["i"], n=p["n"], name=p["name"]) if p.get("i") else tr(lang, "Updating the collections …")
+    return {"wait": wait, "poll": {"action": "progress", "seconds": 5}}
 
 
 def main():
     # The server sends UTF-8, whatever the console code page is (Windows).
     msg = json.loads(getattr(sys.stdin, "buffer", sys.stdin).read())
+    if sys.argv[1:] == ["--update"]:
+        update_in_background(msg.get("settings") or {}, msg.get("server") or {})
+        return
     event = msg.get("event", "")
     data = msg.get("data") or {}
     settings = msg.get("settings") or {}
@@ -423,6 +524,7 @@ def main():
         return
     with locked():
         out, report = run(server, settings)
+        take_pending()   # an earlier click's result is older than this one
     out["lists"] = [{k: r.get(k) for k in ("name", "found", "total", "error") if k in r} for r in report]
     print(json.dumps(out))
 
