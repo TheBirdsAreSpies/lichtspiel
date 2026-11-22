@@ -6,6 +6,7 @@ import { api, ApiError, get } from '../api';
 import { lang, t } from '../i18n';
 import Modal from '../components/Modal.vue';
 import PluginSettings from '../components/PluginSettings.vue';
+import { loadPanels } from '../plugins';
 
 interface Plugin {
   id: string, name: string, version?: string, author?: string, description?: string, enabled: boolean, hooks: string[],
@@ -40,10 +41,10 @@ async function reload() {
   try { const x = await api<{ count: number }>('POST', '/api/plugins/reload'); say(t('{n} plugin(s) found', { n: x.count })); load(); } catch (e) { say((e as Error).message); }
 }
 async function toggle(p: Plugin) {
-  try { await api('POST', `/api/plugins/${p.id}/${p.enabled ? 'disable' : 'enable'}`); load(); } catch (e) { say((e as Error).message); }
+  try { await api('POST', `/api/plugins/${p.id}/${p.enabled ? 'disable' : 'enable'}`); load(); loadPanels(); } catch (e) { say((e as Error).message); }
 }
 async function place(p: Plugin, v: string) {
-  try { await api('PUT', `/api/plugins/${p.id}/placement`, { placement: v === p.suggested_placement ? '' : v }); say(t('Saved')); } catch (e) { say((e as Error).message); }
+  try { await api('PUT', `/api/plugins/${p.id}/placement`, { placement: v === p.suggested_placement ? '' : v }); say(t('Saved')); loadPanels(); } catch (e) { say((e as Error).message); }
 }
 async function save(p: Plugin) {
   try { await api('PUT', `/api/plugins/${p.id}/settings`, forms[p.id].value()); say(t('Saved')); } catch (e) { say((e as Error).message); }

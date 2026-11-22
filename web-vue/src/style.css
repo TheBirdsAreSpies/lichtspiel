@@ -347,6 +347,16 @@ input.short, .form input.short { width: 140px; }
 .break { word-break: break-all; }
 code.ev { margin: 0 6px 6px 0; display: inline-block; }
 .btn.disabled { opacity: .5; pointer-events: none; }
+.pre { white-space: pre-line; }
+.small-tag { font-size: 14px; margin-left: 10px; font-weight: 400; }
+.pp-search { display: flex; gap: 8px; margin: 12px 0; }
+.pp-search input { flex: 1; min-width: 0; }
+.pp-items { display: flex; flex-direction: column; gap: 2px; margin: 12px 0; }
+.pp-item { display: flex; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.pp-item img, .pp-noimg { width: 46px; height: 68px; object-fit: cover; border-radius: 4px; background: var(--panel2); flex: none; }
+.pp-item .actions { margin: 0; flex-wrap: wrap; justify-content: flex-end; }
+.select { user-select: all; }
+.narrow-wide { max-width: 900px; }
 .saved { margin-left: 10px; font-size: 13px; }
 .small { font-size: 13px; }
 .qr { width: 220px; height: 220px; border-radius: 8px; overflow: hidden; background: #fff; }

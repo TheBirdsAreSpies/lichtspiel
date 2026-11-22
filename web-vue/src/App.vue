@@ -6,6 +6,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { session, signOut, savePref } from './api';
 import { lang, packs, setLang, t } from './i18n';
 import Icon from './components/Icon.vue';
+import { loadPanels, panels } from './plugins';
+import { toastState } from './toast';
 
 const route = useRoute();
 const router = useRouter();
@@ -27,6 +29,9 @@ function search(now = false) {
   };
   if (now) go(); else timer = window.setTimeout(go, 350);
 }
+
+// The plugins' own pages in the left menu (asked for again after signing in as someone else).
+watch(() => session.me && session.me.id, id => { if (id) loadPanels(); }, { immediate: true });
 
 const menuOpen = ref(false);
 const sideOpen = ref(false);
@@ -77,6 +82,10 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
       <RouterLink v-for="s in session.sections" :key="s.id" :to="'/library/' + s.id" class="nav" active-class="on">
         <Icon :name="icon(s.type)" /><span>{{ s.title }}</span>
       </RouterLink>
+      <template v-if="panels.list.some(p => p.sidebar)">
+        <div class="nav-head"></div>
+        <RouterLink v-for="p in panels.list.filter(x => x.sidebar)" :key="p.id" :to="'/plugin/' + p.id" class="nav" active-class="on"><Icon name="extension" /><span>{{ p.name }}</span></RouterLink>
+      </template>
       <template v-if="session.me && session.me.admin">
         <div class="nav-head">{{ t('Server') }}</div>
         <RouterLink to="/users" class="nav" active-class="on"><Icon name="people" /><span>{{ t('Users & invites') }}</span></RouterLink>
@@ -92,4 +101,5 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
   </div>
   <!-- (Keyed by the address: the next episode is a new player.) -->
   <RouterView v-else :key="route.path" />
+  <div v-if="toastState.text" :key="toastState.n" class="toast" role="status">{{ toastState.text }}</div>
 </template>

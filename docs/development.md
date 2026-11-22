@@ -42,7 +42,8 @@ a playlist or collection, the choice of version, and "Edit details" for the owne
 intro, recap and credits, the countdown to the next episode, "Are you still watching?", the sleep timer,
 "What happened so far", subtitle timing for the owner and the keyboard shortcuts on `?`), your own settings (account, playback, devices,
 Trakt, watchlist feed; saved under the classic app's names, so both use them), the
-watchlist, users and invites for the owner (`#/users`), and playlists (smart ones with their rules; playing one goes on through it: `web-vue/src/queue.ts`); the rest is still
+watchlist, users and invites and the plugins for the owner (`#/users`, `#/plugins`), the plugins' own panels
+(Settings → Account, or a page in the left menu: `web-vue/src/components/PluginPanel.vue`), and playlists (smart ones with their rules; playing one goes on through it: `web-vue/src/queue.ts`); the rest is still
 only in `web/` (see [todo.md](todo.md)).
 
 - `build.rs` puts every file of `web-vue/dist` into the program (`VUE_FILES`, served by `vue_file` in

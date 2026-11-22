@@ -9,6 +9,8 @@ import DevicesPanel from '../components/settings/DevicesPanel.vue';
 import FeedPanel from '../components/settings/FeedPanel.vue';
 import PlaybackPanel from '../components/settings/PlaybackPanel.vue';
 import TraktPanel from '../components/settings/TraktPanel.vue';
+import PluginPanel from '../components/PluginPanel.vue';
+import { panels } from '../plugins';
 
 const props = defineProps<{ tab?: string }>();
 const TABS: [string, string][] = [['account', 'Account'], ['playback', 'Playback'], ['devices', 'Devices'], ['trakt', 'Trakt'], ['feed', 'Watchlist feed']];
@@ -24,7 +26,10 @@ const tab = computed(() => (TABS.some(([k]) => k === props.tab) ? props.tab : 'a
       </RouterLink>
       <a v-if="session.me?.admin" class="btn admin-link" href="/#/settings/general">{{ t('Server settings') }} ↗</a>
     </nav>
-    <AccountPanel v-if="tab === 'account'" />
+    <template v-if="tab === 'account'">
+      <AccountPanel />
+      <PluginPanel v-for="p in panels.list.filter(x => x.settings)" :id="p.id" :key="p.id" :name="p.name" />
+    </template>
     <PlaybackPanel v-else-if="tab === 'playback'" />
     <DevicesPanel v-else-if="tab === 'devices'" />
     <TraktPanel v-else-if="tab === 'trakt'" />
