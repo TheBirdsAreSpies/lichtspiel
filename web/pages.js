@@ -820,9 +820,11 @@ async function pluginsPage() {
     r.plugins.length ? r.plugins.map(p => {
       const form = pluginSettingsForm(p.settings, p.defaults, p.setting_choices);
       return h('div', { class: 'panel' },
-        h('div', { style: 'display:flex;gap:12px;align-items:center' }, h('b', { style: 'font-size:17px' }, p.name), h('span', { class: 'dim' }, 'v' + (p.version || '?')), p.author ? h('span', { class: 'dim' }, t('by {name}', { name: p.author })) : null, h('span', { style: 'flex:1' }),
-          h('span', { class: p.enabled ? 'ok' : 'dim' }, p.enabled ? t('on') : t('off')),
-          h('button', { class: p.enabled ? '' : 'primary', onclick: async () => { await api('POST', `/api/plugins/${p.id}/${p.enabled ? 'disable' : 'enable'}`); again(); } }, p.enabled ? t('Switch off') : t('Switch on'))),
+        // On a phone the parts go on more lines instead of squeezing each other letter by letter.
+        h('div', { style: 'display:flex;gap:6px 12px;align-items:center;flex-wrap:wrap' }, h('b', { style: 'font-size:17px' }, p.name), h('span', { class: 'dim nowrap' }, 'v' + (p.version || '?')), p.author ? h('span', { class: 'dim nowrap' }, t('by {name}', { name: p.author })) : null,
+          h('span', { style: 'display:flex;gap:12px;align-items:center;margin-left:auto' },
+            h('span', { class: 'nowrap ' + (p.enabled ? 'ok' : 'dim') }, p.enabled ? t('on') : t('off')),
+            h('button', { class: p.enabled ? '' : 'primary', onclick: async () => { await api('POST', `/api/plugins/${p.id}/${p.enabled ? 'disable' : 'enable'}`); again(); } }, p.enabled ? t('Switch off') : t('Switch on')))),
         h('p', {}, p.description), h('div', {}, t('Listens to: '), p.hooks.map(x => h('span', { class: 'tag' }, x))),
         p.user_panel ? formRow(t('Shown in'), h('select', { onchange: async e => {
           try { await api('PUT', `/api/plugins/${p.id}/placement`, { placement: e.target.value === p.suggested_placement ? '' : e.target.value }); toast(t('Saved')); refreshPluginNav(); } catch (x) { toast(x.message, 5000); }
