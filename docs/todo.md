@@ -46,8 +46,8 @@ Collected on 2026-11-22.
 - **Still missing there** (only in `web/` so far): new smart playlists and their rules (the button
   opens the classic app), the advanced library filters (rules), the server's settings, the dashboard,
   users and invites, plugins, downloads, Chromecast, watch together, sign-in with a code, merged
-  versions, editing details; in the player: the sleep timer, the still preview on the seek bar,
-  "What happened so far", subtitle timing, the keyboard shortcuts overlay.
+  versions, editing details; in the player: the sleep timer, "What happened so far", subtitle
+  timing, the keyboard shortcuts overlay.
 
 ### Server
 

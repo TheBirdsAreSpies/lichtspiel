@@ -315,13 +315,28 @@ function doSkip() {
   const b = skipBtn.value; if (!b) return;
   if (b.to >= 0) seek(b.to); else finish();
 }
-// The time and chapter under the pointer on the seek bar.
+// The time and chapter under the pointer on the seek bar, and a still from the server (rounded to 10 s,
+// asked for once the pointer rests a moment; shown only when it has loaded, so no empty box flickers).
 const tip = ref<{ x: number, text: string } | null>(null);
+const still = ref('');
+let stillWant: number | null = null, stillTimer = 0;
 function hover(e: MouseEvent) {
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), s = f * duration.value, c = chapterAt(s);
-  tip.value = { x: Math.max(40, Math.min(r.width - 40, e.clientX - r.left)), text: fmtTime(s) + (c ? ' · ' + c.title : '') };
+  const half = media.value ? 104 : 40;
+  tip.value = { x: Math.max(half, Math.min(r.width - half, e.clientX - r.left)), text: fmtTime(s) + (c ? ' · ' + c.title : '') };
+  const step = Math.floor(s / 10) * 10, i = it.value;
+  if (!i || !media.value || !tk || stillWant === step) return;
+  stillWant = step;
+  clearTimeout(stillTimer);
+  stillTimer = window.setTimeout(() => {
+    const src = withTicket(`/library/parts/${i.id}/frame?t=${step}`, tk), pre = new Image();
+    pre.onload = () => { if (stillWant === step) still.value = src; };
+    pre.onerror = () => { if (stillWant === step) still.value = ''; };
+    pre.src = src;
+  }, 120);
 }
+function unhover() { tip.value = null; still.value = ''; stillWant = null; clearTimeout(stillTimer); }
 
 function seek(to: number) {
   const v = video.value; if (!v) return;
@@ -482,7 +497,7 @@ onMounted(async () => {
   } catch (e) { error.value = (e as Error).message; waiting.value = false; }
 });
 onBeforeUnmount(() => {
-  clearInterval(timer); clearTimeout(idleTimer); clearTimeout(noticeTimer); clearTimeout(freshTimer); clearInterval(countdown);
+  clearInterval(timer); clearTimeout(idleTimer); clearTimeout(noticeTimer); clearTimeout(freshTimer); clearInterval(countdown); clearTimeout(stillTimer);
   for (const ev of INPUT) document.removeEventListener(ev, someone, { capture: true });
   if (sound) sound.ctx.close().catch(() => {});
   document.removeEventListener('keydown', key);
@@ -545,14 +560,14 @@ const endsAt = computed(() => {
     </div>
     <button v-if="skipBtn && !nextBox && !error && !stopped" class="p-skip" :class="{ shown: skipFresh || !idle }" @click.stop="doSkip">{{ skipBtn.label }}</button>
     <div ref="bottom" class="p-bottom" @click.stop>
-      <div class="seek" @mousemove="hover" @mouseleave="tip = null">
+      <div class="seek" @mousemove="hover" @mouseleave="unhover">
         <div class="seek-buf" :style="{ width: bufPct + '%' }"></div>
         <div class="marks">
           <div v-for="c in chapters.length > 1 ? chapters.slice(1) : []" :key="'c' + c.at" class="mark chap" :style="{ left: at(c.at) + '%' }"></div>
           <div v-for="c in credits" :key="'e' + c" class="mark" :style="{ left: at(c) + '%' }"></div>
           <template v-for="m in [intro, recap]" :key="m ? 'i' + m[0] : ''"><div v-if="m" class="mark span" :style="{ left: at(m[0]) + '%', width: Math.max(0.3, at(m[1]) - at(m[0])) + '%' }"></div></template>
         </div>
-        <div v-if="tip" class="seek-tip" :style="{ left: tip.x + 'px' }">{{ tip.text }}</div>
+        <div v-if="tip" class="seek-tip" :style="{ left: tip.x + 'px' }"><img v-if="still" :src="still" alt=""><span>{{ tip.text }}</span></div>
         <input type="range" min="0" :max="duration || 1" step="1" :value="now" :aria-label="t('Position')"
           :style="{ '--p': pct + '%' }" @change="seek(Number(($event.target as HTMLInputElement).value))">
       </div>

@@ -191,7 +191,9 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .mark { position: absolute; top: 5px; width: 3px; height: 8px; margin-left: -1px; background: #ffd34d; border-radius: 1px; z-index: 1; }
 .mark.chap { width: 2px; background: rgba(0,0,0,.7); }
 .mark.span { height: 4px; top: 7px; margin: 0; background: rgba(255,211,77,.55); }
-.seek-tip { position: absolute; bottom: 22px; transform: translateX(-50%); background: rgba(20,21,25,.95); padding: 4px 8px; border-radius: 6px; font-size: 13px; white-space: nowrap; pointer-events: none; }
+.seek-tip { position: absolute; bottom: 22px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+.seek-tip span { background: rgba(20,21,25,.95); padding: 4px 8px; border-radius: 6px; font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.seek-tip img { width: 200px; border-radius: 6px; border: 2px solid #fff; background: #000; box-shadow: 0 8px 28px rgba(0,0,0,.6); }
 .p-menu-head { padding: 6px 10px 4px; color: var(--dim); font-size: 13px; }
 .p-menu hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 .p-skip { position: absolute; right: 22px; bottom: 120px; z-index: 2; background: rgba(20,21,25,.9); border: 1px solid rgba(255,255,255,.5); color: #fff; padding: 10px 18px; font-weight: 600;
