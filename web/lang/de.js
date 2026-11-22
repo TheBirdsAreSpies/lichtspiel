@@ -1279,7 +1279,7 @@ I18N.add('de', 'Deutsch', {
     // ---------- API page
     'Find an address…': 'Adresse suchen …',
     'Web app': 'Web-App',
-    'this one': 'diese hier',
+    'this device': 'dieses Gerät',
     'Token revoked': 'Token widerrufen',
     'Revoke': 'Widerrufen',
     'Make a new token and sign out every other device and script?': 'Neuen Token erstellen und alle anderen Geräte und Skripte abmelden?',
