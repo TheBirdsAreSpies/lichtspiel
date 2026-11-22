@@ -63,10 +63,16 @@ fn directory(sid: u64, title: &str, filter: &str, items: &[&Item]) -> Value {
     })
 }
 
-/// The library's collections (film series and the ones set by hand).
+/// The library's collections (film series and the ones set by hand), each with how many of its
+/// titles this user has seen (`viewedLeafCount`), for "Hide watched" on the Collections page.
 pub fn collections(db: &Db, user: &User, sid: u64) -> Vec<Value> {
     let min = db.settings.collection_min_items.max(1) as usize;
-    groups(db, user, sid, "collection").iter().filter(|(_, its)| its.len() >= min).map(|(t, its)| directory(sid, t, "collection", its)).collect()
+    let seen = |it: &Item| !matches!(field(db, user.id, it, "unwatched"), FieldValue::Bool(true));
+    groups(db, user, sid, "collection").iter().filter(|(_, its)| its.len() >= min).map(|(t, its)| {
+        let mut d = directory(sid, t, "collection", its);
+        d["viewedLeafCount"] = json!(its.iter().filter(|it| seen(it)).count());
+        d
+    }).collect()
 }
 
 /// The library's categories: one per genre, with a picture.
@@ -555,6 +561,9 @@ mod tests {
         let cols = collections(&db, &user, 1);
         assert_eq!(cols.len(), 1);
         assert_eq!(cols[0]["childCount"], 2);
+        assert_eq!(cols[0]["viewedLeafCount"], 0);
+        db.views.insert("1:2".into(), crate::data::db::ViewState { view_count: 1, ..Default::default() });
+        assert_eq!(collections(&db, &user, 1)[0]["viewedLeafCount"], 1, "seen by this user");
         let cats = categories(&db, &user, 1);
         assert!(occasion_rows(&db, &user, (10, 31), 20).is_empty(), "no horror, no Halloween row");
         assert_eq!(cats.iter().map(|c| c["title"].as_str().unwrap().to_string()).collect::<Vec<_>>(), vec!["Comedy", "Drama", "Sci-Fi"]);

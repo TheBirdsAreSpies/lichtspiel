@@ -478,8 +478,26 @@ async function sectionSubPage(sec, tab, tabs) {
   const open = (k, v) => () => (location.hash = `#/section/${sec.id}?${k}=${encodeURIComponent(v)}`);
   if (tab === 'collections') {
     const list = (await GET(`/library/sections/${sec.id}/collections`)).MediaContainer.Metadata;
-    return set(head, tabs, list.length ? h('div', { class: 'grid' }, list.map(d => tile(d, open('f.collection', d.title))))
-      : h('div', { class: 'empty' }, t('No collections yet. Film series are added when details are downloaded; add your own under Edit details → Collections.')));
+    if (!list.length) return set(head, tabs, h('div', { class: 'empty' }, t('No collections yet. Film series are added when details are downloaded; add your own under Edit details → Collections.')));
+    // "Hide watched" (kept per account): each collection counts and opens with only what this person has not seen;
+    // the "Unwatched" chip on the opened collection takes it off there again. Fully seen collections go to the end.
+    const grid = h('div', { class: 'grid' });
+    const draw = () => {
+      const hide = store.get('colHideWatched', '0') === '1';
+      const left = d => d.childCount - (d.viewedLeafCount || 0);
+      const shown = hide ? [...list.filter(d => left(d) > 0), ...list.filter(d => left(d) <= 0)] : list;
+      grid.replaceChildren(...shown.map(d => {
+        const el = tile(hide ? { ...d, childCount: left(d) } : d, () => (location.hash = `#/section/${sec.id}?f.collection=${encodeURIComponent(d.title)}${hide ? '&f.unwatched=true' : ''}`));
+        if (hide) {
+          el.querySelector('.s').textContent = left(d) > 0 ? t('{n} of {total} not seen', { n: left(d), total: d.childCount }) : t('All seen');
+          if (left(d) <= 0) el.style.opacity = '0.5';
+        }
+        return el;
+      }));
+    };
+    const box = h('input', { type: 'checkbox', checked: store.get('colHideWatched', '0') === '1', onchange: e => { store.set('colHideWatched', e.target.checked ? '1' : '0'); draw(); } });
+    draw();
+    return set(head, tabs, h('label', { style: 'display:inline-flex;gap:8px;align-items:center;margin:0 0 12px' }, box, t('Hide watched')), grid);
   }
   if (tab === 'categories') {
     const list = (await GET(`/library/sections/${sec.id}/categories`)).MediaContainer.Metadata;

@@ -652,13 +652,15 @@ function accessEditor(u) {
 // ---------- admin: plugins
 // A plugin's settings as a form: one field per setting, chosen by its value — a tick box for
 // true/false, a number box, a text box (hidden for passwords, tokens and keys), one line per entry
-// for a list. Anything nested (a list of objects, an object) stays JSON. "Edit as JSON" shows it all as JSON.
-function pluginSettingsForm(settings) {
+// for a list, a table for a list of flat objects (one line per entry, one column per field; the columns also come
+// from the plugin's defaults, so an emptied list keeps them). Anything else nested stays JSON. "Edit as JSON" shows
+// it all as JSON. `choices` (the plugin's setting_choices) offers values for a text box, by name or "list.field".
+function pluginSettingsForm(settings, defaults = {}, choices = {}) {
   let fields = [], asJson = false;
   const formEl = h('div', {}), ta = h('textarea', { rows: 10, spellcheck: 'false', style: 'font-family:monospace' });
   const jsonEl = formRow(t('Settings'), ta, null, true), toggle = h('button', {});
   const draw = values => {
-    fields = Object.entries(values || {}).map(([k, v]) => settingField(k, v));
+    fields = Object.entries(values || {}).map(([k, v]) => settingField(k, v, (defaults || {})[k], choices || {}));
     formEl.replaceChildren(...fields.map(f => f.row));
   };
   const fromForm = () => Object.fromEntries(fields.map(f => [f.k, f.get()]));
@@ -676,17 +678,62 @@ function pluginSettingsForm(settings) {
   asJson = !fields.length; show();
   return { el: h('div', {}, formEl, jsonEl), toggle, value: () => asJson ? JSON.parse(ta.value) : fromForm() };
 }
-function settingField(k, v) {
-  const label = k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+const settingLabel = k => k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+// A list of offered values for a text box (strings, or {value, label}), or nothing.
+let choiceListN = 0;
+function choiceList(list) {
+  if (!Array.isArray(list) || !list.length) return null;
+  return h('datalist', { id: 'choices' + (++choiceListN) }, list.map(c => typeof c === 'object' && c ? h('option', { value: String(c.value), label: c.label || '' }) : h('option', { value: String(c) })));
+}
+const flatObject = x => !!x && typeof x === 'object' && !Array.isArray(x) && Object.values(x).every(y => ['string', 'number', 'boolean'].includes(typeof y));
+function settingField(k, v, def, choices = {}) {
+  const label = settingLabel(k);
   let el, get, help = null, top = false;
-  if (typeof v === 'boolean') {
+  const sample = Array.isArray(v) && v.length ? v : Array.isArray(def) ? def : [];
+  if (Array.isArray(v) && sample.length && sample.every(flatObject) && v.every(flatObject)) {
+    // A table: one line per entry. The type of each column comes from its first value.
+    const cols = [...new Set([...sample, ...v].flatMap(o => Object.keys(o)))];
+    const kind = c => { const x = [...v, ...sample].find(o => o[c] !== undefined); return x ? typeof x[c] : 'string'; };
+    const lists = Object.fromEntries(cols.map(c => [c, choiceList(choices[k + '.' + c])]));
+    const rows = [];
+    const body = h('tbody');
+    const addRow = o => {
+      const cells = cols.map(c => {
+        const ty = kind(c), val = o[c];
+        const inp = ty === 'boolean' ? h('input', { type: 'checkbox', checked: !!val })
+          : h('input', { type: ty === 'number' ? 'number' : 'text', step: 'any', value: val ?? '', spellcheck: 'false', style: 'width:100%', list: lists[c] ? lists[c].id : null, 'aria-label': settingLabel(c) });
+        return { c, ty, inp };
+      });
+      const tr = h('tr', {}, cells.map(x => h('td', {}, x.inp)),
+        h('td', { style: 'width:1%' }, h('button', { class: 'small danger', title: t('Remove'), onclick: () => { tr.remove(); rows.splice(rows.indexOf(entry), 1); } }, '✕')));
+      const entry = { tr, cells };
+      rows.push(entry); body.append(tr);
+    };
+    v.forEach(addRow);
+    el = h('div', {}, h('table', {}, h('thead', {}, h('tr', {}, cols.map(c => h('th', { style: 'text-align:left' }, settingLabel(c))), h('th'))), body),
+      ...Object.values(lists).filter(Boolean),
+      h('button', { class: 'small', style: 'margin-top:6px', onclick: () => addRow({}) }, t('+ Add entry')));
+    top = true;
+    // Lines left empty are dropped; a number column takes numbers only.
+    get = () => rows.map(({ cells }) => {
+      const o = {};
+      for (const { c, ty, inp } of cells) {
+        if (ty === 'boolean') o[c] = inp.checked;
+        else if (ty === 'number') { if (inp.value.trim() === '') continue; const n = Number(inp.value); if (!isFinite(n)) throw new Error(t('{name}: enter a number', { name: settingLabel(c) })); o[c] = n; }
+        else o[c] = inp.value.trim();
+      }
+      return o;
+    }).filter(o => cols.some(c => typeof o[c] === 'string' ? o[c] !== '' : typeof o[c] === 'number'));
+  } else if (typeof v === 'boolean') {
     el = h('input', { type: 'checkbox', checked: v }); get = () => el.checked;
   } else if (typeof v === 'number') {
     el = h('input', { type: 'number', step: 'any', value: v });
     get = () => { const n = Number(el.value); if (el.value.trim() === '' || !isFinite(n)) throw new Error(t('{name}: enter a number', { name: label })); return n; };
   } else if (typeof v === 'string') {
     const secret = /pass|secret|token|key/i.test(k);
-    el = h('input', { type: secret ? 'password' : 'text', value: v, autocomplete: secret ? 'new-password' : 'off', spellcheck: 'false' }); get = () => el.value.trim();
+    const dl = choiceList(choices[k]);
+    const inp = h('input', { type: secret ? 'password' : 'text', value: v, autocomplete: secret ? 'new-password' : 'off', spellcheck: 'false', list: dl ? dl.id : null });
+    el = dl ? h('span', {}, inp, dl) : inp; get = () => inp.value.trim();
   } else if (Array.isArray(v) && v.every(x => typeof x === 'string' || typeof x === 'number')) {
     const numbers = v.length > 0 && v.every(x => typeof x === 'number');
     el = h('textarea', { rows: Math.max(2, Math.min(8, v.length + 1)), spellcheck: 'false' }, v.join('\n')); top = true; help = t('One per line.');
@@ -735,7 +782,7 @@ async function pluginsPage() {
     h('div', { class: 'actions' }, h('button', { onclick: async () => { const x = await api('POST', '/api/plugins/reload'); toast(t('{n} plugin(s) found', { n: x.count })); again(); } }, t('Reload plugins')), pluginUpload(again)),
     r.errors.length ? h('div', { class: 'panel', style: 'color:var(--red)' }, r.errors.map(e => h('div', {}, e))) : null,
     r.plugins.length ? r.plugins.map(p => {
-      const form = pluginSettingsForm(p.settings);
+      const form = pluginSettingsForm(p.settings, p.defaults, p.setting_choices);
       return h('div', { class: 'panel' },
         h('div', { style: 'display:flex;gap:12px;align-items:center' }, h('b', { style: 'font-size:17px' }, p.name), h('span', { class: 'dim' }, 'v' + (p.version || '?')), p.author ? h('span', { class: 'dim' }, t('by {name}', { name: p.author })) : null, h('span', { style: 'flex:1' }),
           h('span', { class: p.enabled ? 'ok' : 'dim' }, p.enabled ? t('on') : t('off')),

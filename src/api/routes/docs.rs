@@ -33,7 +33,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("POST", "/library/sections/{id}/emptyTrash", "Admin: take the unavailable items (files gone from disk) out of the library for good"),
     ("GET", "/library/sections/{id}/all", "Browse: ?type=movie|show|episode &sort=title|year:desc|added_at:desc|rating:desc|random &genre=Drama &year>=2000 &unwatched=1 &title~=star &q= &offset &limit"),
     ("GET", "/library/sections/{id}/genres", "Genres and years in a library with counts"),
-    ("GET", "/library/sections/{id}/collections", "The library's collections, each with its size, a picture and the address of its items"),
+    ("GET", "/library/sections/{id}/collections", "The library's collections, each with its size, how many of them you have seen (viewedLeafCount), a picture and the address of its items"),
     ("GET", "/library/sections/{id}/categories", "The library's categories (one per genre) with a picture and size"),
     ("GET", "/library/metadata/{id}/related", "Rows for a movie or show page: Other Editions, Related Movies/Shows, More by <first director>, More with <first two actors> (?count=, default 6)"),
     ("GET", "/library/sections/{id}/filters", "Every filter the library page offers (?type=show|season|episode), with the values found and counts (labels and folders for the owner only; duplicates with ?includeAdvanced=1); use them in /all as field=value (several: a,b)"),

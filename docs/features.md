@@ -55,7 +55,9 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   only for the owner and duplicates sits apart at the end as the advanced filter. Labels, collections and edition can be set
   under **Edit details**.
 - **Library pages** — each library has **Library**, **Collections**, **Playlists** and
-  **Categories** tabs. A movie page shows rows of other editions of the same
+  **Categories** tabs. **Hide watched** on Collections (kept per account) counts only what you have
+  not seen, puts fully seen collections last and opens a collection with the **Unwatched** filter on
+  (its chip takes it off again). A movie page shows rows of other editions of the same
   film, related movies, **More by** the director and **More with** each of the first two actors
   (shows: related shows and More with).
 - **The "⋯" menu** on every poster and on a title's page: **Watch together** (tick people
@@ -225,7 +227,8 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   `imdb-top-250` (IMDb's Top 250 through its copy on Letterboxd, as IMDb blocks programs),
   `oscar-best-picture` (Wikidata), `tmdb-popular` and `tmdb-top-rated` (100 each, with a
   `tmdb_api_key` in the plugin's settings) and any public Letterboxd list or watchlist by its
-  address — `lists: [{"name": "IMDb Top 250", "source": "imdb-top-250"}, …]`, `libraries` by name
+  address — the lists are a table in the plugin's settings (a name and a source per line, the
+  sources offered to pick), `libraries` by name
   (empty = every movie library). Titles are found by TMDB or IMDb id, else by title and year; only
   titles you have go in. A collection the plugin filled keeps up with its list (titles that leave
   the list leave it), a title put in it by hand stays, and downloading details again does not

@@ -17,6 +17,15 @@
     "libraries": [],
     "tmdb_api_key": ""
   },
+  "setting_choices": {
+    "lists.source": [
+      {"value": "imdb-top-250", "label": "IMDb Top 250"},
+      {"value": "oscar-best-picture", "label": "Oscar: Best Picture"},
+      {"value": "tmdb-popular", "label": "TMDB: popular (needs a TMDB key)"},
+      {"value": "tmdb-top-rated", "label": "TMDB: best rated (needs a TMDB key)"},
+      {"value": "https://letterboxd.com/", "label": "A Letterboxd list or watchlist: its address"}
+    ]
+  },
   "timeout_seconds": 900,
   "enabled_by_default": false
 }

@@ -13,7 +13,7 @@ pub fn plugin_list(app: &Arc<App>) -> Resp {
         }
         json!({"id": pl.manifest.id, "name": pl.manifest.name, "version": pl.manifest.version, "description": pl.manifest.description,
             "author": pl.manifest.author, "hooks": pl.manifest.hooks, "command": pl.manifest.command, "enabled": st.enabled,
-            "settings": settings, "folder": pl.dir.to_string_lossy(), "user_panel": pl.manifest.user_panel, "reads_library": pl.manifest.reads_library,
+            "settings": settings, "defaults": pl.manifest.settings, "setting_choices": pl.manifest.setting_choices, "folder": pl.dir.to_string_lossy(), "user_panel": pl.manifest.user_panel, "reads_library": pl.manifest.reads_library,
             "placement": plugins::placement(&pl.manifest, &st.placement), "suggested_placement": plugins::placement(&pl.manifest, "")})
     }).collect();
     // Switched-on plugins first; the sort is stable, so each group keeps its order.

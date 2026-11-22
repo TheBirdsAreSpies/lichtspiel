@@ -68,6 +68,10 @@ pub struct Manifest {
     pub hooks: Vec<String>,
     #[serde(default)]
     pub settings: serde_json::Map<String, Value>,
+    /// Values the settings form offers for a setting, by its name, or "list.field" for a field of the
+    /// entries of a list of objects: {"lists.source": ["imdb-top-250", …]}. Other values can still be typed.
+    #[serde(default)]
+    pub setting_choices: serde_json::Map<String, Value>,
     #[serde(default = "default_timeout")]
     pub timeout_seconds: u64,
     #[serde(default)]

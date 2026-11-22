@@ -135,7 +135,12 @@ Events: `metadata.lookup`, `library.item.added`, `library.item.removed`,
 `server.started`, `schedule.daily`, `disk.low`, `calendar`, `api.call`.
 
 New plugins start switched off; switch them on in the **Plugins** page (where their settings,
-errors and a log of recent runs are shown too). Any language works — the Docker image includes
+errors and a log of recent runs are shown too). The settings are drawn as a form from the values in
+`settings`: a tick box, a number or text box, one line per entry for a list of texts, and a table for a
+list of flat objects (one line per entry, one column per field; the columns come from the defaults, so
+an emptied list keeps them). `setting_choices` offers values for a text box, by the setting's name or
+`"list.field"` for a column, as texts or `{"value", "label"}`; other values can still be typed:
+`"setting_choices": {"lists.source": [{"value": "imdb-top-250", "label": "IMDb Top 250"}]}`. Any language works — the Docker image includes
 Python 3.
 
 Ideas for more plugins are in [todo.md](todo.md).
