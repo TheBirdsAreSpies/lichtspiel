@@ -1,0 +1,77 @@
+# Checks on GitHub: the server's tests, the web app's lint and type check, the plugins' tests and the
+# app's analyze and tests. Nothing is deployed from here: the NAS deploys from Forgejo
+# (.gitea/workflows/deploy.yml). Forgejo does not run this file: it reads .gitea/workflows, which exists.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch stops the run still going for the older one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Some tests need ffmpeg and skip themselves without it; a test runs the bundled plugins with python3.
+      - name: ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # As the Docker build does: without the desktop status window.
+      - name: cargo test
+        run: cargo test --release --locked --no-default-features
+
+  web:
+    name: Web app lint and type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  plugins:
+    name: Plugin tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: unittest, one plugin after the other
+        run: |
+          failed=
+          for d in plugins/*/; do
+            [ -n "$(ls "$d"test*.py 2>/dev/null)" ] || continue
+            echo "::group::$d"
+            python3 -I -m unittest discover -s "$d" || failed="$failed $d"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then echo "::error::Failed:$failed"; exit 1; fi
+
+  app:
+    name: App analyze and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/lichtspiel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test

@@ -46,3 +46,8 @@ Some server tests need ffmpeg on the PATH and skip themselves without it.
 Commits use Conventional Commits with a scope, and the subject describes what the user sees, in lowercase. For example: `fix(web): editing details from a poster's menu changes the address`. Common scopes: `web`, `app`, `client`, `server`, `settings`, `plugins`, `ci`.
 
 **Pushing to `main` deploys to the NAS.** Push only when the owner asks for it.
+
+The repository has two remotes: `origin` (Forgejo on the NAS, which tests and deploys with
+`.gitea/workflows/deploy.yml`) and `github`, a private copy updated by hand with `git push github main`.
+There `.github/workflows/ci.yml` runs every check from the table above (server, web, plugins, app) and
+deploys nothing; Forgejo ignores that folder.
