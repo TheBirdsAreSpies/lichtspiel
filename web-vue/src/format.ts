@@ -58,3 +58,25 @@ export function cardLines(it: Item): [string, string] {
 export const kindName = (k: string) => ({ manual: t('normal'), smart: t('smart'), default: t('default') }[k] || k);
 /** The server's default playlists have English names, shown in the chosen language. */
 export const plTitle = (pl: Playlist) => (pl.default ? t(pl.title) : pl.title);
+
+// ---- numbers of the dashboard
+const hour12 = () => { const f = pref('timeFormat', 'auto'); return f === '12' ? true : f === '24' ? false : undefined; };
+/** A date and time as the language writes it (unix seconds). */
+export const fmtDateTime = (sec?: number) => (sec ? new Date(sec * 1000).toLocaleString(lang.value, { hour12: hour12() }) : '');
+export const fmtDate = (sec?: number) => (sec ? new Date(sec * 1000).toLocaleDateString(lang.value) : '');
+/** Bytes per second as bits: 12,5 Mbit/s. */
+export const fmtBits = (bps: number) => { const b = bps * 8; return b >= 1e9 ? fmtNum(b / 1e9, 2) + ' Gbit/s' : b >= 1e6 ? fmtNum(b / 1e6, 1) + ' Mbit/s' : b >= 1e3 ? fmtNum(b / 1e3, 0) + ' kbit/s' : fmtNum(b, 0) + ' bit/s'; };
+export const fmtBytes = (b: number) => (b >= 1e12 ? fmtNum(b / 1e12, 2) + ' TB' : b >= 1e9 ? fmtNum(b / 1e9, 1) + ' GB' : b >= 1e6 ? fmtNum(b / 1e6, 0) + ' MB' : fmtNum(b / 1e3, 0) + ' kB');
+export const fmtPct = (v?: number | null) => (v === null || v === undefined ? '–' : fmtNum(v, v < 10 ? 1 : 0) + ' %');
+/** "just now", "5 min ago", "3 h ago", else the date. */
+export function fmtAgo(sec: number, now: number): string {
+  const d = Math.max(0, now - sec);
+  if (d < 60) return t('just now');
+  if (d < 3600) return t('{n} min ago', { n: Math.floor(d / 60) });
+  if (d < 86400) return t('{n} h ago', { n: Math.floor(d / 3600) });
+  return fmtDate(sec);
+}
+export const fmtUptime = (s: number) => { const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60; return d ? t('{d} d {h} h', { d, h }) : h ? t('{h} h {m} min', { h, m }) : t('{m} min', { m }); };
+/** Round steps for a chart's axis: four even steps of a round size up to at least v (0, 10, 20, 30, 40 for 33.4). */
+const niceMax = (v: number) => { if (!(v > 0)) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; };
+export const niceTop = (v: number) => 4 * niceMax(Math.max(v, 1e-9) / 4);
