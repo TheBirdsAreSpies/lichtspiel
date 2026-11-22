@@ -48,6 +48,20 @@ Commits use Conventional Commits with a scope, and the subject describes what th
 **Pushing to `main` deploys to the NAS.** Push only when the owner asks for it.
 
 The repository has two remotes: `origin` (Gitea on the NAS, which tests and deploys with
-`.gitea/workflows/deploy.yml`) and `github`, a private copy updated by hand with `git push github main`.
+`.gitea/workflows/deploy.yml`) and `github`, a copy updated by hand with `git push github main`.
 There `.github/workflows/ci.yml` runs every check from the table above (server, web, plugins, app) and
 deploys nothing; Gitea ignores that folder.
+
+### Releases
+
+A release is a tag `vX.Y.Z` on GitHub. `.github/workflows/release.yml` then runs the server tests,
+builds the Docker image for amd64 and arm64, publishes it as `ghcr.io/thebirdsarespies/lichtspiel`
+(tags `X.Y.Z`, `X.Y` and `latest`) and makes a GitHub release with notes from the commits. A tag with
+a dash (`v0.2.0-rc.1`) becomes a pre-release and gets only its own image tag. The NAS does not use
+these images.
+
+1. Raise `version` in `Cargo.toml`, then run `cargo build --release --no-default-features` so
+   `Cargo.lock` follows (the builds use `--locked`). Commit: `chore(release): X.Y.Z`.
+2. `git tag vX.Y.Z`, then `git push && git push github main && git push github vX.Y.Z`.
+
+The workflow stops at once when the tag and `Cargo.toml` disagree.

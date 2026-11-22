@@ -39,6 +39,21 @@ The Docker image was built and tested on an Intel/AMD (x86-64) computer: the ful
 passes inside it, including converting video and downloading movie details. It was not
 tried on a real Synology, so the graphics-chip conversion there is untested.
 
+### Ready-made image instead of building
+
+Each release is also published as an image for Intel/AMD and ARM:
+`ghcr.io/thebirdsarespies/lichtspiel` (tags `latest`, a version like `0.2.0`, or `0.2` for its
+fixes). It saves the 10–20 minutes of building. Put `LICHTSPIEL_IMAGE=ghcr.io/thebirdsarespies/lichtspiel:latest`
+in the `.env` file next to `docker-compose.yml` (steps 2–3 stay the same), then over SSH in that folder:
+
+```
+docker compose pull
+docker compose up -d --no-build
+```
+
+The same two lines update it to the newest release. Without `--no-build` Docker builds from the
+source instead.
+
 ### Automatic build and deploy (Gitea)
 
 `.gitea/workflows/deploy.yml` builds and starts a new version on the Synology after every push to
