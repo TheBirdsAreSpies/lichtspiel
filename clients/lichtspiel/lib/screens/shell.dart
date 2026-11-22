@@ -13,6 +13,7 @@ import 'home.dart';
 import 'library.dart';
 import 'playlists.dart';
 import 'settings.dart';
+import 'stats.dart';
 import 'watchlist.dart';
 
 /// The icon of a library by its kind.
@@ -214,6 +215,7 @@ class MoreScreen extends StatelessWidget {
         ListTile(leading: const Icon(Icons.queue_music), title: const Text('Warteschlange'), onTap: () => showQueueDialog(context, api)),
         ListTile(leading: const Icon(Icons.groups_outlined), title: const Text('Zusammen schauen'), subtitle: const Text('Einem Raum mit Code beitreten'), onTap: () => joinTogetherDialog(context, api)),
         if (DownloadRights.allowed) ListTile(leading: const Icon(Icons.download_outlined), title: const Text('Downloads'), onTap: () => push(DownloadsScreen(api: api))),
+        ListTile(leading: const Icon(Icons.insights_outlined), title: const Text('Statistik'), subtitle: const Text('Was du wann und wie viel schaust'), onTap: () => push(StatsScreen(api: api, admin: admin))),
         if (admin) ListTile(leading: const Icon(Icons.monitor_heart_outlined), title: const Text('Dashboard'), onTap: () => push(DashboardScreen(api: api))),
         ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('Einstellungen'), onTap: () => push(SettingsScreen(api: api, admin: admin))),
         const Divider(),

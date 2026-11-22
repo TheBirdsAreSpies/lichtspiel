@@ -7,6 +7,7 @@ import 'package:lichtspiel/api.dart';
 import 'package:lichtspiel/screens/detail.dart';
 import 'package:lichtspiel/screens/library.dart';
 import 'package:lichtspiel/screens/shell.dart';
+import 'package:lichtspiel/screens/stats.dart';
 import 'package:lichtspiel/screens/watchlist.dart';
 
 /// The main screens are drawn on a phone and on a computer without overflowing or throwing.
@@ -62,6 +63,20 @@ List<Map<String, dynamic>> _episodes() => [
         },
     ];
 
+/// A year of viewing: an evening episode most days, a movie at the weekend.
+Map<String, dynamic> _stats() {
+  final now = DateTime.now();
+  final plays = <List<Object>>[];
+  for (var d = 300; d >= 0; d--) {
+    final day = DateTime(now.year, now.month, now.day - d, 20 + d % 3);
+    plays.add([day.millisecondsSinceEpoch ~/ 1000, 1, day.weekday >= 6 ? 'movie' : 'episode', day.weekday >= 6 ? 110.5 : 42.0]);
+  }
+  final title = {'id': 1, 'title': 'Ein sehr langer Filmtitel, der auf einem Telefon umbrechen muss', 'year': 2021, 'thumb': '/library/metadata/1/thumb', 'plays': 12, 'minutes': 1300.5};
+  return {'days': 365, 'from': now.millisecondsSinceEpoch ~/ 1000 - 365 * 86400, 'size': plays.length, 'minutes': 15000.0, 'plays': plays,
+    'shows': [{...title, 'type': 'show'}], 'movies': [{...title, 'type': 'movie', 'id': 2}], 'genres': [{'genre': 'Drama', 'plays': 200, 'minutes': 9000.0}, {'genre': 'Komödie', 'plays': 50, 'minutes': 2000.0}],
+    'users': [{'id': 1, 'username': 'anna', 'display_name': 'Anna mit einem langen Namen', 'plays': 301, 'minutes': 15000.0}]};
+}
+
 http.Response _json(Object body) => http.Response.bytes(utf8.encode(jsonEncode(body)), 200, headers: {'content-type': 'application/json'});
 
 Future<http.Response> _server(http.Request r) async {
@@ -74,6 +89,12 @@ Future<http.Response> _server(http.Request r) async {
   if (p == '/library/sections') return _json({'MediaContainer': {'Directory': [{'key': '1', 'type': 'movie', 'title': 'Filme', 'count': 12}, {'key': '2', 'type': 'music', 'title': 'Musik', 'count': 3}]}});
   if (p == '/hubs') return _json({'MediaContainer': {'Hub': [{'title': 'Weiterschauen', 'hubIdentifier': 'continueWatching', 'Metadata': [_movie]}]}});
   if (p.startsWith('/library/sections/1/all')) return _json({'MediaContainer': {'totalSize': 2, 'Metadata': [_movie, {..._movie, 'ratingKey': '2', 'id': 2}]}});
+  if (p == '/api/stats/plays') return _json(_stats());
+  if (p == '/api/users') return _json({'users': [{'id': 1, 'username': 'anna', 'display_name': 'Anna mit einem langen Namen'}, {'id': 2, 'username': 'ben'}]});
+  if (p == '/api/dashboard/stats') {
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return _json({'samples': [for (var i = 0; i < 48; i++) {'at': now - i * 3600, 'cpu': 5 + i % 24, 'streams': i % 3, 'transcodes': i % 2}]});
+  }
   if (p.startsWith('/api/watchlist')) return _json({'MediaContainer': {'Metadata': [_movie]}});
   return _json({});
 }
@@ -111,6 +132,16 @@ void main() {
     testWidgets('a library on a $name', (tester) async {
       await _show(tester, size, LibraryScreen(api: api, section: const {'key': '1', 'type': 'show', 'title': 'Serien'}));
       expect(find.byType(SegmentedButton<String>), findsOneWidget);
+    });
+
+    testWidgets('the statistics on a $name', (tester) async {
+      await _show(tester, size, StatsScreen(api: api, admin: true));
+      expect(find.text('Lieblingszeit'), findsOneWidget);
+      // Down to the end: every part of the page is drawn once without overflowing.
+      for (final part in ['Tageszeiten', 'Meistgeschaute Serien', 'Genres', 'Last auf dem Server nach Tageszeit']) {
+        await tester.scrollUntilVisible(find.text(part), 300, scrollable: find.byType(Scrollable).first);
+        expect(tester.takeException(), isNull);
+      }
     });
 
     testWidgets('the watchlist on a $name', (tester) async {

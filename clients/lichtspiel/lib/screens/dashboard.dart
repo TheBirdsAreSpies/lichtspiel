@@ -422,9 +422,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     var start = day0.subtract(Duration(days: days - 1));
     if (weekly) start = start.subtract(Duration(days: (start.weekday - 1) % 7));
     final step = Duration(days: weekly ? 7 : 1);
-    final buckets = <_Bucket>[];
+    final buckets = <ChartBucket>[];
     for (var t = start; !t.isAfter(day0); t = t.add(step)) {
-      buckets.add(_Bucket(t.millisecondsSinceEpoch / 1000, t.add(step).millisecondsSinceEpoch / 1000, '${t.day}.${t.month}.'));
+      buckets.add(ChartBucket(t.millisecondsSinceEpoch / 1000, t.add(step).millisecondsSinceEpoch / 1000, '${t.day}.${t.month}.'));
     }
     for (final p in (r['plays'] as List)) {
       final at = p[0] as num;
@@ -453,7 +453,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Text('${r['size']} Wiedergaben · ${dur(r['minutes'] ?? 0)} gesehen', style: TextStyle(color: context.dim, fontSize: 12)),
             ]),
             const SizedBox(height: 8),
-            SizedBox(height: 180, width: double.infinity, child: CustomPaint(painter: _BarPainter(buckets, context.hair2, context.faint, {'movie': context.info, 'episode': context.warn}))),
+            SizedBox(height: 180, width: double.infinity, child: CustomPaint(painter: StackedBarPainter(buckets, context.hair2, context.faint, {'movie': context.info, 'episode': context.warn}))),
             const SizedBox(height: 6),
             Row(children: [
               Icon(Icons.circle, size: 10, color: context.info), SizedBox(width: 4), Text('Filme', style: TextStyle(fontSize: 12)), SizedBox(width: 12),
@@ -600,24 +600,27 @@ class _LinePainter extends CustomPainter {
   bool shouldRepaint(_LinePainter old) => true;
 }
 
-class _Bucket {
+/// One bar of [StackedBarPainter]: a time span and its parts (movie, episode, other …).
+class ChartBucket {
   final double from, to;
   final String label;
   final Map<String, num> parts = {};
-  _Bucket(this.from, this.to, this.label);
+  ChartBucket(this.from, this.to, this.label);
 }
 
-class _BarPainter extends CustomPainter {
-  final List<_Bucket> buckets;
+/// Stacked bars per bucket, the parts in the order of [keys] (one without a colour is grey).
+class StackedBarPainter extends CustomPainter {
+  final List<ChartBucket> buckets;
+  final List<String> keys;
   final Color gridColor, textColor;
   final Map<String, Color> colors;
-  _BarPainter(this.buckets, this.gridColor, this.textColor, this.colors);
+  StackedBarPainter(this.buckets, this.gridColor, this.textColor, this.colors, {this.keys = const ['movie', 'episode', 'other']});
 
   @override
   void paint(Canvas canvas, Size size) {
     const left = 36.0, bottom = 18.0;
     final w = size.width - left, h = size.height - bottom;
-    double total(_Bucket b) => b.parts.values.fold<double>(0, (a, v) => a + v.toDouble());
+    double total(ChartBucket b) => b.parts.values.fold<double>(0, (a, v) => a + v.toDouble());
     var top = buckets.fold<double>(0, (m, b) => total(b) > m ? total(b) : m);
     if (top <= 0) top = 1;
     final grid = Paint()..color = gridColor;
@@ -631,7 +634,7 @@ class _BarPainter extends CustomPainter {
     final bw = w / buckets.length;
     for (var i = 0; i < buckets.length; i++) {
       var y = h;
-      for (final k in ['movie', 'episode', 'other']) {
+      for (final k in keys) {
         final v = buckets[i].parts[k] ?? 0;
         if (v <= 0) continue;
         final bh = h * v.toDouble() / top;
@@ -647,5 +650,5 @@ class _BarPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_BarPainter old) => true;
+  bool shouldRepaint(StackedBarPainter old) => true;
 }

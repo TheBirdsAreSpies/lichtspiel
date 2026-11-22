@@ -93,7 +93,8 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   (*Settings → Keep converted downloads*). Under **Users & invites** each person can be allowed
   to download or not (*May download*; on by default); without it the plain
   file download is refused too. Converting also needs *May convert*.
-- **Statistics** (everyone, in the left menu; it can be unpinned like a library): your own viewing
+- **Statistics** (everyone: in the web app's left menu, where it can be unpinned like a library, and in
+  the app under **Mehr → Statistik**): your own viewing
   over 30 or 90 days, a year or everything: time watched, movies, episodes, days with viewing and
   the busiest one, your favourite time, a chart per day, week or month (movies and episodes
   stacked), **times of day** as a grid of weekdays by hours, and the most watched shows, movies
