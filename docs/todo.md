@@ -46,7 +46,9 @@ Collected on 2026-11-22.
 - **Still missing there** (only in `web/` so far): new smart playlists and their rules (the button
   opens the classic app), the advanced library filters (rules), the server's settings, the dashboard,
   users and invites, plugins, downloads, Chromecast, watch together, sign-in with a code, merged
-  versions, editing details; in the player: speed, night mode, chapters, skipping intros and credits.
+  versions, editing details; in the player: quality and subtitle size in ⚙, the sleep timer, the
+  countdown to the next episode ("Are you still watching?"), the still preview on the seek bar,
+  "What happened so far", time left / "ends at".
 
 ### Server
 

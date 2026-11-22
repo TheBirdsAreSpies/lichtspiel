@@ -4,10 +4,12 @@
 // stream that starts at the seek point (stream.mp4?offset=…), so one seek bar covers the whole video either way.
 // Progress goes to the server every 10 s and on pause and leaving (/:/timeline). An episode goes on with the next.
 // A movie split over files plays its parts one after the other, still with one seek bar.
+// ⚙ has the speed and night mode; chapters, intro, recap and credits are marked on the seek bar, with
+// buttons to skip the intro / recap and the credits (on to the next episode).
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api, get, list, pref, savePref, ticket, withTicket, type Item, type Stream, type Subtitle } from '../api';
-import { fmtTime, langName, lang2, resumeAt } from '../format';
+import { api, get, list, pref, savePref, ticket, withTicket, type Container, type Item, type Stream, type Subtitle } from '../api';
+import { fmtNum, fmtTime, langName, lang2, resumeAt } from '../format';
 import { t } from '../i18n';
 import Icon from '../components/Icon.vue';
 import { nextInQueue, queue } from '../queue';
@@ -29,7 +31,7 @@ const muted = ref(false);
 const volume = ref(1);
 const full = ref(false);
 const idle = ref(false);
-const menu = ref<'' | 'subs' | 'audio'>('');
+const menu = ref<'' | 'subs' | 'audio' | 'settings' | 'chapters'>('');
 const audio = ref<number | null>(null); // the audio stream's index, null = the file's first
 const sub = ref(-1); // the text subtitle shown (index in subs), -1 = none
 const burn = ref<number | null>(null); // the picture subtitle burned into the video (index in subs)
@@ -37,6 +39,7 @@ const part = ref(0); // the file of a split movie that plays
 const base = ref(0); // where that file starts in the whole movie (s)
 const stopped = ref(false); // the owner stopped this playback (from the dashboard)
 const stoppedMsg = ref('');
+const upNext = ref<Item | null>(null); // the next episode (looked up when the video starts)
 let tk = '';
 let timer = 0;
 let idleTimer = 0;
@@ -90,6 +93,7 @@ async function load(at: number) {
   const noDirect = pref('directPlay', '1') === '0' && m === 'direct' && d.allowed;
   if (noDirect) m = 'transcode';
   method.value = m;
+  levelVolume();
   if (m === 'direct') {
     offset.value = 0;
     v.src = withTicket(`/library/parts/${i.id}/file${p ? '?part=' + p : ''}`, tk);
@@ -98,6 +102,7 @@ async function load(at: number) {
     offset.value = at;
     v.src = withTicket(`/video/transcode/${i.id}/stream.mp4?quality=${q}&offset=${at.toFixed(1)}${extra}${noDirect ? '&transcode=1' : ''}`, tk);
   }
+  v.defaultPlaybackRate = v.playbackRate = speed.value;
   addSubtitles();
   v.play().catch(() => { waiting.value = false; paused.value = true; });
 }
@@ -206,6 +211,96 @@ function setAudio(a: Stream, i: number) {
   load(now.value);
 }
 
+// Speed (⚙, or < and >): kept with the account, like in the classic app.
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const speed = ref(SPEEDS.includes(Number(pref('speed', '1'))) ? Number(pref('speed', '1')) : 1);
+const speedName = (x: number) => (x === 1 ? t('Normal speed') : fmtNum(x) + '×');
+function setSpeed(x: number, tell = false) {
+  speed.value = x;
+  const v = video.value; if (v) v.defaultPlaybackRate = v.playbackRate = x;
+  savePref('speed', String(x)).catch(() => {});
+  if (tell) say(t('Speed: {speed}', { speed: speedName(x) }));
+}
+
+// Night mode (⚙): a compressor evens out the sound, so explosions don't boom and voices stay clear. "Level the
+// volume" (classic app settings) brings measured videos to about -23 LUFS. Both go through one sound graph,
+// made the first time one is needed; the same filter values as in the classic app.
+const night = ref(pref('nightMode', '0') === '1');
+let sound: { ctx: AudioContext, gain: GainNode, comp: DynamicsCompressorNode } | null = null;
+function soundGraph() {
+  if (sound) return sound;
+  const ctx = new AudioContext(), gain = ctx.createGain();
+  ctx.createMediaElementSource(video.value!).connect(gain);
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -32; comp.knee.value = 12; comp.ratio.value = 6; comp.attack.value = 0.005; comp.release.value = 0.3;
+  const makeup = ctx.createGain();
+  makeup.gain.value = 0.5;
+  const limit = ctx.createDynamicsCompressor();
+  limit.threshold.value = -2; limit.knee.value = 0; limit.ratio.value = 20; limit.attack.value = 0.001; limit.release.value = 0.1;
+  comp.connect(makeup); makeup.connect(limit); limit.connect(ctx.destination);
+  return (sound = { ctx, gain, comp });
+}
+function soundRoute() {
+  const g = soundGraph();
+  g.gain.disconnect();
+  g.gain.connect(night.value ? g.comp : g.ctx.destination);
+  g.ctx.resume().catch(() => {});
+}
+function levelVolume() {
+  const i = it.value; if (!i) return;
+  const on = pref('levelVolume', '0') === '1' && typeof i.loudness === 'number';
+  if (!on && !sound && !night.value) return;
+  try {
+    soundGraph().gain.gain.value = on ? Math.min(2, Math.max(0.3, Math.pow(10, (-23 - (i.loudness as number)) / 20))) : 1;
+    soundRoute();
+  } catch { /* the video just plays at its own volume */ }
+}
+function setNight(on: boolean) {
+  menu.value = '';
+  night.value = on;
+  savePref('nightMode', on ? '1' : '0').catch(() => {});
+  try { soundRoute(); } catch { night.value = false; say(t('Night mode does not work in this browser.')); return; }
+  say(on ? t('Night mode on: loud parts are quieter, voices are clearer.') : t('Night mode off'));
+}
+
+// Chapters of the file, and the intro, recap and credits the server knows (s, in the whole video).
+const chapters = ref<{ at: number, title: string }[]>([]);
+const span = (m?: { start: number, end: number }) => (m && m.end > m.start ? [m.start / 1000, m.end / 1000] as [number, number] : null);
+const intro = computed(() => span(it.value?.intro));
+const recap = computed(() => span(it.value?.recap));
+const credits = computed(() => (it.value?.credits || []).map(ms => ms / 1000));
+const at = (s: number) => (duration.value ? Math.min(100, (s / duration.value) * 100) : 0);
+const chapterAt = (s: number) => (chapters.value.length > 1 ? [...chapters.value].reverse().find(c => c.at <= s) || null : null);
+// "Skip intro" / "Skip recap" while they run; "Skip credits" (or on to what comes next) while the credits do.
+const skipBtn = computed<{ label: string, to: number } | null>(() => {
+  const n = now.value, d = duration.value;
+  for (const [m, label] of [[intro.value, 'Skip intro'], [recap.value, 'Skip recap']] as const) if (m && n >= m[0] && n < m[1] - 1) return { label: t(label), to: m[1] };
+  if (d && credits.value.some(c => n >= c) && n < d - 3) {
+    const nxt = route.query.queue ? queue.items[0] : upNext.value;
+    return { label: !nxt ? t('Skip credits') : nxt.type === 'episode' ? t('Next episode ▸') : t('Play next ▸'), to: -1 };
+  }
+  return null;
+});
+// A skip button that just came up stays 10 s even when the controls fade out, then goes with them.
+const skipFresh = ref(false);
+let freshTimer = 0;
+watch(() => skipBtn.value && skipBtn.value.label, (l, was) => {
+  if (!l || l === was) return;
+  skipFresh.value = true; clearTimeout(freshTimer);
+  freshTimer = window.setTimeout(() => { skipFresh.value = false; }, 10000);
+});
+function doSkip() {
+  const b = skipBtn.value; if (!b) return;
+  if (b.to >= 0) seek(b.to); else finish();
+}
+// The time and chapter under the pointer on the seek bar.
+const tip = ref<{ x: number, text: string } | null>(null);
+function hover(e: MouseEvent) {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), s = f * duration.value, c = chapterAt(s);
+  tip.value = { x: Math.max(40, Math.min(r.width - 40, e.clientX - r.left)), text: fmtTime(s) + (c ? ' · ' + c.title : '') };
+}
+
 function seek(to: number) {
   const v = video.value; if (!v) return;
   to = Math.max(0, Math.min(duration.value ? duration.value - 1 : to, to));
@@ -235,9 +330,9 @@ function toggleFull() {
   else if (box.value) box.value.requestFullscreen().catch(() => {});
 }
 
-function report(state: 'playing' | 'paused' | 'stopped') {
+function report(state: 'playing' | 'paused' | 'stopped', ms = Math.floor(now.value * 1000)) {
   const i = it.value; if (!i) return Promise.resolve();
-  return api<{ stopped?: boolean, message?: string } | null>('POST', `/:/timeline?ratingKey=${i.id}&time=${Math.floor(now.value * 1000)}&state=${state}&client=web`)
+  return api<{ stopped?: boolean, message?: string } | null>('POST', `/:/timeline?ratingKey=${i.id}&time=${ms}&state=${state}&client=web`)
     .then(r => {
       // The owner stopped this playback from the dashboard.
       if (r && r.stopped) { stopped.value = true; stoppedMsg.value = r.message || ''; video.value && video.value.pause(); clearInterval(timer); }
@@ -255,15 +350,20 @@ async function nextEpisode(): Promise<Item | null> {
   return at >= 0 ? all.slice(at + 1).find(e => !e.missing) || null : null;
 }
 let done = false; // the end was reported already (not again when leaving)
-async function ended() {
+function ended() {
   // The next part of a split movie.
   if (split.value && part.value < parts.value.length - 1) { load(partStart(part.value + 1)); return; }
+  finish();
+}
+// The end, or "Skip credits" (which counts as watched to the end): what comes next, or close.
+async function finish() {
+  if (done) return;
   done = true;
-  await report('stopped');
+  await report('stopped', Math.floor(duration.value * 1000));
   const fromQueue = nextInQueue();
   if (fromQueue) { router.replace({ name: 'play', params: { id: fromQueue.id }, query: { t: String(Math.floor(resumeAt(fromQueue))), queue: '1' } }); return; }
   // The end of a playlist: it stops there, also after an episode.
-  const next = route.query.queue ? null : await nextEpisode();
+  const next = route.query.queue ? null : upNext.value || await nextEpisode().catch(() => null);
   if (next) router.replace({ name: 'play', params: { id: next.id }, query: { t: '0' } });
   else close();
 }
@@ -288,6 +388,7 @@ function key(e: KeyboardEvent) {
   else if (k === 'ArrowDown') setVolume(Math.max(0, v.volume - 0.1));
   else if (k === 'm') toggleMute();
   else if (k === 'f') toggleFull();
+  else if (k === '<' || k === '>') { const n = SPEEDS.indexOf(speed.value) + (k === '>' ? 1 : -1); setSpeed(SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, n))], true); }
   else if (k === 'Escape' && !document.fullscreenElement) { if (menu.value) menu.value = ''; else close(); }
   else return;
   e.preventDefault(); wake();
@@ -299,7 +400,9 @@ onMounted(async () => {
   try { v.volume = Math.min(1, Math.max(0, Number(localStorage.getItem('volume') || 1))); } catch { /* none */ }
   v.addEventListener('timeupdate', () => { now.value = base.value + offset.value + v.currentTime; });
   v.addEventListener('progress', () => { buffered.value = v.buffered.length ? v.buffered.end(v.buffered.length - 1) : 0; });
-  v.addEventListener('play', () => { paused.value = false; wake(); });
+  v.addEventListener('play', () => { paused.value = false; wake(); if (sound) sound.ctx.resume().catch(() => {}); });
+  // The browser's own menu (picture-in-picture …) can change the speed too: keep it in step.
+  v.addEventListener('ratechange', () => { if (SPEEDS.includes(v.playbackRate) && v.playbackRate !== speed.value) setSpeed(v.playbackRate); });
   v.addEventListener('pause', () => { paused.value = true; idle.value = false; if (!v.ended) report('paused'); });
   v.addEventListener('waiting', () => { waiting.value = true; });
   v.addEventListener('playing', () => { waiting.value = false; });
@@ -314,11 +417,17 @@ onMounted(async () => {
     if (!it.value) { error.value = t('Not found'); return; }
     chooseTracks();
     await load(Number(route.query.t) || 0);
+    const id = it.value.id;
+    if (media.value) get<Container<'Chapter', { start: number, title: string }>>(`/library/metadata/${id}/chapters`).then(r => {
+      chapters.value = (r.MediaContainer.Chapter || []).map(c => ({ at: c.start / 1000, title: c.title.replace(/^Chapter (\d+)$/, (_, n) => t('Chapter {n}', { n })) }));
+    }).catch(() => {});
+    if (!route.query.queue) nextEpisode().then(n => { upNext.value = n; }).catch(() => {});
     timer = window.setInterval(() => { if (!paused.value) report('playing'); }, 10000);
   } catch (e) { error.value = (e as Error).message; waiting.value = false; }
 });
 onBeforeUnmount(() => {
-  clearInterval(timer); clearTimeout(idleTimer); clearTimeout(noticeTimer);
+  clearInterval(timer); clearTimeout(idleTimer); clearTimeout(noticeTimer); clearTimeout(freshTimer);
+  if (sound) sound.ctx.close().catch(() => {});
   document.removeEventListener('keydown', key);
   document.removeEventListener('fullscreenchange', onFull);
   if (it.value && !stopped.value && !done) report('stopped');
@@ -352,9 +461,16 @@ const methodName = computed(() => ({ direct: t('direct play'), remux: t('repacka
       </div>
     </div>
     <div v-if="notice" class="p-notice">{{ notice }}</div>
+    <button v-if="skipBtn && !error && !stopped" class="p-skip" :class="{ shown: skipFresh || !idle }" @click.stop="doSkip">{{ skipBtn.label }}</button>
     <div ref="bottom" class="p-bottom" @click.stop>
-      <div class="seek">
+      <div class="seek" @mousemove="hover" @mouseleave="tip = null">
         <div class="seek-buf" :style="{ width: bufPct + '%' }"></div>
+        <div class="marks">
+          <div v-for="c in chapters.length > 1 ? chapters.slice(1) : []" :key="'c' + c.at" class="mark chap" :style="{ left: at(c.at) + '%' }"></div>
+          <div v-for="c in credits" :key="'e' + c" class="mark" :style="{ left: at(c) + '%' }"></div>
+          <template v-for="m in [intro, recap]" :key="m ? 'i' + m[0] : ''"><div v-if="m" class="mark span" :style="{ left: at(m[0]) + '%', width: Math.max(0.3, at(m[1]) - at(m[0])) + '%' }"></div></template>
+        </div>
+        <div v-if="tip" class="seek-tip" :style="{ left: tip.x + 'px' }">{{ tip.text }}</div>
         <input type="range" min="0" :max="duration || 1" step="1" :value="now" :aria-label="t('Position')"
           :style="{ '--p': pct + '%' }" @change="seek(Number(($event.target as HTMLInputElement).value))">
       </div>
@@ -366,6 +482,12 @@ const methodName = computed(() => ({ direct: t('direct play'), remux: t('repacka
         <input class="vol" type="range" min="0" max="1" step="0.05" :value="muted ? 0 : volume" :aria-label="t('Volume')" @input="setVolume(Number(($event.target as HTMLInputElement).value))">
         <span class="time">{{ fmtTime(now) }} / {{ fmtTime(duration) }}</span>
         <span class="grow"></span>
+        <div v-if="chapters.length > 1" class="p-menu-wrap">
+          <button class="iconbtn label" :class="{ on: menu === 'chapters' }" @click="menu = menu === 'chapters' ? '' : 'chapters'">{{ t('Chapters') }}</button>
+          <div v-if="menu === 'chapters'" class="p-menu">
+            <button v-for="c in chapters" :key="c.at" :class="{ on: chapterAt(now) === c }" @click="menu = ''; seek(c.at)">{{ c.title }} <span class="dim">· {{ fmtTime(c.at) }}</span></button>
+          </div>
+        </div>
         <div class="p-menu-wrap">
           <button v-if="audios.length > 1" class="iconbtn label" :class="{ on: menu === 'audio' }" @click="menu = menu === 'audio' ? '' : 'audio'">{{ t('Audio') }}</button>
           <div v-if="menu === 'audio'" class="p-menu">
@@ -379,6 +501,15 @@ const methodName = computed(() => ({ direct: t('direct play'), remux: t('repacka
             <button v-for="(s, i) in subs" :key="i" :class="{ on: sub === i || burn === i }" :disabled="part > 0 && !isPicture(s)" @click="setSub(i)">
               {{ subName(s, i) }}<template v-if="isPicture(s)"> · {{ t('burned in') }}</template>
             </button>
+          </div>
+        </div>
+        <div class="p-menu-wrap">
+          <button class="iconbtn" :class="{ on: menu === 'settings' }" :aria-label="t('Settings')" @click="menu = menu === 'settings' ? '' : 'settings'"><Icon name="settings" /></button>
+          <div v-if="menu === 'settings'" class="p-menu">
+            <div class="p-menu-head">{{ t('Playback speed') }}</div>
+            <button v-for="x in SPEEDS" :key="x" :class="{ on: speed === x }" @click="menu = ''; setSpeed(x)">{{ speedName(x) }}</button>
+            <hr>
+            <button :class="{ on: night }" @click="setNight(!night)">{{ night ? '✓ ' : '' }}{{ t('Night mode') }}</button>
           </div>
         </div>
         <button class="iconbtn" :aria-label="t('Full screen')" @click="toggleFull"><Icon :name="full ? 'exitfull' : 'full'" /></button>
