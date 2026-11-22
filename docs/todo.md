@@ -31,6 +31,11 @@ and conventions are in [development.md](development.md).
 - **dart:io can't close a socket stuck in a TLS handshake** (`clients/lichtspiel/lib/api.dart`, a
   `shortcut:` comment). One leaked socket per failed try; nothing simple in dart:io today, revisit
   when it gains a handshake timeout.
+- **Flutter after 3.47.9 deprecates `package:flutter/material.dart`** (app) for
+  `package:material_ui/material_ui.dart`: `flutter analyze` then reports every file that imports it
+  (37 on 2026-11-22) and fails. GitHub CI is held at 3.47.9 (`flutter-version` in
+  `.github/workflows/ci.yml`). Before updating Flutter: switch the imports to `material_ui` (add it to
+  `pubspec.yaml`), then raise the version in `ci.yml`.
 
 ## Ideas
 
