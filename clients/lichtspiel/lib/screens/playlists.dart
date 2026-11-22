@@ -196,13 +196,13 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
             if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
             return;
           }
-          if (!mounted) return;
+          if (!context.mounted) return;
           await Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: widget.api, id: '${p['id']}')));
           reload();
         }),
         BarAction(Icons.auto_awesome_outlined, 'Neue intelligente Playlist', () async {
           final id = await smartEditor(context, widget.api);
-          if (id == null || !mounted) return;
+          if (id == null || !context.mounted) return;
           await Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: widget.api, id: id)));
           reload();
         }),
@@ -227,7 +227,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                           for (final p in l)
                             ListTile(
                               leading: p['thumbs'] is List && (p['thumbs'] as List).isNotEmpty
-                                  ? ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(widget.api.img('${(p['thumbs'] as List).first}'), headers: widget.api.auth, width: 40, height: 60, fit: BoxFit.cover, cacheWidth: 100, errorBuilder: (_, __, ___) => const Icon(Icons.playlist_play)))
+                                  ? ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(widget.api.img('${(p['thumbs'] as List).first}'), headers: widget.api.auth, width: 40, height: 60, fit: BoxFit.cover, cacheWidth: 100, errorBuilder: (_, _, _) => const Icon(Icons.playlist_play)))
                                   : const Icon(Icons.playlist_play, size: 36),
                               title: Text(plTitle(p)),
                               subtitle: Text([
@@ -338,19 +338,19 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   await smartEditor(context, api, playlist: p);
                 case 'copy':
                   final r = await api.post('/playlists/${widget.id}/copy', {});
-                  if (mounted && r is Map) {
+                  if (context.mounted && r is Map) {
                     await Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: api, id: '${r['id']}')));
                     return;
                   }
                 case 'delete':
                   if (await _sure(context, 'Die Playlist „${plTitle(p)}“ löschen?')) {
                     await api.deletePlaylist(widget.id);
-                    if (mounted) Navigator.pop(context);
+                    if (context.mounted) Navigator.pop(context);
                     return;
                   }
               }
             } catch (e) {
-              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
+              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
             }
             reload();
           },
@@ -391,7 +391,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     final i = items.indexOf(it);
                     final thumb = '${it['squareThumb'] ?? (it['type'] == 'episode' && it['grandparentThumb'] != null ? it['grandparentThumb'] : it['thumb']) ?? ''}';
                     return ListTile(
-                      leading: thumb.isEmpty ? const Icon(Icons.movie_outlined) : ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(api.img(thumb), headers: api.auth, width: 40, height: 60, fit: BoxFit.cover, cacheWidth: 100, errorBuilder: (_, __, ___) => const Icon(Icons.movie_outlined))),
+                      leading: thumb.isEmpty ? const Icon(Icons.movie_outlined) : ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(api.img(thumb), headers: api.auth, width: 40, height: 60, fit: BoxFit.cover, cacheWidth: 100, errorBuilder: (_, _, _) => const Icon(Icons.movie_outlined))),
                       title: Text(label(it), maxLines: 1, overflow: TextOverflow.ellipsis),
                       subtitle: Text([if (it['year'] != null) '${it['year']}', _dur(it['duration']), if (((it['viewCount'] ?? 0) as num) > 0) '✓ gesehen'].where((e) => e.isNotEmpty).join(' · ')),
                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(api: api, id: '${it['ratingKey']}'))),
@@ -469,7 +469,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: SizedBox.expand(
-                        child: pic.isEmpty ? ColoredBox(color: context.hair, child: Icon(Icons.collections_bookmark_outlined)) : Image.network(widget.api.img(pic), headers: widget.api.auth, fit: BoxFit.cover, cacheWidth: 600, errorBuilder: (_, __, ___) => ColoredBox(color: context.hair)),
+                        child: pic.isEmpty ? ColoredBox(color: context.hair, child: Icon(Icons.collections_bookmark_outlined)) : Image.network(widget.api.img(pic), headers: widget.api.auth, fit: BoxFit.cover, cacheWidth: 600, errorBuilder: (_, _, _) => ColoredBox(color: context.hair)),
                       ),
                     ),
                   ),

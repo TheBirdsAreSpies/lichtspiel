@@ -324,7 +324,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           if (x['thumb'] != null)
             Padding(
               padding: const EdgeInsets.only(right: 10),
-              child: Image.network(widget.api.img('${x['thumb']}'), headers: widget.api.auth, width: 40, height: 60, fit: BoxFit.cover, cacheWidth: 100, errorBuilder: (_, __, ___) => const SizedBox(width: 40, height: 60)),
+              child: Image.network(widget.api.img('${x['thumb']}'), headers: widget.api.auth, width: 40, height: 60, fit: BoxFit.cover, cacheWidth: 100, errorBuilder: (_, _, _) => const SizedBox(width: 40, height: 60)),
             ),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

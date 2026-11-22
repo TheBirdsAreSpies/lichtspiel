@@ -46,7 +46,7 @@ class BusyOverlay extends StatelessWidget {
     final id = int.tryParse('${item['id'] ?? item['ratingKey']}') ?? -1;
     return ValueListenableBuilder<Set<int>>(
       valueListenable: Activity.busy,
-      builder: (_, b, __) => !b.contains(id)
+      builder: (_, b, _) => !b.contains(id)
           ? const SizedBox.shrink()
           : Positioned.fill(
               child: Container(color: Colors.black45, child: const Center(child: SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 3)))),

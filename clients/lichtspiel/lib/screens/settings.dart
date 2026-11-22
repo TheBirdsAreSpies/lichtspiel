@@ -248,7 +248,7 @@ class _AccountTabState extends State<_AccountTab> {
             child: OutlinedButton(
               onPressed: () async {
                 final pw = await _askPassword(context, 'Dein Passwort');
-                if (pw == null || pw.isEmpty || !mounted) return;
+                if (pw == null || pw.isEmpty || !context.mounted) return;
                 final code = await _askPassword(context, 'Code aus der Authenticator-App', secret: false);
                 if (code == null || code.isEmpty) return;
                 await run(() async {
@@ -269,12 +269,12 @@ class _AccountTabState extends State<_AccountTab> {
               onPressed: () async {
                 try {
                   final x = await widget.api.post('/api/me/2fa/setup');
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   await _twoFactorDialog(context, widget.api, '${x['secret']}', '${x['uri']}');
                   final fresh = await widget.api.get('/api/me');
                   if (mounted) setState(() => me = Map<String, dynamic>.from(fresh));
                 } catch (e) {
-                  if (mounted) _say(context, errorText(e));
+                  if (context.mounted) _say(context, errorText(e));
                 }
               },
               child: const Text('Einrichten'),

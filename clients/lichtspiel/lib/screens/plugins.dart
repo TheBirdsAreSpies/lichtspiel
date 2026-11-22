@@ -76,9 +76,9 @@ class _PluginsScreenState extends State<PluginsScreen> {
           onPressed: () async {
             try {
               final x = await widget.api.post('/api/plugins/reload');
-              if (mounted) _say(context, '${x['count']} Plugin(s) gefunden');
+              if (context.mounted) _say(context, '${x['count']} Plugin(s) gefunden');
             } catch (e) {
-              if (mounted) _say(context, '$e');
+              if (context.mounted) _say(context, '$e');
             }
             load();
           },

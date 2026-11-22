@@ -131,7 +131,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       child: IgnorePointer(
         child: ValueListenableBuilder<Offset?>(
           valueListenable: hoverPos,
-          builder: (_, pos, __) => LayoutBuilder(builder: (_, box) {
+          builder: (_, pos, _) => LayoutBuilder(builder: (_, box) {
             final total = player.state.duration.inMilliseconds;
             if (pos == null || total <= 0) return const SizedBox();
             final fromBottom = box.maxHeight - pos.dy;
@@ -160,7 +160,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       if (it['Media'] != null)
                         AspectRatio(
                           aspectRatio: 16 / 9,
-                          child: Image.network(widget.api.abs('/library/parts/$id/frame?t=$step'), headers: widget.api.auth, fit: BoxFit.cover, gaplessPlayback: true, errorBuilder: (_, __, ___) => const SizedBox()),
+                          child: Image.network(widget.api.abs('/library/parts/$id/frame?t=$step'), headers: widget.api.auth, fit: BoxFit.cover, gaplessPlayback: true, errorBuilder: (_, _, _) => const SizedBox()),
                         ),
                       const SizedBox(height: 4),
                       Text('${fmtClock(ms)}$name', textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12)),
@@ -185,7 +185,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       child: IgnorePointer(
         child: ValueListenableBuilder<bool>(
           valueListenable: ticksOn,
-          builder: (_, on, __) => AnimatedOpacity(
+          builder: (_, on, _) => AnimatedOpacity(
             opacity: on ? 1 : 0,
             duration: const Duration(milliseconds: 150),
             child: StreamBuilder<Duration>(
@@ -900,7 +900,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: SizedBox(
           width: 340,
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            SizedBox(width: 90, child: AspectRatio(aspectRatio: 16 / 9, child: Image.network(widget.api.img(n['thumb']), headers: widget.api.auth, fit: BoxFit.cover, cacheWidth: 240, errorBuilder: (_, __, ___) => Container(color: Colors.white10)))),
+            SizedBox(width: 90, child: AspectRatio(aspectRatio: 16 / 9, child: Image.network(widget.api.img(n['thumb']), headers: widget.api.auth, fit: BoxFit.cover, cacheWidth: 240, errorBuilder: (_, _, _) => Container(color: Colors.white10)))),
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

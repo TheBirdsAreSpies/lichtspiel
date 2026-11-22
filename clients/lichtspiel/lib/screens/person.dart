@@ -76,7 +76,7 @@ class _PersonScreenState extends State<PersonScreen> {
                       borderRadius: BorderRadius.circular(4),
                       child: Opacity(
                         opacity: c['item'] != null ? 1 : .55,
-                        child: Image.network(c['item'] != null ? widget.api.img('${c['item']['thumb']}') : '${c['poster'] ?? ''}', headers: c['item'] != null ? widget.api.auth : null, fit: BoxFit.cover, cacheWidth: 400, errorBuilder: (_, __, ___) => Container(color: context.hair)),
+                        child: Image.network(c['item'] != null ? widget.api.img('${c['item']['thumb']}') : '${c['poster'] ?? ''}', headers: c['item'] != null ? widget.api.auth : null, fit: BoxFit.cover, cacheWidth: 400, errorBuilder: (_, _, _) => Container(color: context.hair)),
                       ),
                     ),
                   ),
@@ -104,7 +104,7 @@ class _PersonScreenState extends State<PersonScreen> {
                                 aspectRatio: 2 / 3,
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(6),
-                                  child: c['poster'] != null ? Image.network('${c['poster']}', fit: BoxFit.cover, cacheWidth: 200, errorBuilder: (_, __, ___) => Container(color: context.hair)) : Container(color: context.hair),
+                                  child: c['poster'] != null ? Image.network('${c['poster']}', fit: BoxFit.cover, cacheWidth: 200, errorBuilder: (_, _, _) => Container(color: context.hair)) : Container(color: context.hair),
                                 ),
                               ),
                               const SizedBox(height: 6),
@@ -149,7 +149,7 @@ class _PersonScreenState extends State<PersonScreen> {
                   height: 220,
                   child: src.isEmpty
                       ? Container(color: context.hair, alignment: Alignment.center, child: Text(initials, style: const TextStyle(fontSize: 42)))
-                      : Image.network(src, headers: widget.api.headersFor(src), fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: context.hair, alignment: Alignment.center, child: Text(initials, style: const TextStyle(fontSize: 42)))),
+                      : Image.network(src, headers: widget.api.headersFor(src), fit: BoxFit.cover, errorBuilder: (_, _, _) => Container(color: context.hair, alignment: Alignment.center, child: Text(initials, style: const TextStyle(fontSize: 42)))),
                 ),
               ),
               const SizedBox(width: 20),

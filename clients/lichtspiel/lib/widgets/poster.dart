@@ -154,7 +154,9 @@ class _PosterState extends State<Poster> {
           await edit();
           return;
         case 'match':
-          await matchDialog(context, widget.api, await widget.api.item(id));
+          final item = await widget.api.item(id);
+          if (!mounted) return;
+          await matchDialog(context, widget.api, item);
       }
     } catch (e) {
       say(errorText(e));
@@ -171,7 +173,9 @@ class _PosterState extends State<Poster> {
   }
 
   Future<void> edit() async {
-    await editDetailsDialog(context, widget.api, await widget.api.item(id));
+    final item = await widget.api.item(id);
+    if (!mounted) return;
+    await editDetailsDialog(context, widget.api, item);
     await reload();
   }
 

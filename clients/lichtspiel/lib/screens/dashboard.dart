@@ -51,7 +51,7 @@ String _res(dynamic h) {
 String _ch(dynamic n) => const {1: 'Mono', 2: 'Stereo', 3: '2.1', 6: '5.1', 7: '6.1', 8: '7.1'}[n] ?? (n == null ? '' : '$n ch');
 
 String _videoLine(Map v) {
-  final from = '${_res(v['height'])} (${['${_codec(v['codec'])}', if (v['profile'] != null) '${v['profile']}', if (v['hdr'] == true) 'HDR'].join(' ')})';
+  final from = '${_res(v['height'])} (${[(_codec(v['codec'])), if (v['profile'] != null) '${v['profile']}', if (v['hdr'] == true) 'HDR'].join(' ')})';
   return v['action'] == 'transcode' ? '$from → ${_res(v['out_height'])} (${_codec(v['out_codec'])}) — Umwandlung${v['hw'] == true ? ' (Hardware)' : ''}' : '$from — direkt';
 }
 
@@ -258,7 +258,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           InkWell(
             onTap: () => openItem(context, api, {'ratingKey': p['id']}),
-            child: SizedBox(width: 70, child: AspectRatio(aspectRatio: 2 / 3, child: Image.network(api.img(p['thumb']), headers: api.auth, fit: BoxFit.cover, cacheWidth: 160, errorBuilder: (_, __, ___) => Container(color: context.hair)))),
+            child: SizedBox(width: 70, child: AspectRatio(aspectRatio: 2 / 3, child: Image.network(api.img(p['thumb']), headers: api.auth, fit: BoxFit.cover, cacheWidth: 160, errorBuilder: (_, _, _) => Container(color: context.hair)))),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -477,7 +477,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: SizedBox(width: 34, child: Image.network(api.img(x['thumb']), headers: api.auth, fit: BoxFit.cover, cacheWidth: 80, errorBuilder: (_, __, ___) => Container(color: context.hair))),
+                    leading: SizedBox(width: 34, child: Image.network(api.img(x['thumb']), headers: api.auth, fit: BoxFit.cover, cacheWidth: 80, errorBuilder: (_, _, _) => Container(color: context.hair))),
                     title: Text('${x['title'] ?? '(entfernt)'}', maxLines: 1, overflow: TextOverflow.ellipsis),
                     subtitle: Text([x['year'], if (x['type'] == 'show') 'Serie'].where((e) => e != null).join(' · ')),
                     trailing: Text('${x['plays']}×'),

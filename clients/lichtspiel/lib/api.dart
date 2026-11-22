@@ -222,7 +222,7 @@ class Api {
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
-        if (token != null) 'X-Token': token!,
+        'X-Token': ?token,
       };
 
   dynamic _decode(http.Response r) {
@@ -255,7 +255,7 @@ class Api {
       'username': user,
       'password': pass,
       'device': 'Lichtspiel App',
-      if (code != null) 'code': code,
+      'code': ?code,
     });
     token = r['token'];
     await save();

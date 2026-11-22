@@ -360,10 +360,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
       });
       loadLetters(my);
     } catch (e) {
-      if (my == gen && mounted) setState(() {
+      if (my == gen && mounted) {
+        setState(() {
         error = e;
         loading = false;
       });
+      }
     }
   }
 
@@ -433,10 +435,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
         loading = false;
       });
     } catch (e) {
-      if (my == gen && mounted) setState(() {
+      if (my == gen && mounted) {
+        setState(() {
         error = e;
         loading = false;
       });
+      }
     }
   }
 
@@ -727,7 +731,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       bottomNavigationBar: selectionBar(),
       body: Column(children: [
         bar,
-        if (chips != null) chips,
+        ?chips,
         Expanded(
           child: error != null && items.isEmpty
               ? ErrorView(error: error!, onRetry: reload)

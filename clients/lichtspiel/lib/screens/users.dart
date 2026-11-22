@@ -193,7 +193,7 @@ class _UsersScreenState extends State<UsersScreen> {
     final libs = await pickSections('Bibliotheken für die Einladung', null);
     if (!mounted || (libs != null && libs.length == 1 && libs.first == -1)) return;
     try {
-      final r = await api.post('/api/invites', {'email': email.text, 'note': note.text, 'days': int.tryParse(days.text) ?? 7, 'admin': admin, if (libs != null) 'allowed_sections': libs});
+      final r = await api.post('/api/invites', {'email': email.text, 'note': note.text, 'days': int.tryParse(days.text) ?? 7, 'admin': admin, 'allowed_sections': ?libs});
       await Clipboard.setData(ClipboardData(text: '${r['url']}'));
       if (!mounted) return;
       await showDialog<void>(
