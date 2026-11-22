@@ -60,10 +60,33 @@ A release is a tag `vX.Y.Z` on GitHub. `.github/workflows/release.yml` then runs
 builds the Docker image for amd64 and arm64, publishes it as `ghcr.io/thebirdsarespies/lichtspiel`
 (tags `X.Y.Z`, `X.Y` and `latest`) and makes a GitHub release with notes from the commits. A tag with
 a dash (`v0.2.0-rc.1`) becomes a pre-release and gets only its own image tag. The NAS does not use
-these images.
+these images. The same workflow builds the app for Android (APK), Windows (zip) and macOS (zip, not
+notarized) and attaches them to the release.
+
+On Gitea the tag starts `.gitea/workflows/app.yml`: the NAS runner builds the Android APK in a Flutter
+container (`clients/lichtspiel/android.Dockerfile`) and attaches it to the Gitea release of the tag,
+which it makes when it is missing. Windows and macOS need runners with those systems, so they come
+only from GitHub. The app's version is the tag's (`v0.2.0` → 0.2.0, build number 200).
 
 1. Raise `version` in `Cargo.toml`, then run `cargo build --release --no-default-features` so
    `Cargo.lock` follows (the builds use `--locked`). Commit: `chore(release): X.Y.Z`.
-2. `git tag vX.Y.Z`, then `git push && git push github main && git push github vX.Y.Z`.
+2. `git tag vX.Y.Z`, then `git push && git push origin vX.Y.Z && git push github main && git push github vX.Y.Z`.
 
-The workflow stops at once when the tag and `Cargo.toml` disagree.
+The GitHub workflow stops at once when the tag and `Cargo.toml` disagree.
+
+**Signing the Android app.** Android installs a new APK over the old one only when both are signed
+with the same key, so the release builds take it from the secrets `ANDROID_KEYSTORE` (the `.jks` file
+in base64) and `ANDROID_KEYSTORE_PASSWORD`. Put the same two on GitHub (Settings → Secrets and
+variables → Actions) and on Gitea (Settings → Actions → Secrets), so APKs from either update each
+other. Without them the APK is signed with a throwaway key and the run warns. Make the key once and
+keep the file and password somewhere safe (a lost key means everyone has to uninstall the app once):
+
+```
+keytool -genkeypair -keystore lichtspiel.jks -alias lichtspiel -keyalg RSA -keysize 4096 -validity 36500
+base64 -w0 lichtspiel.jks     # this text is ANDROID_KEYSTORE (PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("lichtspiel.jks")))
+```
+
+Locally, `LICHTSPIEL_KEYSTORE=<file>` and `LICHTSPIEL_KEYSTORE_PASSWORD` sign `flutter build apk
+--release` the same way (`android/app/build.gradle.kts`; alias `lichtspiel` unless
+`LICHTSPIEL_KEY_ALIAS` says otherwise). If Gitea's own run token may not make releases, add a
+`RELEASE_TOKEN` secret there (an access token with read and write on the repository).

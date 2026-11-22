@@ -15,6 +15,8 @@ The Lichtspiel app for Windows, Android, macOS, iPhone and iPad. It talks to a L
   For iOS also install an iOS platform and simulator in Xcode › Settings › Components.
 - For Windows: Visual Studio with "Desktop development with C++". For Android: Android Studio.
 
+Ready-made builds (Android, Windows, macOS) are attached to each release on GitHub; the Gitea release has the Android APK. How they are made and signed: [docs/development.md](../../docs/development.md#releases).
+
 Everything below runs in this folder (`clients/lichtspiel`).
 
 ```sh

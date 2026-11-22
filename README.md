@@ -104,6 +104,7 @@ browser), and the status window is in `shots/now.png`.
 | `vendor/tiny_http/` | the HTTP library, copied in and patched |
 | `Dockerfile`, `docker-compose.yml` | Synology / Docker install |
 | `.gitea/workflows/deploy.yml` | automatic build and deploy to the Synology after a push to `main` |
+| `.gitea/workflows/app.yml`, `.github/workflows/release.yml` | a version tag builds the app (Android on Gitea; Android, Windows, macOS on GitHub) for the release |
 | `docs/` | the documentation above |
 | `shots/` | status-window picture, web app pictures and the last self-test report |
 

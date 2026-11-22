@@ -1,8 +1,9 @@
 # A release: pushing a tag like v0.2.0 to GitHub builds the Docker image for Intel/AMD (amd64) and ARM
 # (arm64) Synology models, publishes it as ghcr.io/<owner>/lichtspiel with the tags 0.2.0, 0.2 and
-# latest, and makes a GitHub release with notes from the commits. Each architecture is built on a runner
-# of its own kind (no emulation). The tag has to match the version in Cargo.toml (docs/development.md).
-# The NAS does not use this: it builds its own image from Gitea (.gitea/workflows/deploy.yml).
+# latest, builds the app for Android, Windows and macOS, and makes a GitHub release with notes from the
+# commits and the app files. Each architecture is built on a runner of its own kind (no emulation). The tag
+# has to match the version in Cargo.toml (docs/development.md). The NAS does not use this: it builds its own
+# image from Gitea (.gitea/workflows/deploy.yml), and Gitea builds the Android app (.gitea/workflows/app.yml).
 name: Release
 
 on:
@@ -93,9 +94,81 @@ jobs:
           path: /tmp/digests/*
           retention-days: 1
 
+  # The app for the release: Android (APK), Windows (zip) and macOS (zip, not notarized). iOS needs a paid
+  # Apple account and is not built. The version comes from the tag: v0.2.0 → 0.2.0, build number 200.
+  app:
+    name: App (${{ matrix.os }})
+    needs: check
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: android
+            runner: ubuntu-latest
+          - os: windows
+            runner: windows-latest
+          - os: macos
+            runner: macos-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: clients/lichtspiel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        if: matrix.os == 'android'
+        with:
+          distribution: temurin
+          java-version: '17'
+      # The same Flutter as ci.yml and the development machine.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.9
+          cache: true
+      - name: Version from the tag
+        run: |
+          v=${GITHUB_REF_NAME#v}; base=${v%%-*}
+          IFS=. read -r ma mi pa <<< "$base"
+          echo "NAME=$base" >> "$GITHUB_ENV"
+          echo "NUMBER=$((ma * 10000 + mi * 100 + pa))" >> "$GITHUB_ENV"
+      - run: flutter pub get
+      - name: Android
+        if: matrix.os == 'android'
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          LICHTSPIEL_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+            export LICHTSPIEL_KEYSTORE="$RUNNER_TEMP/release.jks"
+          else
+            echo "::warning::No ANDROID_KEYSTORE secret: the APK is signed with a throwaway debug key and cannot update an installed app."
+          fi
+          flutter build apk --release --build-name="$NAME" --build-number="$NUMBER"
+          mkdir -p ../../dist && cp build/app/outputs/flutter-apk/app-release.apk "../../dist/lichtspiel-$NAME-android.apk"
+      - name: Windows
+        if: matrix.os == 'windows'
+        run: |
+          flutter build windows --release --build-name="$NAME" --build-number="$NUMBER"
+          mkdir -p ../../dist
+          pwsh -NoProfile -Command "Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ../../dist/lichtspiel-$NAME-windows.zip"
+      - name: macOS
+        if: matrix.os == 'macos'
+        run: |
+          flutter build macos --release --build-name="$NAME" --build-number="$NUMBER"
+          mkdir -p ../../dist
+          ditto -c -k --keepParent build/macos/Build/Products/Release/Lichtspiel.app "../../dist/lichtspiel-$NAME-macos.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.os }}
+          path: dist/*
+          retention-days: 1
+
   publish:
     name: Publish image and release
-    needs: [check, build]
+    needs: [check, build, app]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -107,6 +180,11 @@ jobs:
         with:
           path: /tmp/digests
           pattern: digest-*
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/apps
+          pattern: app-*
           merge-multiple: true
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -134,4 +212,5 @@ jobs:
         run: |
           pre=; case "$GITHUB_REF_NAME" in *-*) pre=--prerelease;; esac
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes --verify-tag $pre \
-            --notes "Docker image: \`$IMAGE:${GITHUB_REF_NAME#v}\` (amd64 and arm64)."
+            --notes "Docker image: \`$IMAGE:${GITHUB_REF_NAME#v}\` (amd64 and arm64). The app: Android (APK), Windows (zip, start lichtspiel.exe) and macOS (zip; not notarized, so open it the first time with right-click → Open)." \
+            /tmp/apps/*

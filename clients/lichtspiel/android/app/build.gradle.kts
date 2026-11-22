@@ -4,6 +4,11 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Release builds are signed with the key in LICHTSPIEL_KEYSTORE (a .jks file) when it is set, as the release
+// workflows do (docs/development.md, "Releases"); without it with the debug key, so `flutter run --release`
+// works. Only APKs signed with the same key can update an installed app.
+val releaseKeystore = System.getenv("LICHTSPIEL_KEYSTORE")?.takeIf { it.isNotEmpty() && file(it).exists() }
+
 android {
     namespace = "de.lichtspiel.lichtspiel"
     compileSdk = flutter.compileSdkVersion
@@ -29,11 +34,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("LICHTSPIEL_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("LICHTSPIEL_KEY_ALIAS") ?: "lichtspiel"
+                keyPassword = System.getenv("LICHTSPIEL_KEY_PASSWORD") ?: System.getenv("LICHTSPIEL_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (releaseKeystore != null) "release" else "debug")
         }
     }
 }
