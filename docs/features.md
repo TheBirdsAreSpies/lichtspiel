@@ -43,7 +43,8 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   playlists** the server keeps up to date (Continue Watching, Recently Added Movies, Recently
   Added Episodes, Unwatched Movies, Favorites, Top Rated). Playlists can be filtered (kind,
   owner, title, size, shared, pinned) and sorted (title, last changed, size, length …); the
-  contents of any playlist can be filtered and sorted again.
+  contents of any playlist can be filtered and sorted again. Both the playlists and the contents
+  of one can be shown as a list or as posters (kept per browser).
 - **Library filters** — filters on every library page (29 for movies,
   14 for shows, 18 for episodes): genre, year, decade, age rating, collection, director, actor,
   writer, producer, country, studio / network, resolution (16k … SD),

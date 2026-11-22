@@ -14,26 +14,41 @@ async function playlistsPage(qs) {
   const list = meta(await GET('/playlists?' + q));
   wait();
   const sel = (key, opts) => h('select', { onchange: e => { st[key] = e.target.value; go(); } }, opts.map(([v, l]) => h('option', { value: v, selected: st[key] === v }, l)));
+  const pic = (pl, big) => {
+    const th = pl.thumbs || [];
+    return th.length >= 4 && big ? h('div', { class: 'mosaic' }, th.slice(0, 4).map(u => h('img', { src: smallTok(u, 200), loading: 'lazy', alt: '' })))
+      : th.length ? h('img', { src: smallTok(th[0], big ? 360 : 120), loading: 'lazy', alt: '' }) : h('div', { class: 'initials' }, '♪');
+  };
+  const info = pl => [[kindName(pl.kind), t('{n} items', { n: pl.leafCount }), fmtDur(pl.duration)].filter(Boolean).join(' · '),
+    pl.shared && pl.kind !== 'default' ? ' · ' + t('shared') : '', pl.pinned ? ' · ' + t('on home') : ''];
+  const playBtn = (pl, cls) => pl.leafCount ? h('button', { class: cls, title: t('▶ Play'), 'aria-label': t('▶ Play'), onclick: e => { e.stopPropagation(); playPlaylist(pl.id); } }, cls === 'play' ? icon('play') : '▶') : null;
+  // As posters (the default) or as a list; kept per browser.
+  const box = h('div');
+  const draw = () => {
+    if (!list.length) return box.replaceChildren(h('div', { class: 'empty' }, t('No playlists match.')));
+    if (store.get('playlistsView', 'grid') === 'list') {
+      return box.replaceChildren(h('div', { class: 'list' }, list.map(pl => h('div', { class: 'li' },
+        h('a', { href: '#/playlist/' + pl.id, class: 'pl-thumb' }, pic(pl, false)),
+        h('div', { class: 'grow' }, h('a', { href: '#/playlist/' + pl.id }, h('b', {}, plTitle(pl))), h('div', { class: 'dim' }, info(pl))),
+        playBtn(pl, 'primary small')))));
+    }
+    box.replaceChildren(h('div', { class: 'grid plgrid' }, list.map(pl => h('div', { class: 'card', onclick: () => { location.hash = '#/playlist/' + pl.id; } },
+      h('div', { class: 'poster' }, pic(pl, true), playBtn(pl, 'play')),
+      h('div', { class: 't', title: plTitle(pl) }, plTitle(pl)),
+      h('div', { class: 's' }, info(pl))))));
+  };
   set(h('h1', {}, t('Playlists')),
     h('div', { class: 'bar-tools' },
       sel('kind', [['', t('All kinds')], ['default', t('Default')], ['smart', t('Smart')], ['manual', t('Normal')]]),
       sel('owner', [['', t('Everyone\'s')], ['me', t('Mine')], ['others', t('Shared with me')], ['server', t('From the server')]]),
       sel('sort', [['pinned:desc,title', t('Pinned first')], ['title', t('Name A–Z')], ['title:desc', t('Name Z–A')], ['updated_at:desc', t('Recently changed')], ['created_at:desc', t('Newest')], ['item_count:desc', t('Most items')], ['duration:desc', t('Longest')]]),
       h('input', { placeholder: t('Find by name'), value: st.title, onchange: e => { st.title = e.target.value.trim(); go(); } }),
+      viewSelect('playlistsView', () => draw(), 'grid'),
       h('span', { class: 'grow' }),
       h('button', { onclick: newManual }, t('+ New playlist')),
       h('button', { class: 'primary', onclick: () => smartEditor(null) }, t('+ New smart playlist'))),
-    list.length ? h('div', { class: 'grid plgrid' }, list.map(pl => {
-      const th = pl.thumbs || [];
-      const pic = th.length >= 4 ? h('div', { class: 'mosaic' }, th.slice(0, 4).map(u => h('img', { src: smallTok(u, 200), loading: 'lazy', alt: '' })))
-        : th.length ? h('img', { src: smallTok(th[0], 360), loading: 'lazy', alt: '' }) : h('div', { class: 'initials' }, '♪');
-      return h('div', { class: 'card', onclick: () => { location.hash = '#/playlist/' + pl.id; } },
-        h('div', { class: 'poster' }, pic,
-          pl.leafCount ? h('button', { class: 'play', title: t('▶ Play'), 'aria-label': t('▶ Play'), onclick: e => { e.stopPropagation(); playPlaylist(pl.id); } }, icon('play')) : null),
-        h('div', { class: 't', title: plTitle(pl) }, plTitle(pl)),
-        h('div', { class: 's' }, [kindName(pl.kind), t('{n} items', { n: pl.leafCount }), fmtDur(pl.duration)].filter(Boolean).join(' · '),
-          pl.shared && pl.kind !== 'default' ? ' · ' + t('shared') : '', pl.pinned ? ' · ' + t('on home') : ''));
-    })) : h('div', { class: 'empty' }, t('No playlists match.')));
+    box);
+  draw();
 }
 
 async function newManual() {
@@ -91,7 +106,11 @@ async function playlistPage(id, qs) {
     await api('PUT', `/playlists/${id}/items/${items[idx].id}/move?after=${after}`); reload();
   };
   const ctx = { items, reorder, manual, pl, id, move, reload };
-  const list = h('div', { class: 'list' }, items.map((it, i) => playlistRow(it, i, ctx)));
+  // As a list (with ↑ ↓) or as posters; kept per browser.
+  const posters = () => store.get('playlistView', 'list') === 'grid';
+  const entry = (it, i) => (posters() ? playlistCard : playlistRow)(it, i, ctx);
+  const list = h('div', { class: posters() ? 'grid' : 'list' }, items.map(entry));
+  const draw = () => { list.className = posters() ? 'grid' : 'list'; list.replaceChildren(...items.map(entry)); };
   // More rows when the end of the list comes near, like the library pages.
   const end = h('div');
   let loading = false;
@@ -104,7 +123,7 @@ async function playlistPage(id, qs) {
       items.push(...r.Metadata);
       // The row that was last can move down again now (its ↓ is the only switched-off button in a row).
       const down = list.lastElementChild && list.lastElementChild.querySelector('button[disabled]'); if (down) down.disabled = false;
-      list.append(...r.Metadata.map((it, k) => playlistRow(it, from + k, ctx)));
+      list.append(...r.Metadata.map((it, k) => entry(it, from + k)));
       more.unobserve(end);
       // Watched again, so a list end that is still in view loads the next page too.
       if (r.Metadata.length && items.length < r.totalSize) more.observe(end);
@@ -127,6 +146,7 @@ async function playlistPage(id, qs) {
       sel('type', [['', t('Movies and episodes')], ['movie', t('Movies')], ['episode', t('Episodes')]]),
       sel('watched', [['', t('Watched or not')], ['unwatched', t('Unwatched')], ['watched', t('Watched')]]),
       h('input', { placeholder: t('Filter by title'), value: st.q, onchange: e => { st.q = e.target.value.trim(); go(); } }),
+      viewSelect('playlistView', draw),
       h('span', { class: 'grow' }), h('span', { class: 'dim' }, t('{shown} of {all} items · {length}', { shown: res.totalSize, all: pl.leafCount, length: fmtDur(pl.duration) }))),
     items.length ? [list, end] :
       h('div', { class: 'empty' }, manual ? t('Empty. Open a movie or episode and use "Add to playlist".') : t('Nothing matches these rules right now.')));
@@ -142,6 +162,22 @@ function playlistRow(it, i, { items, reorder, manual, pl, id, move, reload }) {
     manual && pl.editable ? h('button', { class: 'small danger', onclick: async () => { if (!(await sure(t('Remove “{title}” from this playlist?', { title: it.title }), { ok: t('Remove'), danger: true }))) return; await api('DELETE', `/playlists/${id}/items/${it.id}`); reload(); } }, t('Remove')) : null,
     // shortcut: the queue after ▶ holds only the rows loaded so far; "Play all" still fetches everything.
     h('button', { class: 'primary small', onclick: () => play(it, it.viewOffset ? it.viewOffset / 1000 : 0, items.slice(i + 1)) }, '▶'));
+}
+
+// One title of a playlist as a poster; moving and removing sit under it.
+function playlistCard(it, i, { items, reorder, manual, pl, id, move, reload }) {
+  const tools = [
+    reorder ? [h('button', { class: 'small', title: t('Move up'), 'aria-label': t('Move up'), onclick: () => move(i, -1) }, '←'), h('button', { class: 'small', title: t('Move down'), 'aria-label': t('Move down'), disabled: i === items.length - 1, onclick: () => move(i, 1) }, '→')] : null,
+    manual && pl.editable ? h('button', { class: 'small danger', onclick: async () => { if (!(await sure(t('Remove “{title}” from this playlist?', { title: it.title }), { ok: t('Remove'), danger: true }))) return; await api('DELETE', `/playlists/${id}/items/${it.id}`); reload(); } }, t('Remove')) : null].flat().filter(Boolean);
+  // ▶ on the poster plays on with the rest of the playlist, like ▶ in the list.
+  return h('div', {}, posterCard(it, { play: () => play(it, it.viewOffset ? it.viewOffset / 1000 : 0, items.slice(i + 1)) }),
+    tools.length ? h('div', { class: 'pl-tools' }, tools) : null);
+}
+
+// "List" or "Posters" for a page, kept per browser under key; draw() shows the page the new way.
+function viewSelect(key, draw, def = 'list') {
+  return h('select', { title: t('Show as'), 'aria-label': t('Show as'), onchange: e => { store.set(key, e.target.value); draw(); } },
+    [['list', t('List')], ['grid', t('Posters')]].map(([v, l]) => h('option', { value: v, selected: store.get(key, def) === v }, l)));
 }
 
 function smartEditor(pl) {

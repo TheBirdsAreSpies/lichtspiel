@@ -1310,6 +1310,8 @@ I18N.add('de', 'Deutsch', {
     'In your libraries': 'In deinen Bibliotheken',
     'List': 'Liste',
     'Grid': 'Raster',
+    'Posters': 'Poster',
+    'Show as': 'Anzeigen als',
     'What is downloaded': 'Was geladen wird',
     'Cast and crew': 'Besetzung und Team',
     'Actors with their roles and photos, directors, writers and producers.': 'Schauspieler mit Rollen und Fotos, Regie, Drehbuch und Produktion.',

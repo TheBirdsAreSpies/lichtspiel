@@ -566,7 +566,7 @@ function posterCard(it, opts = {}) {
       const fresh = posterCard(it, opts); replace(fresh);
     }, { cont: opts.cont, removed: () => card.remove(),
       // On a phone the menu also holds what the buttons on the poster do with a mouse.
-      play: touch && isPlayable(it) && !it.missing ? () => play(it, (it.viewOffset || 0) / 1000) : null,
+      play: touch && isPlayable(it) && !it.missing ? (opts.play || (() => play(it, (it.viewOffset || 0) / 1000))) : null,
       select: touch && opts.pick ? () => opts.pick({ preventDefault() {}, shiftKey: false, ctrlKey: true }, true) : null });
   };
   // (The buttons sit inside the link: they do their own thing instead of opening the title.)
@@ -590,7 +590,7 @@ function posterCard(it, opts = {}) {
       it.leafCount && unseen > 0 ? h('span', { class: 'badge' }, unseen) : null,
       seen ? h('span', { class: 'seen', title: t('Watched'), 'aria-label': t('Watched') }, icon('check')) : null,
       opts.pick ? h('span', { class: 'pick', title: t('Select'), onclick: e => { e.preventDefault(); e.stopPropagation(); opts.pick(e, true); } }) : null,
-      isPlayable(it) && !it.missing ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: e => { e.preventDefault(); e.stopPropagation(); play(it, (it.viewOffset || 0) / 1000); } }, icon('play')) : null,
+      isPlayable(it) && !it.missing ? h('button', { class: 'play', title: t('Play'), 'aria-label': t('Play'), onclick: e => { e.preventDefault(); e.stopPropagation(); if (opts.play) opts.play(); else play(it, (it.viewOffset || 0) / 1000); } }, icon('play')) : null,
       S.me.admin && it.type !== 'clip' ? h('button', { class: 'edit', title: t('Edit details'), 'aria-label': t('Edit details'), onclick: edit }, icon('edit')) : null,
       it.type === 'clip' ? null : h('button', { class: 'more', title: t('More'), 'aria-label': t('More'), onclick: more }, '⋯')),
     h('div', { class: 't', title }, title), h('div', { class: 's' }, (opts.caption && opts.caption(it)) || sub));
