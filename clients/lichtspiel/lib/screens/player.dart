@@ -64,7 +64,10 @@ class PlayerScreen extends StatefulWidget {
   final List<Map<String, dynamic>> queue; // what follows (a playlist, the rest of a season, ...)
   final int autoRun; // episodes in a row that played by themselves
   final String? together; // the code of a "Zusammen schauen" room: play, pause and jumps are shared
-  const PlayerScreen({super.key, required this.api, required this.item, this.queue = const [], this.autoRun = 0, this.together});
+  /// "Was bisher geschah": {'until': ms, 'then': the episode}: plays [item] up to `until` without saving anything
+  /// about it (no progress, no viewing), then the episode.
+  final Map<String, dynamic>? catchUp;
+  const PlayerScreen({super.key, required this.api, required this.item, this.queue = const [], this.autoRun = 0, this.together, this.catchUp});
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
@@ -566,6 +569,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String nextName(Map<String, dynamic> n) => n['type'] == 'episode' ? 'S${n['parentIndex'] ?? 0}E${n['index'] ?? 0} · ${n['title']}' : '${n['title']}';
 
   Future<void> report(String state) async {
+    if (widget.catchUp != null) return;
     final r = await widget.api.timeline(id, player.state.position.inMilliseconds, state);
     if (r != null && r['stopped'] == true && mounted) stoppedByOwner('${r['message'] ?? ''}');
   }
@@ -590,6 +594,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   /// Played to the end: watched, then the next one (by itself, or asking), or close.
   void finished() {
+    if (widget.catchUp != null) return catchUpDone();
     if (ended) return;
     ended = true;
     widget.api.scrobble(id);
@@ -642,6 +647,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void sleepTick() {
     if (!mounted || error != null) return;
+    if (widget.catchUp != null) {
+      if (player.state.position.inMilliseconds >= (widget.catchUp!['until'] as num)) catchUpDone();
+      return;
+    }
     if (PlayerScreen.sleepEnd) {
       // The credits count as the end, like "Abspann überspringen".
       final pos = player.state.position.inMilliseconds / 1000, d = player.state.duration.inMilliseconds / 1000;
@@ -691,11 +700,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
+  /// "Was bisher geschah" is over: on to the episode itself.
+  void catchUpDone() {
+    if (goingOn || !mounted) return;
+    ended = true;
+    goingOn = true;
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: widget.api, item: Map<String, dynamic>.from(widget.catchUp!['then'] as Map), queue: widget.queue)));
+  }
+
   void playNext({bool auto = false}) {
     final n = next;
     if (n == null) return;
     countdown?.cancel();
-    if (!ended) {
+    if (!ended && widget.catchUp == null) {
       // Skipped ahead: counts as watched, like letting the credits run.
       widget.api.scrobble(id);
       widget.api.timeline(id, 0, 'stopped');
@@ -732,7 +749,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     for (final s in subs) {
       s.cancel();
     }
-    if (!ended) widget.api.timeline(id, player.state.position.inMilliseconds, 'stopped');
+    if (!ended && widget.catchUp == null) widget.api.timeline(id, player.state.position.inMilliseconds, 'stopped');
     player.dispose();
     super.dispose();
   }
@@ -863,6 +880,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: button,
             );
         return Stack(children: [
+          if (widget.catchUp != null) Positioned(right: 24, bottom: 110, child: FilledButton.tonal(onPressed: catchUpDone, child: const Text('Weiter zur Folge'))),
           if (inIntro) Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => player.seek(Duration(milliseconds: (intro![1] * 1000).round())), child: const Text('Intro überspringen')))),
           if (inRecap) Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => player.seek(Duration(milliseconds: (recap![1] * 1000).round())), child: const Text('Rückblick überspringen')))),
           if (inCredits && !inIntro)
@@ -918,7 +936,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = it['type'] == 'episode' ? '${it['grandparentTitle'] ?? ''} · S${it['parentIndex'] ?? 0}E${it['index'] ?? 0} · ${it['title']}' : '${it['title'] ?? widget.item['title'] ?? ''}';
+    final title = it['type'] == 'episode' ? '${widget.catchUp != null ? 'Was bisher geschah · ' : ''}${it['grandparentTitle'] ?? ''} · S${it['parentIndex'] ?? 0}E${it['index'] ?? 0} · ${it['title']}' : '${it['title'] ?? widget.item['title'] ?? ''}';
     final top = <Widget>[
       MaterialDesktopCustomButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.maybePop(context)),
       Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(tgNames.isEmpty ? title : '$title · $tgNames', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16)))),

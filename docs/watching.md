@@ -67,6 +67,17 @@ For this the server reads each episode's whole sound once (kept in `cache/intro`
 intro prints), so the first run over a large library takes a while; it runs with intro detection
 and is switched on and off with it.
 
+## What happened so far
+
+Back to a show after a break of **14 days or more** (nothing of it watched in that time), the
+next episode's page has **What happened so far** next to Play, in the web app and the app. It
+plays the last 3 minutes of the episode before up to its credits (or its end), then goes straight
+on to the episode, where you left it if you had begun it. **On to the episode ▸** jumps there at
+once. Nothing of this counts for the episode before: no progress, no viewing, no history. It needs
+that episode to be watched; for the first episode of a season it is the last one of the season
+before (specials are left out). In the item details it is the field `catchUp`: `{"id", "from",
+"to"}` in ms, with `parentIndex`, `index` and `title` of that episode.
+
 ## Subtitle timing
 
 A subtitle file made for another release is often a few seconds off, or drifts because it was made

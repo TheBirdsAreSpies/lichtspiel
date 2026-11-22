@@ -7,7 +7,7 @@
 // "Skip credits", the next episode with a countdown and keyboard shortcuts (? lists them).
 const P = { it: null, offset: 0, method: 'direct', timer: null, queue: [], quality: store.get('quality', 'original'), audio: '', speed: Number(store.get('speed', 1)) || 1,
   sub: -1, subSize: store.get('subSize', '100'), autoNext: store.get('autoNext', '1') === '1', remaining: store.get('timeLeft', '0') === '1',
-  next: null, credits: [], intro: null, pending: null, pendingTimer: null, countdown: null, menu: null };
+  next: null, credits: [], intro: null, recap: null, catchUp: null, pending: null, pendingTimer: null, countdown: null, menu: null };
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 /** @type {[string, string][]} */
 const QUALITIES = [['original', t('Original quality')], ['1080p-20', '1080p 20 Mbps'], ['1080p-12', '1080p 12 Mbps'], ['1080p-8', '1080p 8 Mbps'], ['720p-4', '720p 4 Mbps'], ['720p-3', '720p 3 Mbps'], ['720p-2', '720p 2 Mbps'], ['480p-1.5', '480p ' + fmtNum(1.5) + ' Mbps'], ['320p-0.7', '320p ' + fmtNum(0.7) + ' Mbps']];
@@ -75,17 +75,21 @@ const reallyEnded = (pos, dur) => !dur || dur - pos <= 60;
 const shown = () => P.pending !== null ? P.pending : position();
 
 // together = following a "Watch together" room (not told to the others again).
-async function play(it, startAt, queue, together, small) {
+// catchUp ("What happened so far"): {until (s), then (the episode), at (s)}: plays `it` up to
+// `until` without saving anything about it (no progress, no viewing), then `then` from `at`.
+async function play(it, startAt, queue, together, small, catchUp) {
   if (typeof stopTheme === 'function') stopTheme();
   P.queue = queue || [];
+  P.catchUp = null;
   if (!it.Media || !it.Media[0].streams) it = meta(await GET('/library/metadata/' + it.id))[0];
   P.it = it;
+  P.catchUp = catchUp || null;
   if (!small) player.style.display = 'flex';
   hideNext(); closePlayerMenu();
   $('#pkeys').style.display = 'none';
   const ep = it.type === 'episode', song = it.type === 'track';
   $('#ptitle').textContent = ep ? it.grandparentTitle : it.title;
-  P.subLine = ep ? `${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} · ${it.title}` : song ? [it.grandparentTitle, it.parentTitle].filter(Boolean).join(' · ') : (it.year ? String(it.year) : '');
+  P.subLine = ep ? `${P.catchUp ? t('What happened so far') + ' · ' : ''}${t('S{n}', { n: it.parentIndex })}${t('E{n}', { n: it.index })} · ${it.title}` : song ? [it.grandparentTitle, it.parentTitle].filter(Boolean).join(' · ') : (it.year ? String(it.year) : '');
   // A song has no picture: the cover stays on the screen.
   video.poster = song ? withTok(it.thumb) : '';
   const auds = ((it.Media && it.Media[0].streams) || []).filter(s => s.kind === 'audio');
@@ -468,7 +472,8 @@ applySubStyle();
 // The answer can say the owner stopped this playback (from the dashboard): then
 // the player closes and shows their message.
 function report(state, atMs) {
-  if (!P.it) return Promise.resolve(null);
+  // "What happened so far" leaves no trace on the episode before.
+  if (!P.it || P.catchUp) return Promise.resolve(null);
   const it = P.it, ms = atMs !== undefined ? atMs : Math.floor(position() * 1000);
   P.reported = state;
   return api('POST', `/:/timeline?ratingKey=${it.id}&time=${ms}&state=${state}&client=web`)
@@ -512,7 +517,8 @@ function drawBar() {
   // "Skip intro" while the intro runs, "Skip recap" while the recap ("Previously on") does.
   const si = $('#pskipintro');
   const part = [[P.intro, 'Skip intro'], [P.recap, 'Skip recap']].find(([m]) => m && now >= m[0] && now < m[1] - 1);
-  if (part) { si.textContent = t(part[1]); si.dataset.to = String(part[0][1]); showSkip(si, true); }
+  if (P.catchUp) { si.textContent = t('On to the episode ▸'); si.dataset.to = 'episode'; showSkip(si, true); }
+  else if (part) { si.textContent = t(part[1]); si.dataset.to = String(part[0][1]); showSkip(si, true); }
   else showSkip(si, false);
 }
 // A skip button that just came up stays SKIP_FRESH_MS even when the controls have faded out,
@@ -591,6 +597,7 @@ video.addEventListener('ended', () => { if (!castOn()) videoEnded(); });
 // The end of the video, in the browser or on the TV.
 function videoEnded() {
   if (P.preroll || !P.it) return;
+  if (P.catchUp) return catchUpDone();
   // The next part of a split movie.
   if (split() && P.part < P.parts.length - 1) { load(partStart(P.part + 1)); return; }
   // (A finished Chromecast no longer says where it was.)
@@ -690,6 +697,14 @@ function sleepAtEnd() {
   toast(t('Sleep timer: stopped after this title. Good night!'), 8000);
   return true;
 }
+// "What happened so far": at the credits of the episode before, on to the episode itself.
+function catchUpDone() {
+  const c = P.catchUp;
+  if (!c) return;
+  P.catchUp = null;
+  play(c.then, c.at || 0, P.queue);
+}
+setInterval(() => { if (P.it && P.catchUp && !P.preroll && position() >= P.catchUp.until) catchUpDone(); }, 500);
 setInterval(() => {
   if (!P.it || !P.sleep || P.preroll) return;
   if (P.sleep.end) {
@@ -711,6 +726,7 @@ for (const ev of ['pointerdown', 'keydown', 'touchstart', 'wheel']) document.add
 }, { passive: true, capture: true });
 $('#pskipintro').addEventListener('click', () => {
   $('#pskipintro').style.display = 'none';
+  if (P.catchUp) return catchUpDone();
   const to = Number($('#pskipintro').dataset.to);
   if (to > 0) seekTo(to).then(() => tgSend());
 });
@@ -891,6 +907,7 @@ function mediaSession(it) {
 
 function closePlayer(send) {
   if (send) report('stopped');
+  P.catchUp = null;
   castStop();
   tgLeave();
   clearInterval(P.timer); clearTimeout(P.pendingTimer); hideNext(); closePlayerMenu();

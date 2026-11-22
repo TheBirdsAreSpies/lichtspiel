@@ -1231,6 +1231,10 @@ async function itemPage(id) {
           m && !it.missing && resumeAt(it) ? h('button', { class: 'primary big', onclick: () => playV(resumeAt(it)) }, t('▶ Resume from {time}', { time: fmtTime(resumeAt(it)) })) : null,
           m && !it.missing && resumeAt(it) ? iconBtn('restart', t('▶ Play from start'), () => playV(0)) : null,
           m && !it.missing && !resumeAt(it) ? h('button', { class: 'primary big', onclick: () => playV(0) }, t('▶ Play')) : null,
+          // After a long break: the last minutes of the episode before, then this one.
+          m && !it.missing && it.catchUp ? h('button', { class: 'big', title: t('The last minutes of S{s}E{e} before its credits, then this episode', { s: it.catchUp.parentIndex || 0, e: it.catchUp.index || 0 }),
+            onclick: () => play({ id: it.catchUp.id }, it.catchUp.from / 1000, [], false, false, { until: it.catchUp.to / 1000, then: vi > 0 ? Object.assign({}, it, { id: vers[vi].id, ratingKey: String(vers[vi].id), Media: undefined }) : it, at: resumeAt(it) || 0 }) },
+            t('What happened so far')) : null,
           vers ? h('select', { title: t('Version'), 'aria-label': t('Version'), onchange: e => { vi = Number(e.target.value); store.set('version:' + id, vi); } },
             vers.map((v, i) => h('option', { value: i, selected: i === vi }, versionName(v)))) : null,
           // A trailer file next to the movie first, else the first online trailer.

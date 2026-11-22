@@ -135,6 +135,22 @@ class _DetailScreenState extends State<DetailScreen> {
     if (mounted) load(); // refresh resume position and watched marks
   }
 
+  /// "Was bisher geschah": the last minutes of the episode before up to its credits, then this one.
+  Widget catchUpButton(Map<String, dynamic> item, Map<String, dynamic> c) {
+    return Tooltip(
+      message: 'Die letzten Minuten von S${c['parentIndex'] ?? 0}E${c['index'] ?? 0} vor dem Abspann, dann diese Folge',
+      child: OutlinedButton.icon(
+        icon: const Icon(Icons.history),
+        label: const Text('Was bisher geschah'),
+        onPressed: () async {
+          final then = versioned(item);
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: api, item: {'id': c['id'], 'ratingKey': '${c['id']}', 'viewOffset': c['from']}, catchUp: {'until': c['to'], 'then': then})));
+          if (mounted) load();
+        },
+      ),
+    );
+  }
+
   /// All songs of an artist or album, one after the other; shuffled, the same artist does not come twice in a row while others are left.
   Future<void> playMusic(bool shuffle) async {
     List<Map<String, dynamic>> songs;
@@ -276,6 +292,8 @@ class _DetailScreenState extends State<DetailScreen> {
         if (playable && off > 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: Text('Fortsetzen bei ${fmtClock(off)}')),
         if (playable && off > 0) OutlinedButton(onPressed: () => play({...item, 'viewOffset': 0}), child: const Text('Von vorn')),
         if (playable && off == 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
+        // After a long break: the last minutes of the episode before, then this one.
+        if (playable && item['catchUp'] is Map) catchUpButton(item, Map<String, dynamic>.from(item['catchUp'] as Map)),
         if (playable && (item['Media'] as List? ?? const []).length > 1)
           DropdownButton<int>(
             value: ver.clamp(0, (item['Media'] as List).length - 1),

@@ -37,6 +37,44 @@ impl Index {
 }
 
 
+/// "What happened so far": after this many days without watching a show …
+pub const CATCH_UP_DAYS: u64 = 14;
+/// … an episode offers the last this many seconds before the credits of the episode before it.
+pub const CATCH_UP_SECONDS: u64 = 180;
+
+/// For an episode, when the person watched the episode before it and has not watched anything of
+/// the show for CATCH_UP_DAYS: {"id", "from", "to" (ms), "parentIndex", "index", "title"} of that
+/// episode, from a few minutes before its credits (or its end) up to them. Specials are left out.
+pub fn catch_up(db: &Db, user: &User, it: &Item, now: u64) -> Option<Value> {
+    if it.kind != ItemKind::Episode {
+        return None;
+    }
+    let season = db.items.get(&it.parent_id?)?;
+    let show = season.parent_id?;
+    if season.index == Some(0) {
+        return None;
+    }
+    let mut seasons: Vec<&Item> = db.children(show).into_iter().filter(|s| s.kind == ItemKind::Season && s.index.is_some_and(|i| i > 0)).collect();
+    seasons.sort_by_key(|s| s.index);
+    let episodes: Vec<&Item> = seasons.iter().flat_map(|s| db.children(s.id)).filter(|e| e.kind == ItemKind::Episode).collect();
+    let last_seen = episodes.iter().map(|e| db.view(user.id, e.id).last_viewed_at).max().unwrap_or(0);
+    if last_seen == 0 || now.saturating_sub(last_seen) < CATCH_UP_DAYS * 86400 {
+        return None;
+    }
+    let at = episodes.iter().position(|e| e.id == it.id)?;
+    let before = *episodes.get(at.checked_sub(1)?)?;
+    if before.file.is_none() || db.view(user.id, before.id).view_count == 0 {
+        return None;
+    }
+    let to = db.credits_markers(before).first().copied().filter(|c| *c > 0).unwrap_or(before.duration_ms);
+    if to == 0 {
+        return None;
+    }
+    Some(json!({"id": before.id, "from": to.saturating_sub(CATCH_UP_SECONDS * 1000), "to": to,
+        "parentIndex": db.items.get(&before.parent_id?).and_then(|s| s.index), "index": before.index, "title": before.title}))
+}
+
+
 pub fn item_json(db: &Db, user: &User, it: &Item, detail: bool) -> Value {
     item_json_ix(db, user, it, detail, None)
 }
@@ -119,6 +157,7 @@ pub fn item_json_ix(db: &Db, user: &User, it: &Item, detail: bool, ix: Option<&I
         if let Some((s, e)) = db.intro_marker(it) { o["intro"] = json!({"start": s, "end": e}); }
         // Where the recap ("Previously on") runs, for "Skip recap".
         if let Some((s, e)) = db.recap_marker(it) { o["recap"] = json!({"start": s, "end": e}); }
+        if let Some(c) = catch_up(db, user, it, now()) { o["catchUp"] = c; }
     }
     // The file, then (if merged by hand) the other versions of it: 4K first.
     {
@@ -484,4 +523,50 @@ pub fn placeholder_svg(title: &str, kind: &str, id: u64) -> String {
         (hue + 40) % 360,
         kind.to_uppercase()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item(id: u64, kind: ItemKind, parent: Option<u64>, index: u32) -> Item {
+        let mut it: Item = serde_json::from_value(json!({"id": id, "section_id": 1, "kind": kind.as_str(), "title": format!("t{id}"), "added_at": 1, "updated_at": 1})).unwrap();
+        it.parent_id = parent;
+        it.index = Some(index);
+        if kind == ItemKind::Episode {
+            it.file = Some(crate::data::db::MediaFile { path: format!("/e{id}.mkv"), duration_ms: 40 * 60000, ..Default::default() });
+            it.duration_ms = 40 * 60000;
+        }
+        it
+    }
+
+    #[test]
+    fn after_a_break_the_end_of_the_episode_before() {
+        let mut db = Db::default();
+        // Show 1: season 1 (episodes 11, 12), season 2 (episode 21).
+        for it in [item(1, ItemKind::Show, None, 0), item(10, ItemKind::Season, Some(1), 1), item(11, ItemKind::Episode, Some(10), 1),
+            item(12, ItemKind::Episode, Some(10), 2), item(20, ItemKind::Season, Some(1), 2), item(21, ItemKind::Episode, Some(20), 1)] {
+            db.items.insert(it.id, it);
+        }
+        let user: User = serde_json::from_value(json!({"id": 1, "username": "a", "password_hash": "", "salt": "", "admin": false, "created_at": 0})).unwrap();
+        let day = 86400;
+        let t = 100 * day;
+        let ep = |db: &Db, id: u64| catch_up(db, &user, db.items.get(&id).unwrap(), t);
+        // Nothing watched yet: nothing to remember.
+        assert_eq!(ep(&db, 12), None);
+        { let v = db.view_mut(1, 11); v.view_count = 1; v.last_viewed_at = t - 3 * day; }
+        // Watched three days ago: no need.
+        assert_eq!(ep(&db, 12), None);
+        db.view_mut(1, 11).last_viewed_at = t - 20 * day;
+        let c = ep(&db, 12).expect("offered after 20 days");
+        assert_eq!((c["id"].as_u64(), c["from"].as_u64(), c["to"].as_u64()), (Some(11), Some(37 * 60000), Some(40 * 60000)));
+        // The first episode of a season gets the last one of the season before, up to its credits.
+        { let v = db.view_mut(1, 12); v.view_count = 1; v.last_viewed_at = t - 30 * day; }
+        db.items.get_mut(&12).unwrap().file.as_mut().unwrap().credits_ms = vec![38 * 60000];
+        db.sections.push(serde_json::from_value(json!({"id": 1, "name": "TV", "kind": "show", "paths": [], "created_at": 0, "credits_detection": true})).unwrap());
+        let c = ep(&db, 21).expect("offered");
+        assert_eq!((c["id"].as_u64(), c["to"].as_u64(), c["parentIndex"].as_u64()), (Some(12), Some(38 * 60000), Some(1)));
+        // The very first episode has none before it.
+        assert_eq!(ep(&db, 11), None);
+    }
 }
