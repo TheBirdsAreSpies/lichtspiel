@@ -89,6 +89,25 @@ class Lists(unittest.TestCase):
             with self.assertRaises(main.urllib.error.HTTPError):
                 main.wikidata_award("Q19020", {})
 
+    def test_wikidata_gives_each_film_once_with_its_title_and_year_and_an_old_answer_is_asked_again(self):
+        answer = '{"results": {"bindings": [{"film": {"value": "Q1"}, "imdb": {"value": "tt0068646"}, "tmdb": {"value": "238"}, ' \
+                 '"title": {"value": "The Godfather"}, "date": {"value": "1972-03-15T00:00:00Z"}}, {"film": {"value": "Q2"}}]}}'
+        with mock.patch.object(main, "get", lambda url, accept: answer):
+            films = main.ask_wikidata("Q102427")
+        self.assertEqual(films, [{"imdb": "tt0068646", "tmdb": 238, "title": "The Godfather", "year": 1972},
+                                 {"imdb": None, "tmdb": None, "title": None, "year": None}])
+        # Kept from before there were titles: asked again although it is not a week old.
+        cache = {"wikidata:Q102427": {"at": int(main.time.time()), "films": [{"imdb": "tt0068646", "tmdb": 238}]}}
+        with mock.patch.object(main, "ask_wikidata", lambda award: films):
+            self.assertEqual(main.wikidata_award("Q102427", cache), films)
+        self.assertEqual(cache["wikidata:Q102427"]["v"], 2)
+
+    def test_a_missing_film_is_shown_with_a_link_to_its_page(self):
+        self.assertEqual(main.described({"slug": "the-godfather", "title": "The Godfather", "year": 1972}),
+                         {"title": "The Godfather", "year": 1972, "link": "https://letterboxd.com/film/the-godfather/"})
+        self.assertEqual(main.described({"imdb": "tt0068646"}), {"title": "tt0068646", "year": None, "link": "https://www.imdb.com/title/tt0068646/"})
+        self.assertEqual(main.described({"tmdb": 238, "title": "Der Pate"})["link"], "https://www.themoviedb.org/movie/238")
+
     def test_a_site_that_says_how_long_to_wait_is_waited_for_at_most_two_minutes(self):
         def err(after):
             return main.urllib.error.HTTPError("u", 429, "Too Many Requests", {"Retry-After": after} if after else {}, None)
@@ -192,6 +211,14 @@ class Runs(unittest.TestCase):
         self.assertEqual(r["panel"]["items"][0]["status"], "1 von 2 in deinen Mediatheken")
         self.assertNotIn("poll", r)
         self.assertNotIn("collections", call("panel"))
+        # Which films of the list you do not have: a button on the list shows them.
+        item = call("panel")["items"][0]
+        self.assertEqual(item["buttons"], [{"label": "Fehlende zeigen", "action": "missing", "args": {"name": "Oscars"}}])
+        m = main.answer_call({"action": "missing", "admin": True, "body": {"lang": "de", "args": {"name": "Oscars"}}}, settings, {})["panel"]
+        self.assertEqual(m["title"], "Oscars: fehlt dir")
+        self.assertEqual(m["text"], "1 Filme dieser Liste sind nicht in deinen Mediatheken.")
+        self.assertEqual(m["items"], [{"title": "tt9999999", "href": "https://www.imdb.com/title/tt9999999/"}])
+        self.assertEqual(m["buttons"], [{"label": "Zurück", "action": "panel"}])
         # The page was closed in between: opening the panel hands them over.
         with mock.patch.object(main, "films_of", self.films):
             main.update_in_background(settings, {"library": "x"})

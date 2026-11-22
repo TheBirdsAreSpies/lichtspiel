@@ -42,7 +42,8 @@ CACHE = os.path.join(HERE, "cache.json")
 LOCK = os.path.join(HERE, ".collections.lock")
 PROGRESS = os.path.join(HERE, "progress.json")   # while an update started by a click runs
 PENDING = os.path.join(HERE, "pending.json")     # its result, until a call hands it to the server
-STALE = 1200                    # a run not heard from for 20 minutes has stopped
+MISSING_KEPT = 2000             # the films of a list you do not have, kept to be shown
+STALE = 1200                   # a run not heard from for 20 minutes has stopped
 UA = "Lichtspiel-smart-collections/1.0"
 TIMEOUT = 30
 LETTERBOXD_PAGES = 20          # at most 2,000 films a list
@@ -76,6 +77,12 @@ WORDS = {
     "An update is running.": "Eine Aktualisierung läuft.",
     "The update could not be started: {e}": "Die Aktualisierung konnte nicht gestartet werden: {e}",
     "The update stopped: {e}": "Die Aktualisierung ist abgebrochen: {e}",
+    "Show missing": "Fehlende zeigen",
+    "{name}: missing": "{name}: fehlt dir",
+    "{n} films of this list are not in your libraries.": "{n} Filme dieser Liste sind nicht in deinen Mediatheken.",
+    "Nothing is missing.": "Es fehlt nichts.",
+    "The first {n} are shown.": "Die ersten {n} werden gezeigt.",
+    "Back": "Zurück",
 }
 
 
@@ -195,7 +202,8 @@ def wikidata_award(award, cache=None):
     cache = {} if cache is None else cache
     key = "wikidata:" + award
     kept = cache.get(key) if isinstance(cache.get(key), dict) else None
-    if kept and time.time() - kept.get("at", 0) < WIKIDATA_DAYS * 86400:
+    # An answer from before the films had titles (version 1) is asked again, but used while Wikidata is busy.
+    if kept and kept.get("v") == 2 and time.time() - kept.get("at", 0) < WIKIDATA_DAYS * 86400:
         return kept["films"]
     try:
         films = ask_wikidata(award)
@@ -203,18 +211,22 @@ def wikidata_award(award, cache=None):
         if kept:
             return kept["films"]
         raise
-    cache[key] = {"at": int(time.time()), "films": films}
+    cache[key] = {"at": int(time.time()), "v": 2, "films": films}
     return films
 
 
 def ask_wikidata(award):
-    q = ("SELECT ?imdb ?tmdb WHERE { ?film wdt:P31 wd:Q11424; wdt:P166 wd:%s . "
-         "OPTIONAL { ?film wdt:P345 ?imdb } OPTIONAL { ?film wdt:P4947 ?tmdb } }" % award)
+    """The films with the award, once each: IMDb and TMDB ids, title (English, or the one for all languages) and year."""
+    q = ("SELECT ?film (SAMPLE(?i) AS ?imdb) (SAMPLE(?t) AS ?tmdb) (SAMPLE(?l) AS ?title) (MIN(?d) AS ?date) WHERE { "
+         "?film wdt:P31 wd:Q11424; wdt:P166 wd:%s . OPTIONAL { ?film wdt:P345 ?i } OPTIONAL { ?film wdt:P4947 ?t } "
+         'OPTIONAL { ?film rdfs:label ?l FILTER(LANG(?l) IN ("en", "mul")) } OPTIONAL { ?film wdt:P577 ?d } } GROUP BY ?film' % award)
     text = get("https://query.wikidata.org/sparql?" + urllib.parse.urlencode({"query": q}), "application/sparql-results+json")
     out = []
     for b in json.loads(text or "{}").get("results", {}).get("bindings", []):
-        tmdb = (b.get("tmdb") or {}).get("value")
-        out.append({"imdb": (b.get("imdb") or {}).get("value"), "tmdb": int(tmdb) if tmdb and tmdb.isdigit() else None})
+        val = lambda k: (b.get(k) or {}).get("value")  # noqa: E731
+        tmdb, date = val("tmdb"), val("date") or ""
+        out.append({"imdb": val("imdb"), "tmdb": int(tmdb) if tmdb and tmdb.isdigit() else None,
+                    "title": val("title"), "year": int(date[:4]) if date[:4].isdigit() else None})
     return out
 
 
@@ -297,6 +309,19 @@ def match(films, index):
     return out
 
 
+def described(film):
+    """A film of a list you do not have, as the panel shows it: its title, year and a page about it."""
+    if film.get("slug"):
+        link = "https://letterboxd.com/film/%s/" % urllib.parse.quote(film["slug"])
+    elif film.get("imdb"):
+        link = "https://www.imdb.com/title/%s/" % urllib.parse.quote(str(film["imdb"]))
+    elif film.get("tmdb"):
+        link = "https://www.themoviedb.org/movie/%s" % film["tmdb"]
+    else:
+        link = None
+    return {"title": film.get("title") or film.get("imdb") or "?", "year": film.get("year"), "link": link}
+
+
 def lists_of(settings):
     out = []
     for e in settings.get("lists") or []:
@@ -323,8 +348,9 @@ def run(server, settings, progress=None):
             ids = match(films, index)
             collections[name] = ids
             # Films of the list you have, not titles: a film there twice counts once.
-            found = sum(1 for f in films if titles_of(f, index))
-            report.append({"name": name, "source": source, "found": found, "total": len(films)})
+            missing = [f for f in films if not titles_of(f, index)]
+            report.append({"name": name, "source": source, "found": len(films) - len(missing), "total": len(films),
+                           "missing": [described(f) for f in missing[:MISSING_KEPT]]})
         except Exception as e:  # noqa: BLE001 — shown in the panel, the other lists go on
             # Not reachable: the collection is left as it is.
             report.append({"name": name, "source": source, "error": str(e)})
@@ -451,13 +477,30 @@ def panel(lang, settings, message=None):
             status = tr(lang, "error") + ": " + tr(lang, r["error"])
         else:
             status = tr(lang, "{n} of {m} in your libraries", n=r["found"], m=r["total"])
-        items.append({"title": name, "subtitle": source, "status": status, "status_kind": "default" if r and not r.get("error") else None})
+        item = {"title": name, "subtitle": source, "status": status, "status_kind": "default" if r and not r.get("error") else None}
+        if r and not r.get("error") and r.get("missing"):
+            item["buttons"] = [{"label": tr(lang, "Show missing"), "action": "missing", "args": {"name": name}}]
+        items.append(item)
     text = tr(lang, "Updated {when}.", when=when(state["at"], lang)) if state.get("at") else tr(lang, "Not updated yet.")
     if message:
         text = message + " " + text
     if running():
         text = tr(lang, "An update is running.") + " " + text
     return {"title": tr(lang, "Smart collections"), "text": text, "items": items, "buttons": buttons}
+
+
+def missing_panel(lang, name):
+    """The films of one list that are not in your libraries, each linked to its page."""
+    r = next((r for r in read_json(STATE, {}).get("lists") or [] if r.get("name") == name), None)
+    films = (r or {}).get("missing") or []
+    left = (r or {}).get("total", 0) - (r or {}).get("found", 0)
+    text = tr(lang, "{n} films of this list are not in your libraries.", n=left) if left else tr(lang, "Nothing is missing.")
+    if left > len(films):
+        text += " " + tr(lang, "The first {n} are shown.", n=len(films))
+    items = [{"title": "%s (%s)" % (f["title"], f["year"]) if f.get("year") else f.get("title") or "?", **({"href": f["link"]} if f.get("link") else {})}
+             for f in films]
+    return {"title": tr(lang, "{name}: missing", name=name), "text": text, "items": items,
+            "buttons": [{"label": tr(lang, "Back"), "action": "panel"}]}
 
 
 def finished(lang):
@@ -478,8 +521,11 @@ def answer_call(data, settings, server):
     if not data.get("admin"):
         return {"error": tr(lang, "Only admins can see the smart collections.")}
     action = data.get("action")
-    if action not in ("panel", "update", "progress"):
+    if action not in ("panel", "update", "progress", "missing"):
         return {"error": "unknown action %s" % action}
+    if action == "missing":
+        args = body.get("args") if isinstance(body.get("args"), dict) else {}
+        return {"panel": missing_panel(lang, str(args.get("name") or ""))}
     done = finished(lang)
     if done:
         # The collections go to the server with whichever call comes first after the run.

@@ -969,7 +969,7 @@ function traktPanel() {
 // Plugins that give each person a panel of their own.
 // The plugin draws it: api.call "panel" answers {title, text, link, buttons: [{label, action, args, primary, confirm}],
 // input: {placeholder, action, label, value}, upload: {label, action, accept}, items: [{title, subtitle, status, image,
-// buttons}]}. A button's action gets {args} in its body, the input's action {query}, the upload's {file (base64), name}.
+// href (#/… in the app or https://…), buttons}]}. A button's action gets {args} in its body, the input's action {query}, the upload's {file (base64), name}.
 // While a button's action runs it turns and says so ({working}: its own words for that, e.g. "Checking the library…").
 // An answer may carry {panel} (drawn at once, e.g. search results), {message, code, link, wait, poll: {action, seconds}}
 // (shown in a box that asks again until the answer says done), {error}, and the counts of what was brought in.
@@ -1030,9 +1030,13 @@ function pluginPanels(only) {
     }
     // Pictures only from the web (https) or the server itself.
     const pic = src => typeof src === 'string' && /^(https:\/\/|\/(?!\/))/.test(src) ? h('img', { src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: e => e.target.replaceWith(h('div', { class: 'pp-noimg' })) }) : h('div', { class: 'pp-noimg' });
-    // A list where no entry has a picture gets no picture column; a title may link to a page of the app.
+    // A list where no entry has a picture gets no picture column; a title may link to a page of the app,
+    // or to a page on the web (https, in a new tab).
     const pics = (p.items || []).some(it => 'image' in it);
-    const name_ = it => typeof it.href === 'string' && /^#\/[\w/-]+$/.test(it.href) ? h('a', { href: it.href }, h('b', {}, it.title || '')) : h('b', {}, it.title || '');
+    const name_ = it => typeof it.href !== 'string' ? h('b', {}, it.title || '')
+      : /^#\/[\w/-]+$/.test(it.href) ? h('a', { href: it.href }, h('b', {}, it.title || ''))
+      : /^https:\/\/[^\s"<>]+$/.test(it.href) ? h('a', { href: it.href, target: '_blank', rel: 'noopener noreferrer' }, h('b', {}, it.title || ''))
+      : h('b', {}, it.title || '');
     const items = (p.items || []).length ? h('div', { class: 'pp-items' }, p.items.map(it => h('div', { class: 'pp-item' }, pics ? pic(it.image) : null,
       h('div', { class: 'grow' }, name_(it), it.status ? h('span', { class: 'tag' + (it.status_kind ? ' ' + it.status_kind : '') }, it.status) : null,
         it.subtitle ? h('div', { class: 'dim' }, it.subtitle) : null),
