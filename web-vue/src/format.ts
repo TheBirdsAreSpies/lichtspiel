@@ -1,6 +1,6 @@
 // Numbers, times and names as they are shown.
 import { lang, t } from './i18n';
-import type { Item, Playlist } from './api';
+import { pref, type Item, type Playlist } from './api';
 
 export function fmtDur(ms?: number): string {
   if (!ms) return '';
@@ -17,6 +17,12 @@ export function fmtTime(s: number): string {
 }
 
 export const fmtNum = (n: number) => Number(n).toLocaleString(lang.value);
+
+/** A time of day (14:05, or 2:05 PM), as Settings → Time format says. */
+export function fmtClock(d: Date): string {
+  const f = pref('timeFormat', 'auto');
+  return d.toLocaleTimeString(lang.value, { hour: '2-digit', minute: '2-digit', hour12: f === '12' ? true : f === '24' ? false : undefined });
+}
 
 /** Where to go on from, in seconds; less than a second in counts as not started. */
 export const resumeAt = (it: Item) => ((it.viewOffset || 0) >= 1000 ? (it.viewOffset || 0) / 1000 : 0);

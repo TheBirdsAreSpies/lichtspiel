@@ -1858,6 +1858,7 @@ I18N.add('de', 'Deutsch', {
     'Off': 'Aus',
     'Subtitle size': 'Untertitelgröße',
     'Play the next episode by itself': 'Nächste Folge automatisch abspielen',
+    'Time left': 'Restzeit',
     'Sleep timer': 'Sleep-Timer',
     'Night mode': 'Nachtmodus',
     'Coming Soon': 'Demnächst',

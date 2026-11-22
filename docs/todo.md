@@ -37,6 +37,13 @@ and conventions are in [development.md](development.md).
   `.github/workflows/ci.yml`). Before updating Flutter: switch the imports to `material_ui` (add it to
   `pubspec.yaml`), then raise the version in `ci.yml`.
 
+- **A repackaged stream starts at the key frame before the seek point** (web app, both `web/` and
+  `web-vue/`). With a copied picture ffmpeg can only start at a key frame (`progressive_args` in
+  `src/playback/transcode.rs`), but the player counts the stream as starting exactly at the asked-for
+  time. So after a seek the shown time (and subtitles, and the saved place) are ahead by up to the key
+  frame distance: in a test file with a key frame every 10 s, "0:26 / 0:20" at the end. A fix: the
+  server says where the stream really starts (a header), and the player uses that as its offset.
+
 ## Ideas
 
 Collected on 2026-11-22.
@@ -46,9 +53,8 @@ Collected on 2026-11-22.
 - **Still missing there** (only in `web/` so far): new smart playlists and their rules (the button
   opens the classic app), the advanced library filters (rules), the server's settings, the dashboard,
   users and invites, plugins, downloads, Chromecast, watch together, sign-in with a code, merged
-  versions, editing details; in the player: quality and subtitle size in ⚙, the sleep timer, the
-  countdown to the next episode ("Are you still watching?"), the still preview on the seek bar,
-  "What happened so far", time left / "ends at".
+  versions, editing details; in the player: the sleep timer, the still preview on the seek bar,
+  "What happened so far", subtitle timing, the keyboard shortcuts overlay.
 
 ### Server
 

@@ -37,8 +37,8 @@ Some server tests need ffmpeg on the PATH and skip themselves without it.
 It talks to the same JSON API and keeps the sign-in under the same keys as `web/`, so both share it.
 So far it has signing in (password, two-step code, home profiles, first setup), home, libraries with
 their filters (`?f.genre=…`, `web-vue/src/filters.ts`) and collections, a title's page (with "Add to …"
-a playlist or collection), people, search, the player (with speed, night mode, chapters and skipping
-intro, recap and credits), your own settings (account, playback, devices,
+a playlist or collection), people, search, the player (with quality, speed, night mode, chapters, skipping
+intro, recap and credits, the countdown to the next episode and "Are you still watching?"), your own settings (account, playback, devices,
 Trakt, watchlist feed; saved under the classic app's names, so both use them), the
 watchlist and playlists (playing one goes on through it: `web-vue/src/queue.ts`); the rest is still
 only in `web/` (see [todo.md](todo.md)).

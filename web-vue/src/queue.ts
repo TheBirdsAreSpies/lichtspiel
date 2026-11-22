@@ -8,6 +8,10 @@ import { resumeAt } from './format';
 
 export const queue = reactive({ items: [] as Item[] });
 
+/** How many videos in a row went on by themselves, without anyone touching anything (the player asks
+ * "Are you still watching?" after a few). Lasts from one video to the next. */
+export const watching = { autoRun: 0 };
+
 /** Plays the first of `items` and keeps the rest for afterwards. */
 export function playAll(router: Router, items: Item[]) {
   const [first, ...rest] = items;
