@@ -97,8 +97,9 @@ pub fn vue_file(rest: &[&str]) -> Resp {
     };
     let mut r = bytes(200, ctype, body.to_vec());
     if page {
-        // Like the usual web app's (web_csp), without inline scripts, Cast or YouTube: the build has none.
-        r.add_header(header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src * data: blob:; \
+        // Like the usual web app's (web_csp), without inline scripts or YouTube: the build has none.
+        // gstatic: Google's Cast library, loaded only in Chrome and Edge to send a video to a Chromecast.
+        r.add_header(header("Content-Security-Policy", "default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src * data: blob:; \
             media-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"));
         r.add_header(header("Cache-Control", "no-cache"));
     } else {

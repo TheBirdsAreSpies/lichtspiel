@@ -357,6 +357,8 @@ code.ev { margin: 0 6px 6px 0; display: inline-block; }
 .pp-item .actions { margin: 0; flex-wrap: wrap; justify-content: flex-end; }
 .select { user-select: all; }
 .narrow-wide { max-width: 900px; }
+.p-cast { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font-size: 20px; color: var(--dim); background: #000; }
+.p-cast .icon { width: 72px; height: 72px; }
 .bar-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
 .bar-tools .check { display: flex; gap: 6px; align-items: center; margin: 0; }
 .small-text { font-size: 13px; word-break: break-word; }

@@ -9,6 +9,7 @@
 // (or on "Skip credits") the next episode comes after a countdown; after a few in a row without anyone
 // touching anything, the player asks whether somebody is still watching.
 // The sleep timer (⚙) pauses after some minutes or stops at the end of the title; ? lists the keys.
+// With a Chromecast (cast.ts) the TV plays and these controls steer it.
 // The owner can move a subtitle's timing (subtitle menu). "What happened so far" (?until=…&then=…) plays
 // the end of the episode before without saving anything, then goes on to the episode.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
@@ -18,6 +19,7 @@ import { fmtClock, fmtNum, fmtTime, langName, lang2, resumeAt } from '../format'
 import { t } from '../i18n';
 import Icon from '../components/Icon.vue';
 import { nextInQueue, queue, watching } from '../queue';
+import { cast, castHooks, castLoad, castMute, castPause, castPick, castSeek, castStop, castToggle, castUrl, castVolume, initCast } from '../cast';
 
 const props = defineProps<{ id: string }>();
 const route = useRoute();
@@ -87,12 +89,15 @@ async function load(at: number) {
   let q = pref('quality', 'original');
   const want = Number((/^(\d+)p/.exec(q) || [])[1]) || 0, have = Number(media.value && media.value.height) || 0;
   if (want && have && have <= want && pref('keepSmall', '1') !== '0') q = 'original';
+  // A Chromecast plays H.264 up to 1080p for sure (the codecs the browser plays don't count there).
+  const casting = cast.on;
+  if (casting && q === 'original' && have > 1080) q = '1080p-20';
   // Which part of a split movie the position is in; `at` becomes the time inside that part.
   let p = 0;
   if (split.value) while (p < parts.value.length - 1 && at >= partStart(p + 1)) p++;
   part.value = p; base.value = split.value ? partStart(p) : 0;
   at = Math.max(0, at - base.value);
-  const extra = (CODECS ? `&videoCodecs=${CODECS}` : '') + (audio.value !== null ? `&audio=${audio.value}` : '') + (p ? `&part=${p}` : '')
+  const extra = (CODECS && !casting ? `&videoCodecs=${CODECS}` : '') + (audio.value !== null ? `&audio=${audio.value}` : '') + (p ? `&part=${p}` : '')
     + (burn.value !== null ? `&subtitle=${burn.value}` : '');
   const d = await get<{ method: 'direct' | 'remux' | 'transcode', allowed: boolean, start?: number }>(`/library/metadata/${i.id}/decision?quality=${q}&offset=${at.toFixed(3)}${extra}`);
   tk = await ticket('item=' + i.id);
@@ -101,6 +106,7 @@ async function load(at: number) {
   const noDirect = pref('directPlay', '1') === '0' && m === 'direct' && d.allowed;
   if (noDirect) m = 'transcode';
   method.value = m;
+  if (casting) { await toTv(i, m, at, q, extra, noDirect, p, d.start); return; }
   levelVolume();
   if (m === 'direct') {
     offset.value = 0;
@@ -116,6 +122,44 @@ async function load(at: number) {
   addSubtitles();
   v.play().catch(() => { waiting.value = false; paused.value = true; });
 }
+
+// On a TV: the same addresses, sent to it (as it is: the file, the TV seeks in it; else a stream from `at`).
+// A text subtitle goes along (only with the first file of a split movie, as in the browser).
+async function toTv(i: Item, m: string, at: number, q: string, extra: string, noDirect: boolean, p: number, start?: number) {
+  const direct = m === 'direct';
+  if (m === 'remux' && typeof start === 'number' && start <= at) at = start;
+  offset.value = direct ? 0 : at;
+  const path = direct ? `/library/parts/${i.id}/file${p ? '?part=' + p : ''}`
+    : `/video/transcode/${i.id}/stream.mp4?quality=${q}&offset=${at.toFixed(3)}${extra}${noDirect ? '&transcode=1' : ''}`;
+  const dev = '&X-Plex-Product=Chromecast&X-Plex-Device-Name=' + encodeURIComponent(cast.device);
+  const container = String((media.value && media.value.container) || '').toLowerCase();
+  const s = sub.value >= 0 && !p ? subs.value[sub.value] : null;
+  const thumb = i.type === 'episode' && i.grandparentThumb ? i.grandparentThumb : i.thumb;
+  const ok = await castLoad({
+    url: castUrl(withTicket(path, tk)) + dev, type: direct && container === 'webm' ? 'video/webm' : 'video/mp4',
+    title: i.type === 'episode' ? `${i.grandparentTitle} · ${nextName(i)}` : i.title, subtitle: subLine.value,
+    image: thumb ? castUrl(picture(thumb)) : undefined, at: direct ? at : 0,
+    sub: s ? { url: castUrl(withTicket(s.key + (direct ? '' : '?from=' + at.toFixed(1)), tk)), name: subName(s, sub.value), language: s.language || 'und',
+      scale: (Number(pref('subSize', '100')) || 100) / 100, color: pref('subColor', '#ffffff'), background: pref('subBg', '1') === '1' } : undefined,
+  });
+  waiting.value = false;
+  if (ok) report('playing'); else say(t('The TV could not play this video.'));
+}
+// While a TV plays, its position, pause and volume show here; the browser's own video is empty.
+watch(() => cast.time, x => { if (cast.on) now.value = base.value + offset.value + x; });
+watch(() => cast.paused, x => { if (!cast.on) return; paused.value = x; wake(); report(x ? 'paused' : 'playing'); });
+watch(() => cast.buffering, x => { if (cast.on) waiting.value = x; });
+watch(() => [cast.volume, cast.muted], () => { if (cast.on) { volume.value = cast.volume; muted.value = cast.muted; } });
+// A TV takes over: the browser stops, the TV goes on from the same place; and back the other way.
+function castStarted() {
+  const v = video.value, at = now.value;
+  if (v) { v.pause(); v.removeAttribute('src'); v.querySelectorAll('track').forEach(x => x.remove()); v.load(); }
+  menu.value = '';
+  if (it.value) load(at);
+}
+function castEnded() { if (it.value) load(now.value); }
+const castFailed = () => say(t('The TV could not play this video.'));
+Object.assign(castHooks, { started: castStarted, ended: castEnded, finished: () => ended(), failed: castFailed });
 
 // Text subtitles as <track>s; a converted stream starts at the seek point, so their times move by as much.
 // They belong to the first file of a split movie (a later part would show them at the wrong time).
@@ -214,6 +258,7 @@ function setSub(i: number) {
   }
   sub.value = i;
   showSub();
+  if (cast.on && before === burn.value) load(now.value); // the TV gets the subtitle with the video
   savePref('subLang', s && (i >= 0 || burn.value !== null) ? s.language || '' : '').catch(() => {});
   // A burned-in picture comes or goes: the video is fetched again from here.
   if (before !== burn.value) load(now.value);
@@ -371,6 +416,7 @@ function seek(to: number) {
   const v = video.value; if (!v) return;
   to = Math.max(0, Math.min(duration.value ? duration.value - 1 : to, to));
   now.value = to;
+  if (cast.on) { if (method.value === 'direct' && !split.value) castSeek(to); else load(to); return; }
   // Another part of a split movie: that file is loaded.
   const inPart = !split.value || (to >= base.value && (part.value === parts.value.length - 1 || to < partStart(part.value + 1)));
   if (!inPart) { load(to); return; }
@@ -382,15 +428,17 @@ function seek(to: number) {
 }
 const skip = (s: number) => seek(now.value + s);
 function toggle() {
+  if (cast.on) { castToggle(); return; }
   const v = video.value; if (!v) return;
   if (v.paused) v.play().catch(() => {}); else v.pause();
 }
 function setVolume(x: number) {
+  if (cast.on) { castVolume(x); return; }
   const v = video.value; if (!v) return;
   v.volume = x; v.muted = x === 0;
   try { localStorage.setItem('volume', String(x)); } catch { /* none */ }
 }
-function toggleMute() { const v = video.value; if (v) v.muted = !v.muted; }
+function toggleMute() { if (cast.on) { castMute(); return; } const v = video.value; if (v) v.muted = !v.muted; }
 function toggleFull() {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   else if (box.value) box.value.requestFullscreen().catch(() => {});
@@ -401,7 +449,7 @@ function report(state: 'playing' | 'paused' | 'stopped', ms = Math.floor(now.val
   return api<{ stopped?: boolean, message?: string } | null>('POST', `/:/timeline?ratingKey=${i.id}&time=${ms}&state=${state}&client=web`)
     .then(r => {
       // The owner stopped this playback from the dashboard.
-      if (r && r.stopped) { stopped.value = true; stoppedMsg.value = r.message || ''; video.value && video.value.pause(); clearInterval(timer); }
+      if (r && r.stopped) { stopped.value = true; stoppedMsg.value = r.message || ''; video.value && video.value.pause(); castPause(); clearInterval(timer); }
     }).catch(() => {});
 }
 
@@ -511,7 +559,7 @@ function sleepCheck() {
     return;
   }
   const left = sleepLeft();
-  if (left <= 0) { sleep.value = null; v.pause(); sleepFade(1); hideNext(); menu.value = ''; say(t('Sleep timer: paused. Good night!')); return; }
+  if (left <= 0) { sleep.value = null; v.pause(); castPause(); sleepFade(1); hideNext(); menu.value = ''; say(t('Sleep timer: paused. Good night!')); return; }
   if (left <= SLEEP_FADE && !v.paused) sleepFade(left / SLEEP_FADE);
 }
 function sleepWake() { if (sleepVol !== null && sleep.value) { sleep.value = null; sleepFade(1); say(t('Sleep timer off')); } }
@@ -563,8 +611,10 @@ function key(e: KeyboardEvent) {
   else if (k === ' ' || k === 'k') toggle();
   else if (k === 'ArrowLeft' || k === 'j') skip(e.shiftKey ? -60 : -10);
   else if (k === 'ArrowRight' || k === 'l') skip(e.shiftKey ? 60 : 30);
-  else if (k === 'ArrowUp') { setVolume(Math.min(1, Math.round((v.volume + 0.05) * 100) / 100)); say(t('Volume: {n} %', { n: Math.round(v.volume * 100) })); }
-  else if (k === 'ArrowDown') { setVolume(Math.max(0, Math.round((v.volume - 0.05) * 100) / 100)); say(t('Volume: {n} %', { n: Math.round(v.volume * 100) })); }
+  else if (k === 'ArrowUp' || k === 'ArrowDown') {
+    const x = Math.min(1, Math.max(0, Math.round((volume.value + (k === 'ArrowUp' ? 0.05 : -0.05)) * 100) / 100));
+    setVolume(x); say(t('Volume: {n} %', { n: Math.round(x * 100) }));
+  }
   else if (k === 'm') toggleMute();
   else if (k === 'f') toggleFull();
   else if (k === 'p') togglePip();
@@ -581,18 +631,19 @@ function key(e: KeyboardEvent) {
 const onFull = () => { full.value = !!document.fullscreenElement; };
 
 onMounted(async () => {
+  initCast();
   const v = video.value!;
   try { v.volume = Math.min(1, Math.max(0, Number(localStorage.getItem('volume') || 1))); } catch { /* none */ }
-  v.addEventListener('timeupdate', () => { now.value = base.value + offset.value + v.currentTime; });
+  v.addEventListener('timeupdate', () => { if (cast.on) return; now.value = base.value + offset.value + v.currentTime; });
   v.addEventListener('progress', () => { buffered.value = v.buffered.length ? v.buffered.end(v.buffered.length - 1) : 0; });
-  v.addEventListener('play', () => { paused.value = false; wake(); if (sound) sound.ctx.resume().catch(() => {}); });
+  v.addEventListener('play', () => { if (cast.on) return; paused.value = false; wake(); if (sound) sound.ctx.resume().catch(() => {}); });
   // The browser's own menu (picture-in-picture …) can change the speed too: keep it in step.
   v.addEventListener('ratechange', () => { if (SPEEDS.includes(v.playbackRate) && v.playbackRate !== speed.value) setSpeed(v.playbackRate); });
-  v.addEventListener('pause', () => { paused.value = true; idle.value = false; if (!v.ended) report('paused'); });
+  v.addEventListener('pause', () => { if (cast.on) return; paused.value = true; idle.value = false; if (!v.ended) report('paused'); });
   v.addEventListener('waiting', () => { waiting.value = true; });
   v.addEventListener('playing', () => { waiting.value = false; });
   v.addEventListener('canplay', () => { waiting.value = false; });
-  v.addEventListener('volumechange', () => { muted.value = v.muted; volume.value = v.volume; });
+  v.addEventListener('volumechange', () => { if (cast.on) return; muted.value = v.muted; volume.value = v.volume; });
   v.addEventListener('ended', ended);
   v.addEventListener('error', () => { if (v.src) { waiting.value = false; error.value = t('This video can’t be played here.'); } });
   document.addEventListener('keydown', key);
@@ -619,7 +670,9 @@ onBeforeUnmount(() => {
   for (const ev of INPUT) document.removeEventListener(ev, sleepWake, { capture: true });
   clearInterval(sleepTimer); sleepFade(1);
   // Leaving the player (not going on to the next episode) ends the sleep timer.
-  if (!router.currentRoute.value.path.startsWith('/play/')) watching.sleep = null;
+  // (the TV too; going on to the next episode, it plays that one)
+  if (!router.currentRoute.value.path.startsWith('/play/')) { watching.sleep = null; castStop(); }
+  if (castHooks.started === castStarted) { castHooks.started = castHooks.ended = castHooks.finished = castHooks.failed = undefined; }
   if (sound) sound.ctx.close().catch(() => {});
   document.removeEventListener('keydown', key);
   document.removeEventListener('fullscreenchange', onFull);
@@ -647,6 +700,7 @@ const endsAt = computed(() => {
 <template>
   <div ref="box" class="player" :class="{ idle }" :style="cueStyle" @mousemove="wake" @click.self="toggle">
     <video ref="video" playsinline @click="toggle"></video>
+    <div v-if="cast.on" class="p-cast" @click="toggle"><Icon name="cast" /><div>{{ t('Playing on {device}', { device: cast.device }) }}</div></div>
     <div v-if="waiting && !error" class="spinner" aria-hidden="true"></div>
     <div v-if="error || stopped" class="p-msg">
       <h2>{{ stopped ? t('Playback stopped') : error }}</h2>
@@ -657,7 +711,7 @@ const endsAt = computed(() => {
       <button class="iconbtn" :aria-label="t('Back')" @click="close"><Icon name="back" /></button>
       <div>
         <div class="p-title">{{ title }}</div>
-        <div class="dim">{{ subLine }}<span v-if="it"> · {{ methodName }}</span><span v-if="endsAt"> · {{ endsAt }}</span><span v-if="sleepLine"> · {{ sleepLine }}</span></div>
+        <div class="dim">{{ subLine }}<span v-if="it"> · {{ methodName }}</span><span v-if="cast.on"> · {{ t('on {device}', { device: cast.device }) }}</span><span v-if="endsAt"> · {{ endsAt }}</span><span v-if="sleepLine"> · {{ sleepLine }}</span></div>
       </div>
     </div>
     <div v-if="notice" class="p-notice">{{ notice }}</div>
@@ -769,6 +823,7 @@ const endsAt = computed(() => {
             <button v-for="x in SPEEDS" :key="x" :class="{ on: speed === x }" @click="menu = ''; setSpeed(x)">{{ speedName(x) }}</button>
           </div>
         </div>
+        <button v-if="cast.available" class="iconbtn" :class="{ on: cast.on }" :title="t('Play on a TV (Chromecast)')" :aria-label="t('Play on a TV (Chromecast)')" @click="castPick"><Icon name="cast" /></button>
         <button class="iconbtn" :aria-label="t('Full screen')" @click="toggleFull"><Icon :name="full ? 'exitfull' : 'full'" /></button>
       </div>
     </div>
