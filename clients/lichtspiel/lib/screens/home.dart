@@ -9,6 +9,7 @@ import 'calendar.dart';
 import 'detail.dart';
 import 'library.dart';
 import 'shell.dart' show sectionIcon;
+import '../i18n.dart';
 
 void openItem(BuildContext context, Api api, Map<String, dynamic> it) {
   Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(api: api, id: '${it['ratingKey']}')));
@@ -96,11 +97,11 @@ class _HomeScreenState extends State<HomeScreen> {
       onChanged: typed,
       onSubmitted: doSearch,
       decoration: InputDecoration(
-        hintText: 'Suchen…',
+        hintText: tr('Search…'),
         prefixIcon: const Icon(Icons.search),
         suffixIcon: searching
             ? const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
-            : (!narrow && search.text.isNotEmpty ? IconButton(tooltip: 'Leeren', icon: const Icon(Icons.close), onPressed: closeSearch) : null),
+            : (!narrow && search.text.isNotEmpty ? IconButton(tooltip: tr('Clear'), icon: const Icon(Icons.close), onPressed: closeSearch) : null),
         border: InputBorder.none,
       ),
     );
@@ -111,18 +112,18 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           if (narrow)
             IconButton(
-              tooltip: searchOpen ? 'Suche schließen' : 'Suchen',
+              tooltip: searchOpen ? tr('Close search') : tr('Search'),
               icon: Icon(searchOpen ? Icons.close : Icons.search),
               onPressed: () => searchOpen ? closeSearch() : setState(() => searchOpen = true),
             )
           else
             SizedBox(width: 300, child: field),
-          if (!narrow) IconButton(tooltip: 'Aktualisieren', icon: const Icon(Icons.refresh), onPressed: reload),
+          if (!narrow) IconButton(tooltip: tr('Refresh'), icon: const Icon(Icons.refresh), onPressed: reload),
         ],
       ),
       body: results != null
           ? results!.isEmpty
-              ? const ErrorView(error: 'Nichts gefunden.', icon: Icons.search_off)
+              ? ErrorView(error: tr('Nothing found.'), icon: Icons.search_off)
               : ListView(padding: const EdgeInsets.all(16), children: [
                   Wrap(spacing: 12, runSpacing: 16, children: [for (final i in results!) Poster(api: api, item: i, onTap: () => openItem(context, api, i))]),
                 ])
@@ -156,7 +157,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     for (final hub in before) _row(context, api, hub, short: hub == shortOn),
                     if (coming.isNotEmpty) ComingRow(api: api, entries: coming),
                     for (final hub in after) _row(context, api, hub, short: hub == shortOn),
-                    if (hubs.isEmpty) const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Noch nichts da. Die Bibliotheken werden evtl. noch gescannt.'))),
+                    if (hubs.isEmpty) Padding(padding: EdgeInsets.all(32), child: Center(child: Text(tr('Nothing here yet. The libraries may still be being scanned.')))),
                   ]),
                 );
               },
@@ -174,7 +175,7 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
               child: Row(children: [
                 Expanded(child: title),
-                TextButton.icon(onPressed: () => shortDialog(context, api), icon: const Icon(Icons.timer_outlined, size: 18), label: const Text('Etwas Kurzes')),
+                TextButton.icon(onPressed: () => shortDialog(context, api), icon: const Icon(Icons.timer_outlined, size: 18), label: Text(tr('Something short'))),
               ]),
             )
           : Padding(padding: const EdgeInsets.fromLTRB(16, 20, 16, 8), child: title),

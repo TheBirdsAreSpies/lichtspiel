@@ -9,11 +9,12 @@ import 'player.dart';
 import 'smart.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
+import '../i18n.dart';
 
 String _dur(dynamic ms) {
   final m = ((ms is num ? ms : 0) / 60000).round();
   if (m <= 0) return '';
-  return m >= 60 ? '${m ~/ 60} Std. ${m % 60} Min.' : '$m Min.';
+  return m >= 60 ? tr('{m} h {m2} min', {'m': m ~/ 60, 'm2': m % 60}) : tr('{m} min', {'m': m});
 }
 
 String plTitle(Map<String, dynamic> p) => '${p['title']}';
@@ -42,13 +43,13 @@ Future<void> addToPlaylistDialog(BuildContext context, Api api, String itemId, {
   if (!context.mounted) return;
   final choice = await showDialog<Object>(
     context: context,
-    builder: (c) => SimpleDialog(title: const Text('Zur Playlist hinzufügen'), children: [
-      SimpleDialogOption(onPressed: () => Navigator.pop(c, 'new'), child: const Row(children: [Icon(Icons.add), SizedBox(width: 8), Text('Neue Playlist…')])),
+    builder: (c) => SimpleDialog(title: Text(tr('Add to a playlist')), children: [
+      SimpleDialogOption(onPressed: () => Navigator.pop(c, 'new'), child: Row(children: [Icon(Icons.add), SizedBox(width: 8), Text(tr('New playlist…'))])),
       for (final p in pls) SimpleDialogOption(onPressed: () => Navigator.pop(c, p), child: Text(plTitle(p))),
       if (collectable) ...[
         const Divider(),
-        for (final name in cols) SimpleDialogOption(onPressed: () => Navigator.pop(c, 'coll:$name'), child: Text('Sammlung: $name')),
-        SimpleDialogOption(onPressed: () => Navigator.pop(c, 'newcoll'), child: const Row(children: [Icon(Icons.add), SizedBox(width: 8), Text('Neue Sammlung…')])),
+        for (final name in cols) SimpleDialogOption(onPressed: () => Navigator.pop(c, 'coll:$name'), child: Text(tr('Collection: {name}', {'name': name}))),
+        SimpleDialogOption(onPressed: () => Navigator.pop(c, 'newcoll'), child: Row(children: [Icon(Icons.add), SizedBox(width: 8), Text(tr('New collection…'))])),
       ],
     ]),
   );
@@ -57,20 +58,20 @@ Future<void> addToPlaylistDialog(BuildContext context, Api api, String itemId, {
     if (choice == 'newcoll' || (choice is String && choice.startsWith('coll:'))) {
       var name = choice is String && choice.startsWith('coll:') ? choice.substring(5) : '';
       if (choice == 'newcoll') {
-        name = (await askText(context, 'Name der neuen Sammlung')) ?? '';
+        name = (await askText(context, tr('Name of the new collection'))) ?? '';
         if (name.isEmpty) return;
       }
       await api.put('/library/metadata/$itemId', {'collections': [...mine, name]});
-      msg.showSnackBar(SnackBar(content: Text('Zu „$name“ hinzugefügt')));
+      msg.showSnackBar(SnackBar(content: Text(tr('Added to “{name}”', {'name': name}))));
     } else if (choice == 'new') {
-      final name = await askText(context, 'Name der neuen Playlist');
+      final name = await askText(context, tr('Name of the new playlist'));
       if (name == null || name.isEmpty) return;
       await api.createPlaylist(name, ids: ids ?? [itemId]);
-      msg.showSnackBar(SnackBar(content: Text('Zu „$name“ hinzugefügt')));
+      msg.showSnackBar(SnackBar(content: Text(tr('Added to “{name}”', {'name': name}))));
     } else {
       final p = choice as Map<String, dynamic>;
       final added = await api.addToPlaylist('${p['id']}', itemId, ids: ids);
-      msg.showSnackBar(SnackBar(content: Text(added ? 'Zu „${plTitle(p)}“ hinzugefügt' : 'Schon in dieser Playlist')));
+      msg.showSnackBar(SnackBar(content: Text(added ? tr('Added to “{plTitle}”', {'plTitle': plTitle(p)}) : tr('Already in this playlist'))));
     }
   } catch (e) {
     msg.showSnackBar(SnackBar(content: Text(errorText(e))));
@@ -85,7 +86,7 @@ Future<String?> askText(BuildContext context, String title, {String value = ''})
       title: Text(title),
       content: TextField(controller: c, autofocus: true, onSubmitted: (v) => Navigator.pop(d, v.trim())),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d), child: const Text('Abbrechen')),
+        TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Cancel'))),
         FilledButton(onPressed: () => Navigator.pop(d, c.text.trim()), child: const Text('OK')),
       ],
     ),
@@ -97,7 +98,7 @@ Future<bool> _sure(BuildContext context, String text) async =>
       context: context,
       builder: (d) => AlertDialog(
         content: Text(text),
-        actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Ja'))],
+        actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Cancel'))), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Yes')))],
       ),
     ) ??
     false;
@@ -113,7 +114,7 @@ Future<void> playPlaylist(BuildContext context, Api api, String id, {bool shuffl
   }
   if (!context.mounted) return;
   if (items.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Diese Playlist ist leer')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('This playlist is empty'))));
     return;
   }
   if (shuffle) items = smartShuffle(items);
@@ -145,16 +146,16 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
   List<Map<String, dynamic>>? list;
   String? error;
 
-  static const kinds = {'': 'Alle Arten', 'default': 'Standard', 'smart': 'Intelligent', 'manual': 'Normal'};
-  static const owners = {'': 'Von allen', 'me': 'Meine', 'others': 'Mit mir geteilt', 'server': 'Vom Server'};
-  static const sorts = {
-    'pinned:desc,title': 'Angeheftete zuerst',
-    'title': 'Name A–Z',
-    'title:desc': 'Name Z–A',
-    'updated_at:desc': 'Zuletzt geändert',
-    'created_at:desc': 'Neueste',
-    'item_count:desc': 'Meiste Einträge',
-    'duration:desc': 'Längste',
+  static Map<String, String> get kinds => {'': tr('All kinds'), 'default': tr('Default'), 'smart': tr('Smart'), 'manual': tr('Normal')};
+  static Map<String, String> get owners => {'': tr("Everyone's"), 'me': tr('Mine'), 'others': tr('Shared with me'), 'server': tr('From the server')};
+  static Map<String, String> get sorts => {
+    'pinned:desc,title': tr('Pinned first'),
+    'title': tr('Name A–Z'),
+    'title:desc': tr('Name Z–A'),
+    'updated_at:desc': tr('Last changed'),
+    'created_at:desc': tr('Newest'),
+    'item_count:desc': tr('Most items'),
+    'duration:desc': tr('Longest'),
   };
 
   @override
@@ -185,9 +186,9 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
   Widget build(BuildContext context) {
     final l = list;
     return Scaffold(
-      appBar: AppBar(title: const Text('Playlists'), actions: barActions(context, labels: true, keep: 2, [
-        BarAction(Icons.add, 'Neue Playlist', () async {
-          final name = await askText(context, 'Name der neuen Playlist');
+      appBar: AppBar(title: Text(tr('Playlists')), actions: barActions(context, labels: true, keep: 2, [
+        BarAction(Icons.add, tr('New playlist'), () async {
+          final name = await askText(context, tr('Name of the new playlist'));
           if (name == null || name.isEmpty) return;
           final Map<String, dynamic> p;
           try {
@@ -200,7 +201,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
           await Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: widget.api, id: '${p['id']}')));
           reload();
         }),
-        BarAction(Icons.auto_awesome_outlined, 'Neue intelligente Playlist', () async {
+        BarAction(Icons.auto_awesome_outlined, tr('New smart playlist'), () async {
           final id = await smartEditor(context, widget.api);
           if (id == null || !context.mounted) return;
           await Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: widget.api, id: id)));
@@ -222,7 +223,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
               : l == null
                   ? const Center(child: CircularProgressIndicator())
                   : l.isEmpty
-                      ? const Center(child: Text('Keine passenden Playlists.'))
+                      ? Center(child: Text(tr('No matching playlists.')))
                       : ListView(children: [
                           for (final p in l)
                             ListTile(
@@ -231,13 +232,13 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                                   : const Icon(Icons.playlist_play, size: 36),
                               title: Text(plTitle(p)),
                               subtitle: Text([
-                                {'manual': 'normal', 'smart': 'intelligent', 'default': 'Standard'}[p['kind']] ?? '${p['kind']}',
-                                '${p['leafCount'] ?? 0} Einträge',
+                                {'manual': tr('regular'), 'smart': tr('smart'), 'default': tr('Default')}[p['kind']] ?? '${p['kind']}',
+                                tr('{p} items', {'p': p['leafCount'] ?? 0}),
                                 _dur(p['duration']),
-                                if (p['shared'] == true && p['kind'] != 'default') 'geteilt',
-                                if (p['pinned'] == true) 'auf der Startseite',
+                                if (p['shared'] == true && p['kind'] != 'default') tr('shared'),
+                                if (p['pinned'] == true) tr('on the home page'),
                               ].where((e) => e.isNotEmpty).join(' · ')),
-                              trailing: (p['leafCount'] ?? 0) > 0 ? IconButton(tooltip: 'Abspielen', icon: const Icon(Icons.play_arrow), onPressed: () => playPlaylist(context, widget.api, '${p['id']}')) : null,
+                              trailing: (p['leafCount'] ?? 0) > 0 ? IconButton(tooltip: tr('Play'), icon: const Icon(Icons.play_arrow), onPressed: () => playPlaylist(context, widget.api, '${p['id']}')) : null,
                               onTap: () async {
                                 await Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistScreen(api: widget.api, id: '${p['id']}')));
                                 reload();
@@ -328,7 +329,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             try {
               switch (v) {
                 case 'rename':
-                  final n = await askText(context, 'Neuer Name', value: plTitle(p));
+                  final n = await askText(context, tr('New name'), value: plTitle(p));
                   if (n != null && n.isNotEmpty) await api.updatePlaylist(widget.id, {'title': n});
                 case 'pin':
                   await api.updatePlaylist(widget.id, {'pinned': p['pinned'] != true});
@@ -343,7 +344,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     return;
                   }
                 case 'delete':
-                  if (await _sure(context, 'Die Playlist „${plTitle(p)}“ löschen?')) {
+                  if (await _sure(context, tr('Delete the playlist “{plTitle}”?', {'plTitle': plTitle(p)}))) {
                     await api.deletePlaylist(widget.id);
                     if (context.mounted) Navigator.pop(context);
                     return;
@@ -355,12 +356,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             reload();
           },
           itemBuilder: (_) => [
-            if (editable) const PopupMenuItem(value: 'rename', child: Text('Umbenennen')),
-            if (editable) PopupMenuItem(value: 'pin', child: Text(p['pinned'] == true ? 'Von der Startseite entfernen' : 'Auf der Startseite zeigen')),
-            if (editable && !isDefault) PopupMenuItem(value: 'share', child: Text(p['shared'] == true ? 'Nicht mehr teilen' : 'Mit allen teilen')),
-            if (p['smart'] == true && editable) const PopupMenuItem(value: 'rules', child: Text('Regeln bearbeiten')),
-            if (p['smart'] == true) const PopupMenuItem(value: 'copy', child: Text('Als normale Playlist speichern')),
-            if (editable && !isDefault) const PopupMenuItem(value: 'delete', child: Text('Löschen')),
+            if (editable) PopupMenuItem(value: 'rename', child: Text(tr('Rename'))),
+            if (editable) PopupMenuItem(value: 'pin', child: Text(p['pinned'] == true ? tr('Remove from the home page') : tr('Show on the home page'))),
+            if (editable && !isDefault) PopupMenuItem(value: 'share', child: Text(p['shared'] == true ? tr('Stop sharing') : tr('Share with everyone'))),
+            if (p['smart'] == true && editable) PopupMenuItem(value: 'rules', child: Text(tr('Edit rules'))),
+            if (p['smart'] == true) PopupMenuItem(value: 'copy', child: Text(tr('Save as a regular playlist'))),
+            if (editable && !isDefault) PopupMenuItem(value: 'delete', child: Text(tr('Delete'))),
           ],
         ),
       ]),
@@ -368,22 +369,22 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
           child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            FilledButton.icon(onPressed: () => playPlaylist(context, api, widget.id), icon: const Icon(Icons.play_arrow), label: const Text('Alle abspielen')),
-            OutlinedButton.icon(onPressed: () => playPlaylist(context, api, widget.id, shuffle: true), icon: const Icon(Icons.shuffle), label: const Text('Zufällig')),
+            FilledButton.icon(onPressed: () => playPlaylist(context, api, widget.id), icon: const Icon(Icons.play_arrow), label: Text(tr('Play all'))),
+            OutlinedButton.icon(onPressed: () => playPlaylist(context, api, widget.id, shuffle: true), icon: const Icon(Icons.shuffle), label: Text(tr('Random'))),
             SegmentedButton<String>(
               showSelectedIcon: false,
-              segments: const [ButtonSegment(value: '', label: Text('Alle')), ButtonSegment(value: 'unwatched', label: Text('Ungesehen')), ButtonSegment(value: 'watched', label: Text('Gesehen'))],
+              segments: [ButtonSegment(value: '', label: Text(tr('All'))), ButtonSegment(value: 'unwatched', label: Text(tr('Unwatched'))), ButtonSegment(value: 'watched', label: Text(tr('Watched')))],
               selected: {watched},
               onSelectionChanged: (s) => setState(() => watched = s.first),
             ),
-            SizedBox(width: 170, child: TextField(decoration: const InputDecoration(isDense: true, hintText: 'Nach Titel filtern', border: OutlineInputBorder()), onChanged: (v) => setState(() => q = v.trim()))),
-            Text('${shown.length} von ${items.length} Einträgen · ${_dur(p['duration'])}', style: TextStyle(color: context.dim)),
+            SizedBox(width: 170, child: TextField(decoration: InputDecoration(isDense: true, hintText: tr('Filter by title'), border: OutlineInputBorder()), onChanged: (v) => setState(() => q = v.trim()))),
+            Text(tr('{length} of {length2} items · {dur}', {'length': shown.length, 'length2': items.length, 'dur': _dur(p['duration'])}), style: TextStyle(color: context.dim)),
           ]),
         ),
         if (p['summary'] != null && '${p['summary']}'.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: Text('${p['summary']}', style: TextStyle(color: context.dim))),
         Expanded(
           child: shown.isEmpty
-              ? Center(child: Text(manual ? 'Leer. Öffne einen Film oder eine Folge und wähle „Zur Playlist“.' : 'Aktuell passt nichts zu diesen Regeln.'))
+              ? Center(child: Text(manual ? tr('Empty. Open a movie or an episode and choose “Add to playlist”.') : tr('Nothing matches these rules at the moment.')))
               : ListView.builder(
                   itemCount: shown.length,
                   itemBuilder: (_, n) {
@@ -393,19 +394,19 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                     return ListTile(
                       leading: thumb.isEmpty ? const Icon(Icons.movie_outlined) : ClipRRect(borderRadius: BorderRadius.circular(4), child: Image.network(api.img(thumb), headers: api.auth, width: 40, height: 60, fit: BoxFit.cover, cacheWidth: 100, errorBuilder: (_, _, _) => const Icon(Icons.movie_outlined))),
                       title: Text(label(it), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text([if (it['year'] != null) '${it['year']}', _dur(it['duration']), if (((it['viewCount'] ?? 0) as num) > 0) '✓ gesehen'].where((e) => e.isNotEmpty).join(' · ')),
+                      subtitle: Text([if (it['year'] != null) '${it['year']}', _dur(it['duration']), if (((it['viewCount'] ?? 0) as num) > 0) tr('✓ watched')].where((e) => e.isNotEmpty).join(' · ')),
                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => DetailScreen(api: api, id: '${it['ratingKey']}'))),
                       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                         if (reorder) ...[
-                          IconButton(tooltip: 'Nach oben', icon: const Icon(Icons.arrow_upward, size: 18), onPressed: () => move(i, -1)),
-                          IconButton(tooltip: 'Nach unten', icon: const Icon(Icons.arrow_downward, size: 18), onPressed: () => move(i, 1)),
+                          IconButton(tooltip: tr('Move up'), icon: const Icon(Icons.arrow_upward, size: 18), onPressed: () => move(i, -1)),
+                          IconButton(tooltip: tr('Move down'), icon: const Icon(Icons.arrow_downward, size: 18), onPressed: () => move(i, 1)),
                         ],
                         if (manual && editable)
                           IconButton(
-                            tooltip: 'Entfernen',
+                            tooltip: tr('Remove'),
                             icon: const Icon(Icons.close, size: 18),
                             onPressed: () async {
-                              if (!await _sure(context, '„${it['title']}“ aus dieser Playlist entfernen?')) return;
+                              if (!await _sure(context, tr('Remove “{it}” from this playlist?', {'it': it['title']}))) return;
                               try {
                                 await api.removeFromPlaylist(widget.id, '${entryOf(it)}');
                               } catch (e) {
@@ -415,7 +416,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                             },
                           ),
                         IconButton(
-                          tooltip: 'Abspielen',
+                          tooltip: tr('Play'),
                           icon: const Icon(Icons.play_arrow),
                           onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: api, item: it, queue: items.sublist(i + 1)))),
                         ),
@@ -446,14 +447,14 @@ class _GroupsScreenState extends State<GroupsScreen> {
   Widget build(BuildContext context) {
     final coll = widget.kind == 'collections';
     return Scaffold(
-      appBar: AppBar(title: Text(coll ? 'Sammlungen' : 'Kategorien')),
+      appBar: AppBar(title: Text(coll ? tr('Collections') : tr('Categories'))),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: data,
         builder: (context, snap) {
           if (snap.hasError) return Center(child: Text('${snap.error}'));
           if (!snap.hasData) return const Center(child: CircularProgressIndicator());
           final l = snap.data!;
-          if (l.isEmpty) return Center(child: Text(coll ? 'Noch keine Sammlungen. Filmreihen kommen beim Herunterladen der Details dazu.' : 'Noch keine Kategorien. Sie stammen aus den Genres.'));
+          if (l.isEmpty) return Center(child: Text(coll ? tr('No collections yet. Movie series come in with the details.') : tr('No categories yet. They come from the genres.')));
           return GridView.builder(
             padding: const EdgeInsets.all(16),
             gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: coll ? 170 : 260, childAspectRatio: coll ? 0.55 : 1.8, crossAxisSpacing: 12, mainAxisSpacing: 12),
@@ -475,7 +476,7 @@ class _GroupsScreenState extends State<GroupsScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text('${d['title']}', maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text(n == 1 ? '1 Eintrag' : '$n Einträge', style: TextStyle(fontSize: 12, color: context.dim)),
+                  Text(n == 1 ? tr('1 item') : tr('{n} items', {'n': n}), style: TextStyle(fontSize: 12, color: context.dim)),
                 ]),
               );
             },

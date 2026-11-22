@@ -52,8 +52,8 @@ phone, tablet, smart-TV browser). There you browse Movies and TV Shows, play vid
 playlists and smart playlists, invite people, switch plugins on and off and change settings.
 Nothing needs installing on the devices you watch on.
 
-There is also an **app** for Windows, Android, macOS, iPhone and iPad (Flutter, German
-interface): see [clients/lichtspiel/README.md](clients/lichtspiel/README.md).
+There is also an **app** for Windows, Android, macOS, iPhone and iPad (Flutter, English
+and German): see [clients/lichtspiel/README.md](clients/lichtspiel/README.md).
 
 On a computer, the very first start opens the web app in your browser so you can create the
 owner account. A small desktop **status window** (home rows, what's playing, playlists,

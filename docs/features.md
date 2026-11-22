@@ -291,7 +291,7 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   libraries, watched state, play history, resume points, ratings, markers, edited details, cast
   and playlists from its database. Details: [libraries.md](libraries.md).
 - **The app** — Lichtspiel for Windows, Android (also Fire TV), macOS, iPhone and iPad (Flutter,
-  German), with nearly everything of the web app: browsing with filters, the player with all its
+  English and German), with nearly everything of the web app: browsing with filters, the player with all its
   settings, watchlist, playlists, downloads, watch together, statistics, the calendar, plugins'
   panels and the admin pages. It finds servers on the home network, keeps its token in the
   system's keychain, signs in with a code (also as a QR code) and has the same themes and accent
@@ -450,7 +450,10 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
 - **English and German** — the web app follows the browser's language; anyone can switch it
   under **Settings → Your account** (kept per browser). Language packs live in `web/lang/`
   (`de.js`); to add another, copy it, translate the texts, and list it in `src/server/mod.rs`
-  (`WEB_LANGS`) and `web/index.html`.
+  (`WEB_LANGS`) and `web/index.html`. The app follows the device's language and has the same
+  choice under **Settings → Account → Appearance**; the choice is kept with the account, so the web
+  app and the app agree. Its packs live in `clients/lichtspiel/lib/lang/` (`de.dart`); a new one is
+  listed in `I18n.names` and `_packs` in `lib/i18n.dart`.
 - **A full API** — every feature in the web page is an HTTP + JSON call. The list is built
   in: open `http://<server>:8484/api/docs` or the **API** page in the web app.
 - **AI assistants (MCP)** — `/mcp` is an MCP server, so Claude or another assistant can search

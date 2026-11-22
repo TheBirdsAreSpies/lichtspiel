@@ -11,58 +11,59 @@ import 'playlists.dart';
 import '../widgets/bar.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
+import '../i18n.dart';
 
-const _sortFields = {
-  'title': 'Titel',
-  'year': 'Jahr',
-  'release_date': 'Erscheinungsdatum',
-  'critic_rating': 'Kritikerwertung',
-  'audience_rating': 'Publikumswertung',
-  'user_rating': 'Deine Bewertung',
-  'content_rating': 'Altersfreigabe',
-  'duration': 'Länge',
-  'progress': 'Fortschritt',
-  'view_count': 'Wiedergaben',
-  'added_at': 'Hinzugefügt',
-  'last_viewed_at': 'Zuletzt gesehen',
-  'resolution': 'Auflösung',
-  'bitrate': 'Bitrate',
-  'random': 'Zufällig',
+Map<String, String> get _sortFields => {
+  'title': tr('Title'),
+  'year': tr('Year'),
+  'release_date': tr('Release date'),
+  'critic_rating': tr('Critic rating'),
+  'audience_rating': tr('Audience rating'),
+  'user_rating': tr('Your rating'),
+  'content_rating': tr('Age rating'),
+  'duration': tr('Length'),
+  'progress': tr('Progress'),
+  'view_count': tr('Plays'),
+  'added_at': tr('Added'),
+  'last_viewed_at': tr('Last seen'),
+  'resolution': tr('Resolution'),
+  'bitrate': tr('Bitrate'),
+  'random': tr('Random'),
 };
 const _sortAsc = {'title', 'show', 'content_rating', 'random'};
 
-const _filterNames = {
-  'genre': 'Genre',
-  'year': 'Jahr',
-  'decade': 'Jahrzehnt',
-  'content_rating': 'Altersfreigabe',
-  'collection': 'Sammlung',
-  'director': 'Regie',
-  'actor': 'Schauspieler',
-  'writer': 'Drehbuch',
-  'producer': 'Produktion',
-  'country': 'Land',
+Map<String, String> get _filterNames => {
+  'genre': tr('Genre'),
+  'year': tr('Year'),
+  'decade': tr('Decade'),
+  'content_rating': tr('Age rating'),
+  'collection': tr('Collection'),
+  'director': tr('Director'),
+  'actor': tr('Actor'),
+  'writer': tr('Writer'),
+  'producer': tr('Producers'),
+  'country': tr('Country'),
   'studio': 'Studio',
-  'network': 'Sender',
-  'video_resolution': 'Auflösung',
+  'network': tr('Network'),
+  'video_resolution': tr('Resolution'),
   'hdr': 'HDR',
-  'dovi': 'Dolby Vision',
+  'dovi': tr('Dolby Vision'),
   'hdr10plus': 'HDR10+',
-  'atmos': 'Dolby Atmos',
-  'unwatched': 'Ungesehen',
-  'unwatched_leaves': 'Ungesehen',
-  'in_progress': 'Angefangen',
-  'unmatched': 'Nicht zugeordnet',
-  'video_codec': 'Video-Codec',
-  'audio_codec': 'Audio-Codec',
-  'subtitle_codec': 'Untertitelformat',
-  'audio_layout': 'Tonkanäle',
-  'audio_language': 'Tonsprache',
-  'subtitle_language': 'Untertitelsprache',
-  'edition': 'Edition',
-  'label': 'Label',
-  'folder': 'Ordner',
-  'duplicate': 'Duplikate',
+  'atmos': tr('Dolby Atmos'),
+  'unwatched': tr('Unwatched'),
+  'unwatched_leaves': tr('Unwatched'),
+  'in_progress': tr('In progress'),
+  'unmatched': tr('Unmatched'),
+  'video_codec': tr('Video codec'),
+  'audio_codec': tr('Audio codec'),
+  'subtitle_codec': tr('Subtitle format'),
+  'audio_layout': tr('Audio channels'),
+  'audio_language': tr('Audio language'),
+  'subtitle_language': tr('Subtitle language'),
+  'edition': tr('Edition'),
+  'label': tr('Label'),
+  'folder': tr('Folder'),
+  'duplicate': tr('Duplicates'),
 };
 const _groupState = ['unwatched', 'unwatched_leaves', 'in_progress', 'unmatched', 'duplicate'];
 const _groupMain = ['genre', 'year', 'decade', 'content_rating', 'collection', 'director', 'actor', 'writer', 'producer', 'country', 'network', 'studio'];
@@ -150,7 +151,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       var list = await leaves();
       if (!mounted) return;
-      if (list.isEmpty) return say('Nichts zum Abspielen');
+      if (list.isEmpty) return say(tr('Nothing to play'));
       if (shuffle) list = smartShuffle(list);
       await Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: widget.api, item: list.first, queue: list.sublist(1))));
     } catch (e) {
@@ -201,7 +202,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final partial = list.any((i) => n(i, 'leafCount') > 0 && n(i, 'viewedLeafCount') > 0 && n(i, 'viewedLeafCount') < n(i, 'leafCount'));
     bool seen(Map i) => n(i, 'leafCount') > 0 ? n(i, 'viewedLeafCount') >= n(i, 'leafCount') : n(i, 'viewCount') > 0;
     final wasOn = [for (final i in list) if (seen(i)) _id(i)], wasOff = [for (final i in list) if (!seen(i)) _id(i)];
-    return doChosen((ids) => widget.api.setWatchedAll(ids, on), on ? 'Als gesehen markiert' : 'Als ungesehen markiert', undo: partial ? null : () async {
+    return doChosen((ids) => widget.api.setWatchedAll(ids, on), on ? tr('Marked as watched') : tr('Marked as unwatched'), undo: partial ? null : () async {
       if (wasOn.isNotEmpty) await widget.api.setWatchedAll(wasOn, true);
       if (wasOff.isNotEmpty) await widget.api.setWatchedAll(wasOff, false);
     });
@@ -217,13 +218,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, set) => AlertDialog(
-          title: const Text('Zu einem Titel zusammenführen'),
+          title: Text(tr('Merge into one title')),
           content: SizedBox(
             width: 420,
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Die anderen erscheinen danach als Versionen dieses Titels. Fortschritt und „gesehen“ zählen für den Titel.', style: TextStyle(color: context.faint)),
+              Text(tr('The others then show up as versions of this title. Progress and “watched” count for the title.'), style: TextStyle(color: context.faint)),
               const SizedBox(height: 8),
-              const Text('Hauptversion:'),
+              Text(tr('Main version:')),
               for (final i in list)
                 ListTile(
                   dense: true,
@@ -235,8 +236,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Zusammenführen')),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Cancel'))),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Merge'))),
           ],
         ),
       ),
@@ -245,7 +246,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final ids = [main, for (final i in list) if (_id(i) != main) _id(i)];
     try {
       await widget.api.post('/api/merge', {'ids': ids});
-      say('${ids.length} zu einem Titel zusammengeführt');
+      say(tr('{length} merged into one title', {'length': ids.length}));
       picked.clear();
       await reload();
     } catch (e) {
@@ -262,21 +263,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(children: [
-          Text(one ? '1 ausgewählt' : '${picked.length} ausgewählt', style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(one ? tr('1 selected') : tr('{length} selected', {'length': picked.length}), style: const TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(width: 8),
-          TextButton(onPressed: () => setState(picked.clear), child: const Text('Auswahl aufheben')),
-          FilledButton.icon(onPressed: playChosen, icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
+          TextButton(onPressed: () => setState(picked.clear), child: Text(tr('Clear selection'))),
+          FilledButton.icon(onPressed: playChosen, icon: const Icon(Icons.play_arrow), label: Text(tr('Play'))),
           const SizedBox(width: 8),
           TextButton(
             onPressed: () {
               final added = [for (final i in chosen) if (i['watchlist'] != true) _id(i)];
-              doChosen((ids) => widget.api.setWatchlistAll(ids, true), 'Auf die Merkliste gesetzt', undo: added.isEmpty ? null : () => widget.api.setWatchlistAll(added, false));
+              doChosen((ids) => widget.api.setWatchlistAll(ids, true), tr('Added to the watchlist'), undo: added.isEmpty ? null : () => widget.api.setWatchlistAll(added, false));
             },
-            child: const Text('+ Merkliste'),
+            child: Text(tr('+ Watchlist')),
           ),
-          TextButton(onPressed: () => markChosen(true), child: const Text('Gesehen')),
-          TextButton(onPressed: () => markChosen(false), child: const Text('Ungesehen')),
-          TextButton(onPressed: () => addToPlaylistDialog(context, widget.api, picked.first, ids: picked.toList()), child: const Text('Zur Playlist')),
+          TextButton(onPressed: () => markChosen(true), child: Text(tr('Watched'))),
+          TextButton(onPressed: () => markChosen(false), child: Text(tr('Unwatched'))),
+          TextButton(onPressed: () => addToPlaylistDialog(context, widget.api, picked.first, ids: picked.toList()), child: Text(tr('Add to playlist'))),
           if (admin && one) TextButton(onPressed: () async {
             final Map<String, dynamic> it;
             try {
@@ -286,18 +287,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
             }
             if (!mounted) return;
             await editDetailsDialog(context, widget.api, it);
-            await doChosen((_) async {}, 'Gespeichert', keep: true);
-          }, child: const Text('Bearbeiten')),
+            await doChosen((_) async {}, tr('Saved'), keep: true);
+          }, child: Text(tr('Edit'))),
           PopupMenuButton<String>(
-            tooltip: 'Mehr',
+            tooltip: tr('More'),
             onSelected: (v) {
               switch (v) {
                 case 'shuffle':
                   playChosen(shuffle: true);
                 case 'refresh':
-                  doChosen((ids) async { for (final id in ids) { await widget.api.post('/library/metadata/$id/refresh'); } }, 'Details werden geladen', keep: true);
+                  doChosen((ids) async { for (final id in ids) { await widget.api.post('/library/metadata/$id/refresh'); } }, tr('Downloading details'), keep: true);
                 case 'analyze':
-                  doChosen((ids) async { for (final id in ids) { await widget.api.post('/library/metadata/$id/analyze'); } }, 'Wird analysiert', keep: true);
+                  doChosen((ids) async { for (final id in ids) { await widget.api.post('/library/metadata/$id/analyze'); } }, tr('Being analysed'), keep: true);
                 case 'download':
                   downloadDialog(context, widget.api, chosen);
                 case 'merge':
@@ -307,13 +308,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
               }
             },
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'shuffle', child: Text('Zufallswiedergabe')),
-              if (admin) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
-              if (admin) const PopupMenuItem(value: 'analyze', child: Text('Analysieren')),
+              PopupMenuItem(value: 'shuffle', child: Text(tr('Shuffle play'))),
+              if (admin) PopupMenuItem(value: 'refresh', child: Text(tr('Refresh metadata'))),
+              if (admin) PopupMenuItem(value: 'analyze', child: Text(tr('Analyze'))),
               if (admin && picked.length > 1 && chosen.every((i) => i['type'] == chosen.first['type'] && (i['type'] == 'movie' || i['type'] == 'episode')))
-                const PopupMenuItem(value: 'merge', child: Text('Zu einem Titel zusammenführen…')),
-              if (DownloadRights.allowed) const PopupMenuItem(value: 'download', child: Text('Herunterladen…')),
-              const PopupMenuItem(value: 'all', child: Text('Alle auswählen')),
+                PopupMenuItem(value: 'merge', child: Text(tr('Merge into one title…'))),
+              if (DownloadRights.allowed) PopupMenuItem(value: 'download', child: Text(tr('Download…'))),
+              PopupMenuItem(value: 'all', child: Text(tr('Select all'))),
             ],
           ),
         ]),
@@ -463,15 +464,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     String rel(num sec) {
       final d = ((DateTime.now().millisecondsSinceEpoch / 1000 - sec) / 86400).round();
-      String n(int v, String one, String many) => v == 1 ? 'vor 1 $one' : 'vor $v $many';
-      if (d < 1) return 'heute';
-      if (d < 14) return n(d, 'Tag', 'Tagen');
-      if (d < 60) return n((d / 7).round(), 'Woche', 'Wochen');
-      if (d < 730) return n((d / 30.4).round(), 'Monat', 'Monaten');
-      return n((d / 365).round(), 'Jahr', 'Jahren');
+      String n(int v, String one, String many) => v == 1 ? tr('1 {one} ago', {'one': one}) : tr('{v} {many} ago', {'v': v, 'many': many});
+      if (d < 1) return tr('today');
+      if (d < 14) return n(d, tr('day'), tr('days@@ago'));
+      if (d < 60) return n((d / 7).round(), tr('week'), tr('weeks@@ago'));
+      if (d < 730) return n((d / 30.4).round(), tr('month'), tr('months@@ago'));
+      return n((d / 365).round(), tr('year'), tr('years@@ago'));
     }
 
-    String num1(num v) => v.toStringAsFixed(1).replaceAll('.', ',');
+    String num1(num v) => decimal(v.toStringAsFixed(1));
     final scores = it['scores'] is Map ? it['scores'] as Map : const {};
     final media = (it['Media'] is List && (it['Media'] as List).isNotEmpty && (it['Media'] as List).first is Map) ? (it['Media'] as List).first as Map : const {};
     const src = {'imdb': 'IMDb', 'tmdb': 'TMDB', 'rotten_tomatoes': 'RT', 'metacritic': 'MC'};
@@ -488,7 +489,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         return n('duration') != null && n('duration')! > 0 ? dur(n('duration')!) : null;
       case 'release_date':
         final d = DateTime.tryParse('${it['originallyAvailableAt'] ?? ''}');
-        return d != null ? '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}' : '${it['year'] ?? ''}';
+        return d != null ? fmtDay(d, pad: true) : '${it['year'] ?? ''}';
       case 'audience_rating':
         return score(['imdb', 'tmdb']) ?? (n('rating') != null && n('rating')! > 0 ? num1(n('rating')!) : null);
       case 'critic_rating':
@@ -500,7 +501,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       case 'progress':
         return n('viewOffset') != null && n('viewOffset')! > 0 && n('duration') != null && n('duration')! > 0 ? '${(100 * n('viewOffset')! / n('duration')!).round()} %' : null;
       case 'view_count':
-        return n('viewCount') != null && n('viewCount')! > 0 ? '${n('viewCount')!.toInt()}× gesehen' : null;
+        return n('viewCount') != null && n('viewCount')! > 0 ? tr('watched {n}×', {'n': n('viewCount')!.toInt()}) : null;
       case 'added_at':
         return n('addedAt') != null && n('addedAt')! > 0 ? rel(n('addedAt')!) : null;
       case 'last_viewed_at':
@@ -510,7 +511,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         return h is num && h > 0 ? (h >= 2000 ? '4K' : '${h.toInt()}p') : null;
       case 'bitrate':
         final b = media['bitrate'];
-        return b is num && b > 0 ? '${num1(b / 1000)} Mbit/s' : null;
+        return b is num && b > 0 ? tr('{num1} Mbit/s', {'num1': num1(b / 1000)}) : null;
     }
     return null;
   }
@@ -556,20 +557,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
         builder: (ctx, set) => Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.viewInsetsOf(ctx).bottom),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Jahr', style: Theme.of(ctx).textTheme.titleSmall),
+            Text(tr('Year'), style: Theme.of(ctx).textTheme.titleSmall),
             const SizedBox(height: 8),
             Row(children: [
-              Expanded(child: _field(from, 'ab', number: true)),
+              Expanded(child: _field(from, tr('from'), number: true)),
               const SizedBox(width: 12),
-              Expanded(child: _field(to, 'bis', number: true)),
+              Expanded(child: _field(to, tr('to'), number: true)),
             ]),
             const SizedBox(height: 16),
-            Text('Dateityp', style: Theme.of(ctx).textTheme.titleSmall),
+            Text(tr('File type'), style: Theme.of(ctx).textTheme.titleSmall),
             const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 4, children: [
               for (final c in ['', ..._containers])
                 ChoiceChip(
-                  label: Text(c.isEmpty ? 'Alle' : c.toUpperCase()),
+                  label: Text(c.isEmpty ? tr('All') : c.toUpperCase()),
                   selected: container == c,
                   onSelected: (_) => set(() => container = c),
                 ),
@@ -582,10 +583,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   to.clear();
                   container = '';
                 }),
-                child: const Text('Zurücksetzen'),
+                child: Text(tr('Reset')),
               ),
               const Spacer(),
-              FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Anwenden')),
+              FilledButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Apply'))),
             ]),
           ]),
         ),
@@ -596,16 +597,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final sortFields = {if (type == 'season' || type == 'episode') 'show': 'Serie', ..._sortFields};
+    final sortFields = {if (type == 'season' || type == 'episode') 'show': tr('Show'), ..._sortFields};
     final types = switch (sectionType) {
-      'show' => const {'': 'Serien', 'season': 'Staffeln', 'episode': 'Folgen'},
-      'music' || 'artist' => const {'': 'Künstler', 'album': 'Alben', 'track': 'Titel'},
+      'show' => {'': tr('Shows'), 'season': tr('Seasons'), 'episode': tr('Episodes')},
+      'music' || 'artist' => {'': tr('Artists'), 'album': tr('Albums'), 'track': tr('Title')},
       _ => null,
     };
     final nActive = filters.length;
     final narrow = isNarrow(context);
     final nMore = (from.text.trim().isNotEmpty || to.text.trim().isNotEmpty ? 1 : 0) + (container.isNotEmpty ? 1 : 0);
-    final countText = total == 1 ? '1 Eintrag' : '$total Einträge';
+    final countText = total == 1 ? tr('1 item') : tr('{total} items', {'total': total});
     final compact = Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
       child: Column(children: [
@@ -621,10 +622,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         if (types != null) const SizedBox(height: 8),
         Row(children: [
-          Expanded(child: _field(search, 'Nach Titel filtern', icon: Icons.search)),
+          Expanded(child: _field(search, tr('Filter by title'), icon: Icons.search)),
           IconButton(tooltip: 'Filter', onPressed: openFilters, icon: Badge(isLabelVisible: nActive > 0, label: Text('$nActive'), child: const Icon(Icons.filter_list))),
           PopupMenuButton<String>(
-            tooltip: 'Sortieren: ${sortFields[sortField] ?? sortField}',
+            tooltip: tr('Sort: {sortFields}', {'sortFields': sortFields[sortField] ?? sortField}),
             icon: const Icon(Icons.sort),
             onSelected: (v) {
               if (v == '<asc>' || v == '<desc>') {
@@ -637,12 +638,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
             itemBuilder: (_) => [
               for (final e in sortFields.entries) CheckedPopupMenuItem(value: e.key, checked: e.key == sortField, child: Text(e.value)),
               const PopupMenuDivider(),
-              CheckedPopupMenuItem(value: '<asc>', checked: !desc, child: const Text('Aufsteigend')),
-              CheckedPopupMenuItem(value: '<desc>', checked: desc, child: const Text('Absteigend')),
+              CheckedPopupMenuItem(value: '<asc>', checked: !desc, child: Text(tr('Ascending'))),
+              CheckedPopupMenuItem(value: '<desc>', checked: desc, child: Text(tr('Descending'))),
             ],
           ),
-          if (total > 1) IconButton(tooltip: 'Zufällig einen auswählen', onPressed: randomPick, icon: const Icon(Icons.casino_outlined)),
-          IconButton(tooltip: 'Jahr und Dateityp', onPressed: openMore,icon: Badge(isLabelVisible: nMore > 0, label: Text('$nMore'), child: const Icon(Icons.tune))),
+          if (total > 1) IconButton(tooltip: tr('Pick one at random'), onPressed: randomPick, icon: const Icon(Icons.casino_outlined)),
+          IconButton(tooltip: tr('Year and file type'), onPressed: openMore,icon: Badge(isLabelVisible: nMore > 0, label: Text('$nMore'), child: const Icon(Icons.tune))),
         ]),
       ]),
     );
@@ -656,36 +657,36 @@ class _LibraryScreenState extends State<LibraryScreen> {
             selected: {type},
             onSelectionChanged: (s) => setType(s.first),
           ),
-        OutlinedButton.icon(onPressed: openFilters, icon: const Icon(Icons.filter_list), label: Text(nActive > 0 ? 'Filter ($nActive)' : 'Filter')),
+        OutlinedButton.icon(onPressed: openFilters, icon: const Icon(Icons.filter_list), label: Text(nActive > 0 ? tr('Filter ({nActive})', {'nActive': nActive}) : 'Filter')),
         PopupMenuButton<String>(
-          tooltip: 'Sortieren',
+          tooltip: tr('Sort'),
           onSelected: setSort,
           itemBuilder: (_) => [for (final e in sortFields.entries) CheckedPopupMenuItem(value: e.key, checked: e.key == sortField, child: Text(e.value))],
           child: Chip(avatar: const Icon(Icons.sort, size: 18), label: Text(sortFields[sortField] ?? sortField)),
         ),
         IconButton(
-          tooltip: desc ? 'Absteigend' : 'Aufsteigend',
+          tooltip: desc ? tr('Descending') : tr('Ascending'),
           onPressed: () {
             desc = !desc;
             reload();
           },
           icon: Icon(desc ? Icons.arrow_downward : Icons.arrow_upward),
         ),
-        if (total > 1) IconButton(tooltip: 'Zufällig einen auswählen', onPressed: randomPick, icon: const Icon(Icons.casino_outlined)),
-        SizedBox(width: 170, child: _field(search, 'Nach Titel filtern', icon: Icons.search)),
-        SizedBox(width: 90, child: _field(from, 'Jahr ab', number: true)),
-        SizedBox(width: 90, child: _field(to, 'Jahr bis', number: true)),
+        if (total > 1) IconButton(tooltip: tr('Pick one at random'), onPressed: randomPick, icon: const Icon(Icons.casino_outlined)),
+        SizedBox(width: 170, child: _field(search, tr('Filter by title'), icon: Icons.search)),
+        SizedBox(width: 90, child: _field(from, tr('Year from'), number: true)),
+        SizedBox(width: 90, child: _field(to, tr('Year to'), number: true)),
         PopupMenuButton<String>(
-          tooltip: 'Dateityp',
+          tooltip: tr('File type'),
           onSelected: (v) {
             container = v;
             reload();
           },
           itemBuilder: (_) => [
-            CheckedPopupMenuItem(value: '', checked: container.isEmpty, child: const Text('Alle Dateitypen')),
+            CheckedPopupMenuItem(value: '', checked: container.isEmpty, child: Text(tr('Any file type'))),
             for (final c in _containers) CheckedPopupMenuItem(value: c, checked: container == c, child: Text(c.toUpperCase())),
           ],
-          child: Chip(avatar: const Icon(Icons.insert_drive_file_outlined, size: 18), label: Text(container.isEmpty ? 'Dateityp' : container.toUpperCase())),
+          child: Chip(avatar: const Icon(Icons.insert_drive_file_outlined, size: 18), label: Text(container.isEmpty ? tr('File type') : container.toUpperCase())),
         ),
         if (loading || total > 0 || error == null) Text(countText, style: TextStyle(color: context.dim)),
       ]),
@@ -697,7 +698,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             child: Wrap(spacing: 8, runSpacing: 4, children: [
               for (final e in filters.entries)
                 InputChip(
-                  label: Text(e.value == 'true' ? filterName(e.key) : e.value == 'false' ? '${filterName(e.key)}: nein' : '${filterName(e.key)}: ${valueName(e.key, e.value)}'),
+                  label: Text(e.value == 'true' ? filterName(e.key) : e.value == 'false' ? tr('{filterName}: no', {'filterName': filterName(e.key)}) : '${filterName(e.key)}: ${valueName(e.key, e.value)}'),
                   onDeleted: () {
                     filters.remove(e.key);
                     reload();
@@ -709,7 +710,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     filters.clear();
                     reload();
                   },
-                  child: const Text('Filter löschen'),
+                  child: Text(tr('Clear filters')),
                 ),
             ]),
           );
@@ -723,10 +724,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
               : Text('${widget.section['title']}'),
           actions: barActions(context, labels: true, [
         if (sectionType == 'movie' || sectionType == 'show') ...[
-          BarAction(Icons.collections_bookmark_outlined, 'Sammlungen', () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'collections')))),
-          BarAction(Icons.category_outlined, 'Kategorien', () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'categories')))),
+          BarAction(Icons.collections_bookmark_outlined, tr('Collections'), () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'collections')))),
+          BarAction(Icons.category_outlined, tr('Categories'), () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupsScreen(api: widget.api, section: widget.section, kind: 'categories')))),
         ],
-        BarAction(Icons.playlist_play, 'Playlists', () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: widget.api, section: '${widget.section['key']}')))),
+        BarAction(Icons.playlist_play, tr('Playlists'), () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlaylistsScreen(api: widget.api, section: '${widget.section['key']}')))),
       ])),
       bottomNavigationBar: selectionBar(),
       body: Column(children: [
@@ -739,7 +740,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ? const GridSkeleton()
               : items.isEmpty && !loading
                   ? ErrorView(
-                      error: nActive + nMore > 0 || search.text.trim().isNotEmpty ? 'Nichts passt zu diesen Filtern.' : 'Diese Bibliothek ist noch leer.',
+                      error: nActive + nMore > 0 || search.text.trim().isNotEmpty ? tr('Nothing matches these filters.') : tr('This library is still empty.'),
                     )
                   : LayoutBuilder(builder: (context, box) {
                       gridWidth = box.maxWidth;
@@ -889,7 +890,7 @@ class FilterDialogState extends State<FilterDialog> {
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 12, 4),
           child: Row(children: [
-            if (f != null) IconButton(tooltip: 'Zurück', icon: const Icon(Icons.arrow_back), onPressed: () => setState(() => cur = '')) else const SizedBox(width: 12),
+            if (f != null) IconButton(tooltip: tr('Back'), icon: const Icon(Icons.arrow_back), onPressed: () => setState(() => cur = '')) else const SizedBox(width: 12),
             Expanded(child: Text(f != null ? filterName(cur) : 'Filter', style: Theme.of(context).textTheme.titleMedium)),
             if (widget.filters.isNotEmpty && f == null)
               TextButton(
@@ -897,9 +898,9 @@ class FilterDialogState extends State<FilterDialog> {
                   setState(widget.filters.clear);
                   widget.onChanged();
                 },
-                child: const Text('Alle löschen'),
+                child: Text(tr('Clear all')),
               ),
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fertig')),
+            TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Done'))),
           ]),
         ),
         const Divider(height: 1),
@@ -916,7 +917,7 @@ class FilterDialogState extends State<FilterDialog> {
           const VerticalDivider(width: 1),
           Expanded(
             child: f == null
-                ? const Center(child: Text('Keine gefunden.'))
+                ? Center(child: Text(tr('None found.')))
                 : valueList(f, on, values),
           ),
         ]),
@@ -931,12 +932,12 @@ class FilterDialogState extends State<FilterDialog> {
                       child: TextField(
                         controller: needle,
                         onChanged: (_) => setState(() {}),
-                        decoration: InputDecoration(isDense: true, hintText: '${filterName(cur)} suchen …', prefixIcon: const Icon(Icons.search, size: 18), border: const OutlineInputBorder()),
+                        decoration: InputDecoration(isDense: true, hintText: tr('Search {filterName} …', {'filterName': filterName(cur)}), prefixIcon: const Icon(Icons.search, size: 18), border: const OutlineInputBorder()),
                       ),
                     ),
                     Expanded(
                       child: values.isEmpty
-                          ? const Center(child: Text('Keine gefunden.'))
+                          ? Center(child: Text(tr('None found.')))
                           : ListView.builder(
                               itemCount: values.length,
                               itemBuilder: (_, i) {

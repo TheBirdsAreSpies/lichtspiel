@@ -14,6 +14,7 @@ import 'playlists.dart';
 import '../theme.dart';
 import '../widgets/bar.dart';
 import '../widgets/states.dart';
+import '../i18n.dart';
 
 
 String fmtMs(int ms) {
@@ -26,7 +27,7 @@ String fmtSize(num b) => b > 1e9 ? '${(b / 1e9).toStringAsFixed(1)} GB' : '${(b 
 const _containers = {'matroska': 'MKV', 'mov': 'MP4', 'mp4': 'MP4', 'mpegts': 'TS', 'avi': 'AVI', 'webm': 'WebM'};
 String _container(Map m) => _containers['${m['container'] ?? ''}'.toLowerCase()] ?? '${m['container'] ?? ''}'.toUpperCase();
 
-const _langNames = {'ger': 'Deutsch', 'deu': 'Deutsch', 'de': 'Deutsch', 'eng': 'Englisch', 'en': 'Englisch', 'fre': 'Französisch', 'fra': 'Französisch', 'fr': 'Französisch', 'spa': 'Spanisch', 'es': 'Spanisch', 'ita': 'Italienisch', 'it': 'Italienisch', 'jpn': 'Japanisch', 'ja': 'Japanisch', 'por': 'Portugiesisch', 'rus': 'Russisch', 'dut': 'Niederländisch', 'nld': 'Niederländisch', 'pol': 'Polnisch', 'tur': 'Türkisch', 'swe': 'Schwedisch', 'dan': 'Dänisch', 'nor': 'Norwegisch', 'fin': 'Finnisch', 'kor': 'Koreanisch', 'chi': 'Chinesisch', 'zho': 'Chinesisch'};
+Map<String, String> get _langNames => {'ger': tr('German'), 'deu': tr('German'), 'de': tr('German'), 'eng': tr('English'), 'en': tr('English'), 'fre': tr('French'), 'fra': tr('French'), 'fr': tr('French'), 'spa': tr('Spanish'), 'es': tr('Spanish'), 'ita': tr('Italian'), 'it': tr('Italian'), 'jpn': tr('Japanese'), 'ja': tr('Japanese'), 'por': tr('Portuguese'), 'rus': tr('Russian'), 'dut': tr('Dutch'), 'nld': tr('Dutch'), 'pol': tr('Polish'), 'tur': tr('Turkish'), 'swe': tr('Swedish'), 'dan': tr('Danish'), 'nor': tr('Norwegian'), 'fin': tr('Finnish'), 'kor': tr('Korean'), 'chi': tr('Chinese'), 'zho': tr('Chinese')};
 
 /// Every audio track on its own line: "Deutsch · AC3 · 5.1".
 String _audioTracks(Map media) {
@@ -39,12 +40,12 @@ String _audioTracks(Map media) {
   }).join('\n');
 }
 
-String _channels(dynamic n) => const {1: 'Mono', 2: 'Stereo', 3: '2.1', 6: '5.1', 7: '6.1', 8: '7.1'}[n] ?? (n == null ? '' : '$n Kanäle');
+String _channels(dynamic n) => const {1: 'Mono', 2: 'Stereo', 3: '2.1', 6: '5.1', 7: '6.1', 8: '7.1'}[n] ?? (n == null ? '' : tr('{n} channels', {'n': n}));
 
-const _scoreNames = {
+Map<String, String> get _scoreNames => {
   'imdb': 'IMDb',
   'rotten_tomatoes': 'Rotten Tomatoes',
-  'rotten_tomatoes_audience': 'RT Publikum',
+  'rotten_tomatoes_audience': tr('RT audience'),
   'metacritic': 'Metacritic',
   'tmdb': 'TMDB',
 };
@@ -138,10 +139,10 @@ class _DetailScreenState extends State<DetailScreen> {
   /// "Was bisher geschah": the last minutes of the episode before up to its credits, then this one.
   Widget catchUpButton(Map<String, dynamic> item, Map<String, dynamic> c) {
     return Tooltip(
-      message: 'Die letzten Minuten von S${c['parentIndex'] ?? 0}E${c['index'] ?? 0} vor dem Abspann, dann diese Folge',
+      message: tr('The last minutes of S{c}E{c2} before the credits, then this episode', {'c': c['parentIndex'] ?? 0, 'c2': c['index'] ?? 0}),
       child: OutlinedButton.icon(
         icon: const Icon(Icons.history),
-        label: const Text('Was bisher geschah'),
+        label: Text(tr('Previously on')),
         onPressed: () async {
           final then = versioned(item);
           await Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: api, item: {'id': c['id'], 'ratingKey': '${c['id']}', 'viewOffset': c['from']}, catchUp: {'until': c['to'], 'then': then})));
@@ -204,7 +205,7 @@ class _DetailScreenState extends State<DetailScreen> {
   /// Watched or not, for [id] (the page's title or one episode), with "Rückgängig".
   Future<void> setWatched(String id, bool was) async {
     if (await act(() => api.setWatched(id, !was)) && mounted) {
-      undoSnack(context, was ? 'Als ungesehen markiert' : 'Als gesehen markiert', () => act(() => api.setWatched(id, was)));
+      undoSnack(context, was ? tr('Marked as unwatched') : tr('Marked as watched'), () => act(() => api.setWatched(id, was)));
     }
   }
 
@@ -234,9 +235,9 @@ class _DetailScreenState extends State<DetailScreen> {
     final ratings = Map<String, dynamic>.from(x['ratings'] ?? (type == 'season' ? topExtra['ratings'] : null) ?? const {});
     final cast = ((x['cast'] ?? (type != 'movie' ? topExtra['cast'] : null)) as List? ?? const []).map((e) => Map<String, dynamic>.from(e)).toList();
     final crew = <List<String>>[
-      ['Regie', ..._strings(x['directors'])],
-      ['Drehbuch', ..._strings(x['writers'])],
-      ['Idee', ..._strings(x['creators'] ?? (type != 'show' ? topExtra['creators'] : null))],
+      [tr('Director'), ..._strings(x['directors'])],
+      [tr('Writer'), ..._strings(x['writers'])],
+      [tr('Created by'), ..._strings(x['creators'] ?? (type != 'show' ? topExtra['creators'] : null))],
     ].where((r) => r.length > 1).toList();
     final genres = _strings(item['genres']);
     final ids = Map<String, dynamic>.from(x['ids'] ?? topExtra['ids'] ?? const {});
@@ -259,7 +260,7 @@ class _DetailScreenState extends State<DetailScreen> {
     final meta = [
       if (item['year'] != null) '${item['year']}',
       if ((item['editionTitle'] ?? '').toString().isNotEmpty) '${item['editionTitle']}',
-      if (type == 'episode') 'Staffel ${item['parentIndex']}',
+      if (type == 'episode') tr('Season {item}', {'item': item['parentIndex']}),
       if (dur > 0) fmtMs(dur),
       if (item['contentRating'] != null) '${item['contentRating']}',
       if (item['rating'] != null && ratings.isEmpty) '★ ${item['rating']}',
@@ -282,16 +283,16 @@ class _DetailScreenState extends State<DetailScreen> {
           padding: const EdgeInsets.only(top: 12),
           child: _kv([
             for (final r in crew) [r.first, r.skip(1).join(', ')],
-            if (item['studio'] != null) [type == 'show' ? 'Sender' : 'Studio', '${item['studio']}'],
-            if (x['original_title'] != null && x['original_title'] != item['title']) ['Originaltitel', '${x['original_title']}'],
-            if (released.isNotEmpty) [type == 'movie' ? 'Erschienen' : 'Erstausstrahlung', released.split('T').first],
+            if (item['studio'] != null) [type == 'show' ? tr('Network') : 'Studio', '${item['studio']}'],
+            if (x['original_title'] != null && x['original_title'] != item['title']) [tr('Original title'), '${x['original_title']}'],
+            if (released.isNotEmpty) [type == 'movie' ? tr('Released') : tr('First aired'), released.split('T').first],
           ]),
         ),
       const SizedBox(height: 16),
       Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        if (playable && off > 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: Text('Fortsetzen bei ${fmtClock(off)}')),
-        if (playable && off > 0) OutlinedButton(onPressed: () => play({...item, 'viewOffset': 0}), child: const Text('Von vorn')),
-        if (playable && off == 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
+        if (playable && off > 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: Text(tr('Resume at {fmtClock}', {'fmtClock': fmtClock(off)}))),
+        if (playable && off > 0) OutlinedButton(onPressed: () => play({...item, 'viewOffset': 0}), child: Text(tr('From the start'))),
+        if (playable && off == 0) FilledButton.icon(onPressed: () => play(item), icon: const Icon(Icons.play_arrow), label: Text(tr('Play'))),
         // After a long break: the last minutes of the episode before, then this one.
         if (playable && item['catchUp'] is Map) catchUpButton(item, Map<String, dynamic>.from(item['catchUp'] as Map)),
         if (playable && (item['Media'] as List? ?? const []).length > 1)
@@ -300,19 +301,19 @@ class _DetailScreenState extends State<DetailScreen> {
             onChanged: (v) => setState(() => ver = v ?? 0),
             items: [for (var i = 0; i < (item['Media'] as List).length; i++) DropdownMenuItem(value: i, child: Text(versionName(item['Media'][i])))],
           ),
-        if (trailer != null) OutlinedButton.icon(onPressed: () => play(trailer), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer'))
-        else if (online.isNotEmpty) OutlinedButton.icon(onPressed: () => _open('https://www.youtube.com/watch?v=${online.first['key']}'), icon: const Icon(Icons.movie_outlined), label: const Text('Trailer (online)')),
+        if (trailer != null) OutlinedButton.icon(onPressed: () => play(trailer), icon: const Icon(Icons.movie_outlined), label: Text(tr('Trailer')))
+        else if (online.isNotEmpty) OutlinedButton.icon(onPressed: () => _open('https://www.youtube.com/watch?v=${online.first['key']}'), icon: const Icon(Icons.movie_outlined), label: Text(tr('Trailer (online)'))),
         if (leafCount > 0 && (type == 'artist' || type == 'album')) ...[
-          FilledButton.icon(onPressed: () => playMusic(false), icon: const Icon(Icons.play_arrow), label: const Text('Abspielen')),
-          OutlinedButton.icon(onPressed: () => playMusic(true), icon: const Icon(Icons.shuffle), label: const Text('Zufall')),
+          FilledButton.icon(onPressed: () => playMusic(false), icon: const Icon(Icons.play_arrow), label: Text(tr('Play'))),
+          OutlinedButton.icon(onPressed: () => playMusic(true), icon: const Icon(Icons.shuffle), label: Text(tr('Shuffle'))),
         ],
         if (!playable && leafCount > 0 && (type == 'show' || type == 'season'))
-          FilledButton.icon(onPressed: playNextEpisode, icon: const Icon(Icons.play_arrow), label: const Text('Nächste Folge')),
-        _toggle(watched ? Icons.check_circle : Icons.check_circle_outline, watched, watched ? 'Als ungesehen markieren' : 'Als gesehen markieren', () => setWatched(key, watched)),
-        _toggle(item['favorite'] == true ? Icons.favorite : Icons.favorite_border, item['favorite'] == true, item['favorite'] == true ? 'Aus Favoriten entfernen' : 'Zu Favoriten', () => act(() => api.setFavorite(key, item['favorite'] != true))),
-        if (type != 'clip') _toggle(item['watchlist'] == true ? Icons.bookmark : Icons.bookmark_border, item['watchlist'] == true, item['watchlist'] == true ? 'Von der Merkliste entfernen' : 'Auf die Merkliste', () => act(() => api.setWatchlist(key, item['watchlist'] != true))),
-        if (DownloadRights.allowed && (playable || type == 'show' || type == 'season') && item['missing'] != true) OutlinedButton.icon(onPressed: () => downloadDialog(context, api, [item]), icon: const Icon(Icons.download), label: const Text('Herunterladen')),
-        if (playable || type == 'episode') OutlinedButton.icon(onPressed: () => addToPlaylistDialog(context, api, key, item: item), icon: const Icon(Icons.playlist_add), label: const Text('Zur Playlist')),
+          FilledButton.icon(onPressed: playNextEpisode, icon: const Icon(Icons.play_arrow), label: Text(tr('Next episode'))),
+        _toggle(watched ? Icons.check_circle : Icons.check_circle_outline, watched, watched ? tr('Mark as unwatched') : tr('Mark as watched'), () => setWatched(key, watched)),
+        _toggle(item['favorite'] == true ? Icons.favorite : Icons.favorite_border, item['favorite'] == true, item['favorite'] == true ? tr('Remove from favourites') : tr('Add to favourites'), () => act(() => api.setFavorite(key, item['favorite'] != true))),
+        if (type != 'clip') _toggle(item['watchlist'] == true ? Icons.bookmark : Icons.bookmark_border, item['watchlist'] == true, item['watchlist'] == true ? tr('Remove from watchlist') : tr('Add to watchlist'), () => act(() => api.setWatchlist(key, item['watchlist'] != true))),
+        if (DownloadRights.allowed && (playable || type == 'show' || type == 'season') && item['missing'] != true) OutlinedButton.icon(onPressed: () => downloadDialog(context, api, [item]), icon: const Icon(Icons.download), label: Text(tr('Download'))),
+        if (playable || type == 'episode') OutlinedButton.icon(onPressed: () => addToPlaylistDialog(context, api, key, item: item), icon: const Icon(Icons.playlist_add), label: Text(tr('Add to playlist'))),
         _stars(item),
       ]),
       if (links.isNotEmpty)
@@ -330,11 +331,11 @@ class _DetailScreenState extends State<DetailScreen> {
       appBar: AppBar(actions: [
         if (item['type'] != 'clip')
           PopupMenuButton<String>(
-            tooltip: 'Mehr',
+            tooltip: tr('More'),
             onSelected: (v) => v == 'history' ? historyDialog(context, api, item) : reportDialog(context, api, item),
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'history', child: Text('Verlauf')),
-              if (playable) const PopupMenuItem(value: 'report', child: Text('Problem melden…')),
+              PopupMenuItem(value: 'history', child: Text(tr('History'))),
+              if (playable) PopupMenuItem(value: 'report', child: Text(tr('Report a problem…'))),
             ],
           ),
         if (admin) _adminMenu(item),
@@ -365,7 +366,7 @@ class _DetailScreenState extends State<DetailScreen> {
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(title, style: narrow ? Theme.of(context).textTheme.titleLarge : Theme.of(context).textTheme.headlineMedium),
-                    if (item['missing'] == true) Text('Nicht verfügbar: die Datei fehlt auf der Festplatte.', style: TextStyle(color: context.bad)),
+                    if (item['missing'] == true) Text(tr('Not available: the file is missing from the disk.'), style: TextStyle(color: context.bad)),
                     const SizedBox(height: 6),
                     Text(meta, style: dim),
                     if (ratings.isNotEmpty && !narrow) Padding(padding: const EdgeInsets.only(top: 8), child: _scores(ratings)),
@@ -381,16 +382,16 @@ class _DetailScreenState extends State<DetailScreen> {
         Padding(
           padding: EdgeInsets.fromLTRB(pad, 0, pad, 24),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (cast.isNotEmpty) ...[_h('Besetzung'), SizedBox(height: 150, child: ListView(scrollDirection: Axis.horizontal, children: [for (final p in cast) _person(p)]))],
+        if (cast.isNotEmpty) ...[_h(tr('Cast')), SizedBox(height: 150, child: ListView(scrollDirection: Axis.horizontal, children: [for (final p in cast) _person(p)]))],
         if (kids.isNotEmpty) ...[
-          _h(type == 'show' ? 'Staffeln' : 'Folgen'),
+          _h(type == 'show' ? tr('Seasons') : tr('Episodes')),
           if (type == 'show')
             Wrap(spacing: 12, runSpacing: 16, children: [for (final k in kids) Poster(api: api, item: k, onTap: () => openItem(context, api, k))])
           else
             for (var i = 0; i < kids.length; i++) _episode(kids[i]),
         ],
         if (chapters.isNotEmpty) ...[
-          _h('Kapitel'),
+          _h(tr('Chapters')),
           SizedBox(
             height: 170,
             child: ListView(scrollDirection: Axis.horizontal, children: [
@@ -405,7 +406,7 @@ class _DetailScreenState extends State<DetailScreen> {
                         aspectRatio: 16 / 9,
                         child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network(api.img(c['thumb']), headers: api.auth, fit: BoxFit.cover, cacheWidth: 360, errorBuilder: (_, _, _) => Container(color: context.hair))),
                       ),
-                      Text('${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}'), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text('${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => tr('Chapter {m}', {'m': m[1]})), maxLines: 1, overflow: TextOverflow.ellipsis),
                       Text(fmtClock((c['start'] ?? 0) as int), style: TextStyle(fontSize: 12, color: context.faint)),
                     ]),
                   ),
@@ -445,8 +446,8 @@ class _DetailScreenState extends State<DetailScreen> {
                         aspectRatio: 16 / 9,
                         child: ClipRRect(borderRadius: BorderRadius.circular(6), child: Image.network('https://i.ytimg.com/vi/${v['key']}/mqdefault.jpg', fit: BoxFit.cover, cacheWidth: 360, errorBuilder: (_, _, _) => Container(color: context.hair, child: const Icon(Icons.play_circle_outline)))),
                       ),
-                      Text('${v['name'] ?? 'Trailer'}', maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text('online · YouTube', style: TextStyle(fontSize: 12, color: context.faint)),
+                      Text('${v['name'] ?? tr('Trailer')}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(tr('online · YouTube'), style: TextStyle(fontSize: 12, color: context.faint)),
                     ]),
                   ),
                 ),
@@ -512,7 +513,7 @@ class _DetailScreenState extends State<DetailScreen> {
     final matched = item['extra']?['metadata_source'] != null;
     void say(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
     return PopupMenuButton<String>(
-      tooltip: 'Verwalten',
+      tooltip: tr('Manage'),
       onSelected: (v) async {
         try {
           switch (v) {
@@ -524,8 +525,8 @@ class _DetailScreenState extends State<DetailScreen> {
               final ok = await showDialog<bool>(
                 context: context,
                 builder: (d) => AlertDialog(
-                  content: Text('Die Online-Details von „${item['title']}“ entfernen? Der Titel fällt auf den Dateinamen zurück und wird erst wieder automatisch zugeordnet, wenn du eine Zuordnung wählst.'),
-                  actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Zuordnung aufheben'))],
+                  content: Text(tr('Remove the online details of “{item}”? The title falls back to the file name and is only matched again automatically when you pick a match.', {'item': item['title']})),
+                  actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Cancel'))), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Unmatch')))],
                 ),
               );
               if (ok == true) {
@@ -534,24 +535,24 @@ class _DetailScreenState extends State<DetailScreen> {
                 load();
               }
             case 'refresh':
-              say('Lade Details…');
+              say(tr('Loading details…'));
               final r = await api.post('/library/metadata/$key/refresh');
               if (r is Map && r['message'] != null) say('${r['message']}');
               load();
             case 'analyze':
               await api.post('/library/metadata/$key/analyze');
-              say('Analysiere…');
+              say(tr('Analysing…'));
             case 'theme':
-              say('Titelmusik wird geschnitten…');
+              say(tr('Cutting the theme music…'));
               final r = await api.post('/library/metadata/$key/theme');
               final folder = r is Map ? r['folder_theme'] : null;
-              say(folder != null ? 'Titelmusik geschnitten. Gespielt wird aber die Datei im Ordner der Serie: $folder' : 'Titelmusik geschnitten');
+              say(folder != null ? tr("Theme music cut. But the file in the show's folder is played: {folder}", {'folder': folder}) : tr('Theme music cut'));
             case 'credits':
               await creditsDialog(context, api, item);
               load();
             case 'split':
               await api.post('/library/metadata/$key/split');
-              say('Die Versionen sind wieder eigene Titel');
+              say(tr('The versions are separate titles again'));
               ver = 0;
               load();
           }
@@ -560,21 +561,21 @@ class _DetailScreenState extends State<DetailScreen> {
         }
       },
       itemBuilder: (_) => [
-        if (matchable) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
-        if (item['Media'] != null) const PopupMenuItem(value: 'analyze', child: Text('Analysieren')),
-        const PopupMenuItem(value: 'edit', child: Text('Details bearbeiten')),
-        if (type == 'movie' || type == 'episode') const PopupMenuItem(value: 'credits', child: Text('Abspann…')),
-        if (matchable) PopupMenuItem(value: 'match', child: Text(matched ? 'Zuordnung korrigieren…' : 'Zuordnen…')),
-        if (matchable && matched) const PopupMenuItem(value: 'unmatch', child: Text('Zuordnung aufheben')),
-        if (item['Media'] is List && (item['Media'] as List).length > 1) const PopupMenuItem(value: 'split', child: Text('Zusammengeführte Versionen trennen')),
-        if (type == 'show') const PopupMenuItem(value: 'theme', child: Text('Titelmusik schneiden')),
+        if (matchable) PopupMenuItem(value: 'refresh', child: Text(tr('Refresh metadata'))),
+        if (item['Media'] != null) PopupMenuItem(value: 'analyze', child: Text(tr('Analyze'))),
+        PopupMenuItem(value: 'edit', child: Text(tr('Edit details'))),
+        if (type == 'movie' || type == 'episode') PopupMenuItem(value: 'credits', child: Text(tr('Credits…'))),
+        if (matchable) PopupMenuItem(value: 'match', child: Text(matched ? tr('Fix match…') : tr('Match…'))),
+        if (matchable && matched) PopupMenuItem(value: 'unmatch', child: Text(tr('Unmatch'))),
+        if (item['Media'] is List && (item['Media'] as List).length > 1) PopupMenuItem(value: 'split', child: Text(tr('Split the merged versions'))),
+        if (type == 'show') PopupMenuItem(value: 'theme', child: Text(tr('Cut theme music'))),
       ],
     );
   }
 
   Future<void> _open(String url) async {
     if (!await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication) && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Der Link ließ sich nicht öffnen')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('The link could not be opened'))));
     }
   }
 
@@ -639,7 +640,7 @@ class _DetailScreenState extends State<DetailScreen> {
       if (s is! Map || s['score'] == null || '${s['score']}'.isEmpty) continue;
       final count = s['count'] ?? s['votes'];
       chips.add(Tooltip(
-        message: count != null ? '${e.value}: ${s['score']} · $count ${s['count_label'] == 'reviews' ? 'Kritiken' : 'Stimmen'}' : '${e.value}: ${s['score']}',
+        message: count != null ? '${e.value}: ${s['score']} · $count ${s['count_label'] == 'reviews' ? tr('reviews') : tr('votes')}' : '${e.value}: ${s['score']}',
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(color: context.hair, borderRadius: BorderRadius.circular(6)),
@@ -648,7 +649,7 @@ class _DetailScreenState extends State<DetailScreen> {
             const SizedBox(width: 8),
             Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
               Text('${s['score']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, height: 1.1)),
-              Text(count != null ? '$count ${s['count_label'] == 'reviews' ? 'Kritiken' : 'Stimmen'}' : e.value, style: TextStyle(fontSize: 11, color: context.faint)),
+              Text(count != null ? '$count ${s['count_label'] == 'reviews' ? tr('reviews') : tr('votes')}' : e.value, style: TextStyle(fontSize: 11, color: context.faint)),
             ]),
           ]),
         ),
@@ -669,7 +670,7 @@ class _DetailScreenState extends State<DetailScreen> {
       for (var i = 1; i <= 5; i++)
         // Left half of a star = half a star, right half = the whole star (as in the web app).
         Tooltip(
-          message: '${i - 1},5 oder $i ${i == 1 ? 'Stern' : 'Sterne'}',
+          message: tr('{i}.5 or {i2} {i3}', {'i': i - 1, 'i2': i, 'i3': i == 1 ? tr('star') : tr('stars')}),
           waitDuration: const Duration(milliseconds: 600),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -681,7 +682,7 @@ class _DetailScreenState extends State<DetailScreen> {
             ),
           ),
         ),
-      if (cur > 0) TextButton(onPressed: () => act(() => api.rate(key, -1)), child: const Text('löschen')),
+      if (cur > 0) TextButton(onPressed: () => act(() => api.rate(key, -1)), child: Text(tr('clear'))),
     ]);
   }
 
@@ -693,19 +694,19 @@ class _DetailScreenState extends State<DetailScreen> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: context.hair, borderRadius: BorderRadius.circular(8)),
       child: _kv([
-        ['Dateityp', '${_container(media)}${media['size'] != null ? ' · ${fmtSize(media['size'])}' : ''}'],
+        [tr('File type'), '${_container(media)}${media['size'] != null ? ' · ${fmtSize(media['size'])}' : ''}'],
         if (type != 'track')
           [
-            'Video',
+            tr('Video'),
             media['videoCodec'] == null
-                ? 'unbekannt'
+                ? tr('unknown')
                 : ['${media['videoCodec']}'.toUpperCase(), '${media['width']}×${media['height']}', if ((media['bitDepth'] ?? 0) > 8) '${media['bitDepth']}-bit'].join(' · ')
           ],
-        ['Audio', _audioTracks(media)],
-        ['Bitrate', media['bitrate'] != null ? '${((media['bitrate'] as num) / 1000).toStringAsFixed(1)} Mbit/s' : '–'],
-        if (type != 'track') ['Untertitel', subs.isEmpty ? 'keine' : subs],
-        if (media['file'] != null) ['Pfad', '${media['file']}'],
-        if (parts.length > 1) ['Teile', '${parts.length} Dateien, nacheinander abgespielt'],
+        [tr('Audio'), _audioTracks(media)],
+        [tr('Bitrate'), media['bitrate'] != null ? '${((media['bitrate'] as num) / 1000).toStringAsFixed(1)} Mbit/s' : '–'],
+        if (type != 'track') [tr('Subtitles'), subs.isEmpty ? tr('none') : subs],
+        if (media['file'] != null) [tr('Path'), '${media['file']}'],
+        if (parts.length > 1) [tr('Parts'), tr('{length} files, played one after the other', {'length': parts.length})],
       ]),
     );
   }
@@ -745,8 +746,8 @@ class _DetailScreenState extends State<DetailScreen> {
     final missing = e['missing'] == true;
     final sub = [
       if (dur > 0) fmtMs(dur),
-      if (off > 0 && dur > 0) 'noch ${fmtMs(dur - off)}',
-      if (missing) 'Datei fehlt',
+      if (off > 0 && dur > 0) tr('{fmtMs} left', {'fmtMs': fmtMs(dur - off)}),
+      if (missing) tr('File missing'),
     ].join(' · ');
     return InkWell(
       onTap: () => openItem(context, api, e),
@@ -789,7 +790,7 @@ class _DetailScreenState extends State<DetailScreen> {
               if ('${e['summary'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text('${e['summary']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: context.soft))),
             ]),
           ),
-          if (!missing) IconButton(tooltip: off > 0 ? 'Fortsetzen' : 'Abspielen', onPressed: () => play(e), icon: Icon(Icons.play_circle_fill, color: context.accent)),
+          if (!missing) IconButton(tooltip: off > 0 ? tr('Resume') : tr('Play'), onPressed: () => play(e), icon: Icon(Icons.play_circle_fill, color: context.accent)),
         ]),
       ),
     );

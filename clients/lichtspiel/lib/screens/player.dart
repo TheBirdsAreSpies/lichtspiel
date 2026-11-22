@@ -8,21 +8,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api.dart';
 import '../clock.dart';
 import '../widgets/poster.dart';
+import '../i18n.dart';
 
 const _speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 /// The server's names (QUALITIES in src/playback/transcode.rs); also offered in Settings.
-const playerQualities = {
-  'original': 'Originalqualität',
+Map<String, String> get playerQualities => {
+  'original': tr('Original quality'),
   '1080p-20': '1080p 20 Mbit/s',
   '1080p-12': '1080p 12 Mbit/s',
   '1080p-8': '1080p 8 Mbit/s',
   '720p-4': '720p 4 Mbit/s',
   '720p-3': '720p 3 Mbit/s',
   '720p-2': '720p 2 Mbit/s',
-  '480p-1.5': '480p 1,5 Mbit/s',
-  '320p-0.7': '320p 0,7 Mbit/s',
+  '480p-1.5': tr('480p 1.5 Mbit/s'),
+  '320p-0.7': tr('320p 0.7 Mbit/s'),
 };
-const playerSubSizes = {75: 'Klein', 100: 'Normal', 130: 'Groß', 170: 'Sehr groß'};
+Map<int, String> get playerSubSizes => {75: tr('Small'), 100: tr('Normal'), 130: tr('Large'), 170: tr('Very large')};
 
 /// Older versions saved 2160/1080/720/480/360, which the server does not know (it then converts at full size).
 String qualityKey(String? q) =>
@@ -118,7 +119,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     // Somebody is there: the sleep timer that is fading the sound out is switched off.
     if (sleepVol != null && PlayerScreen.sleepAt != null) {
       setSleep(null);
-      tell('Sleep-Timer aus');
+      tell(tr('Sleep timer off'));
     }
     if (!ticksOn.value) ticksOn.value = true;
     ticksTimer?.cancel();
@@ -143,7 +144,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 if (((c['start'] ?? 0) as num) <= ms) chap = c;
               }
             }
-            final name = chap == null ? '' : ' · ${chap['title']}'.replaceFirstMapped(RegExp(r'Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}');
+            final name = chap == null ? '' : ' · ${chap['title']}'.replaceFirstMapped(RegExp(r'Chapter (\d+)$'), (m) => tr('Chapter {m}', {'m': m[1]}));
             const w = 208.0;
             final left = (pos.dx - w / 2).clamp(8.0, box.maxWidth - w - 8);
             final step = ms ~/ 10000 * 10;
@@ -261,9 +262,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       right: 24,
       bottom: 110,
       child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-        if (prerollSeveral) FilledButton.tonal(onPressed: () => end.isCompleted ? null : end.complete(false), child: const Text('Nächstes Video')),
+        if (prerollSeveral) FilledButton.tonal(onPressed: () => end.isCompleted ? null : end.complete(false), child: Text(tr('Next video'))),
         const SizedBox(height: 8),
-        FilledButton(onPressed: () => end.isCompleted ? null : end.complete(true), child: Text(prerollSeveral ? 'Alle überspringen' : 'Überspringen')),
+        FilledButton(onPressed: () => end.isCompleted ? null : end.complete(true), child: Text(prerollSeveral ? tr('Skip all') : tr('Skip'))),
       ]),
     );
   }
@@ -371,11 +372,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void tgDraw(dynamic st) {
     final others = [for (final m in (st['members'] as List? ?? const [])) if (m['id'] != tgMe) '${m['name']}'];
-    final text = others.isEmpty ? 'zusammen (wartet auf andere)' : 'zusammen mit ${others.join(', ')}';
+    final text = others.isEmpty ? tr('together (waiting for others)') : tr('together with {others}', {'others': others.join(', ')});
     if (text != tgNames && mounted) {
       final first = tgNames.isEmpty;
       setState(() => tgNames = text);
-      if (!first) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Zusammen schauen: ${others.isEmpty ? 'allein' : others.join(', ')}')));
+      if (!first) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Watching together: {others}', {'others': others.isEmpty ? tr('alone') : others.join(', ')}))));
     }
   }
 
@@ -580,9 +581,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text('Wiedergabe beendet'),
+        title: Text(tr('Playback stopped')),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Der Besitzer des Servers hat deine Wiedergabe beendet.'),
+          Text(tr("The server's owner stopped your playback.")),
           if (message.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 12), child: Text(message)),
         ]),
         actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
@@ -625,10 +626,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   String sleepLabel() {
-    if (PlayerScreen.sleepEnd) return 'Ende des Titels';
+    if (PlayerScreen.sleepEnd) return tr('End of the title');
     final at = PlayerScreen.sleepAt;
-    if (at == null) return 'Aus';
-    return 'noch ${(at.difference(DateTime.now()).inSeconds / 60).ceil()} Min.';
+    if (at == null) return tr('Off');
+    return tr('{x} min left', {'x': (at.difference(DateTime.now()).inSeconds / 60).ceil()});
   }
 
   void sleepRestore() {
@@ -641,7 +642,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool sleepAtEnd() {
     if (!PlayerScreen.sleepEnd) return false;
     PlayerScreen.sleepEnd = false;
-    tell('Sleep-Timer: nach diesem Titel beendet. Gute Nacht!');
+    tell(tr('Sleep timer: stopped after this title. Good night!'));
     return true;
   }
 
@@ -670,7 +671,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       PlayerScreen.sleepAt = null;
       player.pause().then((_) => sleepRestore());
       report('paused');
-      tell('Sleep-Timer: angehalten. Gute Nacht!');
+      tell(tr('Sleep timer: paused. Good night!'));
     } else if (left <= sleepFadeSecs && player.state.playing) {
       sleepVol ??= player.state.volume;
       player.setVolume(sleepVol! * left / sleepFadeSecs);
@@ -791,7 +792,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     night = on;
     savePref('nightMode', on);
     await applyNight();
-    tell(on ? 'Nachtmodus an: Laute Stellen sind leiser, Stimmen deutlicher.' : 'Nachtmodus aus');
+    tell(on ? tr('Night mode on: loud parts are quieter, voices clearer.') : tr('Night mode off'));
   }
 
   void setSubSize(int v) {
@@ -821,12 +822,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   /// Owner: listen to the sound and move the subtitle lines onto the speech.
   Future<void> syncSub(Map x) async {
-    tell('Höre auf den Ton … das dauert einen Moment');
+    tell(tr('Listening to the sound … this takes a moment'));
     try {
       final r = await widget.api.post('${x['key']}/sync');
-      if (r['applied'] != true) return tell('${r['message'] ?? 'Nicht sicher genug, nichts verschoben'}');
+      if (r['applied'] != true) return tell('${r['message'] ?? tr('Not sure enough, nothing moved')}');
       await reloadSub(x);
-      tell('Untertitel um ${((r['offsetMs'] ?? 0) / 1000).toStringAsFixed(1).replaceAll('.', ',')} s verschoben');
+      tell(tr('Subtitles moved by {x} s', {'x': decimal(((r['offsetMs'] ?? 0) / 1000).toStringAsFixed(1))}));
     } catch (e) {
       tell('$e');
     }
@@ -837,7 +838,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       final r = await widget.api.put('${x['key']}/timing', ms == null ? {'reset': true} : {'delta_ms': ms});
       await reloadSub(x);
-      tell(ms == null ? 'Untertitel-Zeit zurückgesetzt' : 'Untertitel um ${(((r['offsetMs'] ?? 0) as num) / 1000).toStringAsFixed(1).replaceAll('.', ',')} s verschoben');
+      tell(ms == null ? tr('Subtitle timing reset') : tr('Subtitles moved by {x} s', {'x': decimal((((r['offsetMs'] ?? 0) as num) / 1000).toStringAsFixed(1))}));
     } catch (e) {
       tell('$e');
     }
@@ -848,7 +849,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if ((t.language ?? '').toString().isNotEmpty) '${t.language}',
       if ((t.title ?? '').toString().isNotEmpty) '${t.title}',
     ];
-    return parts.isEmpty ? 'Spur ${t.id}' : parts.join(' · ');
+    return parts.isEmpty ? tr('Track {id}', {'id': t.id}) : parts.join(' · ');
   }
 
   // ---------------------------------------------------------------- build
@@ -880,11 +881,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: button,
             );
         return Stack(children: [
-          if (widget.catchUp != null) Positioned(right: 24, bottom: 110, child: FilledButton.tonal(onPressed: catchUpDone, child: const Text('Weiter zur Folge'))),
-          if (inIntro) Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => player.seek(Duration(milliseconds: (intro![1] * 1000).round())), child: const Text('Intro überspringen')))),
-          if (inRecap) Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => player.seek(Duration(milliseconds: (recap![1] * 1000).round())), child: const Text('Rückblick überspringen')))),
+          if (widget.catchUp != null) Positioned(right: 24, bottom: 110, child: FilledButton.tonal(onPressed: catchUpDone, child: Text(tr('Go on to the episode')))),
+          if (inIntro) Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => player.seek(Duration(milliseconds: (intro![1] * 1000).round())), child: Text(tr('Skip intro'))))),
+          if (inRecap) Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => player.seek(Duration(milliseconds: (recap![1] * 1000).round())), child: Text(tr('Skip recap'))))),
           if (inCredits && !inIntro)
-            Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => playNext(), child: Text('Nächste Folge: ${nextName(next!)}')))),
+            Positioned(right: 24, bottom: 110, child: skip(FilledButton.tonal(onPressed: () => playNext(), child: Text(tr('Next episode: {nextName}', {'nextName': nextName(next!)}))))),
           if (nextCard && next != null) Positioned(right: 24, bottom: 110, child: _nextCard()),
         ]);
       },
@@ -905,14 +906,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 if (stillWatching)
-                  Text('Schaust du noch? · stoppt in $left s', style: const TextStyle(fontWeight: FontWeight.bold))
+                  Text(tr('Still watching? · stops in {left} s', {'left': left}), style: const TextStyle(fontWeight: FontWeight.bold))
                 else
-                  Text('Als Nächstes${countdown?.isActive == true ? ' · in $left s' : ''}', style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                  Text(tr('Up next{countdown}', {'countdown': countdown?.isActive == true ? tr(' · in {left} s', {'left': left}) : ''}), style: const TextStyle(color: Colors.white60, fontSize: 12)),
                 Text(n['type'] == 'episode' ? '${n['grandparentTitle'] ?? ''}' : '${n['title']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
                 if (n['type'] == 'episode') Text(nextName(n), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
                 const SizedBox(height: 8),
                 Row(children: [
-                  FilledButton(onPressed: () => playNext(), child: Text(stillWatching ? 'Ja, weiter' : 'Jetzt abspielen')),
+                  FilledButton(onPressed: () => playNext(), child: Text(stillWatching ? tr('Yes, go on') : tr('Play now'))),
                   const SizedBox(width: 8),
                   TextButton(
                     onPressed: () {
@@ -923,7 +924,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         setState(() => nextCard = false);
                       }
                     },
-                    child: Text(stillWatching ? 'Stopp' : 'Abbrechen'),
+                    child: Text(stillWatching ? tr('Stop') : tr('Cancel')),
                   ),
                 ]),
               ]),
@@ -936,11 +937,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title = it['type'] == 'episode' ? '${widget.catchUp != null ? 'Was bisher geschah · ' : ''}${it['grandparentTitle'] ?? ''} · S${it['parentIndex'] ?? 0}E${it['index'] ?? 0} · ${it['title']}' : '${it['title'] ?? widget.item['title'] ?? ''}';
+    final title = it['type'] == 'episode' ? '${widget.catchUp != null ? tr('Previously on ·') : ''}${it['grandparentTitle'] ?? ''} · S${it['parentIndex'] ?? 0}E${it['index'] ?? 0} · ${it['title']}' : '${it['title'] ?? widget.item['title'] ?? ''}';
     final top = <Widget>[
       MaterialDesktopCustomButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.maybePop(context)),
       Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(tgNames.isEmpty ? title : '$title · $tgNames', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16)))),
-      if (method.isNotEmpty) Text(const {'direct': 'Direkt', 'remux': 'Umgepackt', 'transcode': 'Umgewandelt'}[method] ?? method, style: const TextStyle(fontSize: 12, color: Colors.white60)),
+      if (method.isNotEmpty) Text({'direct': tr('Direct'), 'remux': tr('Remuxed'), 'transcode': tr('Converted')}[method] ?? method, style: const TextStyle(fontSize: 12, color: Colors.white60)),
     ];
     final theme = MaterialDesktopVideoControlsThemeData(
       topButtonBar: top,
@@ -956,7 +957,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               final ms = (snap.data ?? player.state.position).inMilliseconds;
               var name = '';
               for (final c in chapters) {
-                if (((c['start'] ?? 0) as num) <= ms) name = '${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}');
+                if (((c['start'] ?? 0) as num) <= ms) name = '${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => tr('Chapter {m}', {'m': m[1]}));
               }
               return name.isEmpty ? const SizedBox() : Padding(padding: const EdgeInsets.only(left: 12), child: Text('· $name', style: const TextStyle(fontSize: 12, color: Colors.white70)));
             },
@@ -1013,9 +1014,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       body: error != null
           ? Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text('Wiedergabe fehlgeschlagen:\n$error', textAlign: TextAlign.center),
+                Text(tr('Playback failed:\n{error}', {'error': error}), textAlign: TextAlign.center),
                 const SizedBox(height: 12),
-                FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Zurück')),
+                FilledButton(onPressed: () => Navigator.pop(context), child: Text(tr('Back'))),
               ]),
             )
           : MaterialVideoControlsTheme(
@@ -1088,18 +1089,18 @@ class _SettingsMenuState extends State<_SettingsMenu> {
     ];
     final serverPick = s.converted && fileAudios.length > 1;
     final embedded = tracks.subtitle.where((t) => t.id != 'auto' && t.id != 'no').toList();
-    final tr = p.state.track.audio;
+    final cur = p.state.track.audio;
     // While the player is on "auto" it plays the preferred language, else the first track: show that one.
-    final curAudio = audios.any((t) => t.id == tr.id)
-        ? tr
-        : (audios.where((t) => s.audioLang.isNotEmpty && _sameLang(t.language, s.audioLang)).firstOrNull ?? (audios.isNotEmpty ? audios.first : tr));
+    final curAudio = audios.any((t) => t.id == cur.id)
+        ? cur
+        : (audios.where((t) => s.audioLang.isNotEmpty && _sameLang(t.language, s.audioLang)).firstOrNull ?? (audios.isNotEmpty ? audios.first : cur));
     final curSub = s.pickedSub ?? p.state.track.subtitle;
     final children = <Widget>[];
     switch (page) {
       case 'subs':
         children.addAll([
-          head('Untertitel'),
-          choice('Aus', curSub.id == 'no', () {
+          head(tr('Subtitles')),
+          choice(tr('Off'), curSub.id == 'no', () {
             s.pickSubtitle(SubtitleTrack.no());
             Navigator.pop(context);
           }),
@@ -1109,20 +1110,20 @@ class _SettingsMenuState extends State<_SettingsMenu> {
               Navigator.pop(context);
             }),
           for (final x in s.externalSubs)
-            choice('${x['language'] ?? x['file'] ?? 'Datei'}${x['title'] != null ? ' · ${x['title']}' : ''}', curSub.uri && curSub.id.startsWith('${s.widget.api.abs('${x['key']}')}?'), () {
+            choice('${x['language'] ?? x['file'] ?? tr('File')}${x['title'] != null ? ' · ${x['title']}' : ''}', curSub.uri && curSub.id.startsWith('${s.widget.api.abs('${x['key']}')}?'), () {
               s.pickSubtitle(SubtitleTrack.uri(s.widget.api.subtitleUrl('${x['key']}', s.subTicket), title: '${x['title'] ?? ''}', language: '${x['language'] ?? ''}'), lang: '${x['language'] ?? ''}');
               Navigator.pop(context);
             }),
           if (Poster.admin)
             for (final x in s.externalSubs)
               if (curSub.uri && curSub.id.startsWith('${s.widget.api.abs('${x['key']}')}?')) ...[
-                head('Zeit der Untertitel'),
-                ListTile(dense: true, title: const Text('Mit dem Ton abgleichen'), onTap: () { Navigator.pop(context); s.syncSub(x); }),
-                ListTile(dense: true, title: const Text('0,5 s früher'), onTap: () { Navigator.pop(context); s.nudgeSub(x, -500); }),
-                ListTile(dense: true, title: const Text('0,5 s später'), onTap: () { Navigator.pop(context); s.nudgeSub(x, 500); }),
-                ListTile(dense: true, title: const Text('Zeit zurücksetzen'), onTap: () { Navigator.pop(context); s.nudgeSub(x, null); }),
+                head(tr('Subtitle timing')),
+                ListTile(dense: true, title: Text(tr('Match to the sound')), onTap: () { Navigator.pop(context); s.syncSub(x); }),
+                ListTile(dense: true, title: Text(tr('0.5 s earlier')), onTap: () { Navigator.pop(context); s.nudgeSub(x, -500); }),
+                ListTile(dense: true, title: Text(tr('0.5 s later')), onTap: () { Navigator.pop(context); s.nudgeSub(x, 500); }),
+                ListTile(dense: true, title: Text(tr('Reset the timing')), onTap: () { Navigator.pop(context); s.nudgeSub(x, null); }),
               ],
-          head('Untertitelgröße'),
+          head(tr('Subtitle size')),
           for (final e in playerSubSizes.entries)
             choice(e.value, s.subSize == e.key, () {
               s.setSubSize(e.key);
@@ -1131,7 +1132,7 @@ class _SettingsMenuState extends State<_SettingsMenu> {
         ]);
       case 'quality':
         children.addAll([
-          back('Qualität'),
+          back(tr('Quality')),
           for (final e in playerQualities.entries)
             choice(e.value, s.quality == e.key, () {
               Navigator.pop(context);
@@ -1140,20 +1141,20 @@ class _SettingsMenuState extends State<_SettingsMenu> {
         ]);
       case 'speed':
         children.addAll([
-          back('Wiedergabegeschwindigkeit'),
+          back(tr('Playback speed')),
           for (final v in _speeds)
-            choice(v == 1 ? 'Normal' : '${v.toString().replaceAll('.', ',')}×', s.speed == v, () {
+            choice(v == 1 ? tr('Normal') : '${decimal(v)}×', s.speed == v, () {
               s.setSpeed(v);
               setState(() {});
             }),
         ]);
       case 'audio':
         children.addAll([
-          back('Tonspur'),
+          back(tr('Audio track')),
           if (serverPick)
             for (final a in fileAudios)
               choice(
-                [a['language'] ?? 'Ton', '${a['codec'] ?? ''}'.toUpperCase(), if ((a['channels'] ?? 0) != 0) '${a['channels']}ch', a['title'] ?? ''].where((e) => '$e'.isNotEmpty).join(' · '),
+                [a['language'] ?? tr('Sound'), '${a['codec'] ?? ''}'.toUpperCase(), if ((a['channels'] ?? 0) != 0) '${a['channels']}ch', a['title'] ?? ''].where((e) => '$e'.isNotEmpty).join(' · '),
                 (s.audioIdx ?? fileAudios.first['index']) == a['index'],
                 () {
                   Navigator.pop(context);
@@ -1172,22 +1173,22 @@ class _SettingsMenuState extends State<_SettingsMenu> {
         void pick(int? m) {
           s.setSleep(m);
           Navigator.pop(context);
-          if (m != null) s.tell('Sleep-Timer: ${s.sleepLabel()}');
+          if (m != null) s.tell(tr('Sleep timer: {s}', {'s': s.sleepLabel()}));
         }
         children.addAll([
-          back('Sleep-Timer'),
-          choice('Aus', PlayerScreen.sleepAt == null && !PlayerScreen.sleepEnd, () => pick(null)),
-          choice(s.it['type'] == 'episode' ? 'Ende dieser Folge' : 'Ende dieses Films', PlayerScreen.sleepEnd, () => pick(0)),
-          for (final m in _PlayerScreenState.sleepMinutes) choice('$m Minuten', false, () => pick(m)),
+          back(tr('Sleep timer')),
+          choice(tr('Off'), PlayerScreen.sleepAt == null && !PlayerScreen.sleepEnd, () => pick(null)),
+          choice(s.it['type'] == 'episode' ? tr('End of this episode') : tr('End of this movie'), PlayerScreen.sleepEnd, () => pick(0)),
+          for (final m in _PlayerScreenState.sleepMinutes) choice(tr('{m} minutes', {'m': m}), false, () => pick(m)),
         ]);
       case 'chapters':
         children.addAll([
-          back('Kapitel'),
+          back(tr('Chapters')),
           for (final c in s.chapters)
             ListTile(
               dense: true,
               selected: s.chapters.lastWhere((x) => ((x['start'] ?? 0) as num) <= p.state.position.inMilliseconds, orElse: () => s.chapters.first) == c,
-              title: Text('${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => 'Kapitel ${m[1]}')),
+              title: Text('${c['title']}'.replaceFirstMapped(RegExp(r'^Chapter (\d+)$'), (m) => tr('Chapter {m}', {'m': m[1]}))),
               trailing: Text(fmtClock((c['start'] ?? 0) as int), style: const TextStyle(color: Colors.white60)),
               onTap: () {
                 p.seek(Duration(milliseconds: (c['start'] ?? 0) as int));
@@ -1197,18 +1198,18 @@ class _SettingsMenuState extends State<_SettingsMenu> {
         ]);
       default:
         children.addAll([
-          entry('Qualität', playerQualities[s.quality] ?? s.quality, 'quality'),
-          entry('Wiedergabegeschwindigkeit', s.speed == 1 ? 'Normal' : '${s.speed.toString().replaceAll('.', ',')}×', 'speed'),
-          if (serverPick || audios.length > 1) entry('Tonspur', serverPick ? 'wählen' : audios.where((t) => t.id == curAudio.id).map(s.trackName).firstOrNull ?? 'Standard', 'audio'),
-          entry('Untertitel', curSub.id == 'no' ? 'Aus' : s.trackName(curSub), 'subs'),
-          if (s.chapters.isNotEmpty) entry('Kapitel', '${s.chapters.length}', 'chapters'),
-          choice('Nachtmodus', s.night, () {
+          entry(tr('Quality'), playerQualities[s.quality] ?? s.quality, 'quality'),
+          entry(tr('Playback speed'), s.speed == 1 ? tr('Normal') : '${decimal(s.speed)}×', 'speed'),
+          if (serverPick || audios.length > 1) entry(tr('Audio track'), serverPick ? tr('choose') : audios.where((t) => t.id == curAudio.id).map(s.trackName).firstOrNull ?? tr('Default'), 'audio'),
+          entry(tr('Subtitles'), curSub.id == 'no' ? tr('Off') : s.trackName(curSub), 'subs'),
+          if (s.chapters.isNotEmpty) entry(tr('Chapters'), '${s.chapters.length}', 'chapters'),
+          choice(tr('Night mode'), s.night, () {
             s.setNight(!s.night);
             setState(() {});
           }),
-          entry('Sleep-Timer', s.sleepLabel(), 'sleep'),
+          entry(tr('Sleep timer'), s.sleepLabel(), 'sleep'),
           if (s.it['type'] == 'episode' || s.queue.isNotEmpty)
-            choice('Nächste Folge automatisch abspielen', s.autoNext, () {
+            choice(tr('Play the next episode by itself'), s.autoNext, () {
               s.autoNext = !s.autoNext;
               s.savePref('autoNext', s.autoNext);
               setState(() {});

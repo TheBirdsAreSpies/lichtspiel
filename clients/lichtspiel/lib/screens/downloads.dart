@@ -9,15 +9,16 @@ import '../widgets/poster.dart';
 import 'detail.dart' show fmtSize;
 import '../theme.dart';
 import '../widgets/states.dart';
+import '../i18n.dart';
 
-const dlQualities = {
-  'original': 'Originalqualität',
+Map<String, String> get dlQualities => {
+  'original': tr('Original quality'),
   '1080p-8': '1080p 8 Mbit/s',
   '720p-4': '720p 4 Mbit/s',
   '720p-3': '720p 3 Mbit/s',
   '720p-2': '720p 2 Mbit/s',
-  '480p-1.5': '480p 1,5 Mbit/s',
-  '320p-0.7': '320p 0,7 Mbit/s',
+  '480p-1.5': tr('480p 1.5 Mbit/s'),
+  '320p-0.7': tr('320p 0.7 Mbit/s'),
 };
 
 /// Whether the signed-in person may download / have videos converted (set by the home screen from /api/me).
@@ -39,7 +40,7 @@ Future<void> saveFile(BuildContext context, Api api, String url) async {
     return;
   }
   if (!await launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication) && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Die Datei ließ sich nicht öffnen')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('The file could not be opened'))));
   }
 }
 
@@ -69,19 +70,19 @@ Future<void> downloadToFile(BuildContext context, Api api, String url) async {
     builder: (d) {
       dialogContext = d;
       return AlertDialog(
-      title: const Text('Wird geladen…'),
+      title: Text(tr('Downloading…')),
       content: ValueListenableBuilder<double?>(
         valueListenable: progress,
         builder: (_, v, _) => Column(mainAxisSize: MainAxisSize.min, children: [
           LinearProgressIndicator(value: v),
           if (v != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text('${(v * 100).toStringAsFixed(0)} %')),
-          Padding(padding: EdgeInsets.only(top: 8), child: Text('Lass die App dabei geöffnet.', style: TextStyle(color: context.faint))),
+          Padding(padding: EdgeInsets.only(top: 8), child: Text(tr('Keep the app open meanwhile.'), style: TextStyle(color: context.faint))),
         ]),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(d),
-          child: const Text('Abbrechen'),
+          child: Text(tr('Cancel')),
         ),
       ],
     );
@@ -98,7 +99,7 @@ Future<void> downloadToFile(BuildContext context, Api api, String url) async {
   try {
     final dir = Platform.isIOS ? await getApplicationDocumentsDirectory() : (await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory());
     final r = await client.send(http.Request('GET', Uri.parse(api.abs(url)))..headers.addAll(api.auth ?? {}));
-    if (r.statusCode >= 400) throw 'Fehler ${r.statusCode}';
+    if (r.statusCode >= 400) throw tr('Error {statusCode}', {'statusCode': r.statusCode});
     final name = (fileNameFrom(r.headers['content-disposition']) ?? 'lichtspiel-download').replaceAll(RegExp(r'[/\\:]'), '_');
     // Don't overwrite a file of the same name: "Film (2).mkv".
     var f = File('${dir.path}/$name');
@@ -120,19 +121,19 @@ Future<void> downloadToFile(BuildContext context, Api api, String url) async {
     } finally {
       await sink.close();
     }
-    if (cancelled) throw 'Abgebrochen';
+    if (cancelled) throw tr('Cancelled');
     // A connection that ends early can close the stream without an error.
-    if (total > 0 && got < total) throw 'Verbindung abgebrochen (${fmtSize(got)} von ${fmtSize(total)})';
+    if (total > 0 && got < total) throw tr('Connection lost ({fmtSize} of {fmtSize2})', {'fmtSize': fmtSize(got), 'fmtSize2': fmtSize(total)});
     await out.rename(f.path);
     out = null;
-    messenger.showSnackBar(SnackBar(content: Text(Platform.isIOS ? 'Gespeichert: „${f.path.split('/').last}“ (Dateien-App › Auf diesem Gerät › Lichtspiel)' : 'Gespeichert in „Downloads“: ${f.path.split('/').last}')));
+    messenger.showSnackBar(SnackBar(content: Text(Platform.isIOS ? tr('Saved: “{f}” (Files app › On My iPhone › Lichtspiel)', {'f': f.path.split('/').last}) : tr('Saved in “Downloads”: {f}', {'f': f.path.split('/').last}))));
   } catch (e) {
     if (out != null && await out.exists()) {
       try {
         await out.delete();
       } catch (_) {}
     }
-    if (!cancelled) messenger.showSnackBar(SnackBar(content: Text('Download fehlgeschlagen: $e')));
+    if (!cancelled) messenger.showSnackBar(SnackBar(content: Text(tr('Download failed: {e}', {'e': e}))));
   } finally {
     finished = true;
     client.close();
@@ -153,16 +154,16 @@ Future<void> downloadDialog(BuildContext context, Api api, List<Map<String, dyna
   final messenger = ScaffoldMessenger.of(context);
   final nav = Navigator.of(context);
   if (!DownloadRights.allowed) {
-    messenger.showSnackBar(const SnackBar(content: Text('Downloads sind nicht erlaubt')));
+    messenger.showSnackBar(SnackBar(content: Text(tr('Downloads are not allowed'))));
     return;
   }
   var q = 'original';
-  final title = items.length == 1 ? '${items.first['title']}' : '${items.length} ausgewählt';
+  final title = items.length == 1 ? '${items.first['title']}' : tr('{length} selected', {'length': items.length});
   final go = await showDialog<bool>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, set) => AlertDialog(
-        title: Text('„$title“ herunterladen'),
+        title: Text(tr('Download “{title}”', {'title': title})),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           DropdownButton<String>(
             value: q,
@@ -173,16 +174,16 @@ Future<void> downloadDialog(BuildContext context, Api api, List<Map<String, dyna
           const SizedBox(height: 8),
           Text(
             q == 'original'
-                ? 'Die Datei, wie sie auf dem Server liegt. Sie ist sofort fertig.'
-                : 'Wird auf dem Server in MP4 (H.264, Stereo) umgewandelt, das überall läuft. Du findest sie unter „Downloads“ mit Fortschritt und lädst sie von dort, wenn sie fertig ist. Eine Datei, die schon klein genug ist, kommt unverändert.',
+                ? tr('The file as it is on the server. It is ready at once.')
+                : tr('Converted on the server to MP4 (H.264, stereo), which plays everywhere. You find it under “Downloads” with its progress and download it from there when it is ready. A file that is small enough already comes unchanged.'),
             style: TextStyle(color: context.faint),
           ),
           if (!DownloadRights.convert)
-            Padding(padding: EdgeInsets.only(top: 8), child: Text('Du darfst keine Videos umwandeln lassen, deshalb geht nur die Originalqualität.', style: TextStyle(color: context.faint))),
+            Padding(padding: EdgeInsets.only(top: 8), child: Text(tr('You may not have videos converted, so only the original quality is possible.'), style: TextStyle(color: context.faint))),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Herunterladen')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Download'))),
         ],
       ),
     ),
@@ -195,14 +196,14 @@ Future<void> downloadDialog(BuildContext context, Api api, List<Map<String, dyna
     });
     num n(String k) => (r[k] ?? 0) as num;
     final parts = [
-      if (n('ready') > 0) '${n('ready')} fertig',
-      if (n('queued') > 0) '${n('queued')} werden umgewandelt',
-      if (n('already') > 0) '${n('already')} schon vorhanden',
-      if (n('refused') > 0) '${n('refused')} ausgelassen (du darfst nicht umwandeln)',
+      if (n('ready') > 0) tr('{n} ready', {'n': n('ready')}),
+      if (n('queued') > 0) tr('{n} being converted', {'n': n('queued')}),
+      if (n('already') > 0) tr('{n} already there', {'n': n('already')}),
+      if (n('refused') > 0) tr('{n} left out (you may not convert)', {'n': n('refused')}),
     ];
     messenger.showSnackBar(SnackBar(
-      content: Text('Downloads: ${parts.join(', ')}'),
-      action: SnackBarAction(label: 'Öffnen', onPressed: () => nav.push(MaterialPageRoute(builder: (_) => DownloadsScreen(api: api)))),
+      content: Text(tr('Downloads: {parts}', {'parts': parts.join(', ')})),
+      action: SnackBarAction(label: tr('Open'), onPressed: () => nav.push(MaterialPageRoute(builder: (_) => DownloadsScreen(api: api)))),
     ));
   } catch (e) {
     messenger.showSnackBar(SnackBar(content: Text(errorText(e))));
@@ -217,7 +218,7 @@ class DownloadsScreen extends StatefulWidget {
 }
 
 class _DownloadsScreenState extends State<DownloadsScreen> {
-  static const states = {'queued': 'Wartet', 'converting': 'Wird umgewandelt', 'ready': 'Fertig', 'failed': 'Fehlgeschlagen'};
+  static Map<String, String> get states => {'queued': tr('Waiting'), 'converting': tr('Converting'), 'ready': tr('Done'), 'failed': tr('Failed')};
   Map<String, dynamic>? data;
   String? error;
   bool all = false;
@@ -261,7 +262,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
   String name(Map d) {
     final x = d['item'];
-    if (x is! Map || x['title'] == null) return '(nicht mehr in der Mediathek)';
+    if (x is! Map || x['title'] == null) return tr('(no longer in the library)');
     return x['type'] == 'episode' ? '${x['grandparentTitle'] ?? ''} · S${x['parentIndex'] ?? 0}E${x['index'] ?? 0} ${x['title']}' : '${x['title']}';
   }
 
@@ -272,8 +273,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     final busy = ((d?['queued'] ?? 0) as num) + ((d?['converting'] ?? 0) as num);
     final finished = ((d?['ready'] ?? 0) as num) + ((d?['failed'] ?? 0) as num);
     return Scaffold(
-      appBar: AppBar(title: const Text('Downloads'), actions: [
-        if (finished > 0) TextButton(onPressed: () => run(() => widget.api.delete('/api/downloads?state=finished${all ? '&all=1' : ''}')), child: const Text('Fertige entfernen')),
+      appBar: AppBar(title: Text(tr('Downloads')), actions: [
+        if (finished > 0) TextButton(onPressed: () => run(() => widget.api.delete('/api/downloads?state=finished${all ? '&all=1' : ''}')), child: Text(tr('Remove finished ones'))),
       ]),
       body: error != null
           ? Center(child: Text(error!))
@@ -282,12 +283,12 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
               : ListView(padding: const EdgeInsets.all(16), children: [
                   Text(
                     d['allowed'] == true
-                        ? 'Über „Herunterladen…“ bei einem Film, einer Folge, Staffel oder Serie.${(d['keep_days'] ?? 0) != 0 ? ' Umgewandelte Kopien bleiben ${d['keep_days']} Tage auf dem Server.' : ''}'
-                        : 'Downloads sind für dein Konto abgeschaltet. Frag den Besitzer des Servers.',
+                        ? tr('With “Download…” on a movie, an episode, a season or a show.{x}', {'x': (d['keep_days'] ?? 0) != 0 ? tr(' Converted copies stay on the server for {d} days.', {'d': d['keep_days']}) : ''})
+                        : tr("Downloads are switched off for your account. Ask the server's owner."),
                     style: TextStyle(color: context.faint),
                   ),
                   const SizedBox(height: 8),
-                  Text([if (busy > 0) '$busy werden umgewandelt', '${d['ready'] ?? 0} fertig', if (((d['failed'] ?? 0) as num) > 0) '${d['failed']} fehlgeschlagen'].join(' · ')),
+                  Text([if (busy > 0) tr('{busy} being converted', {'busy': busy}), tr('{d} ready', {'d': d['ready'] ?? 0}), if (((d['failed'] ?? 0) as num) > 0) tr('{d} failed', {'d': d['failed']})].join(' · ')),
                   if (Poster.admin)
                     CheckboxListTile(
                       dense: true,
@@ -297,9 +298,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         all = v ?? false;
                         reload();
                       },
-                      title: const Text('Downloads von allen'),
+                      title: Text(tr("Everyone's downloads")),
                     ),
-                  if (list.isEmpty) const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Noch nichts heruntergeladen.'))),
+                  if (list.isEmpty) Padding(padding: EdgeInsets.all(32), child: Center(child: Text(tr('Nothing downloaded yet.')))),
                   for (final x in list) _row(x),
                 ]),
     );
@@ -311,7 +312,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     final size = (x['size'] ?? 0) as num;
     final info = [
       dlQualities['${x['quality']}'] ?? '${x['quality']}',
-      if (x['original'] == true && x['quality'] != 'original') 'unverändert (passt schon)',
+      if (x['original'] == true && x['quality'] != 'original') tr('sent as it is (already fits)'),
       states[state] ?? state,
       if (state == 'converting') '${x['progress']} %',
       if (size > 0) fmtSize(size),
@@ -336,12 +337,12 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             ]),
           ),
           if (state == 'ready' && parts > 1)
-            for (var n = 0; n < parts; n++) TextButton(onPressed: () => saveFile(context, widget.api, '${x['url']}?part=$n'), child: Text('Teil ${n + 1}'))
+            for (var n = 0; n < parts; n++) TextButton(onPressed: () => saveFile(context, widget.api, '${x['url']}?part=$n'), child: Text(tr('Part {n}', {'n': n + 1})))
           else if (state == 'ready')
-            FilledButton(onPressed: () => saveFile(context, widget.api, '${x['url']}'), child: const Text('Speichern')),
-          if (state == 'failed') TextButton(onPressed: () => run(() => widget.api.post('/api/downloads/${x['id']}/retry')), child: const Text('Nochmal')),
+            FilledButton(onPressed: () => saveFile(context, widget.api, '${x['url']}'), child: Text(tr('Save'))),
+          if (state == 'failed') TextButton(onPressed: () => run(() => widget.api.post('/api/downloads/${x['id']}/retry')), child: Text(tr('Again'))),
           IconButton(
-            tooltip: state == 'converting' ? 'Stoppen und entfernen' : 'Entfernen',
+            tooltip: state == 'converting' ? tr('Stop and remove') : tr('Remove'),
             icon: const Icon(Icons.close),
             onPressed: () => run(() => widget.api.delete('/api/downloads/${x['id']}')),
           ),

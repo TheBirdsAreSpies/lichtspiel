@@ -15,6 +15,7 @@ import 'playlists.dart';
 import 'settings.dart';
 import 'stats.dart';
 import 'watchlist.dart';
+import '../i18n.dart';
 
 /// The icon of a library by its kind.
 IconData sectionIcon(Object? type) => switch ('$type') {
@@ -70,12 +71,12 @@ class _AppShellState extends State<AppShell> {
         built.add(i);
       });
 
-  static const _dests = [
-    (Icons.home_outlined, Icons.home, 'Start'),
-    (Icons.video_library_outlined, Icons.video_library, 'Bibliotheken'),
-    (Icons.bookmark_border, Icons.bookmark, 'Merkliste'),
-    (Icons.playlist_play_outlined, Icons.playlist_play, 'Playlists'),
-    (Icons.more_horiz, Icons.more_horiz, 'Mehr'),
+  static List<(IconData, IconData, String)> get _dests => [
+    (Icons.home_outlined, Icons.home, tr('Home')),
+    (Icons.video_library_outlined, Icons.video_library, tr('Libraries')),
+    (Icons.bookmark_border, Icons.bookmark, tr('Watchlist')),
+    (Icons.playlist_play_outlined, Icons.playlist_play, tr('Playlists')),
+    (Icons.more_horiz, Icons.more_horiz, tr('More')),
   ];
 
   Widget page(int i) {
@@ -145,24 +146,24 @@ class _SectionsScreenState extends State<SectionsScreen> {
     final n = s['count'] ?? s['videoCount'];
     if (n == null) return '';
     return switch ('${s['type']}') {
-      'show' => '$n Serien',
-      'movie' => '$n Filme',
-      'music' || 'artist' => '$n Künstler',
-      _ => '$n Einträge',
+      'show' => tr('{n} shows', {'n': n}),
+      'movie' => tr('{n} movies', {'n': n}),
+      'music' || 'artist' => tr('{n} artists', {'n': n}),
+      _ => tr('{n} items', {'n': n}),
     };
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Bibliotheken')),
+      appBar: AppBar(title: Text(tr('Libraries'))),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: data,
         builder: (context, snap) {
           if (snap.hasError) return ErrorView(error: snap.error!, onRetry: reload);
           if (!snap.hasData) return const Center(child: CircularProgressIndicator());
           final secs = snap.data!;
-          if (secs.isEmpty) return const ErrorView(error: 'Noch keine Bibliothek, die du sehen darfst.');
+          if (secs.isEmpty) return ErrorView(error: tr('No library you may see yet.'));
           return RefreshIndicator(
             onRefresh: reload,
             child: ListView(padding: const EdgeInsets.all(12), children: [
@@ -195,11 +196,11 @@ class MoreScreen extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (d) => AlertDialog(
-        title: const Text('Abmelden?'),
-        content: Text('Du meldest dich auf diesem Gerät von ${Uri.tryParse(api.base)?.host ?? api.base} ab.'),
+        title: Text(tr('Sign out?')),
+        content: Text(tr('You sign out of {Uri} on this device.', {'Uri': Uri.tryParse(api.base)?.host ?? api.base})),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')),
-          FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Abmelden')),
+          TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Sign out'))),
         ],
       ),
     );
@@ -210,18 +211,18 @@ class MoreScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     void push(Widget w) => Navigator.push(context, MaterialPageRoute(builder: (_) => w));
     return Scaffold(
-      appBar: AppBar(title: const Text('Mehr')),
+      appBar: AppBar(title: Text(tr('More'))),
       body: ListView(children: [
-        ListTile(leading: const Icon(Icons.queue_music), title: const Text('Warteschlange'), onTap: () => showQueueDialog(context, api)),
-        ListTile(leading: const Icon(Icons.groups_outlined), title: const Text('Zusammen schauen'), subtitle: const Text('Einem Raum mit Code beitreten'), onTap: () => joinTogetherDialog(context, api)),
-        if (DownloadRights.allowed) ListTile(leading: const Icon(Icons.download_outlined), title: const Text('Downloads'), onTap: () => push(DownloadsScreen(api: api))),
-        ListTile(leading: const Icon(Icons.insights_outlined), title: const Text('Statistik'), subtitle: const Text('Was du wann und wie viel schaust'), onTap: () => push(StatsScreen(api: api, admin: admin))),
-        if (admin) ListTile(leading: const Icon(Icons.monitor_heart_outlined), title: const Text('Dashboard'), onTap: () => push(DashboardScreen(api: api))),
-        ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('Einstellungen'), onTap: () => push(SettingsScreen(api: api, admin: admin))),
+        ListTile(leading: const Icon(Icons.queue_music), title: Text(tr('Queue')), onTap: () => showQueueDialog(context, api)),
+        ListTile(leading: const Icon(Icons.groups_outlined), title: Text(tr('Watch together')), subtitle: Text(tr('Join a room with a code')), onTap: () => joinTogetherDialog(context, api)),
+        if (DownloadRights.allowed) ListTile(leading: const Icon(Icons.download_outlined), title: Text(tr('Downloads')), onTap: () => push(DownloadsScreen(api: api))),
+        ListTile(leading: const Icon(Icons.insights_outlined), title: Text(tr('Statistics')), subtitle: Text(tr('What you watch, when and how much')), onTap: () => push(StatsScreen(api: api, admin: admin))),
+        if (admin) ListTile(leading: const Icon(Icons.monitor_heart_outlined), title: Text(tr('Dashboard')), onTap: () => push(DashboardScreen(api: api))),
+        ListTile(leading: const Icon(Icons.settings_outlined), title: Text(tr('Settings')), onTap: () => push(SettingsScreen(api: api, admin: admin))),
         const Divider(),
         ListTile(
           leading: Icon(Icons.logout, color: context.bad),
-          title: Text('Abmelden', style: TextStyle(color: context.bad)),
+          title: Text(tr('Sign out'), style: TextStyle(color: context.bad)),
           subtitle: Text(api.base, style: TextStyle(color: context.faint)),
           onTap: () => signOut(context),
         ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../screens/player.dart';
 import '../theme.dart';
+import '../i18n.dart';
 
 String _title(Map<String, dynamic> x) {
   if (x['type'] == 'episode') return '${x['grandparentTitle'] ?? ''} · S${x['parentIndex'] ?? 0}E${x['index'] ?? 0} ${x['title']}';
@@ -16,13 +17,13 @@ Future<void> showQueueDialog(BuildContext context, Api api) {
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, set) => AlertDialog(
-        title: Text('Warteschlange (${q.length})'),
+        title: Text(tr('Queue ({length})', {'length': q.length})),
         content: SizedBox(
           width: 460,
           child: q.isEmpty
-              ? const Text('Die Warteschlange ist leer. Über das „…“-Menü eines Titels lässt sich etwas hinzufügen.')
+              ? Text(tr('The queue is empty. Add something with the “…” menu of a title.'))
               : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Padding(padding: EdgeInsets.only(bottom: 8), child: Text('Läuft nacheinander, nach dem aktuellen Video.', style: TextStyle(color: context.faint))),
+                  Padding(padding: EdgeInsets.only(bottom: 8), child: Text(tr('Plays one after the other, after the current video.'), style: TextStyle(color: context.faint))),
                   Flexible(
                     child: ListView(shrinkWrap: true, children: [
                       for (var i = 0; i < q.length; i++)
@@ -31,8 +32,8 @@ Future<void> showQueueDialog(BuildContext context, Api api) {
                           contentPadding: EdgeInsets.zero,
                           title: Text(_title(q[i]), maxLines: 1, overflow: TextOverflow.ellipsis),
                           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                            if (i > 0) IconButton(tooltip: 'Nach oben', icon: const Icon(Icons.arrow_upward, size: 18), onPressed: () => set(() => q.insert(i - 1, q.removeAt(i)))),
-                            IconButton(tooltip: 'Entfernen', icon: const Icon(Icons.close, size: 18), onPressed: () => set(() => q.removeAt(i))),
+                            if (i > 0) IconButton(tooltip: tr('Move up'), icon: const Icon(Icons.arrow_upward, size: 18), onPressed: () => set(() => q.insert(i - 1, q.removeAt(i)))),
+                            IconButton(tooltip: tr('Remove'), icon: const Icon(Icons.close, size: 18), onPressed: () => set(() => q.removeAt(i))),
                           ]),
                         ),
                     ]),
@@ -40,8 +41,8 @@ Future<void> showQueueDialog(BuildContext context, Api api) {
                 ]),
         ),
         actions: [
-          if (q.isNotEmpty) TextButton(onPressed: () => set(q.clear), child: const Text('Leeren')),
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Schließen')),
+          if (q.isNotEmpty) TextButton(onPressed: () => set(q.clear), child: Text(tr('Clear'))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Close'))),
           if (q.isNotEmpty)
             FilledButton(
               onPressed: () {
@@ -49,7 +50,7 @@ Future<void> showQueueDialog(BuildContext context, Api api) {
                 Navigator.pop(ctx);
                 Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(api: api, item: first)));
               },
-              child: const Text('Abspielen'),
+              child: Text(tr('Play')),
             ),
         ],
       ),

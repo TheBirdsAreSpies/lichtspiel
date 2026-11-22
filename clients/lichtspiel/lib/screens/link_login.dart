@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../api.dart';
 import '../theme.dart';
+import '../i18n.dart';
 
 /// Sign in with a short code shown here and typed on another device.
 class LinkLoginScreen extends StatefulWidget {
@@ -41,7 +42,7 @@ class _LinkLoginScreenState extends State<LinkLoginScreen> {
     } on ApiError catch (e) {
       if (mounted) setState(() => error = e.message);
     } catch (_) {
-      if (mounted) setState(() => error = 'Server nicht erreichbar.');
+      if (mounted) setState(() => error = tr('Server not reachable.'));
     }
   }
 
@@ -71,9 +72,9 @@ class _LinkLoginScreenState extends State<LinkLoginScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
           child: ListView(shrinkWrap: true, padding: const EdgeInsets.all(24), children: [
-            const Text('Mit Code anmelden', textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
+            Text(tr('Sign in with a code'), textAlign: TextAlign.center, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
             const SizedBox(height: 20),
-            Text('Scanne den QR-Code mit einem Handy, das schon angemeldet ist. Oder öffne dort im Browser\nhttp://$host/#/link\nund gib diesen Code ein:',
+            Text(tr('Scan the QR code with a phone that is signed in already. Or open\nhttp://{host}/#/link\nin a browser there and type this code:', {'host': host}),
                 textAlign: TextAlign.center, style: TextStyle(color: context.soft, height: 1.5)),
             const SizedBox(height: 24),
             if (error != null)
@@ -91,9 +92,9 @@ class _LinkLoginScreenState extends State<LinkLoginScreen> {
               )),
             ],
             const SizedBox(height: 28),
-            if (error != null) FilledButton(onPressed: start, child: const Text('Erneut versuchen')),
+            if (error != null) FilledButton(onPressed: start, child: Text(tr('Try again'))),
             if (error != null) const SizedBox(height: 10),
-            OutlinedButton(autofocus: error == null, onPressed: () => Navigator.pop(context), child: const Text('Zurück')),
+            OutlinedButton(autofocus: error == null, onPressed: () => Navigator.pop(context), child: Text(tr('Back'))),
           ]),
         ),
       ),

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../api.dart';
 import '../widgets/bar.dart';
 import '../theme.dart';
+import '../i18n.dart';
 
 /// Admin: people, their rights, local users and invite links (the web app's "Users & invites").
 class UsersScreen extends StatefulWidget {
@@ -54,7 +55,7 @@ class _UsersScreenState extends State<UsersScreen> {
       if (reload) {
         await load();
       } else {
-        say('Gespeichert');
+        say(tr('Saved'));
       }
     } catch (e) {
       say('$e');
@@ -65,11 +66,11 @@ class _UsersScreenState extends State<UsersScreen> {
   String secName(dynamic id) => '${sections.firstWhere((s) => '${s['key']}' == '$id', orElse: () => {'title': '#$id'})['title']}';
 
   String access(Map<String, dynamic> u) => u['admin'] == true
-      ? 'alle (Admin)'
+      ? tr('all (admin)')
       : u['allowed_sections'] == null
-          ? 'alle'
+          ? tr('all')
           : (u['allowed_sections'] as List).map(secName).join(', ').isEmpty
-              ? 'keine'
+              ? tr('none')
               : (u['allowed_sections'] as List).map(secName).join(', ');
 
   Future<bool> sure(String text) async =>
@@ -77,7 +78,7 @@ class _UsersScreenState extends State<UsersScreen> {
         context: context,
         builder: (d) => AlertDialog(
           content: Text(text),
-          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Ja'))],
+          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Cancel'))), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Yes')))],
         ),
       ) ??
       false;
@@ -89,7 +90,7 @@ class _UsersScreenState extends State<UsersScreen> {
       builder: (d) => AlertDialog(
         title: Text(title),
         content: TextField(controller: c, obscureText: password, autofocus: true, decoration: InputDecoration(helperText: hint.isEmpty ? null : hint), onSubmitted: (v) => Navigator.pop(d, v)),
-        actions: [TextButton(onPressed: () => Navigator.pop(d), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, c.text), child: const Text('OK'))],
+        actions: [TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Cancel'))), FilledButton(onPressed: () => Navigator.pop(d, c.text), child: const Text('OK'))],
       ),
     );
   }
@@ -106,7 +107,7 @@ class _UsersScreenState extends State<UsersScreen> {
           content: SizedBox(
             width: 360,
             child: ListView(shrinkWrap: true, children: [
-              CheckboxListTile(value: all, title: const Text('Alle, auch künftige'), onChanged: (v) => set(() => all = v ?? false)),
+              CheckboxListTile(value: all, title: Text(tr('All, also future ones')), onChanged: (v) => set(() => all = v ?? false)),
               for (final s in sections)
                 CheckboxListTile(
                   value: all || on.contains('${s['key']}'),
@@ -115,7 +116,7 @@ class _UsersScreenState extends State<UsersScreen> {
                 ),
             ]),
           ),
-          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('OK'))],
+          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Cancel'))), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('OK'))],
         ),
       ),
     );
@@ -131,34 +132,34 @@ class _UsersScreenState extends State<UsersScreen> {
       context: context,
       builder: (d) => StatefulBuilder(
         builder: (d, set) => AlertDialog(
-          title: const Text('Lokalen Nutzer hinzufügen'),
+          title: Text(tr('Add a local user')),
           content: SizedBox(
             width: 380,
             child: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                TextField(controller: name, decoration: const InputDecoration(labelText: 'Benutzername')),
-                TextField(controller: pass, obscureText: true, decoration: const InputDecoration(labelText: 'Passwort (mind. 6 Zeichen)', helperText: 'Bei einem Heimprofil darf es leer bleiben.')),
-                TextField(controller: pin, obscureText: true, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'PIN (optional)', helperText: '4 bis 8 Ziffern. Admins brauchen eine.')),
-                SwitchListTile(value: home, title: const Text('Heimprofil'), onChanged: (v) => set(() => home = v)),
-                SwitchListTile(value: admin, title: const Text('Admin'), onChanged: (v) => set(() => admin = v)),
+                TextField(controller: name, decoration: InputDecoration(labelText: tr('User name'))),
+                TextField(controller: pass, obscureText: true, decoration: InputDecoration(labelText: tr('Password (at least 6 characters)'), helperText: tr('A home profile may leave it empty.'))),
+                TextField(controller: pin, obscureText: true, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: tr('PIN (optional)'), helperText: tr('4 to 8 digits. Admins need one.'))),
+                SwitchListTile(value: home, title: Text(tr('Home profile')), onChanged: (v) => set(() => home = v)),
+                SwitchListTile(value: admin, title: Text(tr('Admin')), onChanged: (v) => set(() => admin = v)),
                 if (err != null) Text(err!, style: TextStyle(color: context.bad)),
               ]),
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(d), child: const Text('Abbrechen')),
+            TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Cancel'))),
             FilledButton(
               onPressed: () async {
                 try {
                   await api.post('/api/users', {'username': name.text, 'password': pass.text, 'admin': admin, 'home': home, 'pin': pin.text});
                   if (d.mounted) Navigator.pop(d);
-                  say('${name.text.trim()} wurde hinzugefügt');
+                  say(tr('{name} was added', {'name': name.text.trim()}));
                   load();
                 } catch (e) {
                   set(() => err = '$e');
                 }
               },
-              child: const Text('Hinzufügen'),
+              child: Text(tr('Add')),
             ),
           ],
         ),
@@ -173,24 +174,24 @@ class _UsersScreenState extends State<UsersScreen> {
       context: context,
       builder: (d) => StatefulBuilder(
         builder: (d, set) => AlertDialog(
-          title: const Text('Jemanden einladen'),
+          title: Text(tr('Invite someone')),
           content: SizedBox(
             width: 380,
             child: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                TextField(controller: email, decoration: const InputDecoration(labelText: 'E-Mail (optional)')),
-                TextField(controller: note, decoration: const InputDecoration(labelText: 'Nachricht (optional)')),
-                TextField(controller: days, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Link gilt (Tage)')),
-                SwitchListTile(value: admin, title: const Text('Zum Admin machen'), onChanged: (v) => set(() => admin = v)),
+                TextField(controller: email, decoration: InputDecoration(labelText: tr('Email (optional)'))),
+                TextField(controller: note, decoration: InputDecoration(labelText: tr('Message (optional)'))),
+                TextField(controller: days, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: tr('Link valid for (days)'))),
+                SwitchListTile(value: admin, title: Text(tr('Make an admin')), onChanged: (v) => set(() => admin = v)),
               ]),
             ),
           ),
-          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Link erstellen'))],
+          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Cancel'))), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Create the link')))],
         ),
       ),
     );
     if (ok != true || !mounted) return;
-    final libs = await pickSections('Bibliotheken für die Einladung', null);
+    final libs = await pickSections(tr('Libraries for the invite'), null);
     if (!mounted || (libs != null && libs.length == 1 && libs.first == -1)) return;
     try {
       final r = await api.post('/api/invites', {'email': email.text, 'note': note.text, 'days': int.tryParse(days.text) ?? 7, 'admin': admin, 'allowed_sections': ?libs});
@@ -199,9 +200,9 @@ class _UsersScreenState extends State<UsersScreen> {
       await showDialog<void>(
         context: context,
         builder: (d) => AlertDialog(
-          title: const Text('Einladung bereit'),
+          title: Text(tr('Invite ready')),
           content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Dieser Link ist in der Zwischenablage. Schick ihn weiter:'),
+            Text(tr('This link is on the clipboard. Send it on:')),
             const SizedBox(height: 8),
             SelectableText('${r['url']}'),
           ]),
@@ -224,27 +225,27 @@ class _UsersScreenState extends State<UsersScreen> {
           Row(children: [
             Text('${u['display_name'] ?? u['username']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             if ((u['display_name'] ?? u['username']) != u['username']) Padding(padding: const EdgeInsets.only(left: 8), child: Text('${u['username']}', style: TextStyle(color: context.dim))),
-            if (self) Padding(padding: EdgeInsets.only(left: 8), child: Text('(du)', style: TextStyle(color: context.dim))),
+            if (self) Padding(padding: EdgeInsets.only(left: 8), child: Text(tr('(you)'), style: TextStyle(color: context.dim))),
             if (u['two_factor'] == true) const Padding(padding: EdgeInsets.only(left: 8), child: Icon(Icons.lock_outline, size: 16)),
             const Spacer(),
             if (!self) ...[
               TextButton(
                 onPressed: () async {
-                  final pw = await ask('Neues Passwort für ${u['username']}', password: true);
+                  final pw = await ask(tr('New password for {u}', {'u': u['username']}), password: true);
                   if (pw != null && pw.isNotEmpty) {
                     try {
                       await api.request('PATCH', '/api/users/${u['id']}', {'password': pw});
-                      say('Passwort geändert');
+                      say(tr('Password changed'));
                     } catch (e) {
                       say('$e');
                     }
                   }
                 },
-                child: const Text('Passwort'),
+                child: Text(tr('Password')),
               ),
               TextButton(
                 onPressed: () async {
-                  if (await sure('${u['username']} entfernen?')) {
+                  if (await sure(tr('Remove {u}?', {'u': u['username']}))) {
                     try {
                       await api.delete('/api/users/${u['id']}');
                       load();
@@ -253,47 +254,47 @@ class _UsersScreenState extends State<UsersScreen> {
                     }
                   }
                 },
-                child: Text('Entfernen', style: TextStyle(color: context.bad)),
+                child: Text(tr('Remove'), style: TextStyle(color: context.bad)),
               ),
             ],
           ]),
           if ('${u['email'] ?? ''}'.isNotEmpty) Text('${u['email']}', style: TextStyle(color: context.dim)),
           const SizedBox(height: 4),
           Wrap(spacing: 4, runSpacing: 0, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            Text('Bibliotheken: ${access(u)}'),
+            Text(tr('Libraries: {access}', {'access': access(u)})),
             if (!admin)
               TextButton(
                 onPressed: () async {
-                  final r = await pickSections('Bibliotheken für ${u['username']}', u['allowed_sections'] as List?);
+                  final r = await pickSections(tr('Libraries for {u}', {'u': u['username']}), u['allowed_sections'] as List?);
                   if (r != null && r.length == 1 && r.first == -1) return;
                   patch(u, {'allowed_sections': r}, reload: true);
                 },
-                child: const Text('Ändern'),
+                child: Text(tr('Change')),
               ),
           ]),
           Wrap(spacing: 16, children: [
-            _check('Admin', admin, self ? null : (v) => patch(u, {'admin': v}, reload: true)),
-            _check('Darf umwandeln', u['allow_transcode'] == true, (v) => patch(u, {'allow_transcode': v}, reload: true)),
-            _check('Darf Dateien löschen', admin || u['allow_delete'] == true, admin ? null : (v) => patch(u, {'allow_delete': v}, reload: true)),
-            _check('Darf herunterladen', admin || u['allow_download'] == true, admin ? null : (v) => patch(u, {'allow_download': v}, reload: true)),
-            _check('Heimprofil', u['home'] == true, (v) => patch(u, {'home': v}, reload: true)),
+            _check(tr('Admin'), admin, self ? null : (v) => patch(u, {'admin': v}, reload: true)),
+            _check(tr('May convert'), u['allow_transcode'] == true, (v) => patch(u, {'allow_transcode': v}, reload: true)),
+            _check(tr('May delete files'), admin || u['allow_delete'] == true, admin ? null : (v) => patch(u, {'allow_delete': v}, reload: true)),
+            _check(tr('May download'), admin || u['allow_download'] == true, admin ? null : (v) => patch(u, {'allow_download': v}, reload: true)),
+            _check(tr('Home profile'), u['home'] == true, (v) => patch(u, {'home': v}, reload: true)),
           ]),
           Wrap(spacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
             if (!admin) ...[
-              const Text('Altersgrenze:'),
+              Text(tr('Age limit:')),
               DropdownButton<int?>(
                 value: u['max_age'] as int?,
-                items: [const DropdownMenuItem(value: null, child: Text('Keine')), for (final a in [0, 6, 12, 16, 18]) DropdownMenuItem(value: a, child: Text('bis $a'))],
+                items: [DropdownMenuItem(value: null, child: Text(tr('None'))), for (final a in [0, 6, 12, 16, 18]) DropdownMenuItem(value: a, child: Text(tr('up to {a}', {'a': a})))],
                 onChanged: (v) => patch(u, {'max_age': v}, reload: true),
               ),
-              if (u['max_age'] != null) _check('Ohne Freigabe ausblenden', u['block_unrated'] == true, (v) => patch(u, {'block_unrated': v}, reload: true)),
+              if (u['max_age'] != null) _check(tr('Hide unrated'), u['block_unrated'] == true, (v) => patch(u, {'block_unrated': v}, reload: true)),
             ],
             TextButton(
               onPressed: () async {
-                final pin = await ask('PIN für ${u['username']}', password: true, hint: '4 bis 8 Ziffern. Leer lassen, um die PIN zu entfernen.');
+                final pin = await ask(tr('PIN for {u}', {'u': u['username']}), password: true, hint: tr('4 to 8 digits. Leave empty to remove the PIN.'));
                 if (pin != null) patch(u, {'pin': pin}, reload: true);
               },
-              child: Text(u['has_pin'] == true ? 'PIN 🔒' : 'PIN'),
+              child: Text(u['has_pin'] == true ? tr('PIN 🔒') : 'PIN'),
             ),
           ]),
         ]),
@@ -309,51 +310,51 @@ class _UsersScreenState extends State<UsersScreen> {
   String _date(dynamic s) {
     if (s is! num) return '';
     final d = DateTime.fromMillisecondsSinceEpoch((s * 1000).round());
-    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
+    return fmtDay(d, pad: true);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Nutzer & Einladungen'), actions: barActions(context, labels: true, keep: 2, [
-        BarAction(Icons.person_add_alt, 'Lokaler Nutzer', addLocal),
-        BarAction(Icons.mail_outline, 'Einladen', newInvite),
+      appBar: AppBar(title: Text(tr('Users & invites')), actions: barActions(context, labels: true, keep: 2, [
+        BarAction(Icons.person_add_alt, tr('Local user'), addLocal),
+        BarAction(Icons.mail_outline, tr('Invite'), newInvite),
       ])),
       body: error != null
           ? Center(child: Text(error!))
           : !loaded
               ? const Center(child: CircularProgressIndicator())
               : ListView(padding: const EdgeInsets.all(16), children: [
-                  Text('Personen', style: Theme.of(context).textTheme.titleMedium),
+                  Text(tr('People'), style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   for (final u in users) userCard(u),
                   const SizedBox(height: 16),
-                  Text('Einladungen', style: Theme.of(context).textTheme.titleMedium),
+                  Text(tr('Invites'), style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
-                  if (invites.isEmpty) Text('Keine Einladungen.', style: TextStyle(color: context.dim)),
+                  if (invites.isEmpty) Text(tr('No invites.'), style: TextStyle(color: context.dim)),
                   for (final i in invites)
                     Card(
                       child: ListTile(
-                        title: Text('${i['email'] ?? ''}'.isEmpty ? 'jeder mit dem Link' : '${i['email']}'),
+                        title: Text('${i['email'] ?? ''}'.isEmpty ? tr('anyone with the link') : '${i['email']}'),
                         subtitle: Text([
-                          i['status'] == 'used' ? 'benutzt von ${i['used_by']}' : i['status'] == 'open' ? 'offen bis ${_date(i['expires_at'])}' : 'abgelaufen',
+                          i['status'] == 'used' ? tr('used by {i}', {'i': i['used_by']}) : i['status'] == 'open' ? tr('open until {date}', {'date': _date(i['expires_at'])}) : tr('expired'),
                           if ('${i['note'] ?? ''}'.isNotEmpty) '${i['note']}',
                         ].join(' · ')),
                         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                           if (i['status'] == 'open')
                             IconButton(
-                              tooltip: 'Link kopieren',
+                              tooltip: tr('Copy the link'),
                               icon: const Icon(Icons.copy),
                               onPressed: () {
                                 Clipboard.setData(ClipboardData(text: '${i['url']}'));
-                                say('Link kopiert');
+                                say(tr('Link copied'));
                               },
                             ),
                           IconButton(
-                            tooltip: i['status'] == 'open' ? 'Einladung zurückziehen' : 'Löschen',
+                            tooltip: i['status'] == 'open' ? tr('Withdraw the invite') : tr('Delete'),
                             icon: const Icon(Icons.delete_outline),
                             onPressed: () async {
-                              if (!await sure(i['status'] == 'open' ? 'Diese Einladung zurückziehen?' : 'Diese Einladung löschen?')) return;
+                              if (!await sure(i['status'] == 'open' ? tr('Withdraw this invite?') : tr('Delete this invite?'))) return;
                               try {
                                 await api.delete('/api/invites/${i['code']}');
                               } catch (e) {

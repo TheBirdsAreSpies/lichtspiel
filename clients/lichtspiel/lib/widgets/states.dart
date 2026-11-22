@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../theme.dart';
+import '../i18n.dart';
 
 /// What went wrong, in words for the user: the server's and the network's errors are German already,
 /// anything else (a bug, an answer of the wrong shape) is not shown raw.
 String errorText(Object e) {
   if (e is ApiError) return e.message;
   debugPrint('Unexpected error: $e');
-  return 'Etwas ist schiefgelaufen';
+  return tr('Something went wrong');
 }
 
 /// A failed load: what went wrong and a button to try again. With a plain text as [error] it is a quiet
@@ -30,7 +31,7 @@ class ErrorView extends StatelessWidget {
           Text(error is String ? error as String : errorText(error), textAlign: TextAlign.center, style: TextStyle(color: context.dim)),
           if (onRetry != null) ...[
             const SizedBox(height: 16),
-            FilledButton.tonalIcon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Erneut versuchen')),
+            FilledButton.tonalIcon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: Text(tr('Try again'))),
           ],
         ]),
       ),
@@ -42,7 +43,7 @@ class ErrorView extends StatelessWidget {
 void undoSnack(BuildContext context, String text, VoidCallback onUndo) {
   final m = ScaffoldMessenger.of(context);
   m.hideCurrentSnackBar();
-  m.showSnackBar(SnackBar(content: Text(text), action: SnackBarAction(label: 'Rückgängig', onPressed: onUndo)));
+  m.showSnackBar(SnackBar(content: Text(text), action: SnackBarAction(label: tr('Undo'), onPressed: onUndo)));
 }
 
 /// Grey boxes that slowly pulse while the real content loads.

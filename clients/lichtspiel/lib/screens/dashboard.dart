@@ -4,6 +4,7 @@ import '../api.dart';
 import '../clock.dart';
 import 'home.dart';
 import '../theme.dart';
+import '../i18n.dart';
 
 String fmtBits(num bytesPerSec) {
   final b = bytesPerSec * 8;
@@ -29,10 +30,10 @@ String fmtUptime(num sec) {
 
 String fmtAgo(num at, num now) {
   final d = now - at;
-  if (d < 90) return 'gerade eben';
-  if (d < 5400) return 'vor ${(d / 60).round()} min';
-  if (d < 129600) return 'vor ${(d / 3600).round()} h';
-  return 'vor ${(d / 86400).round()} Tagen';
+  if (d < 90) return tr('just now');
+  if (d < 5400) return tr('{x} min ago', {'x': (d / 60).round()});
+  if (d < 129600) return tr('{x} h ago', {'x': (d / 3600).round()});
+  return tr('{x} days ago', {'x': (d / 86400).round()});
 }
 
 String fmtDateTime(num at) {
@@ -52,24 +53,24 @@ String _ch(dynamic n) => const {1: 'Mono', 2: 'Stereo', 3: '2.1', 6: '5.1', 7: '
 
 String _videoLine(Map v) {
   final from = '${_res(v['height'])} (${[(_codec(v['codec'])), if (v['profile'] != null) '${v['profile']}', if (v['hdr'] == true) 'HDR'].join(' ')})';
-  return v['action'] == 'transcode' ? '$from → ${_res(v['out_height'])} (${_codec(v['out_codec'])}) — Umwandlung${v['hw'] == true ? ' (Hardware)' : ''}' : '$from — direkt';
+  return v['action'] == 'transcode' ? tr('{from} → {res} ({codec}) — converted{v}', {'from': from, 'res': _res(v['out_height']), 'codec': _codec(v['out_codec']), 'v': v['hw'] == true ? tr(' (hardware)') : ''}) : tr('{from} — direct', {'from': from});
 }
 
 String _audioLine(Map a) {
-  final lang = a['language'] ?? a['title'] ?? 'Unbekannt';
+  final lang = a['language'] ?? a['title'] ?? tr('Unknown');
   final from = '$lang (${[_codec(a['codec']), _ch(a['channels'])].where((s) => s.isNotEmpty).join(' ')})';
-  return a['action'] == 'transcode' ? '$from → ${_codec(a['out_codec'])} ${_ch(a['out_channels'])} — Umwandlung' : '$from — direkt';
+  return a['action'] == 'transcode' ? tr('{from} → {codec} {ch} — converted', {'from': from, 'codec': _codec(a['out_codec']), 'ch': _ch(a['out_channels'])}) : tr('{from} — direct', {'from': from});
 }
 
-const _ranges = {
-  'realtime': 'Echtzeit',
-  '12h': 'Letzte 12 Stunden',
-  '24h': 'Letzte 24 Stunden',
-  '7d': 'Letzte 7 Tage',
-  '30d': 'Letzte 30 Tage',
-  '90d': 'Letzte 90 Tage',
-  '365d': 'Letztes Jahr',
-  'all': 'Unbegrenzt',
+Map<String, String> get _ranges => {
+  'realtime': tr('Real time'),
+  '12h': tr('Last 12 hours'),
+  '24h': tr('Last 24 hours'),
+  '7d': tr('Last 7 days'),
+  '30d': tr('Last 30 days'),
+  '90d': tr('Last 90 days'),
+  '365d': tr('Last year'),
+  'all': tr('All time'),
 };
 
 /// The owner's dashboard: what is playing (with stop), bandwidth / processor / memory / streams over time,
@@ -146,22 +147,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text('Wiedergabe beenden?'),
+        title: Text(tr('Stop playback?')),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('„$title“ endet sofort für ${p['user'] ?? '?'}.'),
+          Text(tr('“{title}” stops at once for {p}.', {'title': title, 'p': p['user'] ?? '?'})),
           const SizedBox(height: 12),
-          TextField(controller: msg, maxLines: 3, maxLength: 500, decoration: InputDecoration(border: const OutlineInputBorder(), hintText: 'Nachricht an ${p['user'] ?? '?'} (optional)')),
+          TextField(controller: msg, maxLines: 3, maxLength: 500, decoration: InputDecoration(border: const OutlineInputBorder(), hintText: tr('Message to {p} (optional)', {'p': p['user'] ?? '?'}))),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Abbrechen')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Wiedergabe beenden')),
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('Stop playback'))),
         ],
       ),
     );
     if (ok != true) return;
     try {
       await api.post('/api/dashboard/stop', {'user': p['user_id'], 'item': p['id'], 'message': msg.text});
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Wiedergabe beendet')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Playback stopped'))));
       live();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
@@ -172,25 +173,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final data = d;
     return Scaffold(
-      appBar: AppBar(title: const Text('Dashboard')),
+      appBar: AppBar(title: Text(tr('Dashboard'))),
       body: data == null
           ? Center(child: error != null ? Text(error!) : const CircularProgressIndicator())
           : ListView(padding: const EdgeInsets.all(20), children: [
               Text(
-                'Läuft seit ${fmtUptime((data['now'] ?? 0) - (data['started_at'] ?? 0))} · Version ${data['version']} · ${fmtBytes(data['bytes_sent'] ?? 0)} gesendet · aktualisiert alle ${data['sample_seconds']} s',
+                tr('Running for {fmtUptime} · version {data} · {fmtBytes} sent · updated every {data2} s', {'fmtUptime': fmtUptime((data['now'] ?? 0) - (data['started_at'] ?? 0)), 'data': data['version'], 'fmtBytes': fmtBytes(data['bytes_sent'] ?? 0), 'data2': data['sample_seconds']}),
                 style: TextStyle(color: context.dim),
               ),
               const SizedBox(height: 16),
               _tiles(data),
-              _h('Läuft gerade'),
+              _h(tr('Playing now')),
               if ((data['playing'] as List).isEmpty)
-                Padding(padding: EdgeInsets.all(22), child: Center(child: Text('Gerade läuft nichts.', style: TextStyle(color: context.faint))))
+                Padding(padding: EdgeInsets.all(22), child: Center(child: Text(tr('Nothing is playing.'), style: TextStyle(color: context.faint))))
               else
                 for (final p in data['playing'] as List) _playing(Map<String, dynamic>.from(p)),
-              _h('Nutzer'),
+              _h(tr('Users')),
               _users(data),
               Row(children: [
-                Expanded(child: _h('Aktivität')),
+                Expanded(child: _h(tr('Activity'))),
                 DropdownButton<String>(
                   value: range,
                   items: [for (final e in _ranges.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
@@ -232,24 +233,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final outRemote = (c['out_remote_bps'] ?? 0) as num;
     final memTotal = (c['mem_total'] ?? 0) as num;
     return Wrap(spacing: 12, runSpacing: 12, children: [
-      _tile('Läuft gerade', '${playing.length}', tc > 0 ? '$tc davon umgewandelt${(data['max_transcodes'] ?? 0) > 0 ? ' (höchstens ${data['max_transcodes']} gleichzeitig)' : ''}' : 'keine umgewandelt'),
-      _tile('Bandbreite', fmtBits(out), out > 0 ? '${fmtBits((out - outRemote).clamp(0, double.infinity))} lokal · ${fmtBits(outRemote)} extern' : 'wird gerade an Player gesendet'),
-      _tile('Prozessor', fmtPct(c['cpu']), c['cpu_server'] != null ? 'Lichtspiel: ${fmtPct(c['cpu_server'])} · ${data['cores']} Kerne' : '${data['cores']} Kerne'),
-      _tile('Arbeitsspeicher', memTotal > 0 ? fmtPct(100 * (c['mem_used'] as num) / memTotal) : '–', memTotal > 0 ? '${fmtBytes(c['mem_used'])} / ${fmtBytes(memTotal)}${c['mem_server'] != null ? ' · Lichtspiel: ${fmtBytes(c['mem_server'])}' : ''}' : ''),
-      _tile('Aktive Nutzer', '$active', 'von ${users.length} · aktiv = gesehen in den letzten ${((data['active_seconds'] ?? 0) / 60).round()} min'),
+      _tile(tr('Playing now'), '${playing.length}', tc > 0 ? tr('{tc} of them converted{x}', {'tc': tc, 'x': (data['max_transcodes'] ?? 0) > 0 ? tr(' (at most {data} at once)', {'data': data['max_transcodes']}) : ''}) : tr('none converted')),
+      _tile(tr('Bandwidth'), fmtBits(out), out > 0 ? tr('{fmtBits} local · {fmtBits2} remote', {'fmtBits': fmtBits((out - outRemote).clamp(0, double.infinity)), 'fmtBits2': fmtBits(outRemote)}) : tr('being sent to players')),
+      _tile(tr('Processor'), fmtPct(c['cpu']), c['cpu_server'] != null ? tr('Lichtspiel: {fmtPct} · {data} cores', {'fmtPct': fmtPct(c['cpu_server']), 'data': data['cores']}) : tr('{data} cores', {'data': data['cores']})),
+      _tile(tr('Memory'), memTotal > 0 ? fmtPct(100 * (c['mem_used'] as num) / memTotal) : '–', memTotal > 0 ? '${fmtBytes(c['mem_used'])} / ${fmtBytes(memTotal)}${c['mem_server'] != null ? tr(' · Lichtspiel: {fmtBytes}', {'fmtBytes': fmtBytes(c['mem_server'])}) : ''}' : ''),
+      _tile(tr('Active users'), '$active', tr('of {length} · active = seen in the last {x} min', {'length': users.length, 'x': ((data['active_seconds'] ?? 0) / 60).round()})),
     ]);
   }
 
   Widget _playing(Map<String, dynamic> p) {
     final pct = ((p['duration'] ?? 0) as num) > 0 ? ((p['offset'] ?? 0) / p['duration']).clamp(0, 1).toDouble() : 0.0;
-    final title = p['type'] == 'episode' && p['grandparentTitle'] != null ? '${p['grandparentTitle']}' : '${p['title'] ?? '(entfernt)'}';
+    final title = p['type'] == 'episode' && p['grandparentTitle'] != null ? '${p['grandparentTitle']}' : '${p['title'] ?? tr('(removed)')}';
     final sub = p['type'] == 'episode' ? 'S${p['parentIndex'] ?? 0} E${p['index'] ?? 0} · ${p['title']}' : '${p['year'] ?? ''}';
-    final method = switch (p['method']) { 'transcode' => 'Umgewandelt', 'remux' => 'Umgepackt', _ => 'Direkt' };
+    final method = switch (p['method']) { 'transcode' => tr('Converted'), 'remux' => tr('Remuxed'), _ => tr('Direct') };
     final rows = <List<String>>[
-      ['Gerät', '${p['client'] ?? '–'}'],
-      ['Verbindung', '${p['local'] == true ? 'Lokal' : 'Extern'}${p['ip'] != null ? ' (${p['ip']})' : ''} — ${fmtBits(p['out_bps'] ?? 0)}'],
-      if (p['video'] is Map) ['Video', _videoLine(p['video'])],
-      if (p['audio'] is Map) ['Ton', _audioLine(p['audio'])],
+      [tr('Device'), '${p['client'] ?? '–'}'],
+      [tr('Connection'), '${p['local'] == true ? tr('Local') : tr('Remote')}${p['ip'] != null ? ' (${p['ip']})' : ''} — ${fmtBits(p['out_bps'] ?? 0)}'],
+      if (p['video'] is Map) [tr('Video'), _videoLine(p['video'])],
+      if (p['audio'] is Map) [tr('Sound'), _audioLine(p['audio'])],
     ];
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -268,7 +269,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
                   Text(sub, style: TextStyle(color: context.dim)),
                 ])),
-                IconButton(tooltip: 'Wiedergabe beenden', icon: const Icon(Icons.stop_circle_outlined), onPressed: () => stop(p, p['type'] == 'episode' ? '$title · ${p['title']}' : title)),
+                IconButton(tooltip: tr('Stop playback'), icon: const Icon(Icons.stop_circle_outlined), onPressed: () => stop(p, p['type'] == 'episode' ? '$title · ${p['title']}' : title)),
               ]),
               const SizedBox(height: 4),
               Row(children: [
@@ -286,7 +287,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ]),
               const SizedBox(height: 8),
               Row(children: [
-                Text(p['state'] == 'paused' ? '⏸ Pausiert' : '▶ Läuft', style: const TextStyle(fontSize: 12)),
+                Text(p['state'] == 'paused' ? tr('⏸ Paused') : tr('▶ Playing'), style: const TextStyle(fontSize: 12)),
                 const SizedBox(width: 10),
                 Expanded(child: LinearProgressIndicator(value: pct, minHeight: 4)),
                 const SizedBox(width: 10),
@@ -305,26 +306,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
-        columns: const [
-          DataColumn(label: Text('Nutzer')),
-          DataColumn(label: Text('Status')),
-          DataColumn(label: Text('Zuletzt gesehen')),
-          DataColumn(label: Text('Gerät')),
-          DataColumn(label: Text('Adresse')),
-          DataColumn(label: Text('Spielt')),
-          DataColumn(label: Text('Bandbreite')),
-          DataColumn(label: Text('Letzte Wiedergabe')),
+        columns: [
+          DataColumn(label: Text(tr('Users'))),
+          DataColumn(label: Text(tr('Status'))),
+          DataColumn(label: Text(tr('Last seen'))),
+          DataColumn(label: Text(tr('Device'))),
+          DataColumn(label: Text(tr('Address'))),
+          DataColumn(label: Text(tr('Watching'))),
+          DataColumn(label: Text(tr('Bandwidth'))),
+          DataColumn(label: Text(tr('Last played'))),
         ],
         rows: [
           for (final u in users)
             DataRow(cells: [
-              DataCell(Text('${u['display_name'] ?? u['username']}${u['admin'] == true ? ' (Admin)' : ''}', style: const TextStyle(fontWeight: FontWeight.bold))),
+              DataCell(Text('${u['display_name'] ?? u['username']}${u['admin'] == true ? tr(' (admin)') : ''}', style: const TextStyle(fontWeight: FontWeight.bold))),
               DataCell(Row(children: [
                 Icon(Icons.circle, size: 10, color: u['active'] == true ? context.good : Colors.grey),
                 const SizedBox(width: 6),
-                Text(u['active'] == true ? 'aktiv' : 'abwesend'),
+                Text(u['active'] == true ? tr('active') : tr('away')),
               ])),
-              DataCell(Text(u['last_seen'] != null ? fmtAgo(u['last_seen'], now) : 'seit dem Start nicht')),
+              DataCell(Text(u['last_seen'] != null ? fmtAgo(u['last_seen'], now) : tr('not since the start'))),
               DataCell(Text('${u['client'] ?? '–'}')),
               DataCell(Text('${u['ip'] ?? '–'}')),
               DataCell(Text(u['playing'] != null ? '${u['playing']}' : '–')),
@@ -347,21 +348,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final memMax = ((c['mem_total'] ?? 0) as num) > 0 ? (c['mem_total'] as num) / 1e9 : null;
     final times = [for (final s in ss) (s['at'] as num)];
     return [
-      _chart('Bandbreite · $unit', times, [
-        _Series('Lokal', context.info, [for (final s in ss) s['out_bps'] == null ? null : (((s['out_bps'] as num) - ((s['out_remote_bps'] ?? 0) as num)).clamp(0, double.infinity)) * 8 / div]),
-        _Series('Extern', context.warn, [for (final s in ss) s['out_bps'] == null ? null : ((s['out_remote_bps'] ?? 0) as num) * 8 / div]),
+      _chart(tr('Bandwidth · {unit}', {'unit': unit}), times, [
+        _Series(tr('Local'), context.info, [for (final s in ss) s['out_bps'] == null ? null : (((s['out_bps'] as num) - ((s['out_remote_bps'] ?? 0) as num)).clamp(0, double.infinity)) * 8 / div]),
+        _Series(tr('Remote'), context.warn, [for (final s in ss) s['out_bps'] == null ? null : ((s['out_remote_bps'] ?? 0) as num) * 8 / div]),
       ], null, unit: unit),
-      _chart('Prozessor', times, [
-        _Series('System', context.info, [for (final s in ss) v(s, 'cpu')]),
+      _chart(tr('Processor'), times, [
+        _Series(tr('System'), context.info, [for (final s in ss) v(s, 'cpu')]),
         _Series('Lichtspiel', context.warn, [for (final s in ss) v(s, 'cpu_server')]),
       ], 100, unit: '%'),
-      _chart('Arbeitsspeicher', times, [
-        _Series('System', context.info, [for (final s in ss) v(s, 'mem_used') == null ? null : v(s, 'mem_used')! / 1e9]),
+      _chart(tr('Memory'), times, [
+        _Series(tr('System'), context.info, [for (final s in ss) v(s, 'mem_used') == null ? null : v(s, 'mem_used')! / 1e9]),
         _Series('Lichtspiel', context.warn, [for (final s in ss) v(s, 'mem_server') == null ? null : v(s, 'mem_server')! / 1e9]),
       ], memMax, unit: 'GB'),
-      _chart('Streams', times, [
-        _Series('Läuft', context.info, [for (final s in ss) v(s, 'streams')]),
-        _Series('Umgewandelt', context.warn, [for (final s in ss) v(s, 'transcodes')]),
+      _chart(tr('Streams'), times, [
+        _Series(tr('Playing'), context.info, [for (final s in ss) v(s, 'streams')]),
+        _Series(tr('Converted'), context.warn, [for (final s in ss) v(s, 'transcodes')]),
       ], ss.fold<num>(4, (m, s) => ((s['streams'] ?? 0) as num) > m ? (s['streams'] as num) : m), unit: ''),
     ];
   }
@@ -386,7 +387,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final r = hist;
     final users = (data['users'] as List).cast<Map>();
     final head = Row(children: [
-      Expanded(child: _h('Wiedergabeverlauf')),
+      Expanded(child: _h(tr('Play history'))),
       SegmentedButton<int>(
         showSelectedIcon: false,
         segments: const [ButtonSegment(value: 7, label: Text('7 T')), ButtonSegment(value: 30, label: Text('30 T')), ButtonSegment(value: 90, label: Text('90 T')), ButtonSegment(value: 365, label: Text('1 J'))],
@@ -400,14 +401,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       const SizedBox(width: 8),
       SegmentedButton<bool>(
         showSelectedIcon: false,
-        segments: const [ButtonSegment(value: false, label: Text('Wiedergaben')), ButtonSegment(value: true, label: Text('Stunden'))],
+        segments: [ButtonSegment(value: false, label: Text(tr('Plays'))), ButtonSegment(value: true, label: Text(tr('Hours')))],
         selected: {hours},
         onSelectionChanged: (s) => setState(() => hours = s.first),
       ),
       const SizedBox(width: 8),
       DropdownButton<String>(
         value: user,
-        items: [const DropdownMenuItem(value: '', child: Text('Alle')), for (final u in users) DropdownMenuItem(value: '${u['id']}', child: Text('${u['display_name'] ?? u['username']}'))],
+        items: [DropdownMenuItem(value: '', child: Text(tr('All'))), for (final u in users) DropdownMenuItem(value: '${u['id']}', child: Text('${u['display_name'] ?? u['username']}'))],
         onChanged: (v) {
           user = v ?? '';
           loadHistory();
@@ -424,7 +425,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final step = Duration(days: weekly ? 7 : 1);
     final buckets = <ChartBucket>[];
     for (var t = start; !t.isAfter(day0); t = t.add(step)) {
-      buckets.add(ChartBucket(t.millisecondsSinceEpoch / 1000, t.add(step).millisecondsSinceEpoch / 1000, '${t.day}.${t.month}.'));
+      buckets.add(ChartBucket(t.millisecondsSinceEpoch / 1000, t.add(step).millisecondsSinceEpoch / 1000, fmtDay(t, year: false)));
     }
     for (final p in (r['plays'] as List)) {
       final at = p[0] as num;
@@ -436,7 +437,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
     String what(Map it) => it['type'] == 'episode' && it['grandparentTitle'] != null
         ? '${it['grandparentTitle']} · S${it['parentIndex'] ?? 0}E${it['index'] ?? 0} ${it['title']}'
-        : '${it['title'] ?? '(entfernt)'}';
+        : '${it['title'] ?? tr('(removed)')}';
     String dur(num mins) => mins >= 60 ? '${(mins / 60).floor()} h ${(mins % 60).round()} min' : '${mins.round()} min';
     final titles = (r['titles'] as List).cast<Map>();
     final topUsers = (r['users'] as List).cast<Map>();
@@ -448,17 +449,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
           padding: const EdgeInsets.all(12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Text('${hours ? 'Gesehene Stunden' : 'Wiedergaben'} pro ${weekly ? 'Woche' : 'Tag'}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text('${hours ? tr('Hours watched') : tr('Plays')} pro ${weekly ? tr('week') : tr('day')}', style: const TextStyle(fontWeight: FontWeight.w600)),
               const Spacer(),
-              Text('${r['size']} Wiedergaben · ${dur(r['minutes'] ?? 0)} gesehen', style: TextStyle(color: context.dim, fontSize: 12)),
+              Text(tr('{r} plays · {dur} watched', {'r': r['size'], 'dur': dur(r['minutes'] ?? 0)}), style: TextStyle(color: context.dim, fontSize: 12)),
             ]),
             const SizedBox(height: 8),
             SizedBox(height: 180, width: double.infinity, child: CustomPaint(painter: StackedBarPainter(buckets, context.hair2, context.faint, {'movie': context.info, 'episode': context.warn}))),
             const SizedBox(height: 6),
             Row(children: [
-              Icon(Icons.circle, size: 10, color: context.info), SizedBox(width: 4), Text('Filme', style: TextStyle(fontSize: 12)), SizedBox(width: 12),
-              Icon(Icons.circle, size: 10, color: context.warn), SizedBox(width: 4), Text('Folgen', style: TextStyle(fontSize: 12)), SizedBox(width: 12),
-              Icon(Icons.circle, size: 10, color: Colors.grey), SizedBox(width: 4), Text('Sonstiges', style: TextStyle(fontSize: 12)),
+              Icon(Icons.circle, size: 10, color: context.info), SizedBox(width: 4), Text(tr('Movies'), style: TextStyle(fontSize: 12)), SizedBox(width: 12),
+              Icon(Icons.circle, size: 10, color: context.warn), SizedBox(width: 4), Text(tr('Episodes'), style: TextStyle(fontSize: 12)), SizedBox(width: 12),
+              Icon(Icons.circle, size: 10, color: Colors.grey), SizedBox(width: 4), Text(tr('Other'), style: TextStyle(fontSize: 12)),
             ]),
           ]),
         ),
@@ -471,15 +472,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Am häufigsten gesehen', style: TextStyle(fontWeight: FontWeight.w600)),
-                if (titles.isEmpty) Padding(padding: EdgeInsets.all(8), child: Text('Keine Wiedergaben in dieser Zeit.', style: TextStyle(color: context.faint))),
+                Text(tr('Watched most'), style: TextStyle(fontWeight: FontWeight.w600)),
+                if (titles.isEmpty) Padding(padding: EdgeInsets.all(8), child: Text(tr('No plays in this time.'), style: TextStyle(color: context.faint))),
                 for (final x in titles)
                   ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     leading: SizedBox(width: 34, child: Image.network(api.img(x['thumb']), headers: api.auth, fit: BoxFit.cover, cacheWidth: 80, errorBuilder: (_, _, _) => Container(color: context.hair))),
-                    title: Text('${x['title'] ?? '(entfernt)'}', maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text([x['year'], if (x['type'] == 'show') 'Serie'].where((e) => e != null).join(' · ')),
+                    title: Text('${x['title'] ?? tr('(removed)')}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text([x['year'], if (x['type'] == 'show') tr('Show')].where((e) => e != null).join(' · ')),
                     trailing: Text('${x['plays']}×'),
                     onTap: x['id'] == null ? null : () => openItem(context, api, {'ratingKey': x['id']}),
                   ),
@@ -493,10 +494,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Top-Nutzer', style: TextStyle(fontWeight: FontWeight.w600)),
-                if (topUsers.isEmpty) Padding(padding: EdgeInsets.all(8), child: Text('Keine Wiedergaben in dieser Zeit.', style: TextStyle(color: context.faint))),
+                Text(tr('Top users'), style: TextStyle(fontWeight: FontWeight.w600)),
+                if (topUsers.isEmpty) Padding(padding: EdgeInsets.all(8), child: Text(tr('No plays in this time.'), style: TextStyle(color: context.faint))),
                 for (final x in topUsers)
-                  ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${x['display_name'] ?? x['username'] ?? '?'}'), trailing: Text('${x['plays']} Wiedergaben · ${dur(x['minutes'] ?? 0)}', style: TextStyle(fontSize: 12, color: context.dim))),
+                  ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${x['display_name'] ?? x['username'] ?? '?'}'), trailing: Text(tr('{x} plays · {dur}', {'x': x['plays'], 'dur': dur(x['minutes'] ?? 0)}), style: TextStyle(fontSize: 12, color: context.dim))),
               ]),
             ),
           ),
@@ -507,15 +508,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Letzte Wiedergaben', style: TextStyle(fontWeight: FontWeight.w600)),
-            if (recent.isEmpty) Padding(padding: EdgeInsets.all(8), child: Text('Keine Wiedergaben in dieser Zeit.', style: TextStyle(color: context.faint))),
+            Text(tr('Recent plays'), style: TextStyle(fontWeight: FontWeight.w600)),
+            if (recent.isEmpty) Padding(padding: EdgeInsets.all(8), child: Text(tr('No plays in this time.'), style: TextStyle(color: context.faint))),
             for (final e in recent)
               ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 title: Text(what(Map.from(e['item'] ?? const {})), maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text('${fmtDateTime(e['at'])} · ${e['user'] ?? '?'}'),
-                trailing: Text(e['manual'] == true ? 'von Hand markiert' : '${dur(e['minutes'] ?? 0)}${e['live'] == true ? ' · läuft gerade' : ''}', style: TextStyle(fontSize: 12, color: context.dim)),
+                trailing: Text(e['manual'] == true ? tr('marked by hand') : '${dur(e['minutes'] ?? 0)}${e['live'] == true ? tr(' · playing now') : ''}', style: TextStyle(fontSize: 12, color: context.dim)),
                 onTap: (e['item'] is Map && e['item']['id'] != null) ? () => openItem(context, api, {'ratingKey': e['item']['id']}) : null,
               ),
           ]),
@@ -587,7 +588,7 @@ class _LinePainter extends CustomPainter {
     for (final f in [0.0, 0.5, 1.0]) {
       final t = DateTime.fromMillisecondsSinceEpoch(((t0 + span * f) * 1000).round());
       String p(int n) => n.toString().padLeft(2, '0');
-      _text(canvas, long ? '${t.day}.${t.month}.' : '${p(t.hour)}:${p(t.minute)}', Offset((left + w * f - (f == 1 ? 30 : f == 0.5 ? 14 : 0)), h + 3), 11);
+      _text(canvas, long ? fmtDay(t, year: false) : '${p(t.hour)}:${p(t.minute)}', Offset((left + w * f - (f == 1 ? 30 : f == 0.5 ? 14 : 0)), h + 3), 11);
     }
   }
 

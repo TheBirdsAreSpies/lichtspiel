@@ -7,6 +7,7 @@ import '../theme.dart';
 import 'bar.dart';
 import 'poster.dart';
 import 'states.dart';
+import '../i18n.dart';
 
 /// "1 h 5 min", "25 min", like the web app.
 String minutesText(num ms) {
@@ -41,7 +42,7 @@ Future<void> randomDialog(BuildContext context, Api api, Map<String, dynamic> it
   final genres = [for (final g in (it['genres'] as List? ?? const [])) '$g'].take(3);
   final facts = [
     if (it['year'] != null) '${it['year']}',
-    if (type == 'show') '$leaves Folgen' else if (dur > 0) minutesText(dur),
+    if (type == 'show') tr('{leaves} episodes', {'leaves': leaves}) else if (dur > 0) minutesText(dur),
     ...genres,
   ].join(' · ');
   final canPlay = it['missing'] != true && (playable.contains(type) || ((type == 'show' || type == 'season') && leaves > 0));
@@ -61,7 +62,7 @@ Future<void> randomDialog(BuildContext context, Api api, Map<String, dynamic> it
 
       final poster = Poster(api: api, item: it, width: 130, onTap: open);
       return AlertDialog(
-        title: const Text('Zufällig ausgewählt'),
+        title: Text(tr('Picked at random')),
         content: SizedBox(
           width: 520,
           child: SingleChildScrollView(
@@ -71,15 +72,15 @@ Future<void> randomDialog(BuildContext context, Api api, Map<String, dynamic> it
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Schließen')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Close'))),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               again();
             },
-            child: const Text('🎲 Noch einmal'),
+            child: Text(tr('🎲 Once more')),
           ),
-          TextButton(onPressed: open, child: const Text('Mehr Infos')),
+          TextButton(onPressed: open, child: Text(tr('More info'))),
           if (canPlay)
             FilledButton.icon(
               onPressed: () {
@@ -87,7 +88,7 @@ Future<void> randomDialog(BuildContext context, Api api, Map<String, dynamic> it
                 _playNext(context, api, it);
               },
               icon: const Icon(Icons.play_arrow),
-              label: Text(type == 'show' || type == 'season' ? 'Nächste Folge' : off >= 1000 ? 'Fortsetzen' : 'Abspielen'),
+              label: Text(type == 'show' || type == 'season' ? tr('Next episode') : off >= 1000 ? tr('Resume') : tr('Play')),
             ),
         ],
       );
@@ -100,7 +101,7 @@ const shortTimes = [20, 30, 45, 60, 90];
 /// Under a poster of "Etwas Kurzes": how long it takes (an episode keeps its number).
 String shortCaption(Map<String, dynamic> it) {
   final dur = (it['duration'] ?? 0) as num, off = (it['viewOffset'] ?? 0) as num;
-  final time = off > 0 ? 'noch ${minutesText(dur - off)}' : minutesText(dur);
+  final time = off > 0 ? tr('{minutesText} left', {'minutesText': minutesText(dur - off)}) : minutesText(dur);
   return it['type'] == 'episode' ? 'S${it['parentIndex'] ?? '?'}E${it['index'] ?? '?'} · $time' : time;
 }
 
@@ -126,11 +127,11 @@ Future<void> shortDialog(BuildContext context, Api api) async {
       }
 
       return AlertDialog(
-        title: const Text('Etwas Kurzes'),
+        title: Text(tr('Something short')),
         content: SizedBox(
           width: 640,
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Wie viel Zeit hast du? Was hineinpasst, kommt aus dem, was du gerade schaust, und von deiner Merkliste.', style: TextStyle(color: ctx.dim)),
+            Text(tr('How much time do you have? What fits comes from what you are watching and from your watchlist.'), style: TextStyle(color: ctx.dim)),
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
               for (final m in shortTimes) ChoiceChip(label: Text('$m min'), selected: m == minutes, onSelected: (_) => choose(m)),
@@ -139,7 +140,7 @@ Future<void> shortDialog(BuildContext context, Api api) async {
                 child: TextField(
                   controller: own,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(hintText: 'eigene', suffixText: 'min', isDense: true),
+                  decoration: InputDecoration(hintText: tr('custom'), suffixText: 'min', isDense: true),
                   onSubmitted: (v) {
                     final m = int.tryParse(v.trim());
                     if (m != null && m > 0) choose(m);
@@ -155,7 +156,7 @@ Future<void> shortDialog(BuildContext context, Api api) async {
                   if (snap.hasError) return Text(errorText(snap.error!));
                   if (!snap.hasData) return const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()));
                   final items = snap.data!;
-                  if (items.isEmpty) return Text('Nichts, was du gerade schaust oder auf deiner Merkliste hast, passt in $minutes Minuten.', style: TextStyle(color: ctx.dim));
+                  if (items.isEmpty) return Text(tr('Nothing you are watching or have on your watchlist fits into {minutes} minutes.', {'minutes': minutes}), style: TextStyle(color: ctx.dim));
                   return SingleChildScrollView(
                     child: Wrap(spacing: 12, runSpacing: 16, children: [
                       for (final it in items)
@@ -176,7 +177,7 @@ Future<void> shortDialog(BuildContext context, Api api) async {
             ),
           ]),
         ),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Schließen'))],
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Close')))],
       );
     }),
   );

@@ -1,6 +1,6 @@
 # Lichtspiel app (Flutter)
 
-The Lichtspiel app for Windows, Android, macOS, iPhone and iPad. It talks to a Lichtspiel server over the same JSON API as the web app. The interface is in German.
+The Lichtspiel app for Windows, Android, macOS, iPhone and iPad. It talks to a Lichtspiel server over the same JSON API as the web app. The interface is in English and German: it follows the device's language, and Settings → Account → Appearance switches it (kept with the account, like in the web app).
 
 ## What you need
 

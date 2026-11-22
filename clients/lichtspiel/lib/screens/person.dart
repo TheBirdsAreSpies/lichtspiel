@@ -3,6 +3,7 @@ import '../api.dart';
 import '../widgets/poster.dart';
 import 'home.dart';
 import '../theme.dart';
+import '../i18n.dart';
 
 /// An actor and everything they are in (the web app's person page).
 class PersonScreen extends StatefulWidget {
@@ -21,7 +22,7 @@ class _PersonScreenState extends State<PersonScreen> {
 
   static String day(String? iso) {
     final d = DateTime.tryParse(iso ?? '');
-    return d == null ? '' : '${d.day}.${d.month}.${d.year}';
+    return d == null ? '' : fmtDay(d);
   }
 
   /// Biography, birth, photos and filmography from TMDB, below the library part.
@@ -36,15 +37,15 @@ class _PersonScreenState extends State<PersonScreen> {
         final credits = ((d['credits'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e)).toList();
         final mine = credits.where((c) => c['item'] != null).toList();
         final others = credits.where((c) => c['item'] == null).toList();
-        final born = d['birthday'] != null ? 'Geboren am ${day(d['birthday'])}' : '';
-        final died = d['deathday'] != null ? 'Gestorben am ${day(d['deathday'])}' : '';
+        final born = d['birthday'] != null ? tr('Born {day}', {'day': day(d['birthday'])}) : '';
+        final died = d['deathday'] != null ? tr('Died {day}', {'day': day(d['deathday'])}) : '';
         final facts = [born, died, '${d['place_of_birth'] ?? ''}'].where((x) => x.isNotEmpty).join(' · ');
         Widget head(String t) => Padding(padding: const EdgeInsets.only(top: 28, bottom: 10), child: Text(t, style: Theme.of(context).textTheme.titleLarge));
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           if (facts.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 20), child: Text(facts, style: TextStyle(color: context.dim))),
           if ('${d['biography'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text('${d['biography']}')),
           if (photos.length > 1) ...[
-            head('Fotos'),
+            head(tr('Photos')),
             SizedBox(
               height: 200,
               child: ListView(scrollDirection: Axis.horizontal, children: [
@@ -60,10 +61,10 @@ class _PersonScreenState extends State<PersonScreen> {
             ),
           ],
           if (credits.isNotEmpty) ...[
-            head('Filmografie (${mine.length} von ${credits.length} in deinen Bibliotheken)'),
+            head(tr('Filmography ({length} of {length2} in your libraries)', {'length': mine.length, 'length2': credits.length})),
             Row(children: [
-              IconButton(tooltip: 'Raster', isSelected: !asList, onPressed: () => setState(() => asList = false), icon: const Icon(Icons.grid_view)),
-              IconButton(tooltip: 'Liste', isSelected: asList, onPressed: () => setState(() => asList = true), icon: const Icon(Icons.view_list)),
+              IconButton(tooltip: tr('Grid'), isSelected: !asList, onPressed: () => setState(() => asList = false), icon: const Icon(Icons.grid_view)),
+              IconButton(tooltip: tr('List'), isSelected: asList, onPressed: () => setState(() => asList = true), icon: const Icon(Icons.view_list)),
             ]),
             if (asList)
               for (final c in [...mine, ...others])
@@ -81,8 +82,8 @@ class _PersonScreenState extends State<PersonScreen> {
                     ),
                   ),
                   title: Text('${c['title']}', style: TextStyle(color: c['item'] != null ? null : context.dim)),
-                  subtitle: Text([c['year'], c['type'] == 'show' ? 'Serie' : 'Film', c['role']].where((x) => x != null && '$x'.isNotEmpty).join(' · ')),
-                  trailing: Text(c['item'] != null ? 'In deinen Bibliotheken' : 'Nicht in deinen Bibliotheken', style: TextStyle(fontSize: 12, color: context.faint)),
+                  subtitle: Text([c['year'], c['type'] == 'show' ? tr('Show') : tr('Movie'), c['role']].where((x) => x != null && '$x'.isNotEmpty).join(' · ')),
+                  trailing: Text(c['item'] != null ? tr('In your libraries') : tr('Not in your libraries'), style: TextStyle(fontSize: 12, color: context.faint)),
                   onTap: c['item'] == null ? null : () => openItem(context, widget.api, Map<String, dynamic>.from(c['item'])),
                 )
             else
@@ -98,7 +99,7 @@ class _PersonScreenState extends State<PersonScreen> {
                       : Opacity(
                           opacity: .55,
                           child: Tooltip(
-                            message: 'Nicht in deinen Bibliotheken',
+                            message: tr('Not in your libraries'),
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               AspectRatio(
                                 aspectRatio: 2 / 3,
@@ -118,7 +119,7 @@ class _PersonScreenState extends State<PersonScreen> {
           ],
           Padding(
             padding: const EdgeInsets.only(top: 20),
-            child: Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: () => setState(() => details = widget.api.personDetails(widget.keyId, widget.name, refresh: true)), child: const Text('Details neu laden'))),
+            child: Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: () => setState(() => details = widget.api.personDetails(widget.keyId, widget.name, refresh: true)), child: Text(tr('Reload details')))),
           ),
         ]);
       },
@@ -157,13 +158,13 @@ class _PersonScreenState extends State<PersonScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(name, style: Theme.of(context).textTheme.headlineMedium),
                   const SizedBox(height: 6),
-                  Text(n == 1 ? 'In 1 Film oder Serie deiner Bibliotheken' : 'In $n Filmen und Serien deiner Bibliotheken', style: TextStyle(color: context.dim)),
+                  Text(n == 1 ? tr('In 1 movie or show of your libraries') : tr('In {n} movies and shows of your libraries', {'n': n}), style: TextStyle(color: context.dim)),
                 ]),
               ),
             ]),
             const SizedBox(height: 24),
             if (items.isEmpty)
-              const Center(child: Text('Nichts in deinen Bibliotheken.'))
+              Center(child: Text(tr('Nothing in your libraries.')))
             else
               Wrap(spacing: 12, runSpacing: 16, children: [
                 for (final it in items)
@@ -171,7 +172,7 @@ class _PersonScreenState extends State<PersonScreen> {
                     width: 140,
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Poster(api: widget.api, item: it, onTap: () => openItem(context, widget.api, it)),
-                      if (it['role'] != null) Text('als ${it['role']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: context.faint)),
+                      if (it['role'] != null) Text(tr('as {it}', {'it': it['role']}), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: context.faint)),
                     ]),
                   ),
               ]),

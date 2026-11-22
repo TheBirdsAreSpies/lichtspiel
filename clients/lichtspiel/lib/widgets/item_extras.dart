@@ -4,14 +4,15 @@ import '../clock.dart';
 import '../widgets/poster.dart';
 import '../theme.dart';
 import 'states.dart';
+import '../i18n.dart';
 
-const _problems = {
-  'playback': 'Spielt nicht ab / bricht ab',
-  'video': 'Bildproblem',
-  'audio': 'Tonproblem',
-  'subtitles': 'Untertitelproblem',
-  'metadata': 'Falsche Details oder falsches Poster',
-  'other': 'Etwas anderes',
+Map<String, String> get _problems => {
+  'playback': tr('Does not play / stops'),
+  'video': tr('Picture problem'),
+  'audio': tr('Sound problem'),
+  'subtitles': tr('Subtitle problem'),
+  'metadata': tr('Wrong details or poster'),
+  'other': tr('Something else'),
 };
 
 String _when(dynamic at) {
@@ -38,22 +39,22 @@ Future<void> historyDialog(BuildContext context, Api api, Map<String, dynamic> i
   await showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: Text('Verlauf: ${item['title']}'),
+      title: Text(tr('History: {item}', {'item': item['title']})),
       content: SizedBox(
         width: 460,
         child: rows.isEmpty
-            ? const Text('Noch nicht gesehen.')
+            ? Text(tr('Not watched yet.'))
             : ListView(shrinkWrap: true, children: [
                 for (final e in rows)
                   ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     title: Text('${_when(e['at'])}${Poster.admin && e['user'] != null ? ' · ${e['user']}' : ''}'),
-                    subtitle: Text([if (!playable && e['item'] is Map) what(e['item']), e['manual'] == true ? 'als gesehen markiert' : 'gesehen'].join(' · ')),
+                    subtitle: Text([if (!playable && e['item'] is Map) what(e['item']), e['manual'] == true ? tr('marked as watched') : tr('watched')].join(' · ')),
                   ),
               ]),
       ),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Schließen'))],
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Close')))],
     ),
   );
 }
@@ -67,11 +68,11 @@ Future<void> reportDialog(BuildContext context, Api api, Map<String, dynamic> it
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, set) => AlertDialog(
-        title: const Text('Problem melden'),
+        title: Text(tr('Report a problem')),
         content: SizedBox(
           width: 420,
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Der Besitzer dieses Servers sieht deine Meldung.', style: TextStyle(color: context.faint)),
+            Text(tr('The owner of this server sees your report.'), style: TextStyle(color: context.faint)),
             const SizedBox(height: 8),
             DropdownButton<String>(
               value: kind,
@@ -79,12 +80,12 @@ Future<void> reportDialog(BuildContext context, Api api, Map<String, dynamic> it
               onChanged: (v) => set(() => kind = v ?? 'playback'),
               items: [for (final e in _problems.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
             ),
-            TextField(controller: note, minLines: 3, maxLines: 6, decoration: const InputDecoration(labelText: 'Was passiert? (optional)')),
+            TextField(controller: note, minLines: 3, maxLines: 6, decoration: InputDecoration(labelText: tr('What happens? (optional)'))),
           ]),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Senden')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Send'))),
         ],
       ),
     ),
@@ -94,7 +95,7 @@ Future<void> reportDialog(BuildContext context, Api api, Map<String, dynamic> it
   if (send != true) return;
   try {
     await api.post('/library/metadata/$id/report', {'kind': kind, 'note': text});
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Danke – das Problem wurde gemeldet')));
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Thanks – the problem was reported'))));
   } catch (e) {
     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorText(e))));
   }
@@ -113,11 +114,11 @@ Future<void> creditsDialog(BuildContext context, Api api, Map<String, dynamic> i
   if (!context.mounted) return;
   final credits = (r['credits'] as List?) ?? const [];
   final inp = TextEditingController(text: credits.isEmpty ? '' : fmtClock(credits.first as num));
-  const sources = {
-    'manual': 'von Hand gesetzt',
-    'chapters': 'aus einem Kapitel „Credits“ in der Datei',
-    'picture': 'im Bild gefunden (dunkler Schirm mit Text am Ende)',
-    'none': 'nichts gefunden',
+  final sources = {
+    'manual': tr('set by hand'),
+    'chapters': tr('from a chapter “Credits” in the file'),
+    'picture': tr('found in the picture (a dark screen with text at the end)'),
+    'none': tr('none found'),
   };
   int? parse(String v) {
     final p = v.trim().split(':').map(int.tryParse).toList();
@@ -137,42 +138,42 @@ Future<void> creditsDialog(BuildContext context, Api api, Map<String, dynamic> i
   await showDialog(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Abspann'),
+      title: Text(tr('Credits')),
       content: SizedBox(
         width: 420,
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Abspann-Marke: ${sources['${r['source']}'] ?? r['source']}. Das Video gilt ab ${fmtClock((r['watchedAt'] ?? 0) as num)} von ${fmtClock((r['duration'] ?? 0) as num)} als gesehen.', style: TextStyle(color: context.faint)),
+          Text(tr('Credits marker: {sources}. The video counts as watched from {fmtClock} of {fmtClock2}.', {'sources': sources['${r['source']}'] ?? r['source'], 'fmtClock': fmtClock((r['watchedAt'] ?? 0) as num), 'fmtClock2': fmtClock((r['duration'] ?? 0) as num)}), style: TextStyle(color: context.faint)),
           const SizedBox(height: 8),
-          TextField(controller: inp, decoration: const InputDecoration(labelText: 'Abspann beginnt bei (Std:Min:Sek)', hintText: 'z. B. 1:52:30')),
+          TextField(controller: inp, decoration: InputDecoration(labelText: tr('Credits start at (h:min:s)'), hintText: 'z. B. 1:52:30')),
         ]),
       ),
       actions: [
-        if (r['source'] == 'manual') TextButton(onPressed: () => save(ctx, null), child: const Text('Kapitel der Datei nutzen')),
+        if (r['source'] == 'manual') TextButton(onPressed: () => save(ctx, null), child: Text(tr("Use the file's chapters"))),
         TextButton(
           onPressed: () async {
             try {
               await api.post('/library/metadata/$id/credits');
               if (ctx.mounted) {
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Abspann wird erkannt…')));
+                ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(tr('Detecting credits…'))));
               }
             } catch (e) {
               if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(errorText(e))));
             }
           },
-          child: const Text('Neu erkennen'),
+          child: Text(tr('Detect again')),
         ),
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Cancel'))),
         FilledButton(
           onPressed: () {
             final ms = parse(inp.text);
             if (ms == null) {
-              ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Gib eine Zeit wie 1:52:30 ein')));
+              ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(tr('Enter a time like 1:52:30'))));
               return;
             }
             save(ctx, [ms]);
           },
-          child: const Text('Speichern'),
+          child: Text(tr('Save')),
         ),
       ],
     ),

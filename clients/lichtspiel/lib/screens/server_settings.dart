@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../theme.dart';
+import '../i18n.dart';
 
 enum _T { text, number, flag, pick, secret, lines }
 
@@ -72,8 +73,8 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
   List<(dynamic, String)> _lst(String key, dynamic Function(dynamic) v, String Function(dynamic) l) =>
       [for (final e in (resp[key] as List? ?? const [])) (v(e), l(e))];
 
-  List<(dynamic, String)> _nums(List<int> n, String Function(int) l, {bool zero = true, String zeroLabel = 'Unbegrenzt'}) =>
-      [if (zero) (0, zeroLabel), for (final i in n) (i, l(i))];
+  List<(dynamic, String)> _nums(List<int> n, String Function(int) l, {bool zero = true, String? zeroLabel}) =>
+      [if (zero) (0, zeroLabel ?? tr('Unlimited')), for (final i in n) (i, l(i))];
 
   List<(dynamic, String)> get _hours => [for (var i = 0; i < 24; i++) (i, '${i.toString().padLeft(2, '0')}:00')];
 
@@ -85,102 +86,102 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
     final langs = _lst('languages', (e) => e['code'], (e) => '${e['name']}');
     final presets = _lst('h264_presets', (e) => e, (e) => '$e');
     return {
-      'general': ('Server', [
-        const _F('server_name', 'Servername', _T.text),
-        _F('port', 'Port', _T.number, help: 'Standard 8484. Gilt nach einem Neustart; aktuell lauscht der Server auf ${resp['port_in_use']}.'),
-        const _F('public_url', 'Adresse in Einladungslinks', _T.text, help: 'z. B. http://mein-nas.example.com:8484. Leer = Adresse, mit der die Seite geöffnet wurde.'),
-        const _F('invite_default_days', 'Einladungslinks gelten (Tage)', _T.number),
-        const _F('home_profiles', 'Profile auf dem Anmeldebildschirm', _T.flag, help: 'Heimprofile lassen sich mit PIN antippen – nur im Heimnetz.'),
+      'general': (tr('Server'), [
+        _F('server_name', tr('Server name'), _T.text),
+        _F('port', tr('Port'), _T.number, help: tr('Default 8484. Applies after a restart; the server listens on {resp} now.', {'resp': resp['port_in_use']})),
+        _F('public_url', tr('Address in invite links'), _T.text, help: tr('e.g. http://my-nas.example.com:8484. Empty = the address the page was opened with.')),
+        _F('invite_default_days', tr('Invite links are valid for (days)'), _T.number),
+        _F('home_profiles', tr('Profiles on the sign-in screen'), _T.flag, help: tr('Home profiles can be tapped and opened with a PIN – only on the home network.')),
       ]),
-      'network': ('Netzwerk', [
-        _F('max_remote_plays', 'Videos pro Person außerhalb des Heimnetzes', _T.pick, options: _nums([1, 2, 3, 4, 6], (n) => '$n', zeroLabel: 'Unbegrenzt'), help: 'Admins sind nicht begrenzt.'),
-        _F('paused_stop_minutes', 'Pausierte Wiedergabe beenden nach', _T.pick, options: _nums([5, 10, 15, 30, 60, 120], (n) => '$n Minuten', zeroLabel: 'Nie')),
-        _F('remote_max_mbps', 'Streams übers Internet begrenzen', _T.pick, options: _nums([1, 2, 3, 4, 8, 10, 12, 20], (n) => '$n Mbit/s')),
-        const _F('no_auth_networks', 'Netze ohne Anmeldung', _T.text, help: 'Adressen oder Bereiche, durch Komma getrennt, z. B. 192.168.1.0/24. Von dort ist man ohne Passwort als erster Admin angemeldet – nur vertrauenswürdige Netze eintragen.'),
-        const _F('lan_networks', 'Weitere Netze, die als Heimnetz zählen', _T.text, help: 'z. B. 100.64.0.0/10 für ein VPN.'),
-        const _F('bind_address', 'Adresse der Netzwerkkarte', _T.text, help: 'Leer = alle Karten. Gilt nach einem Neustart.'),
-        const _F('tls_cert', 'HTTPS-Zertifikat (Datei)', _T.text, help: 'Pfad der PEM-Datei samt Kette. Gilt nach einem Neustart.'),
-        const _F('tls_key', 'HTTPS-Schlüssel (Datei)', _T.text, help: 'Pfad des privaten Schlüssels (PEM). Leer = einfaches http://.'),
-        const _F('http_redirect_port', 'http:// auf https:// umleiten ab Port', _T.number, help: '0 = aus. Gilt nach einem Neustart.'),
-        const _F('relay_server', 'Relay (Adresse)', _T.text, help: 'Erreichbarkeit von außen ohne Portfreigabe, z. B. relay.example.com:8485. Leer = aus.'),
-        const _F('relay_secret', 'Relay (Geheimnis)', _T.secret, help: 'Mindestens 8 Zeichen.'),
-        const _F('gdm_enabled', 'Apps im Heimnetz dürfen den Server finden', _T.flag),
-        const _F('trusted_proxies', 'Vertrauenswürdige Reverse-Proxys', _T.text, help: 'Adressen oder Bereiche, z. B. 127.0.0.1 oder 172.16.0.0/12 für Docker.'),
+      'network': (tr('Networking'), [
+        _F('max_remote_plays', tr('Videos per person outside the home network'), _T.pick, options: _nums([1, 2, 3, 4, 6], (n) => '$n', zeroLabel: tr('Unlimited')), help: tr('Admins are not limited.')),
+        _F('paused_stop_minutes', tr('Stop paused playback after'), _T.pick, options: _nums([5, 10, 15, 30, 60, 120], (n) => tr('{n} minutes', {'n': n}), zeroLabel: tr('Never'))),
+        _F('remote_max_mbps', tr('Limit streams over the internet'), _T.pick, options: _nums([1, 2, 3, 4, 8, 10, 12, 20], (n) => tr('{n} Mbit/s', {'n': n}))),
+        _F('no_auth_networks', tr('Networks without sign-in'), _T.text, help: tr('Addresses or ranges, separated by commas, e.g. 192.168.1.0/24. From there you are signed in as the first admin without a password – only enter networks you trust.')),
+        _F('lan_networks', tr('More networks that count as the home network'), _T.text, help: tr('e.g. 100.64.0.0/10 for a VPN.')),
+        _F('bind_address', tr('Network card address'), _T.text, help: tr('Empty = all cards. Applies after a restart.')),
+        _F('tls_cert', tr('HTTPS certificate (file)'), _T.text, help: tr('Path of the PEM file with its chain. Applies after a restart.')),
+        _F('tls_key', tr('HTTPS key (file)'), _T.text, help: tr('Path of the private key (PEM). Empty = plain http://.')),
+        _F('http_redirect_port', 'http:// auf https:// umleiten ab Port', _T.number, help: tr('0 = off. Applies after a restart.')),
+        _F('relay_server', tr('Relay (address)'), _T.text, help: tr('Reachable from outside without opening a port, e.g. relay.example.com:8485. Empty = off.')),
+        _F('relay_secret', tr('Relay (secret)'), _T.secret, help: tr('At least 8 characters.')),
+        _F('gdm_enabled', tr('Apps on the home network may find the server'), _T.flag),
+        _F('trusted_proxies', tr('Trusted reverse proxies'), _T.text, help: tr('Addresses or ranges, e.g. 127.0.0.1 or 172.16.0.0/12 for Docker.')),
       ]),
-      'library': ('Bibliothek', [
-        const _F('group_recent_episodes', 'Neue Folgen auf der Startseite als Serie zeigen', _T.flag),
-        const _F('sort_ignore_articles', 'Artikel beim Sortieren ignorieren', _T.flag, help: '„The Matrix“ steht dann unter M.'),
-        const _F('sort_articles', 'Zu ignorierende Artikel', _T.text, help: 'Durch Komma getrennt, z. B. the, a, an, der, die, das.'),
-        const _F('collection_min_items', 'Sammlung ab … Filmen', _T.number, help: '2 = jede Filmreihe.'),
-        const _F('scheduled_scans_enabled', 'Bibliothek regelmäßig scannen', _T.flag),
-        _F('scan_interval_minutes', 'Scan-Intervall', _T.pick, options: scan),
-        _F('watched_threshold_percent', 'Schwelle für „gesehen“', _T.pick, options: thresholds),
-        const _F('watch_folders', 'Bibliothek automatisch aktualisieren', _T.flag, help: 'Ordner werden alle 15 Sekunden geprüft.'),
-        _F('credits_markers_behaviour', 'Abspann-Markierungen erzeugen', _T.pick, options: marks),
-        _F('intro_markers_behaviour', 'Intro-Markierungen erzeugen', _T.pick, options: marks),
-        const _F('credits_from_picture', 'Abspann am Bild erkennen', _T.flag, help: 'Braucht ffmpeg.'),
-        _F('played_at_behaviour', 'Videos als gesehen markieren', _T.pick, options: playedAt),
-        const _F('continue_watching_weeks', 'Wochen für „Weiterschauen“', _T.number),
-        const _F('continue_watching_limit', 'Höchstzahl bei „Weiterschauen“', _T.number),
-        const _F('continue_watching_include_premieres', 'Staffelpremieren in „Weiterschauen“', _T.flag),
-        const _F('empty_trash_automatically', 'Papierkorb nach jedem Scan leeren', _T.flag, help: 'Aus: fehlende Dateien bleiben als nicht verfügbar, bis du den Papierkorb leerst.'),
-        const _F('allow_media_deletion', 'Löschen von Mediendateien erlauben', _T.flag),
-        const _F('download_keep_days', 'Konvertierte Downloads behalten (Tage)', _T.number, help: '0 = bis sie von der Download-Seite entfernt werden.'),
+      'library': (tr('Library'), [
+        _F('group_recent_episodes', tr('Show new episodes on the home page as their show'), _T.flag),
+        _F('sort_ignore_articles', tr('Ignore articles when sorting'), _T.flag, help: tr('“The Matrix” is then under M.')),
+        _F('sort_articles', tr('Articles to ignore'), _T.text, help: tr('Separated by commas, e.g. the, a, an, der, die, das.')),
+        _F('collection_min_items', tr('Collection from … movies'), _T.number, help: tr('2 = every movie series.')),
+        _F('scheduled_scans_enabled', tr('Scan the library regularly'), _T.flag),
+        _F('scan_interval_minutes', tr('Scan interval'), _T.pick, options: scan),
+        _F('watched_threshold_percent', tr('Threshold for “watched”'), _T.pick, options: thresholds),
+        _F('watch_folders', tr('Update the library by itself'), _T.flag, help: tr('Folders are checked every 15 seconds.')),
+        _F('credits_markers_behaviour', tr('Make credits markers'), _T.pick, options: marks),
+        _F('intro_markers_behaviour', tr('Make intro markers'), _T.pick, options: marks),
+        _F('credits_from_picture', tr('Detect credits in the picture'), _T.flag, help: tr('Needs ffmpeg.')),
+        _F('played_at_behaviour', tr('Mark videos as watched'), _T.pick, options: playedAt),
+        _F('continue_watching_weeks', tr('Weeks for “Continue watching”'), _T.number),
+        _F('continue_watching_limit', tr('Most items in “Continue watching”'), _T.number),
+        _F('continue_watching_include_premieres', tr('Season premieres in “Continue watching”'), _T.flag),
+        _F('empty_trash_automatically', tr('Empty the trash after every scan'), _T.flag, help: tr('Off: missing files stay as unavailable until you empty the trash.')),
+        _F('allow_media_deletion', tr('Allow deleting media files'), _T.flag),
+        _F('download_keep_days', tr('Keep converted downloads (days)'), _T.number, help: tr('0 = until they are removed from the downloads page.')),
       ]),
-      'metadata': ('Film- und Seriendetails', [
-        const _F('metadata_enabled', 'Handlung, Besetzung, Poster und Folgentitel aus dem Internet laden', _T.flag),
-        const _F('meta_cast', 'Besetzung und Team', _T.flag, help: 'Schauspieler mit Rollen und Fotos, Regie, Drehbuch, Produktion.'),
-        _F('cast_photos_limit', 'Schauspielerfotos pro Film oder Serie', _T.pick, options: _nums([10, 20, 40, 100], (n) => '$n', zeroLabel: 'Keine'), help: 'Die Besetzungsliste bleibt; nur so viele Fotos werden gespeichert.'),
-        const _F('meta_person_details', 'Details zu Personen', _T.flag, help: 'Biografie, Geburtsdaten, weitere Fotos und Filmografie. Braucht einen TMDB-Schlüssel; wird beim Öffnen der Seite geladen.'),
-        const _F('meta_artwork', 'Poster und Hintergründe', _T.flag, help: 'Aus: nur Bilder aus deinen Ordnern.'),
-        const _F('meta_episodes', 'Staffeln und Folgen', _T.flag, help: 'Folgennamen, Handlung, Sendedatum und Standbilder.'),
-        const _F('meta_ratings', 'Bewertungen', _T.flag, help: 'Bewertungen der Online-Quelle.'),
-        _F('metadata_language', 'Sprache von Titeln, Handlungen und Folgennamen', _T.pick, options: langs, help: 'Eine Änderung lädt die Details im Hintergrund neu.'),
-        const _F('imdb_ratings_file', 'IMDb-Bewertungen aus IMDbs Bewertungsdatei', _T.flag, help: 'Lädt einmal pro Woche ca. 9 MB.'),
-        const _F('tmdb_api_key', 'TMDB-API-Schlüssel (optional)', _T.text, help: 'Ohne Schlüssel: Wikipedia/Wikidata und TVmaze. Mit Schlüssel bessere Treffer, Darstellerfotos, übersetzte Handlungen.'),
-        const _F('omdb_api_key', 'OMDb-API-Schlüssel für IMDb-Handlungen (optional)', _T.text),
+      'metadata': (tr('Movie and show details'), [
+        _F('metadata_enabled', tr('Load plot, cast, posters and episode titles from the internet'), _T.flag),
+        _F('meta_cast', tr('Cast and crew'), _T.flag, help: tr('Actors with roles and photos, directors, writers, producers.')),
+        _F('cast_photos_limit', tr('Actor photos per movie or show'), _T.pick, options: _nums([10, 20, 40, 100], (n) => '$n', zeroLabel: tr('None')), help: tr('The cast list stays; only this many photos are kept.')),
+        _F('meta_person_details', tr('Details about people'), _T.flag, help: tr('Biography, dates of birth, more photos and filmography. Needs a TMDB key; loaded when the page is opened.')),
+        _F('meta_artwork', tr('Posters and backgrounds'), _T.flag, help: tr('Off: only pictures from your folders.')),
+        _F('meta_episodes', tr('Seasons and episodes'), _T.flag, help: tr('Episode names, plots, air dates and stills.')),
+        _F('meta_ratings', tr('Ratings'), _T.flag, help: tr('Ratings from the online source.')),
+        _F('metadata_language', tr('Language of titles, plots and episode names'), _T.pick, options: langs, help: tr('A change reloads the details in the background.')),
+        _F('imdb_ratings_file', tr("IMDb ratings from IMDb's ratings file"), _T.flag, help: tr('Downloads about 9 MB once a week.')),
+        _F('tmdb_api_key', tr('TMDB API key (optional)'), _T.text, help: tr('Without a key: Wikipedia/Wikidata and TVmaze. With a key better matches, actor photos, translated plots.')),
+        _F('omdb_api_key', tr('OMDb API key for IMDb plots (optional)'), _T.text),
       ]),
       'extras': ('Extras', [
-        const _F('trailers_online', 'Online-Trailer zeigen', _T.flag, help: 'Von TMDB oder Wikidata, abgespielt über YouTube.'),
-        const _F('trailers_english', 'Auch englische Trailer suchen', _T.flag),
-        const _F('trailers_red_band', 'Red-Band-Trailer erlauben', _T.flag),
-        const _F('preroll_mode', 'Vorspann: welcher wird gespielt', _T.pick, options: [('random', 'Einer, zufällig'), ('all', 'Alle in der Reihenfolge'), ('first', 'Immer der erste')]),
-        const _F('preroll_paths', 'Vorspann-Videos', _T.lines, help: 'Vor jedem Film gespielt. Ein Pfad pro Zeile.'),
+        _F('trailers_online', tr('Show online trailers'), _T.flag, help: tr('From TMDB or Wikidata, played through YouTube.')),
+        _F('trailers_english', tr('Also look for English trailers'), _T.flag),
+        _F('trailers_red_band', tr('Allow red band trailers'), _T.flag),
+        _F('preroll_mode', tr('Pre-roll: which one plays'), _T.pick, options: [('random', tr('One, at random')), ('all', tr('All, in order')), ('first', tr('Always the first'))]),
+        _F('preroll_paths', tr('Pre-roll videos'), _T.lines, help: tr('Played before every movie. One path per line.')),
       ]),
-      'tasks': ('Geplante Aufgaben', [
-        _F('maintenance_start_hour', 'Wartung beginnt um', _T.pick, options: _hours),
-        _F('maintenance_end_hour', 'Wartung endet um', _T.pick, options: _hours),
-        const _F('backup_enabled', 'Bibliotheksdatei alle 3 Tage sichern', _T.flag),
-        const _F('backup_dir', 'Sicherungsordner', _T.text, help: 'Leer = Ordner „backups“ im Datenordner.'),
-        const _F('backups_keep', 'Zu behaltende Sicherungen', _T.number),
-        const _F('db_cache_mb', 'Datenbank-Cache (MB)', _T.number),
-        const _F('optimize_weekly', 'Bibliotheksdatei wöchentlich optimieren', _T.flag),
-        const _F('cleanup_weekly', 'Alte Cache-Dateien wöchentlich entfernen', _T.flag),
-        const _F('analyze_loudness', 'Lautheit der Videos messen', _T.flag, help: 'Braucht ffmpeg.'),
-        const _F('deep_analysis', 'Tiefenanalyse', _T.flag, help: 'Liest jede Datei komplett – Platten bleiben lange beschäftigt. Braucht ffprobe.'),
-        const _F('generate_thumbnails', 'Vorschaubilder erzeugen', _T.flag, help: 'Braucht ffmpeg.'),
-        const _F('theme_from_intros', 'Titelmusik aus dem Serien-Intro', _T.flag, help: 'Einmal pro Serie im Wartungsfenster. Eine theme.mp3 im Ordner hat Vorrang. Braucht ffmpeg.'),
-        const _F('refresh_metadata', 'Alle Bibliotheken alle 3 Tage neu lesen', _T.flag),
+      'tasks': (tr('Scheduled tasks'), [
+        _F('maintenance_start_hour', tr('Maintenance starts at'), _T.pick, options: _hours),
+        _F('maintenance_end_hour', tr('Maintenance ends at'), _T.pick, options: _hours),
+        _F('backup_enabled', tr('Back up the library file every 3 days'), _T.flag),
+        _F('backup_dir', tr('Backup folder'), _T.text, help: tr('Empty = the folder “backups” in the data folder.')),
+        _F('backups_keep', tr('Backups to keep'), _T.number),
+        _F('db_cache_mb', tr('Database cache (MB)'), _T.number),
+        _F('optimize_weekly', tr('Optimize the library file every week'), _T.flag),
+        _F('cleanup_weekly', tr('Remove old cache files every week'), _T.flag),
+        _F('analyze_loudness', tr('Measure the loudness of the videos'), _T.flag, help: tr('Needs ffmpeg.')),
+        _F('deep_analysis', tr('Deep analysis'), _T.flag, help: tr('Reads every file in full – the disks stay busy for a long time. Needs ffprobe.')),
+        _F('generate_thumbnails', tr('Make preview pictures'), _T.flag, help: tr('Needs ffmpeg.')),
+        _F('theme_from_intros', tr('Theme music from show intros'), _T.flag, help: tr('Once per show in the maintenance window. A theme.mp3 in the folder comes first. Needs ffmpeg.')),
+        _F('refresh_metadata', tr('Read all libraries again every 3 days'), _T.flag),
       ]),
-      'transcoder': ('Transcoder', [
-        _F('transcoder_quality', 'Transcoder-Qualität', _T.pick, options: const [('automatic', 'Automatisch'), ('speed', 'Höhere Geschwindigkeit'), ('quality', 'Höhere Qualität'), ('max', 'Maximal (CPU glüht)')]),
-        const _F('boost_dialogue', 'Dialoge beim Herunterrechnen auf Stereo anheben', _T.flag),
-        const _F('transcoding_enabled', 'Videokonvertierung erlauben', _T.flag, help: 'Aus: Es spielen nur Dateien, die der Player direkt abspielen kann.'),
-        const _F('transcode_dir', 'Ordner für Live-Konvertierungen', _T.text, help: 'Leer = Ordner „transcode“ im Datenordner.'),
-        const _F('downloads_dir', 'Ordner für konvertierte Downloads', _T.text),
-        _F('hw_accel', 'Hardwarebeschleunigung', _T.pick, options: const [('auto', 'Automatisch'), ('none', 'Aus (Software)'), ('vaapi', 'Intel/AMD VAAPI'), ('qsv', 'Intel Quick Sync'), ('nvenc', 'NVIDIA')]),
-        const _F('hw_device', 'Grafikgerät', _T.text, help: 'Leer = das erste. VAAPI: Gerätedatei wie /dev/dri/renderD129. NVIDIA: Kartennummer.'),
-        const _F('hdr_tone_mapping', 'HDR in normale Farben umrechnen', _T.flag),
-        const _F('hw_constant_quality', 'Grafikchip: nach Qualität statt Bitrate', _T.flag),
-        _F('h264_preset', 'Geschwindigkeit des Software-Encoders (x264)', _T.pick, options: presets),
-        const _F('h264_minimum_crf', 'Beste erlaubte x264-Qualität (CRF)', _T.number),
-        const _F('max_transcodes', 'Gleichzeitige Transcodes (0 = unbegrenzt)', _T.number),
-        const _F('max_gpu_transcodes', '… davon mit Grafikchip', _T.number),
-        const _F('max_cpu_transcodes', '… davon mit Prozessor', _T.number),
-        const _F('hls_segment_seconds', 'HLS-Segmentlänge (Sekunden)', _T.number),
-        const _F('segmented_transcoder_timeout_seconds', 'Timeout des segmentierten Transcoders (Sekunden)', _T.number),
-        const _F('ffmpeg', 'ffmpeg-Programm', _T.text),
-        const _F('ffprobe', 'ffprobe-Programm', _T.text),
+      'transcoder': (tr('Transcoder'), [
+        _F('transcoder_quality', tr('Transcoder quality'), _T.pick, options: [('automatic', tr('Automatic')), ('speed', tr('Faster')), ('quality', tr('Better quality')), ('max', tr('Maximum (the processor glows)'))]),
+        _F('boost_dialogue', tr('Raise the dialogue when mixing down to stereo'), _T.flag),
+        _F('transcoding_enabled', tr('Allow converting videos'), _T.flag, help: tr('Off: only files the player can play directly are played.')),
+        _F('transcode_dir', tr('Folder for live conversions'), _T.text, help: tr('Empty = the folder “transcode” in the data folder.')),
+        _F('downloads_dir', tr('Folder for converted downloads'), _T.text),
+        _F('hw_accel', tr('Hardware acceleration'), _T.pick, options: [('auto', tr('Automatic')), ('none', tr('Off (software)')), ('vaapi', 'Intel/AMD VAAPI'), ('qsv', 'Intel Quick Sync'), ('nvenc', 'NVIDIA')]),
+        _F('hw_device', tr('Graphics device'), _T.text, help: tr('Empty = the first one. VAAPI: a device file like /dev/dri/renderD129. NVIDIA: the card number.')),
+        _F('hdr_tone_mapping', tr('Convert HDR to normal colours'), _T.flag),
+        _F('hw_constant_quality', tr('Graphics chip: convert by quality instead of bitrate'), _T.flag),
+        _F('h264_preset', tr('Speed of the software encoder (x264)'), _T.pick, options: presets),
+        _F('h264_minimum_crf', tr('Best x264 quality allowed (CRF)'), _T.number),
+        _F('max_transcodes', tr('Transcodes at the same time (0 = no limit)'), _T.number),
+        _F('max_gpu_transcodes', tr('… of them on the graphics chip'), _T.number),
+        _F('max_cpu_transcodes', tr('… of them on the processor'), _T.number),
+        _F('hls_segment_seconds', tr('HLS segment length (seconds)'), _T.number),
+        _F('segmented_transcoder_timeout_seconds', tr('Timeout of the segmenting transcoder (seconds)'), _T.number),
+        _F('ffmpeg', tr('ffmpeg program'), _T.text),
+        _F('ffprobe', tr('ffprobe program'), _T.text),
       ]),
     };
   }
@@ -199,8 +200,8 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
     try {
       final x = await api.put('/api/settings', body);
       final msg = [
-        'Gespeichert',
-        if (x is Map && x['refetching'] != null && x['refetching'] != 0) 'Details für ${x['refetching']} Titel werden neu geladen',
+        tr('Saved'),
+        if (x is Map && x['refetching'] != null && x['refetching'] != 0) tr('Details for {x} titles are being reloaded', {'x': x['refetching']}),
         if (x is Map && x['restart_needed'] != null) '${x['restart_needed']}',
       ].join(' · ');
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
@@ -259,29 +260,29 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(found ? 'ffmpeg gefunden: ${tc['ffmpeg_version']}' : 'ffmpeg wurde nicht gefunden. Installiere es oder gib unten den Pfad an; ohne ffmpeg spielen nur browserfreundliche Dateien.',
+        Text(found ? tr('ffmpeg found: {tc}', {'tc': tc['ffmpeg_version']}) : tr('ffmpeg was not found. Install it or give its path below; without ffmpeg only browser-friendly files play.'),
             style: TextStyle(color: found ? context.good : context.bad)),
-        if (hw.isNotEmpty) Text('Hardware-Encoder: ${hw.join(', ')}', style: TextStyle(color: context.dim)),
-        if (hw.isNotEmpty) Text(work.isNotEmpty ? 'Funktioniert hier: ${work.join(', ')}' : 'Keiner davon funktioniert hier, der Prozessor konvertiert.', style: TextStyle(color: context.dim)),
-        Text('Konvertiert mit: ${tc['hw_in_use'] == 'none' ? 'dem Prozessor (Software)' : tc['hw_in_use']}', style: TextStyle(color: context.dim)),
+        if (hw.isNotEmpty) Text(tr('Hardware encoders: {hw}', {'hw': hw.join(', ')}), style: TextStyle(color: context.dim)),
+        if (hw.isNotEmpty) Text(work.isNotEmpty ? tr('Works here: {work}', {'work': work.join(', ')}) : tr('None of them works here, the processor converts.'), style: TextStyle(color: context.dim)),
+        Text(tr('Converting with: {tc}', {'tc': tc['hw_in_use'] == 'none' ? tr('the processor (software)') : tc['hw_in_use']}), style: TextStyle(color: context.dim)),
       ]),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (error != null) return Scaffold(appBar: AppBar(title: const Text('Servereinstellungen')), body: Center(child: Text(error!)));
-    if (!loaded) return Scaffold(appBar: AppBar(title: const Text('Servereinstellungen')), body: const Center(child: CircularProgressIndicator()));
+    if (error != null) return Scaffold(appBar: AppBar(title: Text(tr('Server settings'))), body: Center(child: Text(error!)));
+    if (!loaded) return Scaffold(appBar: AppBar(title: Text(tr('Server settings'))), body: const Center(child: CircularProgressIndicator()));
     final ps = panels;
     return DefaultTabController(
       length: ps.length,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Servereinstellungen'),
+          title: Text(tr('Server settings')),
           actions: [
             Padding(
               padding: const EdgeInsets.only(right: 12),
-              child: FilledButton.icon(onPressed: saving ? null : save, icon: const Icon(Icons.save_outlined), label: const Text('Speichern')),
+              child: FilledButton.icon(onPressed: saving ? null : save, icon: const Icon(Icons.save_outlined), label: Text(tr('Save'))),
             ),
           ],
           bottom: TabBar(isScrollable: true, tabs: [for (final p in ps.values) Tab(text: p.$1)]),
@@ -290,8 +291,8 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen> {
           for (final e in ps.entries)
             ListView(padding: const EdgeInsets.all(16), children: [
               if (e.key == 'transcoder') info(),
-              if (e.key == 'general') Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Datenordner auf dem Server: ${resp['data_dir']}', style: TextStyle(color: context.dim))),
-              if (e.key == 'network' && resp['lan_url'] != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Adresse im Heimnetz: ${resp['lan_url']}', style: TextStyle(color: context.dim))),
+              if (e.key == 'general') Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(tr('Data folder on the server: {resp}', {'resp': resp['data_dir']}), style: TextStyle(color: context.dim))),
+              if (e.key == 'network' && resp['lan_url'] != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(tr('Address on the home network: {resp}', {'resp': resp['lan_url']}), style: TextStyle(color: context.dim))),
               for (final f in e.value.$2) field(f),
             ]),
         ]),

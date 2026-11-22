@@ -4,6 +4,7 @@ import '../api.dart';
 import '../discovery.dart';
 import 'link_login.dart';
 import '../theme.dart';
+import '../i18n.dart';
 
 class LoginScreen extends StatefulWidget {
   final void Function(Api) onSignedIn;
@@ -78,9 +79,9 @@ class _LoginScreenState extends State<LoginScreen> {
       final got = await showDialog<String>(
         context: context,
         builder: (d) => AlertDialog(
-          title: Text('PIN für ${p['display_name'] ?? p['username']}'),
+          title: Text(tr('PIN for {p}', {'p': p['display_name'] ?? p['username']})),
           content: TextField(controller: c, obscureText: true, autofocus: true, keyboardType: TextInputType.number, onSubmitted: (v) => Navigator.pop(d, v)),
-          actions: [TextButton(onPressed: () => Navigator.pop(d), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, c.text), child: const Text('Anmelden'))],
+          actions: [TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Cancel'))), FilledButton(onPressed: () => Navigator.pop(d, c.text), child: Text(tr('Sign in')))],
         ),
       );
       c.dispose();
@@ -99,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => error = e.message);
     } catch (e) {
       debugPrint('Profile sign-in to ${Api.normalize(server.text)} failed: $e');
-      setState(() => error = 'Server nicht erreichbar.');
+      setState(() => error = tr('Server not reachable.'));
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -107,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> signInWithCode() async {
     if (server.text.trim().isEmpty) {
-      setState(() => error = 'Bitte zuerst die Server-Adresse eintragen.');
+      setState(() => error = tr("Please enter the server's address first."));
       return;
     }
     setState(() { busy = true; error = null; });
@@ -120,7 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
         widget.onSignedIn(a);
       })));
     } catch (_) {
-      setState(() => error = 'Server nicht erreichbar. Adresse prüfen (z. B. 192.168.1.20:8484).');
+      setState(() => error = tr('Server not reachable. Check the address (e.g. 192.168.1.20:8484).'));
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -132,15 +133,15 @@ class _LoginScreenState extends State<LoginScreen> {
       final api = await Api.reach(server.text); // reachable? (an https address may end up on http)
       await api.login(user.text, pass.text, code: needsCode ? code.text : null);
       if (api.base != Api.normalize(server.text) && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Der Server spricht kein HTTPS – die Verbindung läuft unverschlüsselt über http://')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('The server does not speak HTTPS – the connection runs unencrypted over http://'))));
       }
       widget.onSignedIn(api);
     } on ApiError catch (e) {
       debugPrint('Sign-in to ${Api.normalize(server.text)} failed: ${e.cause ?? e}');
-      setState(() { error = e.status == 0 ? '${e.message}\nAdresse prüfen (z. B. 192.168.1.20:8484)' : e.message; if (e.needsCode) needsCode = true; });
+      setState(() { error = e.status == 0 ? tr('{message}\nCheck the address (e.g. 192.168.1.20:8484)', {'message': e.message}) : e.message; if (e.needsCode) needsCode = true; });
     } catch (e) {
       debugPrint('Sign-in to ${Api.normalize(server.text)} failed: $e');
-      setState(() => error = 'Server nicht erreichbar. Adresse prüfen (z. B. 192.168.1.20:8484).');
+      setState(() => error = tr('Server not reachable. Check the address (e.g. 192.168.1.20:8484).'));
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -157,7 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const Text('Lichtspiel', textAlign: TextAlign.center, style: TextStyle(fontSize: 34, fontWeight: FontWeight.w600)),
               const SizedBox(height: 28),
               if (found.isNotEmpty) ...[
-                Text('Im Netzwerk gefunden', style: TextStyle(color: context.faint)),
+                Text(tr('Found on the network'), style: TextStyle(color: context.faint)),
                 for (final s in found)
                   ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -175,11 +176,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 autocorrect: false,
                 onSubmitted: (_) => loadProfiles(),
                 decoration: InputDecoration(
-                  labelText: found.isEmpty ? 'Server' : 'Oder Adresse eingeben',
+                  labelText: found.isEmpty ? tr('Server') : tr('Or type an address'),
                   hintText: '192.168.1.20:8484',
                   suffixIcon: searching
                       ? const Padding(padding: EdgeInsets.all(14), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
-                      : IconButton(tooltip: 'Im Netzwerk suchen', icon: const Icon(Icons.wifi_find), onPressed: search),
+                      : IconButton(tooltip: tr('Search the network'), icon: const Icon(Icons.wifi_find), onPressed: search),
                 ),
               ),
               if (profiles.isNotEmpty) ...[
@@ -191,21 +192,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: busy ? null : () => signInProfile(p),
                     ),
                 ]),
-                Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Center(child: Text('oder mit Passwort anmelden', style: TextStyle(color: context.faint)))),
+                Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Center(child: Text(tr('or sign in with a password'), style: TextStyle(color: context.faint)))),
               ],
-              TextField(controller: user, autofillHints: const [AutofillHints.username], decoration: const InputDecoration(labelText: 'Benutzername')),
-              TextField(controller: pass, obscureText: true, autofillHints: const [AutofillHints.password], onSubmitted: (_) => submit(), decoration: const InputDecoration(labelText: 'Passwort')),
+              TextField(controller: user, autofillHints: const [AutofillHints.username], decoration: InputDecoration(labelText: tr('User name'))),
+              TextField(controller: pass, obscureText: true, autofillHints: const [AutofillHints.password], onSubmitted: (_) => submit(), decoration: InputDecoration(labelText: tr('Password'))),
               if (needsCode)
-                TextField(controller: code, keyboardType: TextInputType.number, onSubmitted: (_) => submit(), decoration: const InputDecoration(labelText: 'Code aus der Authenticator-App')),
+                TextField(controller: code, keyboardType: TextInputType.number, onSubmitted: (_) => submit(), decoration: InputDecoration(labelText: tr('Code from the authenticator app'))),
               if (error != null)
                 Padding(padding: const EdgeInsets.only(top: 12), child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
               const SizedBox(height: 20),
               FilledButton(
                 onPressed: busy ? null : submit,
-                child: busy ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Anmelden'),
+                child: busy ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2)) : Text(tr('Sign in')),
               ),
               const SizedBox(height: 10),
-              OutlinedButton(onPressed: busy ? null : signInWithCode, child: const Text('Mit Code anmelden')),
+              OutlinedButton(onPressed: busy ? null : signInWithCode, child: Text(tr('Sign in with a code'))),
             ]),
           ),
         ),

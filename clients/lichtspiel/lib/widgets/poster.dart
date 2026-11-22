@@ -11,6 +11,7 @@ import 'states.dart';
 import '../screens/playlists.dart' show addToPlaylistDialog;
 import '../screens/downloads.dart';
 import '../theme.dart';
+import '../i18n.dart';
 
 /// A poster card with title, subtitle, watched mark and progress bar. Focusable (D-pad / remote ready):
 /// the focused poster grows a little and gets a frame in the accent colour.
@@ -80,20 +81,20 @@ class _PosterState extends State<Poster> {
       context: context,
       position: RelativeRect.fromLTRB(at.dx, at.dy, size.width - at.dx, size.height - at.dy),
       items: [
-        if (touch && playable && item['missing'] != true) const PopupMenuItem(value: 'play', child: Text('Abspielen')),
-        if (widget.onPick != null && !widget.picked) const PopupMenuItem(value: 'pick', child: Text('Auswählen')),
-        if (playable && !(item['missing'] == true)) const PopupMenuItem(value: 'queue', child: Text('Zur Warteschlange')),
-        if (widget.onRemoved != null) const PopupMenuItem(value: 'unresume', child: Text('Aus „Weiterschauen“ entfernen')),
-        if (playable && item['missing'] != true && item['type'] != 'track') const PopupMenuItem(value: 'together', child: Text('Zusammen schauen…')),
-        if (DownloadRights.allowed && (playable || const {'show', 'season'}.contains(item['type'])) && item['missing'] != true) const PopupMenuItem(value: 'download', child: Text('Herunterladen…')),
-        if (const {'movie', 'show', 'episode', 'track'}.contains(item['type'])) const PopupMenuItem(value: 'playlist', child: Text('Zur Playlist…')),
-        if (const {'movie', 'show', 'season', 'episode'}.contains(item['type'])) const PopupMenuItem(value: 'share', child: Text('Link kopieren')),
-        if (item['type'] != 'clip' && item['type'] != 'collection') const PopupMenuItem(value: 'history', child: Text('Verlauf')),
-        if (playable) const PopupMenuItem(value: 'report', child: Text('Problem melden…')),
-        PopupMenuItem(value: 'watched', child: Text(watched ? 'Als ungesehen markieren' : 'Als gesehen markieren')),
-        if (Poster.admin && matchable) const PopupMenuItem(value: 'refresh', child: Text('Metadaten aktualisieren')),
-        if (Poster.admin) const PopupMenuItem(value: 'edit', child: Text('Details bearbeiten')),
-        if (Poster.admin && matchable) PopupMenuItem(value: 'match', child: Text(matched ? 'Zuordnung korrigieren…' : 'Zuordnen…')),
+        if (touch && playable && item['missing'] != true) PopupMenuItem(value: 'play', child: Text(tr('Play'))),
+        if (widget.onPick != null && !widget.picked) PopupMenuItem(value: 'pick', child: Text(tr('Pick'))),
+        if (playable && !(item['missing'] == true)) PopupMenuItem(value: 'queue', child: Text(tr('Add to queue'))),
+        if (widget.onRemoved != null) PopupMenuItem(value: 'unresume', child: Text(tr('Remove from “Continue watching”'))),
+        if (playable && item['missing'] != true && item['type'] != 'track') PopupMenuItem(value: 'together', child: Text(tr('Watch together…'))),
+        if (DownloadRights.allowed && (playable || const {'show', 'season'}.contains(item['type'])) && item['missing'] != true) PopupMenuItem(value: 'download', child: Text(tr('Download…'))),
+        if (const {'movie', 'show', 'episode', 'track'}.contains(item['type'])) PopupMenuItem(value: 'playlist', child: Text(tr('Add to playlist…'))),
+        if (const {'movie', 'show', 'season', 'episode'}.contains(item['type'])) PopupMenuItem(value: 'share', child: Text(tr('Copy the link'))),
+        if (item['type'] != 'clip' && item['type'] != 'collection') PopupMenuItem(value: 'history', child: Text(tr('History'))),
+        if (playable) PopupMenuItem(value: 'report', child: Text(tr('Report a problem…'))),
+        PopupMenuItem(value: 'watched', child: Text(watched ? tr('Mark as unwatched') : tr('Mark as watched'))),
+        if (Poster.admin && matchable) PopupMenuItem(value: 'refresh', child: Text(tr('Refresh metadata'))),
+        if (Poster.admin) PopupMenuItem(value: 'edit', child: Text(tr('Edit details'))),
+        if (Poster.admin && matchable) PopupMenuItem(value: 'match', child: Text(matched ? tr('Fix match…') : tr('Match…'))),
       ],
     );
     if (v == null || !mounted) return;
@@ -107,14 +108,14 @@ class _PosterState extends State<Poster> {
           return;
         case 'queue':
           PlayerScreen.userQueue.add(item);
-          say('Zur Warteschlange hinzugefügt – sie läuft nach dem aktuellen Video');
+          say(tr('Added to the queue – it plays after the current video'));
           return;
         case 'playlist':
           await addToPlaylistDialog(context, widget.api, id, item: item);
           return;
         case 'share':
           await Clipboard.setData(ClipboardData(text: '${widget.api.base}/#/item/$id'));
-          say('Link kopiert – wer ein Konto hier hat und die Mediathek sehen darf, kann ihn öffnen');
+          say(tr('Link copied – anyone with an account here who may see the library can open it'));
           return;
         case 'history':
           await historyDialog(context, widget.api, item);
@@ -130,14 +131,14 @@ class _PosterState extends State<Poster> {
           return;
         case 'unresume':
           await widget.api.post('/api/continue/remove', {'ids': [id]});
-          say('Aus „Weiterschauen“ entfernt');
+          say(tr('Removed from “Continue watching”'));
           widget.onRemoved?.call();
           return;
         case 'watched':
           final was = watched;
           await widget.api.setWatched(id, !was);
           if (mounted) {
-            undoSnack(context, was ? 'Als ungesehen markiert' : 'Als gesehen markiert', () async {
+            undoSnack(context, was ? tr('Marked as unwatched') : tr('Marked as watched'), () async {
               try {
                 await widget.api.setWatched(id, was);
               } catch (e) {
@@ -147,7 +148,7 @@ class _PosterState extends State<Poster> {
             });
           }
         case 'refresh':
-          say('Lade Details…');
+          say(tr('Loading details…'));
           final r = await widget.api.post('/library/metadata/$id/refresh');
           if (r is Map && r['message'] != null) say('${r['message']}');
         case 'edit':
@@ -233,7 +234,7 @@ class _PosterState extends State<Poster> {
                     Image.network(widget.api.img(thumb), headers: widget.api.auth, fit: BoxFit.cover, cacheWidth: cache, errorBuilder: (_, _, _) => Center(child: Text('$title', textAlign: TextAlign.center))),
                     if (missing) Container(color: Colors.black54),
                     BusyOverlay(item: item),
-                    if (missing) const Center(child: Tooltip(message: 'Datei fehlt – im Papierkorb der Mediathek', child: Icon(Icons.delete, size: 56, color: Colors.redAccent, shadows: [Shadow(blurRadius: 6, color: Colors.black87)]))),
+                    if (missing) Center(child: Tooltip(message: tr("File missing – in the library's trash"), child: Icon(Icons.delete, size: 56, color: Colors.redAccent, shadows: [Shadow(blurRadius: 6, color: Colors.black87)]))),
                     if (unseen > 0)
                       Positioned(top: 6, right: 6, child: Container(padding: const EdgeInsets.symmetric(horizontal: 7), decoration: BoxDecoration(color: context.accent, borderRadius: BorderRadius.circular(10)), child: Text('$unseen', style: TextStyle(color: context.onAccent, fontSize: 12, fontWeight: FontWeight.w700))))
                     else if (watched)
@@ -265,13 +266,13 @@ class _PosterState extends State<Poster> {
                       ),
                     if (off > 0 && dur > 0)
                       Positioned(left: 0, right: 0, bottom: 0, child: LinearProgressIndicator(value: (off / dur).clamp(0, 1).toDouble(), minHeight: 3)),
-                    if (show && playable && !missing) Center(child: round(Icons.play_arrow, 'Abspielen', play, size: 30, pad: 10)),
-                    if (show && Poster.admin && item['type'] != 'clip') Positioned(left: 6, bottom: 10, child: round(Icons.edit_outlined, 'Details bearbeiten', edit)),
+                    if (show && playable && !missing) Center(child: round(Icons.play_arrow, tr('Play'), play, size: 30, pad: 10)),
+                    if (show && Poster.admin && item['type'] != 'clip') Positioned(left: 6, bottom: 10, child: round(Icons.edit_outlined, tr('Edit details'), edit)),
                     if (show && item['type'] != 'clip')
                       Positioned(
                         right: 6,
                         bottom: 10,
-                        child: Builder(builder: (c) => round(Icons.more_vert, 'Mehr', () {
+                        child: Builder(builder: (c) => round(Icons.more_vert, tr('More'), () {
                               final b = c.findRenderObject() as RenderBox;
                               menu(b.localToGlobal(Offset.zero));
                             })),

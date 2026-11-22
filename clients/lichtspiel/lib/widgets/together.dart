@@ -5,6 +5,7 @@ import '../api.dart';
 import '../screens/player.dart';
 import '../theme.dart';
 import 'states.dart';
+import '../i18n.dart';
 
 /// "Zusammen schauen": opens a room for [item]; people registered here can be ticked and invited,
 /// or the link/code sent. "Starten" joins it.
@@ -18,30 +19,30 @@ Future<void> watchTogether(BuildContext context, Api api, Map<String, dynamic> i
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Zusammen schauen'),
+        title: Text(tr('Watch together')),
         content: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Wer abspielt, pausiert oder springt, nimmt alle mit.', style: TextStyle(color: context.faint)),
+            Text(tr('Whoever plays, pauses or skips takes everyone along.'), style: TextStyle(color: context.faint)),
             const SizedBox(height: 12),
-            const Text('Leute hier', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(tr('People here'), style: TextStyle(fontWeight: FontWeight.bold)),
             TogetherPeople(api: api, code: code),
             const SizedBox(height: 12),
-            const Text('Oder den Link schicken', style: TextStyle(fontWeight: FontWeight.bold)),
-            Text('Für jemanden mit einem Konto hier, das diese Mediathek sehen darf.', style: TextStyle(color: context.faint)),
+            Text(tr('Or send the link'), style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(tr('For someone with an account here who may see this library.'), style: TextStyle(color: context.faint)),
             const SizedBox(height: 6),
             SelectableText(link),
-            Text('Code: $code'),
+            Text(tr('Code: {code}', {'code': code})),
           ]),
         ),
         actions: [
-          TextButton(onPressed: () => Clipboard.setData(ClipboardData(text: link)), child: const Text('Link kopieren')),
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Schließen')),
+          TextButton(onPressed: () => Clipboard.setData(ClipboardData(text: link)), child: Text(tr('Copy the link'))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Close'))),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               joinTogetherWith(context, api, code);
             },
-            child: const Text('Starten'),
+            child: Text(tr('Start')),
           ),
         ],
       ),
@@ -113,7 +114,7 @@ class _TogetherPeopleState extends State<TogetherPeople> {
     if (error != null) return Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error));
     final list = people;
     if (list == null) return const Padding(padding: EdgeInsets.all(8), child: LinearProgressIndicator());
-    if (list.isEmpty) return Text('Sonst darf hier niemand diesen Titel sehen.', style: TextStyle(color: context.faint));
+    if (list.isEmpty) return Text(tr('Nobody else here may see this title.'), style: TextStyle(color: context.faint));
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       for (final p in list)
         CheckboxListTile(
@@ -123,9 +124,9 @@ class _TogetherPeopleState extends State<TogetherPeople> {
           value: p['invited'] == true || picked.contains(p['id']),
           onChanged: p['invited'] == true ? null : (v) => setState(() => v == true ? picked.add(p['id'] as int) : picked.remove(p['id'])),
           title: Text('${p['name']}'),
-          subtitle: p['invited'] == true ? const Text('eingeladen') : p['online'] == true ? const Text('online') : null,
+          subtitle: p['invited'] == true ? Text(tr('invited')) : p['online'] == true ? const Text('online') : null,
         ),
-      FilledButton.tonal(onPressed: picked.isEmpty ? null : invite, child: const Text('Einladen')),
+      FilledButton.tonal(onPressed: picked.isEmpty ? null : invite, child: Text(tr('Invite'))),
     ]);
   }
 }
@@ -169,14 +170,14 @@ class TogetherInvites {
     final join = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Zusammen schauen'),
+        title: Text(tr('Watch together')),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('${inv!['by']} lädt dich ein, „${inv['title']}“ gemeinsam anzusehen.'),
-          if (others.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text('Schon dabei: ${others.join(', ')}', style: TextStyle(color: ctx.faint))),
+          Text(tr('{inv} invites you to watch “{inv2}” together.', {'inv': inv!['by'], 'inv2': inv['title']})),
+          if (others.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(tr('Already in: {others}', {'others': others.join(', ')}), style: TextStyle(color: ctx.faint))),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Nein, danke')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Beitreten')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('No, thanks'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Join'))),
         ],
       ),
     );
@@ -196,11 +197,11 @@ Future<void> joinTogetherDialog(BuildContext context, Api api) async {
   final text = await showDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Einem Raum beitreten'),
-      content: TextField(controller: c, autofocus: true, decoration: const InputDecoration(labelText: 'Link oder Code'), onSubmitted: (v) => Navigator.pop(ctx, v)),
+      title: Text(tr('Join a room')),
+      content: TextField(controller: c, autofocus: true, decoration: InputDecoration(labelText: tr('Link or code')), onSubmitted: (v) => Navigator.pop(ctx, v)),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, c.text), child: const Text('Beitreten')),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Cancel'))),
+        FilledButton(onPressed: () => Navigator.pop(ctx, c.text), child: Text(tr('Join'))),
       ],
     ),
   );

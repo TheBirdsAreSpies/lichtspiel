@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'i18n.dart';
 
 class ApiError implements Exception {
   final int status;
@@ -104,38 +105,15 @@ class Api {
   /// What went wrong on the way to the server, in words for the user. [https]: the address used https.
   static String describe(Object e, {bool https = false}) {
     final s = '$e';
-    if (e is HandshakeException && RegExp('CERTIFICATE|certificate').hasMatch(s)) return 'Das Zertifikat des Servers ist ungültig oder nicht vertrauenswürdig';
+    if (e is HandshakeException && RegExp('CERTIFICATE|certificate').hasMatch(s)) return tr("The server's certificate is invalid or not trusted");
     final timedOut = e is TimeoutException || e is http.RequestAbortedException || s.contains('timed out');
-    if (timedOut) return 'Server antwortet nicht (Zeitüberschreitung)';
-    if (https && e is TlsException) return 'Server spricht kein HTTPS – http:// verwenden'; // HandshakeException is one too
-    if (s.contains('Failed host lookup')) return 'Adresse nicht gefunden';
+    if (timedOut) return tr('The server does not answer (timed out)');
+    if (https && e is TlsException) return tr('The server does not speak HTTPS – use http://'); // HandshakeException is one too
+    if (s.contains('Failed host lookup')) return tr('Address not found');
     // 61 macOS, 111 Linux, 10061 Winsock, 1225 what dart:io reports on Windows (ERROR_CONNECTION_REFUSED)
     final code = e is SocketException ? e.osError?.errorCode : null;
-    if (s.contains('Connection refused') || const {61, 111, 1225, 10061}.contains(code)) return 'Verbindung abgelehnt – läuft der Server?';
-    return 'Server nicht erreichbar';
-  }
-
-  /// The server's known error texts in German; others are shown as they come.
-  static String german(String msg) {
-    const known = {
-      'User name or password is wrong': 'Benutzername oder Passwort falsch',
-      'Wrong PIN': 'Falsche PIN',
-      'A PIN is 4 to 8 digits': 'Eine PIN hat 4 bis 8 Ziffern',
-      'Too many wrong PINs; try again in a few minutes': 'Zu viele falsche PINs – versuch es in ein paar Minuten noch einmal',
-      'Enter the code from your authenticator app': 'Gib den Code aus deiner Authenticator-App ein',
-      'That code is wrong': 'Dieser Code ist falsch',
-      'That code was already used; wait for the next one': 'Dieser Code wurde schon verwendet; warte auf den nächsten',
-      'The password is wrong': 'Das Passwort ist falsch',
-      'The old password is wrong': 'Das alte Passwort ist falsch',
-      'No such profile': 'Dieses Profil gibt es nicht',
-      'Profiles on the sign-in screen are switched off': 'Profile auf dem Anmeldebildschirm sind ausgeschaltet',
-      'Profiles can only be picked in the local network; sign in with your password': 'Profile lassen sich nur im lokalen Netz auswählen – melde dich mit deinem Passwort an',
-      'Only an admin can do this': 'Das darf nur ein Admin',
-      "You don't have access to this library": 'Du hast keinen Zugriff auf diese Bibliothek',
-    };
-    final locked = RegExp(r'^Too many wrong attempts; try again in (\d+) minute\(s\)$').firstMatch(msg);
-    if (locked != null) return 'Zu viele falsche Versuche – versuch es in ${locked[1]} Minute(n) noch einmal';
-    return known[msg] ?? msg;
+    if (s.contains('Connection refused') || const {61, 111, 1225, 10061}.contains(code)) return tr('Connection refused – is the server running?');
+    return tr('Server not reachable');
   }
 
   /// Whether [host] is in the home network: private or link-local IPv4, loopback, IPv6 ULA or link-local,
@@ -157,7 +135,7 @@ class Api {
       await api.status();
       return api;
     } on ApiError catch (e) {
-      if (e.status != 0 || e.message != 'Server spricht kein HTTPS – http:// verwenden' || !homeNetwork(Uri.parse(api.base).host)) rethrow;
+      if (e.status != 0 || e.message != tr('The server does not speak HTTPS – use http://') || !homeNetwork(Uri.parse(api.base).host)) rethrow;
       final plain = Api(api.base.replaceFirst('https://', 'http://'));
       try {
         await plain.status();
@@ -232,7 +210,8 @@ class Api {
     } catch (_) {}
     if (r.statusCode >= 400) {
       if (r.statusCode == 401 && token != null) onUnauthorized?.call(this);
-      final msg = body is Map && body['error'] != null ? german('${body['error']}') : 'Fehler ${r.statusCode}';
+      // The server's texts are English; the language packs have the known ones.
+      final msg = body is Map && body['error'] != null ? tr('${body['error']}') : tr('Error {statusCode}', {'statusCode': r.statusCode});
       throw ApiError(r.statusCode, msg, needsCode: body is Map && body['needs_code'] == true);
     }
     return body;

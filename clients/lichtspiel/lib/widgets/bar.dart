@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../i18n.dart';
 
 /// One button of a screen's top bar.
 class BarAction {
@@ -26,7 +27,7 @@ List<Widget> barActions(BuildContext context, List<BarAction> actions, {bool lab
     for (final a in shown) IconButton(tooltip: a.label, icon: Icon(a.icon), onPressed: a.onPressed),
     if (rest.isNotEmpty)
       PopupMenuButton<int>(
-        tooltip: 'Mehr',
+        tooltip: tr('More'),
         onSelected: (i) => rest[i].onPressed(),
         itemBuilder: (_) => [
           for (var i = 0; i < rest.length; i++) PopupMenuItem(value: i, child: ListTile(contentPadding: EdgeInsets.zero, leading: Icon(rest[i].icon), title: Text(rest[i].label))),

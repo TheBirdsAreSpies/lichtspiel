@@ -3,6 +3,7 @@ import '../api.dart';
 import '../theme.dart';
 import 'dashboard.dart';
 import 'home.dart';
+import '../i18n.dart';
 
 /// Statistik, like the web page (#/stats): one's own viewing (an admin: everyone's or one person's)
 /// over 30 or 90 days, a year or everything: totals, per day, week or month, the times of day, the most
@@ -16,7 +17,7 @@ class StatsScreen extends StatefulWidget {
   State<StatsScreen> createState() => _StatsScreenState();
 }
 
-const _weekdays = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+List<String> get _weekdays => [tr('Mon'), tr('Tue'), tr('Wed'), tr('Thu'), tr('Fri'), tr('Sat'), tr('Sun')];
 
 /// The time span a statistic covers ([days] back, `span` days with viewing in them) splits into days,
 /// weeks (beyond 90 days) or months (beyond 400), counted in local time.
@@ -29,7 +30,7 @@ List<ChartBucket> statBuckets(DateTime now, int days, int span) {
   final out = <ChartBucket>[];
   for (var d = start; !d.isAfter(day0);) {
     final next = unit == 'month' ? DateTime(d.year, d.month + 1, 1) : DateTime(d.year, d.month, d.day + (unit == 'week' ? 7 : 1));
-    out.add(ChartBucket(d.millisecondsSinceEpoch / 1000, next.millisecondsSinceEpoch / 1000, unit == 'month' ? '${d.month}/${d.year % 100}' : '${d.day}.${d.month}.'));
+    out.add(ChartBucket(d.millisecondsSinceEpoch / 1000, next.millisecondsSinceEpoch / 1000, unit == 'month' ? '${d.month}/${d.year % 100}' : fmtDay(d, year: false)));
     d = next;
   }
   return out;
@@ -94,7 +95,7 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   String dur(num mins) => mins >= 60 ? '${(mins / 60).floor()} h ${(mins % 60).round()} min' : '${mins.round()} min';
-  String num1(num v) => v < 10 && v != v.roundToDouble() ? v.toStringAsFixed(1).replaceAll('.', ',') : v.round().toString();
+  String num1(num v) => v < 10 && v != v.roundToDouble() ? decimal(v.toStringAsFixed(1)) : v.round().toString();
 
   Widget card(String title, List<Widget> kids, {String? note}) => Card(
         child: Padding(
@@ -124,7 +125,7 @@ class _StatsScreenState extends State<StatsScreen> {
         ),
       );
 
-  Widget none() => Padding(padding: const EdgeInsets.all(8), child: Text('Keine Wiedergaben in dieser Zeit.', style: TextStyle(color: context.faint)));
+  Widget none() => Padding(padding: const EdgeInsets.all(8), child: Text(tr('No plays in this time.'), style: TextStyle(color: context.faint)));
 
   List<Map> sorted(dynamic list) {
     final l = (list as List? ?? const []).cast<Map>().toList();
@@ -143,7 +144,7 @@ class _StatsScreenState extends State<StatsScreen> {
           dense: true,
           contentPadding: EdgeInsets.zero,
           leading: SizedBox(width: 34, child: Image.network(api.img(x['thumb']), headers: api.auth, fit: BoxFit.cover, cacheWidth: 80, errorBuilder: (_, _, _) => Container(color: context.hair))),
-          title: Text('${x['title'] ?? '(entfernt)'}', maxLines: 1, overflow: TextOverflow.ellipsis),
+          title: Text('${x['title'] ?? tr('(removed)')}', maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: x['year'] == null ? null : Text('${x['year']}'),
           trailing: Text(amount(x), style: TextStyle(fontSize: 12, color: context.dim)),
           onTap: x['id'] == null ? null : () => openItem(context, api, {'ratingKey': x['id']}),
@@ -154,7 +155,7 @@ class _StatsScreenState extends State<StatsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Statistik')),
+      appBar: AppBar(title: Text(tr('Statistics'))),
       body: RefreshIndicator(
         onRefresh: load,
         child: ListView(padding: const EdgeInsets.all(12), children: [
@@ -162,7 +163,7 @@ class _StatsScreenState extends State<StatsScreen> {
           SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
             SegmentedButton<int>(
               showSelectedIcon: false,
-              segments: const [ButtonSegment(value: 30, label: Text('30 T')), ButtonSegment(value: 90, label: Text('90 T')), ButtonSegment(value: 365, label: Text('1 J')), ButtonSegment(value: 3660, label: Text('Alles'))],
+              segments: [ButtonSegment(value: 30, label: Text('30 T')), ButtonSegment(value: 90, label: Text('90 T')), ButtonSegment(value: 365, label: Text('1 J')), ButtonSegment(value: 3660, label: Text(tr('Everything')))],
               selected: {days},
               onSelectionChanged: (s) {
                 days = s.first;
@@ -171,14 +172,14 @@ class _StatsScreenState extends State<StatsScreen> {
             ),
             SegmentedButton<bool>(
               showSelectedIcon: false,
-              segments: const [ButtonSegment(value: false, label: Text('Wiedergaben')), ButtonSegment(value: true, label: Text('Stunden'))],
+              segments: [ButtonSegment(value: false, label: Text(tr('Plays'))), ButtonSegment(value: true, label: Text(tr('Hours')))],
               selected: {hours},
               onSelectionChanged: (s) => setState(() => hours = s.first),
             ),
             if (people.isNotEmpty)
               DropdownButton<String>(
                 value: user,
-                items: [const DropdownMenuItem(value: '', child: Text('Alle')), for (final u in people) DropdownMenuItem(value: '${u['id']}', child: Text('${u['display_name'] ?? u['username']}'))],
+                items: [DropdownMenuItem(value: '', child: Text(tr('All'))), for (final u in people) DropdownMenuItem(value: '${u['id']}', child: Text('${u['display_name'] ?? u['username']}'))],
                 onChanged: (v) {
                   user = v ?? '';
                   load();
@@ -200,7 +201,7 @@ class _StatsScreenState extends State<StatsScreen> {
     final from = ((r['from'] ?? 0) as num) > first ? (r['from'] as num) : first;
     final span = ((DateTime.now().millisecondsSinceEpoch / 1000 - from) / 86400).ceil().clamp(1, 100000);
     final buckets = statBuckets(DateTime.now(), days, span);
-    final unit = span > 400 ? 'Monat' : span > 90 ? 'Woche' : 'Tag';
+    final unit = span > 400 ? tr('month') : span > 90 ? tr('week') : tr('day');
     final grid = List.generate(7, (_) => List.filled(24, 0.0));
     final perDay = <String, double>{};
     var movies = 0, episodes = 0;
@@ -210,7 +211,7 @@ class _StatsScreenState extends State<StatsScreen> {
       final b = buckets.where((x) => at >= x.from && at < x.to).firstOrNull;
       if (b != null) b.parts['${p[2]}'] = (b.parts['${p[2]}'] ?? 0) + add(p);
       grid[d.weekday - 1][d.hour] += add(p);
-      final key = '${d.day}.${d.month}.${d.year}';
+      final key = fmtDay(d);
       perDay[key] = (perDay[key] ?? 0) + add(p);
       if (p[2] == 'movie') movies++;
       if (p[2] == 'episode') episodes++;
@@ -226,44 +227,44 @@ class _StatsScreenState extends State<StatsScreen> {
         : Column(children: [a, ?b]);
     return [
       Wrap(spacing: 8, runSpacing: 8, children: [
-        tile('Gesehen', dur((r['minutes'] ?? 0) as num), '${r['size'] ?? 0} Wiedergaben'),
-        tile('Filme', '$movies'),
-        tile('Folgen', '$episodes'),
-        tile('Tage mit Schauen', '${perDay.length}', best == null ? null : 'Am meisten am ${best.key}: ${fmt(best.value)}'),
-        if (plays.isNotEmpty) tile('Lieblingszeit', hh(peak), '${hh(peak)} bis ${hh((peak + 1) % 24)}'),
+        tile(tr('Watched'), dur((r['minutes'] ?? 0) as num), tr('{r} plays', {'r': r['size'] ?? 0})),
+        tile(tr('Movies'), '$movies'),
+        tile(tr('Episodes'), '$episodes'),
+        tile(tr('Days with watching'), '${perDay.length}', best == null ? null : tr('Most on {key}: {fmt}', {'key': best.key, 'fmt': fmt(best.value)})),
+        if (plays.isNotEmpty) tile(tr('Favourite time'), hh(peak), tr('{hh} to {hh2}', {'hh': hh(peak), 'hh2': hh((peak + 1) % 24)})),
       ]),
       const SizedBox(height: 8),
-      card('${hours ? 'Gesehene Stunden' : 'Wiedergaben'} pro $unit', [
+      card(tr('{hours} per {unit}', {'hours': hours ? tr('Hours watched') : tr('Plays'), 'unit': unit}), [
         SizedBox(height: 180, width: double.infinity, child: CustomPaint(painter: StackedBarPainter(buckets, context.hair2, context.faint, colors))),
         const SizedBox(height: 6),
         Row(children: [
-          Icon(Icons.circle, size: 10, color: context.info), const SizedBox(width: 4), const Text('Filme', style: TextStyle(fontSize: 12)), const SizedBox(width: 12),
-          Icon(Icons.circle, size: 10, color: context.warn), const SizedBox(width: 4), const Text('Folgen', style: TextStyle(fontSize: 12)), const SizedBox(width: 12),
-          const Icon(Icons.circle, size: 10, color: Colors.grey), const SizedBox(width: 4), const Text('Sonstiges', style: TextStyle(fontSize: 12)),
+          Icon(Icons.circle, size: 10, color: context.info), const SizedBox(width: 4), Text(tr('Movies'), style: TextStyle(fontSize: 12)), const SizedBox(width: 12),
+          Icon(Icons.circle, size: 10, color: context.warn), const SizedBox(width: 4), Text(tr('Episodes'), style: TextStyle(fontSize: 12)), const SizedBox(width: 12),
+          const Icon(Icons.circle, size: 10, color: Colors.grey), const SizedBox(width: 4), Text(tr('Other'), style: TextStyle(fontSize: 12)),
         ]),
       ]),
-      card('Tageszeiten', [
+      card(tr('Times of day'), [
         SizedBox(height: 7 * 22 + 20, width: double.infinity, child: CustomPaint(painter: HeatPainter(grid, context.info, context.hair, context.faint))),
-      ], note: hours ? 'Gesehene Stunden' : 'Wiedergaben'),
-      pair(card('Meistgeschaute Serien', [titleList(r['shows'])]), card('Meistgeschaute Filme', [titleList(r['movies'])])),
+      ], note: hours ? tr('Hours watched') : tr('Plays')),
+      pair(card(tr('Most watched shows'), [titleList(r['shows'])]), card(tr('Most watched movies'), [titleList(r['movies'])])),
       pair(
-        card('Genres', [
+        card(tr('Genres'), [
           if (sorted(r['genres']).isEmpty) none(),
           for (final g in sorted(r['genres'])) ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${g['genre']}'), trailing: Text(amount(g), style: TextStyle(fontSize: 12, color: context.dim))),
         ]),
         widget.admin && user.isEmpty
-            ? card('Wer schaut wie viel', [
+            ? card(tr('Who watches how much'), [
                 if (sorted(r['users']).isEmpty) none(),
                 for (final x in sorted(r['users']))
                   ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${x['display_name'] ?? x['username'] ?? '?'}'),
-                      subtitle: Text('${x['plays']} Wiedergaben · ${dur((x['minutes'] ?? 0) as num)}', style: TextStyle(fontSize: 12, color: context.dim))),
+                      subtitle: Text(tr('{x} plays · {dur}', {'x': x['plays'], 'dur': dur((x['minutes'] ?? 0) as num)}), style: TextStyle(fontSize: 12, color: context.dim))),
               ])
             : null,
       ),
       if (widget.admin)
-        card('Last auf dem Server nach Tageszeit', [
+        card(tr('Load on the server by time of day'), [
           if (cpu == null)
-            Text('Noch nichts gemessen.', style: TextStyle(color: context.faint))
+            Text(tr('Nothing measured yet.'), style: TextStyle(color: context.faint))
           else ...[
             SizedBox(
               height: 160,
@@ -271,11 +272,10 @@ class _StatsScreenState extends State<StatsScreen> {
               child: CustomPaint(painter: StackedBarPainter([for (var i = 0; i < 24; i++) ChartBucket(i.toDouble(), i + 1.0, '$i')..parts['cpu'] = cpu![i]], context.hair2, context.faint, {'cpu': context.good}, keys: const ['cpu'])),
             ),
             const SizedBox(height: 6),
-            Text('Prozessor in % · am meisten Streams um ${hh(streams.indexOf(streams.reduce((a, b) => a > b ? a : b)))} '
-                '(im Schnitt ${num1(streams.reduce((a, b) => a > b ? a : b))}, davon ${num1(converted[streams.indexOf(streams.reduce((a, b) => a > b ? a : b))])} umgewandelt)',
+            Text(tr('Processor in % · most streams at {hh} (on average {num1}, {num12} of them converted)', {'hh': hh(streams.indexOf(streams.reduce((a, b) => a > b ? a : b))), 'num1': num1(streams.reduce((a, b) => a > b ? a : b)), 'num12': num1(converted[streams.indexOf(streams.reduce((a, b) => a > b ? a : b))])}),
                 style: TextStyle(fontSize: 12, color: context.dim)),
           ],
-        ], note: 'Schnitt der letzten 30 Tage'),
+        ], note: tr('Average of the last 30 days')),
     ];
   }
 }

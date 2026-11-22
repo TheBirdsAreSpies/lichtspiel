@@ -12,6 +12,7 @@ import 'users.dart';
 import '../widgets/bar.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
+import '../i18n.dart';
 
 String fmtDateTime(dynamic secs) {
   if (secs is! num || secs <= 0) return '–';
@@ -36,18 +37,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Einstellungen'),
+          title: Text(tr('Settings')),
           actions: [
             if (widget.admin)
               ...barActions(context, labels: true, [
-                BarAction(Icons.video_library_outlined, 'Bibliotheken', () => Navigator.push(context, MaterialPageRoute(builder: (_) => LibrariesScreen(api: widget.api)))),
-                BarAction(Icons.dns_outlined, 'Server', () => Navigator.push(context, MaterialPageRoute(builder: (_) => ServerSettingsScreen(api: widget.api)))),
-                BarAction(Icons.extension_outlined, 'Plugins', () => Navigator.push(context, MaterialPageRoute(builder: (_) => PluginsScreen(api: widget.api)))),
-                BarAction(Icons.build_outlined, 'Wartung', () => Navigator.push(context, MaterialPageRoute(builder: (_) => MaintenanceScreen(api: widget.api)))),
-                BarAction(Icons.group_outlined, 'Nutzer & Einladungen', () => Navigator.push(context, MaterialPageRoute(builder: (_) => UsersScreen(api: widget.api)))),
+                BarAction(Icons.video_library_outlined, tr('Libraries'), () => Navigator.push(context, MaterialPageRoute(builder: (_) => LibrariesScreen(api: widget.api)))),
+                BarAction(Icons.dns_outlined, tr('Server'), () => Navigator.push(context, MaterialPageRoute(builder: (_) => ServerSettingsScreen(api: widget.api)))),
+                BarAction(Icons.extension_outlined, tr('Plugins'), () => Navigator.push(context, MaterialPageRoute(builder: (_) => PluginsScreen(api: widget.api)))),
+                BarAction(Icons.build_outlined, tr('Maintenance'), () => Navigator.push(context, MaterialPageRoute(builder: (_) => MaintenanceScreen(api: widget.api)))),
+                BarAction(Icons.group_outlined, tr('Users & invites'), () => Navigator.push(context, MaterialPageRoute(builder: (_) => UsersScreen(api: widget.api)))),
               ]),
           ],
-          bottom: TabBar(isScrollable: isNarrow(context), tabs: const [Tab(text: 'Konto'), Tab(text: 'Wiedergabe'), Tab(text: 'Geräte'), Tab(text: 'Merkliste-Feed')]),
+          bottom: TabBar(isScrollable: isNarrow(context), tabs: [Tab(text: tr('Account')), Tab(text: tr('Playback')), Tab(text: tr('Devices')), Tab(text: tr('Watchlist feed'))]),
         ),
         body: TabBarView(children: [
           _AccountTab(api: widget.api),
@@ -82,7 +83,7 @@ Future<String?> _askPassword(BuildContext context, String title, {bool secret = 
       title: Text(title),
       content: TextField(controller: c, obscureText: secret, autofocus: true, onSubmitted: (v) => Navigator.pop(d, v)),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(d), child: const Text('Abbrechen')),
+        TextButton(onPressed: () => Navigator.pop(d), child: Text(tr('Cancel'))),
         FilledButton(onPressed: () => Navigator.pop(d, c.text), child: const Text('OK')),
       ],
     ),
@@ -97,24 +98,24 @@ Future<void> _twoFactorDialog(BuildContext context, Api api, String secret, Stri
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, set) => AlertDialog(
-        title: const Text('Zweistufige Anmeldung einrichten'),
+        title: Text(tr('Set up two-step sign-in')),
         content: SizedBox(
           width: 420,
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Tippe diesen Schlüssel in deine Authenticator-App ein oder öffne den Link auf diesem Gerät:'),
+            Text(tr('Type this key into your authenticator app or open the link on this device:')),
             const SizedBox(height: 8),
             SelectableText(secret, style: const TextStyle(fontSize: 18, fontFamily: 'monospace')),
             Row(children: [
-              TextButton(onPressed: () => Clipboard.setData(ClipboardData(text: secret)), child: const Text('Schlüssel kopieren')),
-              TextButton(onPressed: () => launchUrl(Uri.parse(uri), mode: LaunchMode.externalApplication), child: const Text('In Authenticator öffnen')),
+              TextButton(onPressed: () => Clipboard.setData(ClipboardData(text: secret)), child: Text(tr('Copy the key'))),
+              TextButton(onPressed: () => launchUrl(Uri.parse(uri), mode: LaunchMode.externalApplication), child: Text(tr('Open in authenticator'))),
             ]),
             const SizedBox(height: 8),
-            const Text('Dann der 6-stellige Code, den sie anzeigt:'),
+            Text(tr('Then the 6-digit code it shows:')),
             TextField(controller: code, keyboardType: TextInputType.number, decoration: InputDecoration(hintText: '123456', errorText: err)),
           ]),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Cancel'))),
           FilledButton(
             onPressed: () async {
               try {
@@ -124,7 +125,7 @@ Future<void> _twoFactorDialog(BuildContext context, Api api, String secret, Stri
                 set(() => err = errorText(e));
               }
             },
-            child: const Text('Einschalten'),
+            child: Text(tr('Switch on')),
           ),
         ],
       ),
@@ -170,17 +171,17 @@ class _AccountTabState extends State<_AccountTab> {
     final m = me;
     if (m == null) return const Center(child: CircularProgressIndicator());
     return ListView(padding: const EdgeInsets.all(16), children: [
-      _panel(context, 'Dein Konto', [
-        Text('Benutzername: ${m['username']}'),
+      _panel(context, tr('Your account'), [
+        Text(tr('User name: {m}', {'m': m['username']})),
         const SizedBox(height: 12),
-        TextField(controller: name, decoration: const InputDecoration(labelText: 'Voller Name', border: OutlineInputBorder())),
+        TextField(controller: name, decoration: InputDecoration(labelText: tr('Full name'), border: OutlineInputBorder())),
         const SizedBox(height: 12),
         Align(
           alignment: Alignment.centerLeft,
-          child: FilledButton(onPressed: () => run(() async => widget.api.post('/api/me/profile', {'full_name': name.text}), 'Gespeichert'), child: const Text('Speichern')),
+          child: FilledButton(onPressed: () => run(() async => widget.api.post('/api/me/profile', {'full_name': name.text}), tr('Saved')), child: Text(tr('Save'))),
         ),
       ]),
-      _panel(context, 'Darstellung', [
+      _panel(context, tr('Appearance'), [
         ListenableBuilder(
           listenable: AppTheme.changes,
           builder: (context, _) {
@@ -192,12 +193,28 @@ class _AccountTabState extends State<_AccountTab> {
             }
 
             return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // The language is kept with the account too (pref "lang", as in the web app). Choosing one
+              // builds the app again in it, so it is saved first.
+              Row(children: [
+                Text(tr('Language')),
+                const SizedBox(width: 16),
+                DropdownButton<String>(
+                  value: I18n.lang.value,
+                  items: [for (final e in I18n.names.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
+                  onChanged: (v) async {
+                    if (v == null || v == I18n.lang.value) return;
+                    await save({'lang': v});
+                    await I18n.set(v);
+                  },
+                ),
+              ]),
+              const SizedBox(height: 16),
               SegmentedButton<String>(
                 showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: 'system', icon: Icon(Icons.brightness_auto_outlined), label: Text('System')),
-                  ButtonSegment(value: 'light', icon: Icon(Icons.light_mode_outlined), label: Text('Hell')),
-                  ButtonSegment(value: 'dark', icon: Icon(Icons.dark_mode_outlined), label: Text('Dunkel')),
+                segments: [
+                  ButtonSegment(value: 'system', icon: Icon(Icons.brightness_auto_outlined), label: Text(tr('System'))),
+                  ButtonSegment(value: 'light', icon: Icon(Icons.light_mode_outlined), label: Text(tr('Light'))),
+                  ButtonSegment(value: 'dark', icon: Icon(Icons.dark_mode_outlined), label: Text(tr('Dark'))),
                   ButtonSegment(value: 'oled', icon: Icon(Icons.contrast), label: Text('OLED')),
                 ],
                 selected: {AppTheme.choice.value},
@@ -207,9 +224,9 @@ class _AccountTabState extends State<_AccountTab> {
                 },
               ),
               const SizedBox(height: 6),
-              Text('„System“ folgt der Einstellung des Geräts. „OLED“ ist reines Schwarz.', style: TextStyle(fontSize: 12, color: context.dim)),
+              Text(tr("“System” follows the device's setting. “OLED” is pure black."), style: TextStyle(fontSize: 12, color: context.dim)),
               const SizedBox(height: 16),
-              const Text('Akzentfarbe'),
+              Text(tr('Accent colour')),
               const SizedBox(height: 8),
               Wrap(spacing: 12, children: [
                 for (final e in AppTheme.accents.entries)
@@ -239,29 +256,29 @@ class _AccountTabState extends State<_AccountTab> {
           },
         ),
       ]),
-      _panel(context, 'Zweistufige Anmeldung', [
+      _panel(context, tr('Two-step sign-in'), [
         if (m['two_factor'] == true) ...[
-          const Text('Die zweistufige Anmeldung ist eingeschaltet.'),
+          Text(tr('Two-step sign-in is on.')),
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
             child: OutlinedButton(
               onPressed: () async {
-                final pw = await _askPassword(context, 'Dein Passwort');
+                final pw = await _askPassword(context, tr('Your password'));
                 if (pw == null || pw.isEmpty || !context.mounted) return;
-                final code = await _askPassword(context, 'Code aus der Authenticator-App', secret: false);
+                final code = await _askPassword(context, tr('Code from the authenticator app'), secret: false);
                 if (code == null || code.isEmpty) return;
                 await run(() async {
                   await widget.api.post('/api/me/2fa/disable', {'password': pw, 'code': code});
                   final fresh = await widget.api.get('/api/me');
                   if (mounted) setState(() => me = Map<String, dynamic>.from(fresh));
-                }, 'Ausgeschaltet');
+                }, tr('Switched off'));
               },
-              child: const Text('Ausschalten'),
+              child: Text(tr('Switch off')),
             ),
           ),
         ] else ...[
-          const Text('Beim Anmelden mit Passwort fragt der Server zusätzlich nach einem Code aus einer Authenticator-App (Google Authenticator, Aegis, 1Password …).'),
+          Text(tr('When signing in with a password the server also asks for a code from an authenticator app (Google Authenticator, Aegis, 1Password …).')),
           const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerLeft,
@@ -277,23 +294,23 @@ class _AccountTabState extends State<_AccountTab> {
                   if (context.mounted) _say(context, errorText(e));
                 }
               },
-              child: const Text('Einrichten'),
+              child: Text(tr('Set up')),
             ),
           ),
         ],
       ]),
-      _panel(context, 'Passwort', [
+      _panel(context, tr('Password'), [
         Align(
           alignment: Alignment.centerLeft,
           child: OutlinedButton(
             onPressed: () async {
-              final old = await _askPassword(context, 'Aktuelles Passwort');
+              final old = await _askPassword(context, tr('Current password'));
               if (old == null || old.isEmpty || !context.mounted) return;
-              final nw = await _askPassword(context, 'Neues Passwort (mindestens 6 Zeichen)');
+              final nw = await _askPassword(context, tr('New password (at least 6 characters)'));
               if (nw == null || nw.isEmpty) return;
-              run(() async => widget.api.post('/api/me/password', {'old': old, 'new': nw}), 'Passwort geändert');
+              run(() async => widget.api.post('/api/me/password', {'old': old, 'new': nw}), tr('Password changed'));
             },
-            child: const Text('Passwort ändern'),
+            child: Text(tr('Change password')),
           ),
         ),
       ]),
@@ -310,25 +327,25 @@ class _PlaybackTab extends StatefulWidget {
 }
 
 class _PlaybackTabState extends State<_PlaybackTab> {
-  static const langs = {
-    '': 'Nicht festgelegt',
-    'en': 'Englisch',
-    'de': 'Deutsch',
-    'fr': 'Französisch',
-    'es': 'Spanisch',
-    'it': 'Italienisch',
-    'pt': 'Portugiesisch',
-    'nl': 'Niederländisch',
-    'sv': 'Schwedisch',
-    'da': 'Dänisch',
-    'no': 'Norwegisch',
-    'fi': 'Finnisch',
-    'pl': 'Polnisch',
-    'ru': 'Russisch',
-    'tr': 'Türkisch',
-    'ja': 'Japanisch',
-    'ko': 'Koreanisch',
-    'zh': 'Chinesisch',
+  static Map<String, String> get langs => {
+    '': tr('Not set'),
+    'en': tr('English'),
+    'de': tr('German'),
+    'fr': tr('French'),
+    'es': tr('Spanish'),
+    'it': tr('Italian'),
+    'pt': tr('Portuguese'),
+    'nl': tr('Dutch'),
+    'sv': tr('Swedish'),
+    'da': tr('Danish'),
+    'no': tr('Norwegian'),
+    'fi': tr('Finnish'),
+    'pl': tr('Polish'),
+    'ru': tr('Russian'),
+    'tr': tr('Turkish'),
+    'ja': tr('Japanese'),
+    'ko': tr('Korean'),
+    'zh': tr('Chinese'),
   };
   SharedPreferences? p;
 
@@ -402,15 +419,15 @@ class _PlaybackTabState extends State<_PlaybackTab> {
     if (p == null) return const Center(child: CircularProgressIndicator());
     final s = p!;
     return ListView(padding: const EdgeInsets.all(16), children: [
-      _panel(context, 'Qualität', [
-        row('Videoqualität', drop('quality', 'original', playerQualities), 'Die Qualität, mit der ein Video startet. Im Player änderbar.'),
-        row('Nächste Folge automatisch', Switch(value: s.getBool('autoNext') ?? true, onChanged: (v) => save('autoNext', v)), 'Nach einer Folge nach 10 Sekunden die nächste starten.'),
+      _panel(context, tr('Quality'), [
+        row(tr('Video quality'), drop('quality', 'original', playerQualities), tr('The quality a video starts with. Can be changed in the player.')),
+        row(tr('Next episode by itself'), Switch(value: s.getBool('autoNext') ?? true, onChanged: (v) => save('autoNext', v)), tr('Start the next episode 10 seconds after one ends.')),
       ]),
-      _panel(context, 'Ton und Untertitel', [
-        row('Bevorzugte Tonsprache', drop('audioLang', '', langs)),
-        row('Bevorzugte Untertitelsprache', drop('subLang', '', langs)),
+      _panel(context, tr('Audio and subtitles'), [
+        row(tr('Preferred audio language'), drop('audioLang', '', langs)),
+        row(tr('Preferred subtitle language'), drop('subLang', '', langs)),
         row(
-          'Untertitelgröße',
+          tr('Subtitle size'),
           DropdownButton<int>(
             value: playerSubSizes.containsKey(s.getInt('subSize')) ? s.getInt('subSize') : 100,
             items: [for (final e in playerSubSizes.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
@@ -456,8 +473,8 @@ class _DevicesTabState extends State<_DevicesTab> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (d) => AlertDialog(
-        content: Text(all ? 'Ein neues Token erzeugen und alle anderen Geräte und Skripte abmelden?' : 'Ein neues Token erzeugen? Skripte mit dem alten Token funktionieren danach nicht mehr.'),
-        actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Ja'))],
+        content: Text(all ? tr('Make a new token and sign out all other devices and scripts?') : tr('Make a new token? Scripts with the old token stop working.')),
+        actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Cancel'))), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Yes')))],
       ),
     );
     if (ok != true) return;
@@ -465,7 +482,7 @@ class _DevicesTabState extends State<_DevicesTab> {
       final r = await widget.api.post('/api/tokens/rotate', {'all': all});
       widget.api.token = r['token'];
       await widget.api.save();
-      if (mounted) _say(context, all ? 'Neues Token; ${(r['revoked'] ?? 1) - 1} andere Anmeldung(en) beendet' : 'Neues Token; das alte gilt nicht mehr');
+      if (mounted) _say(context, all ? tr('New token; {x} other sign-in(s) ended', {'x': (r['revoked'] ?? 1) - 1}) : tr('New token; the old one no longer works'));
     } catch (e) {
       if (mounted) _say(context, errorText(e));
     }
@@ -477,14 +494,14 @@ class _DevicesTabState extends State<_DevicesTab> {
     if (error != null) return Center(child: Text(error!));
     final l = tokens;
     if (l == null) return const Center(child: CircularProgressIndicator());
-    if (l.isEmpty) return const Center(child: Text('Keine Geräte.'));
+    if (l.isEmpty) return Center(child: Text(tr('No devices.')));
     return ListView(padding: const EdgeInsets.all(16), children: [
-      Padding(padding: EdgeInsets.only(bottom: 8), child: Text('Browser, Apps und Skripte, die an deinem Konto angemeldet sind.', style: TextStyle(color: context.dim))),
+      Padding(padding: EdgeInsets.only(bottom: 8), child: Text(tr('Browsers, apps and scripts signed in to your account.'), style: TextStyle(color: context.dim))),
       Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Wrap(spacing: 8, children: [
-          OutlinedButton(onPressed: () => rotate(false), child: const Text('Token erneuern')),
-          OutlinedButton(onPressed: () => rotate(true), child: const Text('Erneuern und überall sonst abmelden')),
+          OutlinedButton(onPressed: () => rotate(false), child: Text(tr('Renew the token'))),
+          OutlinedButton(onPressed: () => rotate(true), child: Text(tr('Renew and sign out everywhere else'))),
         ]),
       ),
       for (final k in l)
@@ -492,10 +509,10 @@ class _DevicesTabState extends State<_DevicesTab> {
           child: ListTile(
             leading: const Icon(Icons.devices_other),
             title: Row(children: [
-              Flexible(child: Text('${k['last_device'] ?? k['device'] ?? 'Web-App'}')),
-              if (k['current'] == true) const Padding(padding: EdgeInsets.only(left: 8), child: Chip(label: Text('dieses'), visualDensity: VisualDensity.compact)),
+              Flexible(child: Text('${k['last_device'] ?? k['device'] ?? tr('Web app')}')),
+              if (k['current'] == true) Padding(padding: EdgeInsets.only(left: 8), child: Chip(label: Text(tr('this one')), visualDensity: VisualDensity.compact)),
             ]),
-            subtitle: Text('Zuletzt benutzt: ${fmtDateTime(k['last_used'])} · Adresse: ${k['last_ip'] ?? '–'} · Angemeldet: ${fmtDateTime(k['created_at'])}'),
+            subtitle: Text(tr('Last used: {fmtDateTime} · address: {k} · signed in: {fmtDateTime2}', {'fmtDateTime': fmtDateTime(k['last_used']), 'k': k['last_ip'] ?? '–', 'fmtDateTime2': fmtDateTime(k['created_at'])})),
             trailing: k['current'] == true
                 ? null
                 : TextButton(
@@ -503,8 +520,8 @@ class _DevicesTabState extends State<_DevicesTab> {
                       final ok = await showDialog<bool>(
                         context: context,
                         builder: (d) => AlertDialog(
-                          content: const Text('Dieses Gerät abmelden? Es muss sich neu anmelden.'),
-                          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Abmelden'))],
+                          content: Text(tr('Sign this device out? It has to sign in again.')),
+                          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Cancel'))), FilledButton(onPressed: () => Navigator.pop(d, true), child: Text(tr('Sign out')))],
                         ),
                       );
                       if (ok != true) return;
@@ -515,7 +532,7 @@ class _DevicesTabState extends State<_DevicesTab> {
                       }
                       load();
                     },
-                    child: const Text('Abmelden'),
+                    child: Text(tr('Sign out')),
                   ),
           ),
         ),
@@ -556,8 +573,8 @@ class _FeedTabState extends State<_FeedTab> {
     if (f == null) return const Center(child: CircularProgressIndicator());
     final on = f['enabled'] == true;
     return ListView(padding: const EdgeInsets.all(16), children: [
-      _panel(context, 'Merkliste als Feed', [
-        Text('Deine Merkliste als RSS-Feed für einen Feedreader oder eine Automatisierung. Wer die Adresse kennt, kann die Liste lesen – halte sie also privat.', style: TextStyle(color: context.dim)),
+      _panel(context, tr('Watchlist as a feed'), [
+        Text(tr('Your watchlist as an RSS feed for a feed reader or an automation. Anyone who knows the address can read the list – so keep it private.'), style: TextStyle(color: context.dim)),
         const SizedBox(height: 12),
         if (on) ...[
           SelectableText('${f['url']}'),
@@ -566,15 +583,15 @@ class _FeedTabState extends State<_FeedTab> {
             OutlinedButton(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: '${f['url']}'));
-                _say(context, 'Link kopiert');
+                _say(context, tr('Link copied'));
               },
-              child: const Text('Link kopieren'),
+              child: Text(tr('Copy the link')),
             ),
-            OutlinedButton(onPressed: () => change({'regenerate': true}), child: const Text('Neue Adresse')),
-            OutlinedButton(onPressed: () => change({'enabled': false}), child: const Text('Ausschalten')),
+            OutlinedButton(onPressed: () => change({'regenerate': true}), child: Text(tr('New address'))),
+            OutlinedButton(onPressed: () => change({'enabled': false}), child: Text(tr('Switch off'))),
           ]),
         ] else
-          FilledButton(onPressed: () => change({'enabled': true}), child: const Text('Einschalten')),
+          FilledButton(onPressed: () => change({'enabled': true}), child: Text(tr('Switch on'))),
       ]),
     ]);
   }

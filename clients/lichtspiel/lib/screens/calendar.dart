@@ -3,13 +3,14 @@ import '../api.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
 import 'detail.dart';
+import '../i18n.dart';
 
 /// "Coming soon": next episodes of the shows in the libraries and what Radarr and Sonarr expect
 /// (GET /api/upcoming), as a row on the start screen and as a calendar by day.
 
-const _weekdays = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
-const _months = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
-const _notes = {'in cinemas': 'Im Kino', 'digital release': 'Digital erhältlich', 'on disc': 'Auf Disc'};
+List<String> get _weekdays => [tr('Monday'), tr('Tuesday'), tr('Wednesday'), tr('Thursday'), tr('Friday'), tr('Saturday'), tr('Sunday')];
+List<String> get _months => [tr('January'), tr('February'), tr('March'), tr('April'), tr('May'), tr('June'), tr('July'), tr('August'), tr('September'), tr('October'), tr('November'), tr('December')];
+Map<String, String> get _notes => {'in cinemas': tr('In cinemas'), 'digital release': tr('Digital release'), 'on disc': tr('On disc')};
 
 /// "2026-11-28" → Heute / Morgen / the weekday within a week / "Sa., 28.11." later;
 /// [long]: "Morgen · Sonntag, 22. November".
@@ -20,9 +21,11 @@ String comingDay(String date, {bool long = false, DateTime? today}) {
   final now = today ?? DateTime.now();
   final days = at.difference(DateTime(now.year, now.month, now.day)).inHours ~/ 24;
   final wd = _weekdays[at.weekday - 1];
-  final full = long ? '$wd, ${at.day}. ${_months[at.month - 1]}' : '${wd.substring(0, 2)}., ${at.day}.${at.month}.';
-  if (days == 0) return long ? 'Heute · $full' : 'Heute';
-  if (days == 1) return long ? 'Morgen · $full' : 'Morgen';
+  final full = I18n.lang.value == 'de'
+      ? (long ? '$wd, ${at.day}. ${_months[at.month - 1]}' : '${wd.substring(0, 2)}., ${fmtDay(at, year: false)}')
+      : (long ? '$wd, ${_months[at.month - 1]} ${at.day}' : '${wd.substring(0, 3)}, ${fmtDay(at, year: false)}');
+  if (days == 0) return long ? tr('Today · {full}', {'full': full}) : tr('Today');
+  if (days == 1) return long ? tr('Tomorrow · {full}', {'full': full}) : tr('Tomorrow');
   if (days > 1 && days < 7 && !long) return wd;
   return full;
 }
@@ -78,9 +81,9 @@ class ComingRow extends StatelessWidget {
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
         child: Row(children: [
-          Text('Demnächst', style: Theme.of(context).textTheme.titleMedium),
+          Text(tr('Coming soon'), style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(width: 8),
-          TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarScreen(api: api))), child: const Text('Kalender ›')),
+          TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CalendarScreen(api: api))), child: Text(tr('Calendar ›'))),
         ]),
       ),
       SizedBox(
@@ -144,7 +147,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget build(BuildContext context) {
     final api = widget.api;
     return Scaffold(
-      appBar: AppBar(title: const Text('Kalender')),
+      appBar: AppBar(title: Text(tr('Calendar'))),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: data,
         builder: (context, snap) {
@@ -157,9 +160,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
           return RefreshIndicator(
             onRefresh: reload,
             child: ListView(padding: const EdgeInsets.all(16), children: [
-              Text('Neue Folgen der Serien in deinen Mediatheken, einmal am Tag nachgesehen, und was Radarr und Sonarr erwarten, wenn das Wunschlisten-Plugin an ist.',
+              Text(tr('New episodes of the shows in your libraries, checked once a day, and what Radarr and Sonarr expect when the wish list plugin is on.'),
                   style: TextStyle(color: context.dim)),
-              if (days.isEmpty) const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('In den nächsten 90 Tagen kommt nichts.'))),
+              if (days.isEmpty) Padding(padding: EdgeInsets.all(32), child: Center(child: Text(tr('Nothing comes in the next 90 days.')))),
               for (final MapEntry(key: date, value: list) in days.entries) ...[
                 Padding(padding: const EdgeInsets.fromLTRB(0, 20, 0, 8), child: Text(comingDay(date, long: true), style: Theme.of(context).textTheme.titleMedium)),
                 for (final e in list)

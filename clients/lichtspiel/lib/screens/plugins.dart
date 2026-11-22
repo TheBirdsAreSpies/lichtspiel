@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import 'settings.dart' show fmtDateTime;
 import '../theme.dart';
+import '../i18n.dart';
 
 void _say(BuildContext c, String s) => ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(s), duration: const Duration(seconds: 6)));
 
@@ -71,18 +72,18 @@ class _PluginsScreenState extends State<PluginsScreen> {
     final d = data;
     final plugins = ((d?['plugins'] as List?) ?? const []).map((e) => Map<String, dynamic>.from(e)).toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('Plugins'), actions: [
+      appBar: AppBar(title: Text(tr('Plugins')), actions: [
         TextButton(
           onPressed: () async {
             try {
               final x = await widget.api.post('/api/plugins/reload');
-              if (context.mounted) _say(context, '${x['count']} Plugin(s) gefunden');
+              if (context.mounted) _say(context, tr('{x} plugin(s) found', {'x': x['count']}));
             } catch (e) {
               if (context.mounted) _say(context, '$e');
             }
             load();
           },
-          child: const Text('Neu laden'),
+          child: Text(tr('Reload')),
         ),
       ]),
       body: error != null
@@ -90,14 +91,14 @@ class _PluginsScreenState extends State<PluginsScreen> {
           : d == null
               ? const Center(child: CircularProgressIndicator())
               : ListView(padding: const EdgeInsets.all(16), children: [
-                  Text('Plugins bringen Funktionen mit: Details ergänzen, Benachrichtigungen senden, auf die Wiedergabe reagieren. Jedes Plugin liegt in einem eigenen Ordner in „${d['folder']}“ mit einer plugin.json; danach „Neu laden“.', style: TextStyle(color: context.faint)),
+                  Text(tr('Plugins bring features: add details, send notifications, react to playback. Each plugin is in a folder of its own in “{d}” with a plugin.json; then “Reload”.', {'d': d['folder']}), style: TextStyle(color: context.faint)),
                   for (final e in (d['errors'] as List? ?? const [])) Padding(padding: const EdgeInsets.only(top: 8), child: Text('$e', style: TextStyle(color: context.bad))),
                   const SizedBox(height: 8),
-                  if (plugins.isEmpty) const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Noch keine Plugins installiert.'))),
+                  if (plugins.isEmpty) Padding(padding: EdgeInsets.all(32), child: Center(child: Text(tr('No plugins installed yet.')))),
                   for (final p in plugins) _plugin(p),
                   const SizedBox(height: 16),
-                  Text('Letzte Plugin-Aktivität', style: Theme.of(context).textTheme.titleMedium),
-                  if (log.isEmpty) Text('Noch nichts.', style: TextStyle(color: context.faint)),
+                  Text(tr('Recent plugin activity'), style: Theme.of(context).textTheme.titleMedium),
+                  if (log.isEmpty) Text(tr('Nothing yet.'), style: TextStyle(color: context.faint)),
                   for (final l in log.take(40))
                     ListTile(
                       dense: true,
@@ -107,7 +108,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
                       subtitle: Text('${fmtDateTime(l['at'])}${'${l['detail'] ?? ''}'.isEmpty ? '' : ' · ${l['detail']}'}'),
                     ),
                   const SizedBox(height: 16),
-                  Text('Ereignisse, auf die ein Plugin hören kann', style: Theme.of(context).textTheme.titleMedium),
+                  Text(tr('Events a plugin can listen to'), style: Theme.of(context).textTheme.titleMedium),
                   Wrap(spacing: 8, children: [for (final e in (d['events'] as List? ?? const [])) Chip(label: Text('$e', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)), visualDensity: VisualDensity.compact)]),
                 ]),
     );
@@ -115,7 +116,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
 
   List<Widget> _fields(_SettingsForm f) {
     if (f.asJson) {
-      return [TextField(controller: f.json, minLines: 3, maxLines: 12, style: const TextStyle(fontFamily: 'monospace', fontSize: 12), decoration: const InputDecoration(labelText: 'Einstellungen (JSON)', border: OutlineInputBorder()))];
+      return [TextField(controller: f.json, minLines: 3, maxLines: 12, style: const TextStyle(fontFamily: 'monospace', fontSize: 12), decoration: InputDecoration(labelText: tr('Settings (JSON)'), border: OutlineInputBorder()))];
     }
     return [
       for (final MapEntry(:key, :value) in f.values.entries)
@@ -137,7 +138,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
       minLines: plain ? 1 : 2,
       maxLines: plain ? 1 : 8,
       style: plain || list ? null : const TextStyle(fontFamily: 'monospace', fontSize: 12),
-      decoration: InputDecoration(labelText: _SettingsForm.label(key), helperText: list ? 'Eins pro Zeile.' : plain ? null : 'Als JSON.', border: const OutlineInputBorder()),
+      decoration: InputDecoration(labelText: _SettingsForm.label(key), helperText: list ? tr('One per line.') : plain ? null : tr('As JSON.'), border: const OutlineInputBorder()),
     );
   }
 
@@ -150,12 +151,12 @@ class _PluginsScreenState extends State<PluginsScreen> {
         padding: const EdgeInsets.all(14),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Expanded(child: Text('${p['name']}  v${p['version'] ?? '?'}${p['author'] != null ? '  von ${p['author']}' : ''}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
-            Text(on ? 'an' : 'aus', style: TextStyle(color: on ? context.good : context.faint)),
+            Expanded(child: Text('${p['name']}  v${p['version'] ?? '?'}${p['author'] != null ? tr('  of {p}', {'p': p['author']}) : ''}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16))),
+            Text(on ? tr('on') : tr('off'), style: TextStyle(color: on ? context.good : context.faint)),
             const SizedBox(width: 8),
             on
-                ? OutlinedButton(onPressed: () => run(() => widget.api.post('/api/plugins/$id/disable')), child: const Text('Ausschalten'))
-                : FilledButton(onPressed: () => run(() => widget.api.post('/api/plugins/$id/enable')), child: const Text('Einschalten')),
+                ? OutlinedButton(onPressed: () => run(() => widget.api.post('/api/plugins/$id/disable')), child: Text(tr('Switch off')))
+                : FilledButton(onPressed: () => run(() => widget.api.post('/api/plugins/$id/enable')), child: Text(tr('Switch on'))),
           ]),
           if ('${p['description'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text('${p['description']}')),
           Padding(
@@ -175,9 +176,9 @@ class _PluginsScreenState extends State<PluginsScreen> {
                   _say(context, '$e');
                   return;
                 }
-                run(() => widget.api.put('/api/plugins/$id/settings', v), ok: 'Gespeichert');
+                run(() => widget.api.put('/api/plugins/$id/settings', v), ok: tr('Saved'));
               },
-              child: const Text('Einstellungen speichern'),
+              child: Text(tr('Save settings')),
             ),
             TextButton(
               onPressed: () {
@@ -187,7 +188,7 @@ class _PluginsScreenState extends State<PluginsScreen> {
                   _say(context, '$e');
                 }
               },
-              child: Text(forms[id]!.asJson ? 'Als Felder bearbeiten' : 'Als JSON bearbeiten'),
+              child: Text(forms[id]!.asJson ? tr('Edit as fields') : tr('Edit as JSON')),
             ),
           ]),
         ]),
@@ -234,7 +235,7 @@ class _SettingsForm {
   Map<String, dynamic> value() {
     if (asJson) {
       final v = jsonDecode(json.text);
-      if (v is! Map) throw 'Die Einstellungen müssen ein JSON-Objekt sein';
+      if (v is! Map) throw tr('The settings must be a JSON object');
       return Map<String, dynamic>.from(v);
     }
     final out = <String, dynamic>{};
@@ -244,7 +245,7 @@ class _SettingsForm {
         out[k] = v;
       } else if (v is num) {
         final n = num.tryParse(t.replaceAll(',', '.'));
-        if (n == null) throw '${label(k)}: bitte eine Zahl eingeben';
+        if (n == null) throw tr('{label}: please enter a number', {'label': label(k)});
         out[k] = n;
       } else if (v is String) {
         out[k] = t;
@@ -330,7 +331,7 @@ class _PluginPanelState extends State<_PluginPanel> {
     load();
   }
 
-  Future<dynamic> call(String action, [Map<String, dynamic>? extra]) => widget.api.post('/api/plugins/${widget.id}/call/$action', {'lang': 'de', ...?extra});
+  Future<dynamic> call(String action, [Map<String, dynamic>? extra]) => widget.api.post('/api/plugins/${widget.id}/call/$action', {'lang': I18n.lang.value, ...?extra});
 
   Future<void> load() async {
     Map<String, dynamic> p;
@@ -348,7 +349,7 @@ class _PluginPanelState extends State<_PluginPanel> {
         context: context,
         builder: (d) => AlertDialog(
           content: Text('${b['confirm']}'),
-          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Abbrechen')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('OK'))],
+          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: Text(tr('Cancel'))), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('OK'))],
         ),
       );
       if (ok != true) return;
@@ -365,10 +366,10 @@ class _PluginPanelState extends State<_PluginPanel> {
       await showDialog(context: context, barrierDismissible: false, builder: (_) => _PollDialog(api: widget.api, id: widget.id, title: '${b['label']}', first: Map<String, dynamic>.from(r)));
     } else if (r is Map) {
       final counts = [
-        if (r['marked'] != null) ' ${r['matched']} in deinen Bibliotheken gefunden, ${r['marked']} neu als gesehen markiert.',
-        if (r['rated'] != null) ' ${r['rated']} Bewertungen übernommen.',
-        if (r['watchlisted'] != null) ' ${r['watchlisted']} auf deine Watchlist gesetzt.',
-        if (r['playlist_items'] != null) ' Playlist mit ${r['playlist_items']} Titeln gespeichert.',
+        if (r['marked'] != null) tr(' {r} found in your libraries, {r2} newly marked as watched.', {'r': r['matched'], 'r2': r['marked']}),
+        if (r['rated'] != null) tr(' {r} ratings taken over.', {'r': r['rated']}),
+        if (r['watchlisted'] != null) tr(' {r} put on your watchlist.', {'r': r['watchlisted']}),
+        if (r['playlist_items'] != null) tr(' Playlist with {r} titles saved.', {'r': r['playlist_items']}),
       ].join();
       if (r['error'] != null) {
         _say(context, '${r['error']}');
@@ -391,17 +392,17 @@ class _PluginPanelState extends State<_PluginPanel> {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: p == null
-            ? const Text('Lädt…')
+            ? Text(tr('Loading…'))
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
                   Text('${p['title'] ?? widget.name}', style: Theme.of(context).textTheme.titleMedium),
-                  if (p['status'] == 'on') Padding(padding: EdgeInsets.only(left: 10), child: Text('verbunden', style: TextStyle(color: context.good))),
+                  if (p['status'] == 'on') Padding(padding: EdgeInsets.only(left: 10), child: Text(tr('connected'), style: TextStyle(color: context.good))),
                 ]),
                 if (p['text'] != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text('${p['text']}')),
                 if (p['link'] != null)
                   TextButton(onPressed: () => launchUrl(Uri.parse('${p['link']}'), mode: LaunchMode.externalApplication), child: Text('${p['link']}')),
                 if (p['upload'] != null)
-                  Padding(padding: const EdgeInsets.only(top: 8), child: Text('Die Datei dafür lädst du in der Web-Oberfläche hoch (Einstellungen → Konto).', style: TextStyle(color: context.dim))),
+                  Padding(padding: const EdgeInsets.only(top: 8), child: Text(tr('You upload the file for this in the web app (Settings → Account).'), style: TextStyle(color: context.dim))),
                 for (final it in (p['items'] as List? ?? const []))
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
@@ -479,7 +480,7 @@ class _PollDialogState extends State<_PollDialog> {
     final secs = ((poll['seconds'] ?? 5) as num).toInt().clamp(2, 60);
     timer = Timer(Duration(seconds: secs), () async {
       try {
-        final n = await widget.api.post('/api/plugins/${widget.id}/call/${poll['action']}', {'lang': 'de'});
+        final n = await widget.api.post('/api/plugins/${widget.id}/call/${poll['action']}', {'lang': I18n.lang.value});
         next(Map<String, dynamic>.from(n));
       } catch (e) {
         if (mounted) {
@@ -498,9 +499,9 @@ class _PollDialogState extends State<_PollDialog> {
         if (message.isNotEmpty) Text(message),
         if (code.isNotEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: SelectableText(code, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w700, letterSpacing: 4))),
         if (link.isNotEmpty) TextButton(onPressed: () => launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication), child: Text(link)),
-        Text(wait.isNotEmpty ? wait : 'Wartet, bis der Code eingegeben wurde…', style: TextStyle(color: context.faint)),
+        Text(wait.isNotEmpty ? wait : tr('Waiting for the code to be entered…'), style: TextStyle(color: context.faint)),
       ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Abbrechen'))],
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel')))],
     );
   }
 }

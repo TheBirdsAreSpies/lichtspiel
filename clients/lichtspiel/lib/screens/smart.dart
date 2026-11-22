@@ -2,20 +2,21 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../api.dart';
 import '../theme.dart';
+import '../i18n.dart';
 
-const _fieldNames = {
-  'title': 'Titel', 'kind': 'Art (movie, show, episode …)', 'year': 'Jahr', 'genre': 'Genre', 'rating': 'Bewertung', 'user_rating': 'Meine Bewertung',
-  'content_rating': 'Altersfreigabe', 'studio': 'Studio / Sender', 'summary': 'Handlung', 'show': 'Serie', 'artist': 'Künstler',
-  'director': 'Regie', 'actor': 'Darsteller', 'writer': 'Drehbuch', 'country': 'Land', 'collection': 'Sammlung', 'label': 'Label',
-  'edition': 'Edition', 'folder': 'Ordner', 'unwatched': 'Ungesehen', 'in_progress': 'Angefangen', 'added_at': 'Hinzugefügt', 'last_viewed_at': 'Zuletzt gesehen',
-  'view_count': 'Anzahl Wiedergaben', 'duration': 'Länge', 'release_date': 'Erscheinungsdatum', 'video_resolution': 'Auflösung', 'video_codec': 'Videocodec',
-  'audio_codec': 'Audiocodec', 'audio_language': 'Tonsprache', 'subtitle_language': 'Untertitelsprache', 'hdr': 'HDR', 'dovi': 'Dolby Vision',
-  'duplicate': 'Doppelt', 'unmatched': 'Nicht zugeordnet', 'favorite': 'Favorit', 'watchlist': 'Auf der Merkliste',
+Map<String, String> get _fieldNames => {
+  'title': tr('Title'), 'kind': tr('Kind (movie, show, episode …)'), 'year': tr('Year'), 'genre': tr('Genre'), 'rating': tr('Rating'), 'user_rating': tr('My rating'),
+  'content_rating': tr('Age rating'), 'studio': tr('Studio / network'), 'summary': tr('Plot'), 'show': tr('Show'), 'artist': tr('Artists'),
+  'director': tr('Director'), 'actor': tr('Actor'), 'writer': tr('Writer'), 'country': tr('Country'), 'collection': tr('Collection'), 'label': tr('Label'),
+  'edition': tr('Edition'), 'folder': tr('Folder'), 'unwatched': tr('Unwatched'), 'in_progress': tr('In progress'), 'added_at': tr('Added'), 'last_viewed_at': tr('Last seen'),
+  'view_count': tr('Number of plays'), 'duration': tr('Length'), 'release_date': tr('Release date'), 'video_resolution': tr('Resolution'), 'video_codec': tr('Video codec'),
+  'audio_codec': tr('Audio codec'), 'audio_language': tr('Audio language'), 'subtitle_language': tr('Subtitle language'), 'hdr': 'HDR', 'dovi': tr('Dolby Vision'),
+  'duplicate': tr('Duplicate'), 'unmatched': tr('Unmatched'), 'favorite': tr('Favourite'), 'watchlist': tr('On the watchlist'),
 };
-const _opNames = {
-  'is': 'ist', 'is_not': 'ist nicht', 'contains': 'enthält', 'not_contains': 'enthält nicht', 'starts_with': 'beginnt mit', 'ends_with': 'endet mit',
-  'in': 'ist eines von (Komma)', 'gt': 'größer als', 'gte': 'mindestens', 'lt': 'kleiner als', 'lte': 'höchstens', 'between': 'zwischen (niedrig,hoch)',
-  'in_last_days': 'in den letzten … Tagen', 'not_in_last_days': 'nicht in den letzten … Tagen',
+Map<String, String> get _opNames => {
+  'is': tr('is'), 'is_not': tr('is not'), 'contains': tr('contains'), 'not_contains': tr('does not contain'), 'starts_with': tr('starts with'), 'ends_with': tr('ends with'),
+  'in': tr('is one of (commas)'), 'gt': tr('greater than'), 'gte': tr('at least'), 'lt': tr('less than'), 'lte': tr('at most'), 'between': tr('between (low,high)'),
+  'in_last_days': tr('in the last … days'), 'not_in_last_days': tr('not in the last … days'),
 };
 const _opsByType = {
   'bool': ['is', 'is_not'],
@@ -23,9 +24,9 @@ const _opsByType = {
   'number': ['is', 'is_not', 'gt', 'gte', 'lt', 'lte', 'between', 'in'],
   'text': ['is', 'is_not', 'contains', 'not_contains', 'starts_with', 'ends_with', 'in'],
 };
-const _sorts = {
-  'title': 'Titel', 'year:desc': 'Jahr (neueste)', 'year': 'Jahr (älteste)', 'added_at:desc': 'Zuletzt hinzugefügt', 'rating:desc': 'Bewertung',
-  'duration:desc': 'Länge', 'last_viewed_at:desc': 'Zuletzt gesehen', 'view_count:desc': 'Meist gesehen', 'random': 'Zufällig', 'episode_order': 'Serie, Staffel, Folge',
+Map<String, String> get _sorts => {
+  'title': tr('Title'), 'year:desc': tr('Year (newest)'), 'year': tr('Year (oldest)'), 'added_at:desc': tr('Recently added'), 'rating:desc': tr('Rating'),
+  'duration:desc': tr('Length'), 'last_viewed_at:desc': tr('Last seen'), 'view_count:desc': tr('Most watched'), 'random': tr('Random'), 'episode_order': tr('Show, season, episode'),
 };
 
 /// Creates a smart playlist or edits the rules of one. Returns the playlist id, or null if cancelled.
@@ -106,7 +107,7 @@ class _SmartDialogState extends State<_SmartDialog> {
           return '${m['title']}';
         }).join(', ');
         final total = mc?['totalSize'] ?? 0;
-        if (mounted) setState(() => preview = '$total Titel passen: $list${total > 6 ? ' …' : ''}');
+        if (mounted) setState(() => preview = tr('{total} titles match: {list}{total2}', {'total': total, 'list': list, 'total2': total > 6 ? ' …' : ''}));
       } catch (e) {
         if (mounted) setState(() => preview = '$e');
       }
@@ -168,7 +169,7 @@ class _SmartDialogState extends State<_SmartDialog> {
               ? DropdownButtonFormField<bool>(
                   isExpanded: true,
                   initialValue: r['value'] == false ? false : true,
-                  items: const [DropdownMenuItem(value: true, child: Text('ja')), DropdownMenuItem(value: false, child: Text('nein'))],
+                  items: [DropdownMenuItem(value: true, child: Text(tr('yes'))), DropdownMenuItem(value: false, child: Text(tr('no')))],
                   onChanged: (v) => setState(() {
                     r['value'] = v ?? true;
                     upd();
@@ -177,7 +178,7 @@ class _SmartDialogState extends State<_SmartDialog> {
               : TextFormField(
                   key: ValueKey('v$i-${r['field']}-$op'),
                   initialValue: show(r['value']),
-                  decoration: InputDecoration(hintText: op == 'between' ? 'niedrig,hoch' : op.contains('days') ? 'Tage' : 'Wert'),
+                  decoration: InputDecoration(hintText: op == 'between' ? tr('low,high') : op.contains('days') ? tr('days') : tr('value')),
                   onChanged: (v) {
                     r['value'] = parse(r, v);
                     upd();
@@ -185,7 +186,7 @@ class _SmartDialogState extends State<_SmartDialog> {
                 ),
         ),
         IconButton(
-          tooltip: 'Regel entfernen',
+          tooltip: tr('Remove the rule'),
           icon: const Icon(Icons.close),
           onPressed: () => setState(() {
             rules.removeAt(i);
@@ -198,7 +199,7 @@ class _SmartDialogState extends State<_SmartDialog> {
 
   Future<void> save() async {
     if (name.text.trim().isEmpty) {
-      setState(() => error = 'Gib der Playlist einen Namen');
+      setState(() => error = tr('Give the playlist a name'));
       return;
     }
     q['limit'] = int.tryParse(limit.text.trim());
@@ -232,20 +233,20 @@ class _SmartDialogState extends State<_SmartDialog> {
   Widget build(BuildContext context) {
     final isDefault = pl?['default'] == true;
     return AlertDialog(
-      title: Text(pl == null ? 'Neue intelligente Playlist' : 'Regeln bearbeiten'),
+      title: Text(pl == null ? tr('New smart playlist') : tr('Edit rules')),
       content: SizedBox(
         width: 720,
         child: !loaded
             ? SizedBox(height: 120, child: Center(child: error != null ? Text(error!) : const CircularProgressIndicator()))
             : SingleChildScrollView(
                 child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  TextField(controller: name, decoration: const InputDecoration(labelText: 'Name', hintText: 'z. B. Ungesehene Sci-Fi aus den 90ern')),
+                  TextField(controller: name, decoration: InputDecoration(labelText: tr('Name'), hintText: tr('e.g. Unwatched sci-fi from the 90s'))),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<bool>(
                     isExpanded: true,
                     initialValue: q['match_all'] != false,
-                    decoration: const InputDecoration(labelText: 'Titel aufnehmen, die passen auf'),
-                    items: const [DropdownMenuItem(value: true, child: Text('alle diese Regeln')), DropdownMenuItem(value: false, child: Text('eine dieser Regeln'))],
+                    decoration: InputDecoration(labelText: tr('Take in titles that match')),
+                    items: [DropdownMenuItem(value: true, child: Text(tr('all of these rules'))), DropdownMenuItem(value: false, child: Text(tr('any of these rules')))],
                     onChanged: (v) => setState(() {
                       q['match_all'] = v ?? true;
                       upd();
@@ -257,7 +258,7 @@ class _SmartDialogState extends State<_SmartDialog> {
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
                       icon: const Icon(Icons.add),
-                      label: const Text('Regel hinzufügen'),
+                      label: Text(tr('Add a rule')),
                       onPressed: () => setState(() => rules.add({'field': 'genre', 'op': 'is', 'value': ''})),
                     ),
                   ),
@@ -266,7 +267,7 @@ class _SmartDialogState extends State<_SmartDialog> {
                       child: DropdownButtonFormField<String>(
                         isExpanded: true,
                         initialValue: _sorts.containsKey(q['sort']) ? '${q['sort']}' : 'title',
-                        decoration: const InputDecoration(labelText: 'Sortieren nach'),
+                        decoration: InputDecoration(labelText: tr('Sort by')),
                         items: [for (final e in _sorts.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
                         onChanged: (v) => setState(() {
                           q['sort'] = v;
@@ -280,7 +281,7 @@ class _SmartDialogState extends State<_SmartDialog> {
                       child: TextField(
                         controller: limit,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'Höchstzahl (leer = alle)'),
+                        decoration: InputDecoration(labelText: tr('Most items (empty = all)')),
                         onChanged: (v) {
                           q['limit'] = int.tryParse(v.trim());
                           upd();
@@ -289,7 +290,7 @@ class _SmartDialogState extends State<_SmartDialog> {
                     ),
                   ]),
                   const SizedBox(height: 12),
-                  Text('Bibliotheken (keine gewählt = alle)', style: TextStyle(color: context.dim)),
+                  Text(tr('Libraries (none chosen = all)'), style: TextStyle(color: context.dim)),
                   Wrap(spacing: 8, children: [
                     for (final s in sections)
                       FilterChip(
@@ -304,8 +305,8 @@ class _SmartDialogState extends State<_SmartDialog> {
                       ),
                   ]),
                   if (!isDefault) ...[
-                    CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, title: const Text('Mit allen teilen'), value: shared, onChanged: (v) => setState(() => shared = v == true)),
-                    CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, title: const Text('Auf der Startseite zeigen'), value: pinned, onChanged: (v) => setState(() => pinned = v == true)),
+                    CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, title: Text(tr('Share with everyone')), value: shared, onChanged: (v) => setState(() => shared = v == true)),
+                    CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, title: Text(tr('Show on the home page')), value: pinned, onChanged: (v) => setState(() => pinned = v == true)),
                   ],
                   const SizedBox(height: 8),
                   Text(preview, style: TextStyle(color: context.dim)),
@@ -314,8 +315,8 @@ class _SmartDialogState extends State<_SmartDialog> {
               ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Abbrechen')),
-        FilledButton(onPressed: saving || !loaded ? null : save, child: const Text('Speichern')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Cancel'))),
+        FilledButton(onPressed: saving || !loaded ? null : save, child: Text(tr('Save'))),
       ],
     );
   }

@@ -6,6 +6,7 @@ import 'library.dart' show showFilters, filterName, valueName;
 import '../widgets/bar.dart';
 import '../widgets/states.dart';
 import '../theme.dart';
+import '../i18n.dart';
 
 /// What you want to watch later, with the type, sort, year and title filters of the web app.
 class WatchlistScreen extends StatefulWidget {
@@ -16,13 +17,13 @@ class WatchlistScreen extends StatefulWidget {
 }
 
 class _WatchlistScreenState extends State<WatchlistScreen> {
-  static const sorts = {
-    '': 'Zur Merkliste hinzugefügt (neueste)',
-    'oldest': 'Zur Merkliste hinzugefügt (älteste)',
-    'title': 'Titel',
-    'year': 'Jahr',
-    'rating': 'Bewertung',
-    'added_at': 'Zur Bibliothek hinzugefügt',
+  static Map<String, String> get sorts => {
+    '': tr('Added to the watchlist (newest)'),
+    'oldest': tr('Added to the watchlist (oldest)'),
+    'title': tr('Title'),
+    'year': tr('Year'),
+    'rating': tr('Rating'),
+    'added_at': tr('Added to the library'),
   };
   String type = '', sort = '';
   final filters = <String, String>{};
@@ -78,11 +79,11 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       builder: (ctx) => Padding(
         padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.viewInsetsOf(ctx).bottom),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Jahr', style: Theme.of(ctx).textTheme.titleSmall),
+          Text(tr('Year'), style: Theme.of(ctx).textTheme.titleSmall),
           const SizedBox(height: 8),
-          Row(children: [Expanded(child: field(from, 'ab', null, number: true)), const SizedBox(width: 12), Expanded(child: field(to, 'bis', null, number: true))]),
+          Row(children: [Expanded(child: field(from, tr('from'), null, number: true)), const SizedBox(width: 12), Expanded(child: field(to, tr('to'), null, number: true))]),
           const SizedBox(height: 16),
-          Align(alignment: Alignment.centerRight, child: FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Anwenden'))),
+          Align(alignment: Alignment.centerRight, child: FilledButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Apply')))),
         ]),
       ),
     );
@@ -106,11 +107,11 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     final years = (from.text.trim().isNotEmpty ? 1 : 0) + (to.text.trim().isNotEmpty ? 1 : 0);
     final types = SegmentedButton<String>(
       showSelectedIcon: false,
-      segments: const [
-        ButtonSegment(value: '', label: Text('Alle')),
-        ButtonSegment(value: 'movie', label: Text('Filme')),
-        ButtonSegment(value: 'show', label: Text('Serien')),
-        ButtonSegment(value: 'episode', label: Text('Folgen')),
+      segments: [
+        ButtonSegment(value: '', label: Text(tr('All'))),
+        ButtonSegment(value: 'movie', label: Text(tr('Movies'))),
+        ButtonSegment(value: 'show', label: Text(tr('Shows'))),
+        ButtonSegment(value: 'episode', label: Text(tr('Episodes'))),
       ],
       selected: {type},
       onSelectionChanged: (s) {
@@ -126,10 +127,10 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
         SizedBox(width: double.infinity, child: types),
         const SizedBox(height: 8),
         Row(children: [
-          Expanded(child: field(search, 'Nach Titel filtern', null)),
+          Expanded(child: field(search, tr('Filter by title'), null)),
           IconButton(tooltip: 'Filter', onPressed: openFilters, icon: Badge(isLabelVisible: filters.isNotEmpty, label: Text('${filters.length}'), child: const Icon(Icons.filter_list))),
           PopupMenuButton<String>(
-            tooltip: 'Sortieren: ${sorts[sort]}',
+            tooltip: tr('Sort: {sorts}', {'sorts': sorts[sort]}),
             icon: const Icon(Icons.sort),
             onSelected: (v) {
               sort = v;
@@ -137,7 +138,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
             },
             itemBuilder: (_) => [for (final e in sorts.entries) CheckedPopupMenuItem(value: e.key, checked: e.key == sort, child: Text(e.value))],
           ),
-          IconButton(tooltip: 'Jahr', onPressed: openYears, icon: Badge(isLabelVisible: years > 0, label: Text('$years'), child: const Icon(Icons.date_range_outlined))),
+          IconButton(tooltip: tr('Year'), onPressed: openYears, icon: Badge(isLabelVisible: years > 0, label: Text('$years'), child: const Icon(Icons.date_range_outlined))),
         ]),
       ]),
     );
@@ -145,10 +146,10 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       appBar: AppBar(
         title: narrow && list != null
             ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Merkliste'),
-                Text(list.length == 1 ? '1 Eintrag' : '${list.length} Einträge', style: TextStyle(fontSize: 12, color: context.dim)),
+                Text(tr('Watchlist')),
+                Text(list.length == 1 ? tr('1 item') : tr('{length} items', {'length': list.length}), style: TextStyle(fontSize: 12, color: context.dim)),
               ])
-            : const Text('Merkliste'),
+            : Text(tr('Watchlist')),
       ),
       body: Column(children: [
         if (narrow) compact else Padding(
@@ -156,7 +157,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
           child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
             types,
             PopupMenuButton<String>(
-              tooltip: 'Sortieren',
+              tooltip: tr('Sort'),
               onSelected: (v) {
                 sort = v;
                 reload();
@@ -164,11 +165,11 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
               itemBuilder: (_) => [for (final e in sorts.entries) CheckedPopupMenuItem(value: e.key, checked: e.key == sort, child: Text(e.value))],
               child: Chip(avatar: const Icon(Icons.sort, size: 18), label: Text(sorts[sort]!)),
             ),
-            OutlinedButton.icon(onPressed: openFilters, icon: const Icon(Icons.filter_list), label: Text(filters.isNotEmpty ? 'Filter (${filters.length})' : 'Filter')),
-            field(search, 'Nach Titel filtern', 170),
-            field(from, 'Jahr ab', 90, number: true),
-            field(to, 'Jahr bis', 90, number: true),
-            if (list != null) Text(list.length == 1 ? '1 Eintrag' : '${list.length} Einträge', style: TextStyle(color: context.dim)),
+            OutlinedButton.icon(onPressed: openFilters, icon: const Icon(Icons.filter_list), label: Text(filters.isNotEmpty ? tr('Filter ({length})', {'length': filters.length}) : 'Filter')),
+            field(search, tr('Filter by title'), 170),
+            field(from, tr('Year from'), 90, number: true),
+            field(to, tr('Year to'), 90, number: true),
+            if (list != null) Text(list.length == 1 ? tr('1 item') : tr('{length} items', {'length': list.length}), style: TextStyle(color: context.dim)),
           ]),
         ),
         if (filters.isNotEmpty)
@@ -179,7 +180,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
               child: Wrap(spacing: 8, runSpacing: 4, children: [
                 for (final e in filters.entries)
                   InputChip(
-                    label: Text(e.value == 'true' ? filterName(e.key) : e.value == 'false' ? '${filterName(e.key)}: nein' : '${filterName(e.key)}: ${valueName(e.key, e.value)}'),
+                    label: Text(e.value == 'true' ? filterName(e.key) : e.value == 'false' ? tr('{filterName}: no', {'filterName': filterName(e.key)}) : '${filterName(e.key)}: ${valueName(e.key, e.value)}'),
                     onDeleted: () {
                       filters.remove(e.key);
                       reload();
@@ -191,7 +192,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                       filters.clear();
                       reload();
                     },
-                    child: const Text('Filter löschen'),
+                    child: Text(tr('Clear filters')),
                   ),
               ]),
             ),
@@ -204,8 +205,8 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                   : list.isEmpty
                       ? ErrorView(
                           error: filters.isNotEmpty || years > 0 || search.text.trim().isNotEmpty || type.isNotEmpty
-                              ? 'Nichts auf der Merkliste passt zu diesen Filtern.'
-                              : 'Deine Merkliste ist leer. Nutze „Auf die Merkliste“ bei einem Film oder einer Serie.',
+                              ? tr('Nothing on the watchlist matches these filters.')
+                              : tr('Your watchlist is empty. Use “Add to watchlist” on a movie or a show.'),
                         )
                       : GridView.builder(
                           padding: const EdgeInsets.all(16),
