@@ -1005,4 +1005,3 @@ document.addEventListener('keydown', e => {
   }
   if (done) { e.preventDefault(); wake(); }
 });
-drawButtons();

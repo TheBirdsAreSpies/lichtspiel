@@ -37,6 +37,7 @@ interface Window {
   webkitAudioContext: typeof AudioContext;
   // Google's Cast library (cast.js) and Chrome.
   chrome: any;
+  cast: any;
   __onGCastApiAvailable: (ok: boolean) => void;
 }
 

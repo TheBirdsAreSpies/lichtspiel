@@ -18,7 +18,9 @@ $('#pcast').hidden = true;
 (function castInit() {
   const ua = navigator.userAgent;
   if (!window.isSecureContext || !window.chrome || !/Chrome\//.test(ua) || /OPR\/|SamsungBrowser|Silk/.test(ua)) return;
-  window.__onGCastApiAvailable = ok => { if (ok) castSetup(); };
+  // ok can come without the framework: on an http:// page on this computer, Google's loader asks for it over
+  // http://, which the page's Content-Security-Policy does not allow. Then there is no Cast button.
+  window.__onGCastApiAvailable = ok => { if (ok && window.cast && cast.framework) castSetup(); };
   const s = document.createElement('script');
   s.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
   s.async = true;
@@ -176,3 +178,5 @@ function castVolume(v) {
   CAST.rp.volumeLevel = v;
   CAST.rpc.setVolumeLevel();
 }
+// The player's buttons, drawn first here: drawButtons() asks isPaused() and castOn() of this file.
+drawButtons();
