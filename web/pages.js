@@ -2044,6 +2044,7 @@ const NAV = { edit: false, cur: '', more: false };
 NAV.more = store.get('navMore', '0') === '1';
 function navList() {
   const all = [...S.sections.map(s => ({ key: 's' + s.id, sec: s, title: s.title, nav: 'section/' + s.id })), { key: 'playlists', title: t('Playlists'), nav: 'playlists' },
+    { key: 'stats', title: t('Statistics'), nav: 'stats' },
     ...(S.pluginPages || []).map(p => ({ key: 'p:' + p.id, title: p.name, nav: 'plugin/' + p.id }))];
   const sb = (S.me && S.me.sidebar) || {};
   const order = sb.order || [], hidden = new Set(sb.hidden || []);
@@ -2356,6 +2357,7 @@ async function render() {
       case 'reports': return await reportsPage();
       case 'watchlist': return await watchlistPage(qs);
       case 'calendar': return await calendarPage();
+      case 'stats': return await statsPage();
       case 'downloads': return await downloadsPage();
       case 'dashboard': return await dashboardPage();
       case 'together': return await joinTogether(parts[1]);

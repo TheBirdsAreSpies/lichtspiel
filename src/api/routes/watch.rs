@@ -200,6 +200,13 @@ pub(super) fn routes(app: &Arc<App>, ctx: &Ctx, user: &db::User, m: &str, segs: 
             let db = app.db.lock().unwrap();
             crate::api::dashboard::history(&db, &open, ctx.num("days").unwrap_or(30), ctx.num("user"))
         }
+        ("GET", ["api", "stats", "plays"]) => {
+            // The statistics page: everyone sees their own viewings, an admin everyone's (or one person's).
+            let only = if user.admin { ctx.num("user") } else { Some(user.id) };
+            let open: Vec<crate::data::db::PlaySession> = app.playing.lock().unwrap().values().filter(|p| p.session_at > 0).map(|p| p.session()).collect();
+            let db = app.db.lock().unwrap();
+            crate::api::dashboard::history(&db, &open, ctx.num("days").unwrap_or(365), only)
+        }
         _ => { *hit = false; fail(404, "") }
     })
 }

@@ -43,15 +43,6 @@ Collected on 2026-11-22.
   (by hand this is **Optimize** in a title's "⋯" menu).
 - **Quality check:** the Library doctor reports movies in low resolution or without a German audio
   track; with Radarr it could ask for a better version.
-- **Statistics page:** who watches how much, the most watched shows, times of day, load on the
-  NAS — like Wrapped, but all year.
-
-### Watching
-
-- **Skip "previously on":** recaps at the start of an episode found by sound like the intro, with
-  a skip button.
-- **"What happened so far":** after weeks away from a show, a button that plays the last minutes
-  of the previous episode.
 
 ### From earlier
 

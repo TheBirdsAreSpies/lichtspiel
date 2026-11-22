@@ -273,10 +273,14 @@ fn top_of(db: &Db, id: u64) -> u64 {
     at
 }
 
+/// The longest time the play history looks back (ten years: "everything").
+pub const HISTORY_DAYS_MAX: u64 = 3660;
+
 /// GET /api/dashboard/history?days=30&user=: plays over the last days, as
 /// a compact list the browser counts per day in its own time zone
-/// [[at, user id, kind, minutes], …], plus who and what was played most and
-/// the latest plays.
+/// [[at, user id, kind, minutes], …], plus who and what was played most (all
+/// titles, shows, movies and genres) and the latest plays. Also GET
+/// /api/stats/plays, where everyone but an admin gets only their own.
 ///
 /// A play is each time someone played a movie or episode for at least a minute,
 /// with the time it really ran (`open`: the ones still going). Marked watched
@@ -291,7 +295,7 @@ pub fn history(db: &Db, open: &[PlaySession], days: u64, only_user: Option<u64>)
         manual: bool,
         live: bool,
     }
-    let days = days.clamp(1, 366);
+    let days = days.clamp(1, HISTORY_DAYS_MAX);
     let from = now().saturating_sub(days * 86400);
     let since = db.sessions.first().map(|s| s.at).into_iter().chain(open.iter().map(|s| s.at)).min().unwrap_or(u64::MAX);
     let wanted = |at: u64, user: u64| at >= from && only_user.is_none_or(|u| user == u);
@@ -328,16 +332,27 @@ pub fn history(db: &Db, open: &[PlaySession], days: u64, only_user: Option<u64>)
         .map(|(id, n, m)| json!({"id": id, "username": db.user(id).map(|u| u.username.clone()), "display_name": db.user(id).map(|u| u.display_name()), "plays": n, "minutes": round(m)}))
         .collect();
     let mut titles: Vec<(u64, u64, f64)> = by_title.into_iter().map(|(id, (n, m))| (id, n, m)).collect();
-    titles.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.total_cmp(&a.2)));
-    let titles: Vec<Value> = titles
-        .into_iter()
-        .take(10)
-        .map(|(id, n, m)| {
-            let it = db.items.get(&id);
-            json!({"id": id, "title": it.map(|i| i.title.clone()), "type": it.map(|i| i.kind.as_str()), "year": it.and_then(|i| i.year),
-                "thumb": format!("/library/metadata/{}/thumb?v={}", id, it.map(|i| i.updated_at).unwrap_or(0)), "plays": n, "minutes": round(m)})
-        })
-        .collect();
+    titles.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.total_cmp(&a.2)).then(a.0.cmp(&b.0)));
+    // Genres of what was watched (of the show for an episode), each viewing counted once per genre.
+    let mut by_genre: HashMap<&str, (u64, f64)> = HashMap::new();
+    for &(id, n, m) in &titles {
+        for g in db.items.get(&id).map(|i| i.genres.as_slice()).unwrap_or_default() {
+            let e = by_genre.entry(g.as_str()).or_default();
+            e.0 += n;
+            e.1 += m;
+        }
+    }
+    let mut genres: Vec<(&str, u64, f64)> = by_genre.into_iter().map(|(g, (n, m))| (g, n, m)).collect();
+    genres.sort_by(|a, b| b.2.total_cmp(&a.2).then(b.1.cmp(&a.1)).then(a.0.cmp(b.0)));
+    let genres: Vec<Value> = genres.into_iter().take(10).map(|(g, n, m)| json!({"genre": g, "plays": n, "minutes": round(m)})).collect();
+    let title_json = |&(id, n, m): &(u64, u64, f64)| {
+        let it = db.items.get(&id);
+        json!({"id": id, "title": it.map(|i| i.title.clone()), "type": it.map(|i| i.kind.as_str()), "year": it.and_then(|i| i.year),
+            "thumb": format!("/library/metadata/{}/thumb?v={}", id, it.map(|i| i.updated_at).unwrap_or(0)), "plays": n, "minutes": round(m)})
+    };
+    let of_kind = |kind: ItemKind| -> Vec<Value> { titles.iter().filter(|t| db.items.get(&t.0).is_some_and(|i| i.kind == kind)).take(10).map(title_json).collect() };
+    let (shows, movies) = (of_kind(ItemKind::Show), of_kind(ItemKind::Movie));
+    let titles: Vec<Value> = titles.iter().take(10).map(title_json).collect();
     let recent: Vec<Value> = events
         .iter()
         .rev()
@@ -347,7 +362,7 @@ pub fn history(db: &Db, open: &[PlaySession], days: u64, only_user: Option<u64>)
         .collect();
     let total_minutes = events.iter().fold(0.0, |n, e| n + e.minutes);
     ok(json!({"days": days, "from": from, "size": plays.len(), "minutes": round(total_minutes),
-        "plays": plays, "users": users, "titles": titles, "recent": recent}))
+        "plays": plays, "users": users, "titles": titles, "shows": shows, "movies": movies, "genres": genres, "recent": recent}))
 }
 
 /// GET /api/dashboard/stats?range=realtime|12h|24h|7d|30d|90d|365d|all: bandwidth
@@ -402,6 +417,28 @@ mod tests {
         assert_eq!(v["minutes"].as_f64().unwrap(), 20.0 + 5.0);
         assert_eq!(v["recent"][0]["live"], true);
         assert_eq!(v["recent"][0]["minutes"].as_f64().unwrap(), 5.0);
+    }
+
+    #[test]
+    fn shows_movies_and_genres_watched_most() {
+        let (mut db, _) = setup();
+        db.items.get_mut(&10).unwrap().genres = vec!["Drama".into()];
+        db.items.get_mut(&20).unwrap().genres = vec!["Comedy".into(), "Drama".into()];
+        let t = now();
+        for (item, at, min) in [(10, 5000, 100), (22, 4000, 20), (23, 3000, 20)] {
+            assert!(db.record_session(PlaySession { user_id: 1, item_id: item, at: t - at, watched_ms: min * 60000 }));
+        }
+        let r = history(&db, &[], 30, None);
+        let v: Value = serde_json::from_slice(&{ let mut b = vec![]; std::io::Read::read_to_end(&mut r.into_reader(), &mut b).unwrap(); b }).unwrap();
+        // The episodes count for their show.
+        assert_eq!(v["shows"][0]["id"], 20, "{v}");
+        assert_eq!(v["shows"][0]["plays"], 2);
+        assert_eq!(v["movies"][0]["id"], 10);
+        assert_eq!(v["movies"].as_array().unwrap().len(), 1);
+        // By time watched: Drama has the movie and the show.
+        assert_eq!(v["genres"][0]["genre"], "Drama");
+        assert_eq!(v["genres"][0]["minutes"].as_f64().unwrap(), 140.0);
+        assert_eq!(v["genres"][1]["genre"], "Comedy");
     }
 
     #[test]

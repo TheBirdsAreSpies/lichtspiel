@@ -142,6 +142,7 @@ pub const ROUTES: &[(&str, &str, &str)] = &[
     ("GET", "/api/dashboard/stats", "Admin: bandwidth (all and outside the local network), processor and memory (computer and server) and streams over ?range=realtime|12h|24h|7d|30d|90d|365d|all, as samples on an even grid"),
     ("POST", "/api/dashboard/stop", "Admin: stop what a user is playing {user, item, message}: converted streams end at once, the player shows the message on its next report, and the same video can't start again for 30 s unless the player heard it"),
     ("GET", "/api/dashboard/history", "Admin: viewings of the last days ?days=30 &user=id as [[at, user, kind, minutes], …] to count per day, plus most played titles, top users and the latest viewings"),
+    ("GET", "/api/stats/plays", "The statistics page: like /api/dashboard/history (?days=365, up to 3660), with the most watched shows, movies and genres; everyone but an admin gets only their own viewings"),
     ("GET", "/hubs", "Home rows: continue watching, rows for the time of year (Halloween, Christmas, New Year's Eve, Valentine's Day; ?date=MM-DD tries a day), recently added movies and TV, pinned playlists"),
     ("GET", "/hubs/sections/{id}", "A library's Recommended rows: continue watching, recently released and added, today's genre, person or network, unwatched picks, the time of year, recently watched; ?date=MM-DD tries a day, ?count= titles per row (20)"),
     ("GET", "/hubs/home/continueWatching", "Started but not finished, plus next episodes"),

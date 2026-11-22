@@ -93,6 +93,14 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   (*Settings → Keep converted downloads*). Under **Users & invites** each person can be allowed
   to download or not (*May download*; on by default); without it the plain
   file download is refused too. Converting also needs *May convert*.
+- **Statistics** (everyone, in the left menu; it can be unpinned like a library): your own viewing
+  over 30 or 90 days, a year or everything: time watched, movies, episodes, days with viewing and
+  the busiest one, your favourite time, a chart per day, week or month (movies and episodes
+  stacked), **times of day** as a grid of weekdays by hours, and the most watched shows, movies
+  and genres, as viewings or hours. An admin sees everyone's (or picks one person), **who watches
+  how much**, and the **load on the server by time of day** (processor per hour, with the average
+  streams and conversions, from the last 30 days). Counted like the dashboard's play history
+  (`GET /api/stats/plays`).
 - **Dashboard** (admins, the pulse button at the top — grey when quiet, yellow with the number
   of streams while something plays): what is playing right now — who, on which device
   ("Plex for Samsung — TV 2020", "Chrome · Windows"), local or remote with the address and

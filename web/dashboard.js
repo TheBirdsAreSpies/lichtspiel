@@ -474,3 +474,128 @@ async function calendarPage() {
       h('div', { class: 'grow' }, e.show_id ? h('a', { href: '#/item/' + e.show_id }, h('b', {}, e.title)) : h('b', {}, e.title),
         h('div', { class: 'dim' }, comingWhat(e))))))]));
 }
+
+// ---------- statistics (#/stats), for everyone: one's own viewing (an admin sees everyone's or picks one
+// person) over the last month, year or everything: totals, per day, week or month, the times of day, the
+// most watched shows, movies and genres, who watches how much; for an admin also the load on the server
+// per hour of the day.
+const ST = { days: 365, metric: 'hours', user: '', people: /** @type {any[]|null} */ (null) };
+const STAT_RANGES = [[30, '30 days'], [90, '90 days'], [365, '1 year'], [3660, 'Everything']];
+// Monday first (7 January 2024 was a Sunday).
+const WEEKDAYS = () => [1, 2, 3, 4, 5, 6, 0].map(d => new Date(2024, 0, 7 + d).toLocaleDateString(I18N.lang, { weekday: 'short' }));
+async function statsPage() {
+  markNav('stats');
+  if (S.me.admin && !ST.people) ST.people = await GET('/api/users').then(r => Array.isArray(r) ? r : r.users || []).catch(() => []);
+  const q = `/api/stats/plays?days=${ST.days}${S.me.admin && ST.user ? '&user=' + ST.user : ''}`;
+  let r;
+  try { r = await GET(q); } catch (e) { return set(h('div', { class: 'empty' }, e.message)); }
+  const hours = ST.metric === 'hours';
+  const add = e => hours ? e[3] / 60 : 1;
+  const fmt = (v, full) => hours ? fmtNum(v, v && v < 10 ? 1 : 0) + (full ? ' h' : '') : fmtNum(Math.round(v * 100) / 100, v % 1 ? 1 : 0);
+  const seg = (vals, cur, pick) => h('div', { class: 'seg' }, vals.map(([v, l]) => h('button', { class: 'small' + (cur === v ? ' on' : ''), onclick: () => { pick(v); statsPage(); } }, t(l))));
+  // Per day, per week beyond 90 days, per month beyond a year (counted in this browser's time zone).
+  const first = r.plays.length ? r.plays[0][0] : r.from;
+  const span = Math.max(1, Math.ceil((Date.now() / 1000 - Math.max(r.from, first)) / 86400));
+  const unit = span > 400 ? 'month' : span > 90 ? 'week' : 'day';
+  const day0 = new Date(); day0.setHours(0, 0, 0, 0);
+  const start = new Date(day0); start.setDate(start.getDate() - (Math.min(span, ST.days) - 1));
+  if (unit === 'week') start.setDate(start.getDate() - (start.getDay() + 6) % 7);
+  if (unit === 'month') start.setDate(1);
+  const buckets = [];
+  for (const d = new Date(start); d <= day0;) {
+    const from = new Date(d);
+    if (unit === 'month') d.setMonth(d.getMonth() + 1); else d.setDate(d.getDate() + (unit === 'week' ? 7 : 1));
+    buckets.push({ from: from.getTime() / 1000, to: d.getTime() / 1000, parts: { movie: 0, episode: 0, other: 0 },
+      label: unit === 'month' ? from.toLocaleDateString(I18N.lang, { month: 'short', year: '2-digit' }) : from.toLocaleDateString(I18N.lang, { day: 'numeric', month: 'numeric' }),
+      tip: unit === 'month' ? from.toLocaleDateString(I18N.lang, { month: 'long', year: 'numeric' }) : unit === 'week' ? t('Week of {date}', { date: from.toLocaleDateString(I18N.lang) })
+        : from.toLocaleDateString(I18N.lang, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) });
+  }
+  // Weekday by hour, and the days with any viewing.
+  const grid = Array.from({ length: 7 }, () => new Array(24).fill(0));
+  const days = new Map();
+  let movies = 0, episodes = 0;
+  for (const e of r.plays) {
+    const d = new Date(e[0] * 1000);
+    const b = buckets.find(x => e[0] >= x.from && e[0] < x.to); if (b) b.parts[e[2]] += add(e);
+    grid[(d.getDay() + 6) % 7][d.getHours()] += add(e);
+    const key = d.toDateString(); days.set(key, (days.get(key) || 0) + add(e));
+    if (e[2] === 'movie') movies++; else if (e[2] === 'episode') episodes++;
+  }
+  const best = [...days.entries()].sort((a, b) => b[1] - a[1])[0];
+  const byHour = grid[0].map((_, hh) => grid.reduce((a, row) => a + row[hh], 0));
+  const peak = byHour.indexOf(Math.max(...byHour));
+  const hourName = hh => new Date(2024, 0, 1, hh).toLocaleTimeString(I18N.lang, { hour: '2-digit', minute: '2-digit', hour12: hour12() });
+  const chart = h('div', { class: 'chart' }), heat = h('div', { class: 'chart' }), load = h('div', { class: 'chart' });
+  const ranked = (list, f) => list && list.length ? h('ol', { class: 'ranked' }, list.map(f)) : h('p', { class: 'dim' }, t('No viewings in this time.'));
+  const amount = x => hours ? fmtDur(x.minutes * 60000) || '0 min' : t('{n}×', { n: x.plays });
+  const titleRow = x => h('li', {}, h('img', { src: withTok(x.thumb), alt: '', loading: 'lazy' }),
+    h('div', { class: 'grow' }, h('a', { href: '#/item/' + x.id }, x.title || t('(removed)')), h('div', { class: 'dim' }, x.year ? String(x.year) : '')),
+    h('span', { class: 'dim' }, amount(x)));
+  const sortBy = list => (list || []).slice().sort((a, b) => hours ? b.minutes - a.minutes : b.plays - a.plays);
+  const people = S.me.admin ? (ST.people || []) : [];
+  const per = t(unit);
+  set(
+    h('div', { class: 'dash-head' }, h('h1', {}, t('Statistics')),
+      h('div', { class: 'hist-tools' },
+        seg(STAT_RANGES, ST.days, v => (ST.days = v)),
+        seg([['plays', 'Viewings'], ['hours', 'Hours']], ST.metric, v => (ST.metric = v)),
+        people.length ? h('select', { 'aria-label': t('User'), onchange: e => { ST.user = e.target.value; statsPage(); } }, h('option', { value: '' }, t('Everyone')),
+          people.map(u => h('option', { value: u.id, selected: String(u.id) === String(ST.user) }, shownName(u)))) : null)),
+    h('div', { class: 'tiles' },
+      tile(t('Watched'), fmtDur(r.minutes * 60000) || '0 min', t('{n} viewings', { n: r.size })),
+      tile(t('Movies'), fmtNum(movies, 0)),
+      tile(t('Episodes'), fmtNum(episodes, 0)),
+      tile(t('Days with viewing'), fmtNum(days.size, 0), best ? t('Most on {date}: {v}', { date: new Date(best[0]).toLocaleDateString(I18N.lang), v: fmt(best[1], true) }) : null),
+      r.plays.length ? tile(t('Favourite time'), hourName(peak), t('{a} to {b}', { a: hourName(peak), b: hourName((peak + 1) % 24) })) : null),
+    h('div', { class: 'panel' }, h('div', { class: 'ch-title' }, h('b', {}, hours ? t('Hours watched per {unit}', { unit: per }) : t('Viewings per {unit}', { unit: per }))), chart),
+    h('div', { class: 'panel' }, h('div', { class: 'ch-title' }, h('b', {}, t('Times of day')), h('span', { class: 'dim' }, hours ? t('Hours watched') : t('Viewings'))), heat),
+    h('div', { class: 'dash-cols' },
+      h('div', { class: 'panel' }, h('b', {}, t('Most watched shows')), ranked(sortBy(r.shows), titleRow)),
+      h('div', { class: 'panel' }, h('b', {}, t('Most watched movies')), ranked(sortBy(r.movies), titleRow))),
+    h('div', { class: 'dash-cols' },
+      h('div', { class: 'panel' }, h('b', {}, t('Genres')), ranked(sortBy(r.genres), x => h('li', {}, h('div', { class: 'grow' }, x.genre), h('span', { class: 'dim' }, amount(x))))),
+      S.me.admin && !ST.user ? h('div', { class: 'panel' }, h('b', {}, t('Who watches how much')),
+        ranked(sortBy(r.users), x => h('li', {}, h('div', { class: 'grow' }, h('b', {}, shownName(x))),
+          h('span', { class: 'dim' }, t('{n} viewings · {h} watched', { n: x.plays, h: fmtDur(x.minutes * 60000) || '0 min' }))))) : null),
+    S.me.admin ? h('div', { class: 'panel' }, h('div', { class: 'ch-title' }, h('b', {}, t('Load on the server by time of day')), h('span', { class: 'dim' }, t('Average of the last 30 days'))), load) : null);
+  barChart(chart, { buckets, keys: KINDS, fmt });
+  heatChart(heat, grid, fmt);
+  if (S.me.admin) loadByHour(load, hourName);
+}
+// Weekdays (rows) by hours (columns): the stronger the colour, the more.
+function heatChart(box, grid, fmt) {
+  const W = Math.max(320, box.clientWidth || 700), L = 44, T = 4, B = 22, cw = (W - L) / 24, ch = Math.min(28, Math.max(16, cw * 0.8)), H = T + ch * 7 + B;
+  const max = Math.max(...grid.flat(), 0);
+  const names = WEEKDAYS();
+  const g = sv('svg', { viewBox: `0 0 ${W} ${H}`, width: '100%', height: H, class: 'viz', role: 'img', 'aria-label': t('Times of day') });
+  grid.forEach((row, d) => {
+    g.append(sv('text', { x: L - 8, y: T + ch * d + ch / 2 + 4, 'text-anchor': 'end', class: 'tick' }, names[d]));
+    row.forEach((v, hh) => {
+      const cell = sv('rect', { x: L + cw * hh + 1, y: T + ch * d + 1, width: Math.max(1, cw - 2), height: ch - 2, rx: 3,
+        fill: v > 0 ? 'var(--s1)' : 'var(--panel2)', 'fill-opacity': v > 0 ? 0.18 + 0.82 * v / max : 1 });
+      const two = n => String(n).padStart(2, '0');
+      cell.addEventListener('mousemove', e => vizTip(e, [[null, `${names[d]} ${two(hh)}–${two((hh + 1) % 24)}`], ['var(--s1)', '', fmt(v, true)]]));
+      cell.addEventListener('mouseleave', e => vizTip(e, null));
+      g.append(cell);
+    });
+  });
+  for (let hh = 0; hh < 24; hh += cw < 22 ? 3 : 2) g.append(sv('text', { x: L + cw * hh + cw / 2, y: H - 6, 'text-anchor': 'middle', class: 'tick' }, String(hh)));
+  box.replaceChildren(g);
+}
+// The processor per hour of the day, from the hour averages of the last 30 days, with the streams in the tooltip.
+async function loadByHour(box, hourName) {
+  let r;
+  try { r = await GET('/api/dashboard/stats?range=30d'); } catch (e) { return box.replaceChildren(h('p', { class: 'dim' }, e.message)); }
+  const sum = Array.from({ length: 24 }, () => ({ cpu: 0, n: 0, streams: 0, transcodes: 0, k: 0 }));
+  for (const s of r.samples || []) {
+    if (s.streams === undefined) continue;
+    const x = sum[new Date(s.at * 1000).getHours()];
+    x.k++; x.streams += s.streams || 0; x.transcodes += s.transcodes || 0;
+    if (typeof s.cpu === 'number') { x.cpu += s.cpu; x.n++; }
+  }
+  if (!sum.some(x => x.k)) return box.replaceChildren(h('p', { class: 'dim' }, t('Nothing measured yet.')));
+  const pctFmt = (v, full) => fmtNum(v, v && v < 10 ? 1 : 0) + (full ? ' %' : '');
+  const buckets = sum.map((x, hh) => ({ label: String(hh), parts: { cpu: x.n ? x.cpu / x.n : 0 },
+    tip: `${hourName(hh)} – ${hourName((hh + 1) % 24)} · ` + t('{n} streams, {c} converted on average', { n: fmtNum(x.k ? x.streams / x.k : 0, 1), c: fmtNum(x.k ? x.transcodes / x.k : 0, 1) }) }));
+  barChart(box, { buckets, keys: [['cpu', 'Processor', 'var(--s3)']], fmt: pctFmt, height: 180 });
+}
