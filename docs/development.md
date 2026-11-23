@@ -43,10 +43,10 @@ intro, recap and credits, the countdown to the next episode, "Are you still watc
 "What happened so far", subtitle timing for the owner and the keyboard shortcuts on `?`), your own settings (account, playback, devices,
 Trakt, watchlist feed; saved under the classic app's names, so both use them), the
 watchlist, downloads (`#/downloads`; the button on an item's page), Chromecast in the player (`web-vue/src/cast.ts`), watching together (`#/together/<code>`, `web-vue/src/together.ts`), the server's settings for the owner
-(`#/server/<tab>`, the rows as data in `web-vue/src/serverSettings.ts`, with Maintenance), the dashboard, users and invites and the plugins for the owner (`#/dashboard`, `#/users`, `#/plugins`;
+(`#/server/<tab>`, the rows as data in `web-vue/src/serverSettings.ts`, with Maintenance), the dashboard, the libraries (adding, folders, scans, the import from the old server and the sync with Plex), users and invites and the plugins for the owner (`#/dashboard`, `#/libraries`, `#/users`, `#/plugins`;
 the charts are `web-vue/src/components/LineChart.vue` and `BarChart.vue`), the plugins' own panels
 (Settings → Account, or a page in the left menu: `web-vue/src/components/PluginPanel.vue`), and playlists (smart ones with their rules; playing one goes on through it: `web-vue/src/queue.ts`); the rest is still
-only in `web/` (see [todo.md](todo.md)).
+only in `web/` (see [todo.md](todo.md)). For the owner, the top bar shows what the server is doing in the background (scans, jobs, details: `web-vue/src/activity.ts`).
 
 - `build.rs` puts every file of `web-vue/dist` into the program (`VUE_FILES`, served by `vue_file` in
   `src/server/http.rs`). Build the Vue app first, then the server. Without a build `/vue/` says how

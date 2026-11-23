@@ -58,6 +58,16 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .search { flex: 1; max-width: 520px; display: flex; align-items: center; gap: 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 0 14px; color: var(--dim); }
 .search input { flex: 1; border: 0; background: none; padding: 9px 0; outline: none; color: var(--text); }
 .who { margin-left: auto; position: relative; }
+/* what the server is doing in the background (activity.ts) */
+.activity { margin-left: auto; display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; font-size: 12.5px; line-height: 1.25; color: var(--dim); background: var(--panel2); border-radius: 14px; padding: 4px 12px; max-width: min(560px, 40vw); max-height: 46px; overflow: hidden; }
+.activity + .who { margin-left: 0; }
+.activity .txt { overflow-wrap: anywhere; }
+.activity button { flex: 0 0 auto; padding: 1px 10px; margin: 0; }
+.activity .spin { width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: act-spin .9s linear infinite; flex: 0 0 12px; }
+.activity .pbar { display: inline-block; width: 60px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; flex: 0 0 60px; }
+.activity .pbar i { display: block; height: 100%; background: var(--accent); }
+@keyframes act-spin { to { transform: rotate(360deg); } }
+@media (max-width: 700px) { .activity { display: none; } }
 .userbtn { background: none; border: 0; padding: 4px 6px; }
 .av { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
 .av.big { width: 64px; height: 64px; font-size: 26px; }

@@ -10,6 +10,7 @@ import { loadPanels, panels } from './plugins';
 import { dl, loadDlCount } from './downloads';
 import { toastState } from './toast';
 import { checkInvites, declineInvite, invites } from './together';
+import { activity, cancelJob, poke } from './activity';
 import Modal from './components/Modal.vue';
 
 const route = useRoute();
@@ -34,7 +35,7 @@ function search(now = false) {
 }
 
 // The plugins' own pages in the left menu (asked for again after signing in as someone else).
-watch(() => session.me && session.me.id, id => { if (id) { loadPanels(); loadDlCount(); } }, { immediate: true });
+watch(() => session.me && session.me.id, id => { if (id) { loadPanels(); loadDlCount(); poke(); } }, { immediate: true });
 // Invitations to watch together, looked for every 15 seconds.
 window.setInterval(() => { if (session.me) checkInvites(); }, 15000);
 function joinInvite() { const inv = invites.shown; invites.shown = null; if (inv) router.push('/together/' + inv.code); }
@@ -51,6 +52,8 @@ async function out() {
   await signOut();
   router.push({ name: 'login' });
 }
+// The tooltip of the activity at the top: every line, with the file a scan is on.
+const activityTitle = () => activity.lines.map(l => l.text + (l.title ? '\n' + l.title : '')).join('\n') || activity.last;
 const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', photo: 'photo' }[type] || 'folder');
 </script>
 
@@ -63,6 +66,16 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
         <Icon name="search" />
         <input v-model="query" type="search" :placeholder="t('Search')" :aria-label="t('Search')" @input="search()">
       </form>
+      <div v-if="activity.busy || activity.last" class="activity" :title="activityTitle()">
+        <template v-if="activity.busy">
+          <span class="spin"></span>
+          <template v-for="(l, i) in activity.lines" :key="i">
+            <span class="txt">{{ l.text }}</span><span v-if="l.pct !== undefined" class="pbar"><i :style="{ width: l.pct + '%' }"></i></span>
+          </template>
+          <button v-if="activity.canCancel" class="small" @click="cancelJob">{{ t('Cancel') }}</button>
+        </template>
+        <span v-else class="txt">{{ activity.last }}</span>
+      </div>
       <div class="who">
         <button class="userbtn" aria-haspopup="menu" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
           <span class="av">{{ (name[0] || '?').toUpperCase() }}</span><span class="nm">{{ name }}</span>
@@ -97,6 +110,7 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
         <div class="nav-head">{{ t('Server') }}</div>
         <RouterLink to="/dashboard" class="nav" active-class="on"><Icon name="dashboard" /><span>{{ t('Dashboard') }}</span></RouterLink>
         <RouterLink to="/server" class="nav" :class="{ on: route.name === 'server' }" active-class="on"><Icon name="dns" /><span>{{ t('Server settings') }}</span></RouterLink>
+        <RouterLink to="/libraries" class="nav" active-class="on"><Icon name="folder" /><span>{{ t('Libraries') }}</span></RouterLink>
         <RouterLink to="/users" class="nav" active-class="on"><Icon name="people" /><span>{{ t('Users & invites') }}</span></RouterLink>
         <RouterLink to="/reports" class="nav" active-class="on"><Icon name="flag" /><span>{{ t('Reported problems') }}</span></RouterLink>
         <RouterLink to="/plugins" class="nav" active-class="on"><Icon name="extension" /><span>{{ t('Plugins') }}</span></RouterLink>

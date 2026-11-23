@@ -48,6 +48,7 @@ const wideRow = (h: Hub) => h.hubIdentifier === 'continueWatching';
       <div v-if="!session.sections.length" class="empty">
         <h1>{{ t('Welcome') }}</h1>
         <p>{{ session.me?.admin ? t('No libraries yet. Add your movie and TV show folders to get started.') : t('The owner has not shared any libraries with you yet.') }}</p>
+        <RouterLink v-if="session.me?.admin" to="/libraries" class="btn primary">{{ t('Add a library') }}</RouterLink>
       </div>
       <section v-if="spot" class="spot">
         <img :src="spotArt" alt="" class="spot-art" @error="($event.target as HTMLElement).remove()">
