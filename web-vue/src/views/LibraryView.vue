@@ -429,7 +429,12 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
       <template v-else-if="tab === 'playlists'">
         <div v-if="pls === null" class="skel line"></div>
         <div v-else-if="pls.length" class="list">
-          <div v-for="pl in pls" :key="pl.id" class="li"><div class="grow">
+          <div v-for="pl in pls" :key="pl.id" class="li">
+            <RouterLink :to="'/playlist/' + pl.id" class="li-thumb tall">
+              <img v-if="(pl.thumbs || []).length" :src="picture((pl.thumbs || [])[0], 120)" loading="lazy" alt="">
+              <div v-else class="initials">♪</div>
+            </RouterLink>
+            <div class="grow">
             <RouterLink :to="'/playlist/' + pl.id"><b>{{ plTitle(pl) }}</b></RouterLink>
             <div class="dim">{{ [pl.smart || pl.kind === 'smart' ? t('Smart playlist') : t('Playlist'), t('{n} items', { n: pl.leafCount ?? 0 }), pl.duration ? fmtDur(pl.duration) : ''].filter(Boolean).join(' · ') }}</div>
           </div></div>
