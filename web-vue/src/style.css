@@ -623,11 +623,12 @@ code.m-delete { color: #e5534b; }
 
 /* a title's page: the scores of review sites, your own stars, links, the online trailer */
 .scores { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
-.score { display: inline-flex; align-items: center; gap: 10px; background: var(--panel2); border-radius: 8px; padding: 6px 12px; color: inherit; }
-.score .mark { display: flex; flex: none; }
-.score .mark svg { height: 26px; width: auto; display: block; }
+/* (score-mark, not mark: .mark is a marker on the player's seek bar) */
+.score { display: inline-flex; align-items: center; gap: 10px; background: var(--panel2); border-radius: 8px; padding: 6px 12px; color: inherit; text-decoration: none; }
+.score-mark { display: flex; flex: none; }
+.score-mark svg { height: 26px; width: auto; display: block; }
 .score .num { display: flex; flex-direction: column; line-height: 1.2; }
-.score .num span { font-size: 12px; color: var(--dim); }
+.score .num span { font-size: 11px; color: var(--dim); letter-spacing: .03em; }
 .score b { font-size: 17px; }
 .stars { display: inline-flex; align-items: center; gap: 2px; margin-top: 12px; }
 .actions .stars { margin: 0 0 0 8px; }

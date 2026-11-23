@@ -25,7 +25,7 @@ const badges = computed(() => {
   <div v-if="badges.length" class="scores">
     <component :is="b.url ? 'a' : 'div'" v-for="b in badges" :key="b.k" class="score" :href="b.url" :target="b.url ? '_blank' : undefined" :rel="b.url ? 'noopener' : undefined" :title="b.title" :aria-label="b.title">
       <!-- (The marks are fixed SVG from scoreMarks.ts, not text from the server.) -->
-      <span class="mark" v-html="b.mark"></span>
+      <span class="score-mark" v-html="b.mark"></span>
       <span class="num"><b>{{ b.score }}</b><span>{{ b.sub }}</span></span>
     </component>
   </div>
