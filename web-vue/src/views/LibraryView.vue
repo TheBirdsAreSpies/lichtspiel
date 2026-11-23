@@ -19,7 +19,6 @@ import FilterButton from '../components/FilterButton.vue';
 import PosterCard from '../components/PosterCard.vue';
 import RandomPick from '../components/RandomPick.vue';
 import PickBar from '../components/PickBar.vue';
-import SectionMenu from '../components/SectionMenu.vue';
 import ShortDialog from '../components/ShortDialog.vue';
 
 const props = defineProps<{ id: string }>();
@@ -369,7 +368,7 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
     <template v-else>
       <div v-if="collection" class="crumbs dim"><RouterLink :to="{ query: { tab: 'collections' } }">{{ section.title }} · {{ t('Collections') }}</RouterLink> ›</div>
       <div class="lib-head">
-        <h1>{{ collection || section.title }}<span v-if="session.me?.admin && !collection" class="head-more"><SectionMenu :section="section" /></span></h1>
+        <h1>{{ collection || section.title }}</h1>
       </div>
       <div v-if="!collection" class="tabs flat">
         <button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="router.replace({ query: k ? { tab: k } : keptQuery() })">{{ t(l) }}</button>
