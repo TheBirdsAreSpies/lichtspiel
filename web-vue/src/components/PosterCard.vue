@@ -61,7 +61,7 @@ function play() {
       <button v-if="isPlayable(it) && !it.missing" class="play" :title="t('Play')" :aria-label="t('Play')" @click.prevent.stop="play"><Icon name="play" /></button>
     </div>
     <div class="t" :title="lines[0]">{{ lines[0] }}</div>
-    <div v-if="cap" class="s" :title="cap.tip"><b v-if="cap.src" class="src">{{ cap.src }}</b> {{ cap.text }}</div>
+    <div v-if="cap" class="s" :title="cap.tip"><!-- (The mark is fixed SVG from scoreMarks.ts, not text from the server.) --><span v-if="cap.mark" class="cap-mark" :title="cap.src" v-html="cap.mark"></span><b v-else-if="cap.src" class="src">{{ cap.src }}</b> {{ cap.text }}</div>
     <div v-else class="s">{{ lines[1] }}</div>
     <EditDetails v-if="editing" :id="it.id" @close="editing = false" @saved="changed" />
   </RouterLink>

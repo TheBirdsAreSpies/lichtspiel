@@ -1,6 +1,7 @@
 // Numbers, times and names as they are shown.
 import { lang, t } from './i18n';
 import { pref, type Item, type Playlist } from './api';
+import { SCORE_MARKS } from './scoreMarks';
 
 export function fmtDur(ms?: number): string {
   if (!ms) return '';
@@ -97,7 +98,7 @@ const niceMax = (v: number) => { if (!(v > 0)) return 1; const p = Math.pow(10, 
 export const niceTop = (v: number) => 4 * niceMax(Math.max(v, 1e-9) / 4);
 
 // ---- what a poster says under its title, by the way the library is sorted (as captionFor() in the classic app)
-export interface Caption { text: string, src?: string, tip?: string }
+export interface Caption { text: string, src?: string, tip?: string, /** The review site's mark (fixed SVG from scoreMarks.ts). */ mark?: string }
 const SCORE_SRC: Record<string, string> = { imdb: 'IMDb', tmdb: 'TMDB', rotten_tomatoes: 'RT', metacritic: 'MC' };
 /** "3 days ago", "2 months ago" … for a time in Unix seconds. */
 export function relTime(sec: number): string {
@@ -111,7 +112,9 @@ export function relTime(sec: number): string {
 }
 const score = (it: Item, from: string[]): Caption | null => {
   const s = it.scores || {}, k = from.find(x => s[x]);
-  return k ? { src: SCORE_SRC[k], text: String(s[k]).replace('/10', '') } : null;
+  if (!k) return null;
+  const text = String(s[k]).replace('/10', ''), mark = SCORE_MARKS[k];
+  return { src: SCORE_SRC[k], text, mark: mark ? mark(parseFloat(text) || 0) : undefined };
 };
 const when = (sec?: number): Caption | null => (sec ? { text: relTime(sec), tip: new Date(sec * 1000).toLocaleString(lang.value) } : null);
 /** The line for this sorting; null = the usual one (also when the title has no such value). */
