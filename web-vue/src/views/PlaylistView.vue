@@ -148,7 +148,7 @@ const rowInfo = (it: Item) => [it.type === 'track' ? it.parentTitle : null, it.y
         <button v-if="pl.smart && editable" @click="editingRules = true">{{ t('Edit rules') }}</button>
         <button v-if="editable && !pl.default" class="danger" @click="deleting = true">{{ t('Delete') }}</button>
       </div>
-      <div class="lib-bar tools">
+      <div class="bar-tools">
         <select :value="sort" :aria-label="t('Sort')" @change="go({ sort: ($event.target as HTMLSelectElement).value })">
           <option value="">{{ manual ? t('Playlist order') : t('Rule order') }}</option>
           <option v-for="[v, l] in SORTS" :key="v" :value="v">{{ t(l) }}</option>

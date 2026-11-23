@@ -53,6 +53,10 @@ watch(() => route.query, async () => {
 const info = (pl: Playlist) => [kindName(pl.kind), t('{n} items', { n: pl.leafCount }), fmtDur(pl.duration),
   pl.shared && pl.kind !== 'default' ? t('shared') : '', pl.pinned ? t('on home') : ''].filter(Boolean).join(' · ');
 
+// As posters (the default) or as a list, kept in this browser (the classic app's key).
+const asList = ref((() => { try { return localStorage.getItem('playlistsView') === 'list'; } catch { return false; } })());
+function setView(v: string) { asList.value = v === 'list'; try { localStorage.setItem('playlistsView', v); } catch { /* none */ } }
+
 async function play(pl: Playlist) {
   try { playAll(router, list<Item>(await get(`/playlists/${pl.id}/items`))); } catch (e) { error.value = (e as Error).message; }
 }
@@ -69,26 +73,40 @@ async function make(name: string | null) {
 
 <template>
   <div>
-    <div class="lib-head">
-      <h1>{{ t('Playlists') }}</h1>
-      <div class="lib-bar">
-        <input v-model="q" type="search" :placeholder="t('Find by name')" :aria-label="t('Find by name')">
-        <select :value="kind" :aria-label="t('Kind')" @change="go({ kind: ($event.target as HTMLSelectElement).value })">
-          <option v-for="[v, l] in KINDS" :key="v" :value="v">{{ t(l) }}</option>
-        </select>
-        <select :value="owner" :aria-label="t('Owner')" @change="go({ owner: ($event.target as HTMLSelectElement).value })">
-          <option v-for="[v, l] in OWNERS" :key="v" :value="v">{{ t(l) }}</option>
-        </select>
-        <select :value="sort" :aria-label="t('Sort')" @change="go({ sort: ($event.target as HTMLSelectElement).value })">
-          <option v-for="[v, l] in SORTS" :key="v" :value="v">{{ t(l) }}</option>
-        </select>
-        <button class="primary" @click="asking = true">{{ t('+ New playlist') }}</button>
-        <button class="primary" @click="smartNew = true">{{ t('+ New smart playlist') }}</button>
-      </div>
+    <h1>{{ t('Playlists') }}</h1>
+    <!-- The classic app's bar: kind, owner, order, name, list or posters; the new buttons at the right. -->
+    <div class="bar-tools">
+      <select :value="kind" :aria-label="t('Kind')" @change="go({ kind: ($event.target as HTMLSelectElement).value })">
+        <option v-for="[v, l] in KINDS" :key="v" :value="v">{{ t(l) }}</option>
+      </select>
+      <select :value="owner" :aria-label="t('Owner')" @change="go({ owner: ($event.target as HTMLSelectElement).value })">
+        <option v-for="[v, l] in OWNERS" :key="v" :value="v">{{ t(l) }}</option>
+      </select>
+      <select :value="sort" :aria-label="t('Sort')" @change="go({ sort: ($event.target as HTMLSelectElement).value })">
+        <option v-for="[v, l] in SORTS" :key="v" :value="v">{{ t(l) }}</option>
+      </select>
+      <input v-model="q" type="search" :placeholder="t('Find by name')" :aria-label="t('Find by name')">
+      <select :value="asList ? 'list' : 'grid'" :title="t('Show as')" :aria-label="t('Show as')" @change="setView(($event.target as HTMLSelectElement).value)">
+        <option value="list">{{ t('List') }}</option><option value="grid">{{ t('Posters') }}</option>
+      </select>
+      <span class="grow"></span>
+      <button @click="asking = true">{{ t('+ New playlist') }}</button>
+      <button class="primary" @click="smartNew = true">{{ t('+ New smart playlist') }}</button>
     </div>
     <p v-if="error" class="err">{{ error }}</p>
     <div v-if="pls === null" class="grid wide-grid"><div v-for="n in 8" :key="n" class="card ph"><div class="poster sq skel"></div></div></div>
-    <div v-else-if="pls.length" class="grid wide-grid">
+    <p v-else-if="!pls.length" class="empty">{{ t('No playlists match.') }}</p>
+    <div v-else-if="asList" class="list">
+      <div v-for="pl in pls" :key="pl.id" class="li">
+        <RouterLink :to="'/playlist/' + pl.id" class="li-thumb tall">
+          <img v-if="(pl.thumbs || []).length" :src="picture((pl.thumbs || [])[0], 120)" loading="lazy" alt="">
+          <div v-else class="initials">♪</div>
+        </RouterLink>
+        <div class="grow"><RouterLink :to="'/playlist/' + pl.id"><b>{{ plTitle(pl) }}</b></RouterLink><div class="dim">{{ info(pl) }}</div></div>
+        <button v-if="pl.leafCount" class="primary small" :title="t('▶ Play')" :aria-label="t('▶ Play')" @click="play(pl)">▶</button>
+      </div>
+    </div>
+    <div v-else class="grid wide-grid">
       <RouterLink v-for="pl in pls" :key="pl.id" :to="'/playlist/' + pl.id" class="card">
         <div class="poster sq">
           <div v-if="(pl.thumbs || []).length >= 4" class="mosaic"><img v-for="u in (pl.thumbs || []).slice(0, 4)" :key="u" :src="picture(u, 200)" class="in" loading="lazy" alt=""></div>
@@ -100,7 +118,6 @@ async function make(name: string | null) {
         <div class="s">{{ info(pl) }}</div>
       </RouterLink>
     </div>
-    <p v-else class="empty">{{ t('No playlists match.') }}</p>
     <AskDialog v-if="asking" :title="t('Name of the new playlist')" :ok="t('Create')" @done="make" />
     <SmartEditor v-if="smartNew" @close="smartNew = false" />
   </div>
