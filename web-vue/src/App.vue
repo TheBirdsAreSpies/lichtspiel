@@ -3,7 +3,7 @@
 // who is signed in. Signed out, and in the player, only the page itself.
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { session, signOut, savePref } from './api';
+import { pref, session, signOut, savePref } from './api';
 import { lang, packs, setLang, t } from './i18n';
 import Icon from './components/Icon.vue';
 import { loadPanels } from './plugins';
@@ -13,6 +13,7 @@ import { cardSize } from './cardSize';
 import { checkInvites, declineInvite, invites } from './together';
 import { activity, cancelJob, poke } from './activity';
 import Modal from './components/Modal.vue';
+import { applyLook } from './look';
 import SideList from './components/SideList.vue';
 import ActivityPanel from './components/ActivityPanel.vue';
 
@@ -63,6 +64,12 @@ async function out() {
   await signOut();
   router.push({ name: 'login' });
 }
+// Signing out asks first; switching user goes straight to the sign-in (with the home profiles).
+const askOut = ref(false);
+// The look, as under Settings → Account (kept with the account).
+const LOOKS: [string, string][] = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark'], ['oled', 'OLED (pure black)']];
+const ACCENTS: [string, string][] = [['rose', 'Rose'], ['amber', 'Amber'], ['blue', 'Blue'], ['green', 'Green'], ['red', 'Red'], ['violet', 'Violet']];
+function setLook(key: string, value: string) { savePref(key, value).catch(() => {}); applyLook(); }
 // The tooltip of the activity at the top: every line, with the file a scan is on.
 // A click on the bar opens what runs, what waits and what is planned (ActivityPanel).
 const actOpen = ref(false);
@@ -95,6 +102,9 @@ const playingLabel = computed(() => (activity.playing ? t('Dashboard · {n} play
         </template>
         <span v-else class="txt">{{ activity.last }}</span>
       </div>
+      <Modal v-if="askOut" :title="t('Sign out on this device?')" @close="askOut = false">
+        <template #actions><button class="primary" @click="askOut = false; out()">{{ t('Sign out') }}</button><button @click="askOut = false">{{ t('Cancel') }}</button></template>
+      </Modal>
       <ActivityPanel v-if="actOpen" @close="actOpen = false" />
       <!-- The owner's way to the dashboard, with how many play now (also on phones, where the activity is hidden). -->
       <RouterLink v-if="session.me && session.me.admin" to="/dashboard" class="npbtn" :class="{ live: (activity.playing || 0) > 0 }" active-class="on"
@@ -112,9 +122,21 @@ const playingLabel = computed(() => (activity.playing ? t('Dashboard · {n} play
               <option v-for="(p, code) in packs" :key="code" :value="code">{{ p.name }}</option>
             </select>
           </label>
-          <RouterLink class="menu-row" to="/settings">{{ t('Settings') }}</RouterLink>
+          <label class="menu-row">
+            {{ t('Appearance') }}
+            <select :value="pref('theme', 'system')" @change="setLook('theme', ($event.target as HTMLSelectElement).value)"><option v-for="[v, l] in LOOKS" :key="v" :value="v">{{ t(l) }}</option></select>
+          </label>
+          <label class="menu-row">
+            {{ t('Accent color') }}
+            <select :value="pref('accent', 'rose')" @change="setLook('accent', ($event.target as HTMLSelectElement).value)"><option v-for="[v, l] in ACCENTS" :key="v" :value="v">{{ t(l) }}</option></select>
+          </label>
+          <hr>
+          <RouterLink class="menu-row" to="/settings" @click="menuOpen = false">{{ t('Settings') }}</RouterLink>
+          <RouterLink class="menu-row" to="/settings/devices" @click="menuOpen = false">{{ t('Sign in a device') }}</RouterLink>
           <a class="menu-row" href="/">{{ t('Classic web app') }}</a>
-          <button class="menu-row" role="menuitem" @click="out">{{ t('Sign out') }}</button>
+          <hr>
+          <button class="menu-row" role="menuitem" @click="menuOpen = false; out()">{{ t('Switch user') }}</button>
+          <button class="menu-row" role="menuitem" @click="menuOpen = false; askOut = true">{{ t('Sign out') }}</button>
         </div>
       </div>
     </header>
