@@ -74,7 +74,6 @@ const spots = computed<Spot[]>(() => {
   }
   return out;
 });
-const wideRow = (h: Hub) => h.hubIdentifier === 'continueWatching';
 </script>
 
 <template>
@@ -94,7 +93,7 @@ const wideRow = (h: Hub) => h.hubIdentifier === 'continueWatching';
       <h1 v-if="!spots.length && session.sections.length">{{ t('Home') }}</h1>
       <template v-for="x in rows" :key="x.id">
         <ComingRow v-if="!x.hub" :entries="coming" />
-        <PosterRow v-else :title="x.title" :items="x.hub.Metadata || []" :wide="wideRow(x.hub)" :cont="x.id === 'continueWatching'">
+        <PosterRow v-else :title="x.title" :items="x.hub.Metadata || []" :cont="x.id === 'continueWatching'">
           <template v-if="x.id === shortOn" #head><button class="small h2btn" @click="short = true">{{ t('⏱ Something short') }}</button></template>
         </PosterRow>
       </template>
