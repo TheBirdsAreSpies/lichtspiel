@@ -743,6 +743,11 @@ code.m-delete { color: #e5534b; }
 /* the library's bar, as the classic app's: one panel with the controls, the poster size and "Scan now" at the right */
 .bar-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 20px; padding: 12px; background: var(--panel); border-radius: 10px; }
 .bar-tools .grow { flex: 1; }
+/* a library's page: the bar stays on top, only the posters scroll (as in the classic app) */
+.libhead { position: sticky; top: var(--top); z-index: 6; background: var(--bg); margin: -22px -32px 18px; padding: 22px 32px 0; }
+.libhead .bar-tools { margin-bottom: 12px; }
+.libhead .chips { margin: 0 0 12px; }
+@media (max-width: 760px) { .libhead { margin: -16px -14px 12px; padding: 16px 14px 0; } }
 .bar-tools .year { width: 95px; }
 .bar-tools .title-q { width: 150px; }
 .bar-tools .count { color: var(--dim); font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }

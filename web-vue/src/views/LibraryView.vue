@@ -244,21 +244,29 @@ async function loadLetters() {
 const firstOf = (m: Mark) => Math.min(...m.ranges.map(r => r[0]));
 // The letter just chosen stays lit for a moment, whatever is under the top bar.
 let forced = '', forcedAt = 0;
-async function jump(m: Mark) {
+// Where the posters begin on the screen: under the top bar and the library's bar that stays on top.
+const headBottom = () => {
+  const h = document.querySelector('.libhead');
+  return h ? h.getBoundingClientRect().bottom : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top')) || 60;
+};
+// A click on a letter glides there; running a finger down the letters jumps at once.
+async function jump(m: Mark, smooth = false) {
   const i = Math.min(firstOf(m), (total.value || 1) - 1);
-  forced = m.key; forcedAt = Date.now(); current.value = m.key;
-  const at = () => {
+  forced = m.key; forcedAt = Date.now() + (smooth ? 700 : 0); current.value = m.key;
+  const target = () => {
     const el = gridEl.value && gridEl.value.querySelector(`[data-i="${i}"]`);
-    if (!el) return null;
-    const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top')) || 60;
-    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - top - 12, behavior: 'auto' });
-    return window.scrollY;
+    return el ? Math.round(el.getBoundingClientRect().top + window.scrollY - headBottom() - 12) : null;
   };
-  const y = at();
+  const y = target();
+  if (y === null) return;
+  window.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' });
   await loadPage(Math.floor(i / PAGE));
   await nextTick();
-  // The real cards may be a little taller than the empty ones: line up again, if nobody scrolled meanwhile.
-  if (y !== null && Math.abs(window.scrollY - y) < 3) at();
+  // The real cards may be a little taller than the empty ones: line up again once there, if nobody scrolled
+  // elsewhere meanwhile.
+  const again = () => { const y2 = target(); if (y2 !== null && Math.abs(window.scrollY - y) < 3 && Math.abs(y2 - y) >= 1) window.scrollTo({ top: y2, behavior: 'auto' }); };
+  if (smooth && Math.abs(window.scrollY - y) >= 3 && 'onscrollend' in window) window.addEventListener('scrollend', again, { once: true });
+  else again();
 }
 // Where you are: the first card under the top bar lights its letter.
 let raf = 0;
@@ -272,8 +280,7 @@ function onScroll() {
     forced = '';
     const g = gridEl.value; if (!g) return;
     const r = g.getBoundingClientRect();
-    const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top')) || 60;
-    const hit = document.elementFromPoint(r.left + 20, Math.max(top + 40, r.top + 20));
+    const hit = document.elementFromPoint(r.left + 20, Math.max(headBottom() + 40, r.top + 20));
     const card = hit && (hit.closest('[data-i]') as HTMLElement | null);
     if (!card) return;
     const i = Number(card.dataset.i);
@@ -366,6 +373,8 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
   <div>
     <p v-if="!section" class="empty">{{ t('Library not found.') }}</p>
     <template v-else>
+      <!-- As in the classic app: the title, tabs, controls and filter chips stay at the top; only the posters scroll. -->
+      <div class="libhead">
       <div v-if="collection" class="crumbs dim"><RouterLink :to="{ query: { tab: 'collections' } }">{{ section.title }} · {{ t('Collections') }}</RouterLink> ›</div>
       <div class="lib-head">
         <h1>{{ collection || section.title }}</h1>
@@ -404,6 +413,12 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
           <span class="dim big-mark">▮</span>
         </label>
         <button v-if="session.me?.admin && !collection" class="opt" @click="scanNow">{{ t('Scan now') }}</button>
+      </div>
+      <div v-if="!tab && (Object.keys(active).length || rules.length)" class="chips">
+        <button v-for="(v, f) in active" :key="f" class="chip" :title="t('Remove this filter')" @click="setFilter(String(f), '')">{{ chipLabel(String(f), v) }} <span aria-hidden="true">×</span></button>
+        <button v-if="rules.length" class="chip" :title="t('Advanced filters')" @click="advancedOpen = true">{{ t('Advanced filters ({n})', { n: rules.length }) }}</button>
+        <button v-if="Object.keys(active).length + (rules.length ? 1 : 0) > 1" class="linkbtn" @click="clearFilters">{{ t('Clear filters') }}</button>
+      </div>
       </div>
       <p v-if="error" class="err">{{ error }}</p>
       <template v-if="tab === 'recommended'">
@@ -447,11 +462,6 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
         <p v-else class="empty">{{ t('No collections yet. Film series are added when details are downloaded; add your own under Edit details → Collections.') }}</p>
       </template>
       <template v-else>
-      <div v-if="Object.keys(active).length || rules.length" class="chips">
-        <button v-for="(v, f) in active" :key="f" class="chip" :title="t('Remove this filter')" @click="setFilter(String(f), '')">{{ chipLabel(String(f), v) }} <span aria-hidden="true">×</span></button>
-        <button v-if="rules.length" class="chip" :title="t('Advanced filters')" @click="advancedOpen = true">{{ t('Advanced filters ({n})', { n: rules.length }) }}</button>
-        <button v-if="Object.keys(active).length + (rules.length ? 1 : 0) > 1" class="linkbtn" @click="clearFilters">{{ t('Clear filters') }}</button>
-      </div>
       <ShortDialog v-if="short" :section="section" @close="short = false" />
       <RandomPick v-if="rolled" :item="rolled" @close="rolled = null" @again="randomPick" />
       <AdvancedFilters v-if="advancedOpen" :rules="rules" :any="rmatch" @close="advancedOpen = false" @apply="setRules" />
@@ -466,7 +476,7 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
       <p v-if="total === 0" class="empty">{{ t('Nothing found.') }}</p>
       <div v-if="marks.length" ref="letterBox" class="letters" :class="{ scrub: !!bubble }"
         @touchstart.passive="touchStart" @touchmove="touchMove" @touchend="touchEnd" @touchcancel="scrubEnd" @contextmenu="bubble && $event.preventDefault()">
-        <button v-for="m in marks" :key="m.key" :class="{ on: current === m.key }" :title="`${m.key} · ${m.size}`" @click="jump(m)">{{ m.key }}</button>
+        <button v-for="m in marks" :key="m.key" :class="{ on: current === m.key }" :title="`${m.key} · ${m.size}`" @click="jump(m, true)">{{ m.key }}</button>
       </div>
       <div v-if="bubble" class="letterbubble" :style="{ top: bubbleTop + 'px' }" aria-hidden="true">{{ bubble }}</div>
       </template>
