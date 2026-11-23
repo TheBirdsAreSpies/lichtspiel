@@ -47,7 +47,7 @@ watchlist, downloads (`#/downloads`; the button on an item's page), Chromecast i
 the charts are `web-vue/src/components/LineChart.vue` and `BarChart.vue`), the plugins' own panels
 (Settings → Account, or a page in the left menu: `web-vue/src/components/PluginPanel.vue`), playlists (smart ones with their rules; playing one goes on through it: `web-vue/src/queue.ts`), the statistics
 (`#/stats`, for everyone; the times of day are `web-vue/src/components/HeatChart.vue`), the calendar (`#/calendar`, and the
-"Coming soon" row on home: `web-vue/src/coming.ts`) and the API page for the owner (`#/api`): every page of `web/`. For the owner, the top bar shows what the server is doing in the background (scans, jobs, details: `web-vue/src/activity.ts`).
+"Coming soon" row on home: `web-vue/src/coming.ts`) and the API for the owner (a tab of the server settings, `#/server/api`): every page of `web/`. Unlike `web/`, the server settings have no "Extras" tab (trailers are under "Movie and show details", pre-roll under "Library settings"). The ☰ folds the left menu to its icons. For the owner, the top bar shows what the server is doing in the background (scans, jobs, details: `web-vue/src/activity.ts`).
 
 - `build.rs` puts every file of `web-vue/dist` into the program (`VUE_FILES`, served by `vue_file` in
   `src/server/http.rs`). Build the Vue app first, then the server. Without a build `/vue/` says how

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The API page (owner): everything the app does goes through the JSON API (GET /api/docs lists it), so
+// The API (owner; a tab of the server settings, embedded: without its own title): everything the app does goes through the JSON API (GET /api/docs lists it), so
 // scripts can do the same. One's own token (shown on request, rotated, extra tokens for scripts), the
 // filter fields, and every address by group with a search.
 import { computed, onMounted, ref } from 'vue';
@@ -10,6 +10,7 @@ import { toast } from '../toast';
 import AskDialog from '../components/AskDialog.vue';
 import Modal from '../components/Modal.vue';
 
+defineProps<{ embedded?: boolean }>();
 interface Route { method: string, path: string, description: string }
 interface Docs { auth: string, groups: { name: string, routes: Route[] }[] }
 interface Token { id: string, device?: string, created_at: number, current?: boolean }
@@ -75,7 +76,7 @@ const example = computed(() => `curl -H "X-Token: <token>" ${location.origin}/li
 
 <template>
   <div>
-    <h1>{{ t('API') }}</h1>
+    <h1 v-if="!embedded">{{ t('API') }}</h1>
     <p v-if="docs">{{ t('Everything this app does goes through this JSON API, so other apps and scripts can do the same. ') }}{{ docs.auth }}.</p>
     <p v-if="error" class="err">{{ error }}</p>
     <section class="panel">

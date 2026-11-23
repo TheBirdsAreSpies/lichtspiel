@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // The server's settings (owner), one tab each (/server/<tab>), drawn from the rows in serverSettings.ts;
-// a search goes through every tab. Save sends them all (PUT /api/settings). Maintenance has its own panel.
+// a search goes through every tab. Save sends them all (PUT /api/settings). Maintenance and the API (tokens,
+// every address) have their own panels. The page stays while the tabs change (App.vue keys it by name).
 import { computed, ref } from 'vue';
 import { api, get, session } from '../api';
 import { lang, t } from '../i18n';
@@ -8,6 +9,7 @@ import { NEEDS_FFMPEG, ROWS, TABS, type Opt, type Row, type SettingsReply, type 
 import { toast } from '../toast';
 import AskDialog from '../components/AskDialog.vue';
 import MaintenancePanel from '../components/MaintenancePanel.vue';
+import ApiView from './ApiView.vue';
 
 const props = defineProps<{ tab?: string }>();
 const tab = computed(() => (TABS.some(([k]) => k === props.tab) ? props.tab! : 'general'));
@@ -98,6 +100,7 @@ const where = computed(() => {
     <p v-if="error" class="err">{{ error }}</p>
 
     <MaintenancePanel v-if="tab === 'maintenance' && !query.trim()" />
+    <ApiView v-else-if="tab === 'api' && !query.trim()" embedded />
     <template v-else-if="r && tc">
       <p v-if="!shown.length" class="empty">{{ t('No setting matches “{q}”.', { q: query.trim() }) }}</p>
       <section v-for="[k, rows] in shown" :key="k" class="panel">

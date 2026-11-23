@@ -96,6 +96,8 @@ I18N.add('de', 'Deutsch', {
     'Plays theme music quietly on a movie’s or show’s page: a theme.mp3 from its folder, or for shows the music cut from the intro. Browsers may need one click on the page first.': 'Spielt Titelmusik leise auf der Seite eines Films oder einer Serie: eine theme.mp3 aus dem Ordner oder bei Serien die aus dem Intro geschnittene Musik. Browser brauchen eventuell zuerst einen Klick auf die Seite.',
     'Skip': 'Überspringen',
     'Pre-roll videos': 'Vorspann für Filme',
+    'Trailers': 'Trailer',
+    'Before a movie': 'Vor dem Film',
     'Pre-roll: which to play': 'Vorspann: welcher wird gespielt',
     'One, picked at random': 'Einer, zufällig gewählt',
     'All of them, in the order listed': 'Alle, in der aufgelisteten Reihenfolge',

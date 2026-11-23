@@ -31,7 +31,7 @@ export const NEEDS_FFMPEG = ['credits_from_picture', 'analyze_loudness', 'deep_a
   'hw_accel', 'hw_device', 'hw_constant_quality', 'hdr_tone_mapping', 'h264_preset', 'h264_minimum_crf', 'max_transcodes', 'max_gpu_transcodes', 'max_cpu_transcodes', 'hls_segment_seconds', 'segmented_transcoder_timeout_seconds'];
 
 export const TABS: [string, string][] = [['general', 'Server'], ['network', 'Network settings'], ['library', 'Library settings'], ['metadata', 'Movie and show details'],
-  ['transcoder', 'Transcoder'], ['tasks', 'Scheduled tasks'], ['extras', 'Extras'], ['maintenance', 'Maintenance']];
+  ['transcoder', 'Transcoder'], ['tasks', 'Scheduled tasks'], ['maintenance', 'Maintenance'], ['api', 'API']];
 
 export const ROWS: Record<string, Row[]> = {
   general: [
@@ -87,6 +87,9 @@ export const ROWS: Record<string, Row[]> = {
     { k: 'allow_media_deletion', label: 'Allow media deletion', kind: 'check', help: 'Admins, and people you allow under Users & invites, may delete movie and episode files from disk with "Delete" in the "⋯" menu.' },
     { k: 'disk_warn_percent', label: 'Warn when a disk is nearly full (percent free)', kind: 'number', help: 'Checked every 30 minutes for the disks of the libraries and of the data folder. Below this much free space plugins are told once (the Telegram / Pushover plugin sends a message), and the dashboard shows it red. 0 = never.' },
     { k: 'download_keep_days', label: 'Keep converted downloads (days)', kind: 'number', help: 'Copies converted for “Download…” are kept in the server’s data folder (downloads) and deleted this many days after they were made. 0 = until they are removed from the Downloads page.' },
+    { kind: 'head', label: 'Before a movie' },
+    { k: 'preroll_mode', label: 'Pre-roll: which to play', kind: 'select', opts: [['random', 'One, picked at random'], ['all', 'All of them, in the order listed'], ['first', 'Always the first']], help: 'Used when several pre-roll videos are listed below. Pre-roll videos are not the online trailers: those appear on the movie’s page.' },
+    { k: 'preroll_paths', label: 'Pre-roll videos', kind: 'area', help: 'Played before every movie. One path per line (or separated by semicolons). MP4 or WebM files that the browser plays directly work best; the video can be skipped.' },
   ],
   metadata: [
     { k: 'metadata_enabled', label: 'Download plot, cast, posters and episode titles from the internet', kind: 'check' },
@@ -102,13 +105,10 @@ export const ROWS: Record<string, Row[]> = {
     { kind: 'button', what: 'imdb', label: 'Update IMDb ratings now', help: 'Downloads the ratings file again right away and updates every movie and show that has an IMDb id.' },
     { k: 'tmdb_api_key', label: 'TMDB API key (optional)', kind: 'text', help: 'Without a key, movies come from Wikipedia/Wikidata and TV shows from TVmaze. A free key from themoviedb.org gives better matches, cast photos and translated plots.' },
     { k: 'omdb_api_key', label: 'OMDb API key for IMDb plots (optional)', kind: 'text', help: 'With a free key from omdbapi.com, movie and show plots are taken from IMDb (in English) instead of Wikipedia. Press Refresh details on a movie, or change the language, to load them for movies you already have.' },
-  ],
-  extras: [
+    { kind: 'head', label: 'Trailers' },
     { k: 'trailers_online', label: 'Show online trailers', kind: 'check', help: 'Trailers and other videos from TMDB or Wikidata, played from YouTube. Nothing is downloaded.' },
     { k: 'trailers_english', label: 'Also look for English trailers', kind: 'check', help: 'When there is none in the library language. Applies to titles when their details are loaded again.' },
     { k: 'trailers_red_band', label: 'Allow red band trailers', kind: 'check', help: 'Trailers marked for adults only. Applies to titles when their details are loaded again.' },
-    { k: 'preroll_mode', label: 'Pre-roll: which to play', kind: 'select', opts: [['random', 'One, picked at random'], ['all', 'All of them, in the order listed'], ['first', 'Always the first']], help: 'Used when several pre-roll videos are listed below. Pre-roll videos are not the online trailers: those appear on the movie’s page.' },
-    { k: 'preroll_paths', label: 'Pre-roll videos', kind: 'area', help: 'Played before every movie. One path per line (or separated by semicolons). MP4 or WebM files that the browser plays directly work best; the video can be skipped.' },
   ],
   tasks: [
     { k: 'maintenance_start_hour', label: 'Maintenance starts at', kind: 'select', opts: hours, help: 'Scheduled tasks only start between these two times (your local time).' },

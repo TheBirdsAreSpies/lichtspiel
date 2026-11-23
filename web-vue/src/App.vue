@@ -41,6 +41,14 @@ window.setInterval(() => { if (session.me) checkInvites(); }, 15000);
 function joinInvite() { const inv = invites.shown; invites.shown = null; if (inv) router.push('/together/' + inv.code); }
 
 const menuOpen = ref(false);
+// The left menu folded to its icons (kept in this browser, as it suits the screen); the ☰ in the top bar folds
+// it. On a phone the ☰ opens the menu over the page instead.
+const navSmall = ref((() => { try { return localStorage.getItem('vue-navSmall') === '1'; } catch { return false; } })());
+function burger() {
+  if (matchMedia('(max-width: 760px)').matches) { sideOpen.value = !sideOpen.value; return; }
+  navSmall.value = !navSmall.value;
+  try { localStorage.setItem('vue-navSmall', navSmall.value ? '1' : '0'); } catch { /* storage blocked */ }
+}
 const sideOpen = ref(false);
 watch(() => route.fullPath, () => { sideOpen.value = false; menuOpen.value = false; });
 
@@ -54,6 +62,8 @@ async function out() {
 }
 // The tooltip of the activity at the top: every line, with the file a scan is on.
 const activityTitle = () => activity.lines.map(l => l.text + (l.title ? '\n' + l.title : '')).join('\n') || activity.last;
+// A page with tabs in its address stays while they change (no new loading); any other address is a new page.
+const pageKey = computed(() => (route.name === 'server' || route.name === 'settings' ? String(route.name) : route.path));
 const playingLabel = computed(() => (activity.playing ? t('Dashboard · {n} playing now', { n: activity.playing }) : t('Dashboard · nothing is playing')));
 // The number beside a library in the menu: its shows, or its videos.
 const sectionCount = (s: Section) => (s.type === 'show' ? (s.count ? t('{n} shows', { n: s.count }) : '') : s.videoCount ?? s.count ?? '');
@@ -61,9 +71,9 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
 </script>
 
 <template>
-  <div v-if="framed" class="frame" :class="{ 'side-open': sideOpen }">
+  <div v-if="framed" class="frame" :class="{ 'side-open': sideOpen, 'nav-small': navSmall }">
     <header class="top">
-      <button class="iconbtn burger" :aria-label="t('Menu')" @click="sideOpen = !sideOpen"><Icon name="menu" /></button>
+      <button class="iconbtn burger" :aria-label="t('Menu')" :title="navSmall ? t('Expand the menu') : t('Collapse the menu to its icons')" @click="burger"><Icon name="menu" /></button>
       <RouterLink to="/" class="brand">
         <!-- The light beam of the classic app's logo. -->
         <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="beam"><stop offset="0" style="stop-color: var(--accent)" stop-opacity=".95" /><stop offset="1" style="stop-color: var(--accent)" stop-opacity=".15" /></linearGradient></defs><path d="M4.5 16 27 4.5v23z" fill="url(#beam)" /><circle cx="4.5" cy="16" r="3.5" style="fill: var(--accent)" /><rect x="27.5" y="3.5" width="3.2" height="25" rx="1.6" style="fill: var(--accent)" /></svg>
@@ -106,35 +116,34 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
       </div>
     </header>
     <nav class="side" :aria-label="t('Libraries')">
-      <RouterLink to="/" class="nav" exact-active-class="on"><Icon name="home" /><span>{{ t('Home') }}</span></RouterLink>
-      <RouterLink to="/watchlist" class="nav" active-class="on"><Icon name="mark" /><span>{{ t('Watchlist') }}</span></RouterLink>
-      <RouterLink to="/playlists" class="nav" :class="{ on: route.name === 'playlist' }" active-class="on"><Icon name="playlist" /><span>{{ t('Playlists') }}</span></RouterLink>
-      <RouterLink to="/stats" class="nav" active-class="on"><Icon name="chart" /><span>{{ t('Statistics') }}</span></RouterLink>
-      <RouterLink v-if="session.me && session.me.can_download" to="/downloads" class="nav" active-class="on"><Icon name="download" /><span>{{ t('Downloads') }}</span><small v-if="dl.busy" class="nav-count" :title="t('{n} being converted', { n: dl.busy })">{{ dl.busy }}</small></RouterLink>
+      <RouterLink to="/" class="nav" exact-active-class="on" :title="t('Home')"><Icon name="home" /><span>{{ t('Home') }}</span></RouterLink>
+      <RouterLink to="/watchlist" class="nav" active-class="on" :title="t('Watchlist')"><Icon name="mark" /><span>{{ t('Watchlist') }}</span></RouterLink>
+      <RouterLink to="/playlists" class="nav" :class="{ on: route.name === 'playlist' }" active-class="on" :title="t('Playlists')"><Icon name="playlist" /><span>{{ t('Playlists') }}</span></RouterLink>
+      <RouterLink to="/stats" class="nav" active-class="on" :title="t('Statistics')"><Icon name="chart" /><span>{{ t('Statistics') }}</span></RouterLink>
+      <RouterLink v-if="session.me && session.me.can_download" to="/downloads" class="nav" active-class="on" :title="t('Downloads')"><Icon name="download" /><span>{{ t('Downloads') }}</span><small v-if="dl.busy" class="nav-count" :title="t('{n} being converted', { n: dl.busy })">{{ dl.busy }}</small></RouterLink>
       <div class="nav-head">{{ t('Libraries') }}</div>
-      <RouterLink v-for="s in session.sections" :key="s.id" :to="'/library/' + s.id" class="nav" active-class="on">
+      <RouterLink v-for="s in session.sections" :key="s.id" :to="'/library/' + s.id" class="nav" active-class="on" :title="s.title">
         <Icon :name="icon(s.type)" /><span>{{ s.title }}</span><small v-if="sectionCount(s)" class="nav-num">{{ sectionCount(s) }}</small>
       </RouterLink>
       <template v-if="panels.list.some(p => p.sidebar)">
         <div class="nav-head"></div>
-        <RouterLink v-for="p in panels.list.filter(x => x.sidebar)" :key="p.id" :to="'/plugin/' + p.id" class="nav" active-class="on"><Icon name="extension" /><span>{{ p.name }}</span></RouterLink>
+        <RouterLink v-for="p in panels.list.filter(x => x.sidebar)" :key="p.id" :to="'/plugin/' + p.id" class="nav" active-class="on" :title="p.name"><Icon name="extension" /><span>{{ p.name }}</span></RouterLink>
       </template>
       <template v-if="session.me && session.me.admin">
         <div class="nav-head">{{ t('Server') }}</div>
-        <RouterLink to="/dashboard" class="nav" active-class="on"><Icon name="dashboard" /><span>{{ t('Dashboard') }}</span></RouterLink>
-        <RouterLink to="/server" class="nav" :class="{ on: route.name === 'server' }" active-class="on"><Icon name="dns" /><span>{{ t('Server settings') }}</span></RouterLink>
-        <RouterLink to="/libraries" class="nav" active-class="on"><Icon name="folder" /><span>{{ t('Libraries') }}</span></RouterLink>
-        <RouterLink to="/users" class="nav" active-class="on"><Icon name="people" /><span>{{ t('Users & invites') }}</span></RouterLink>
-        <RouterLink to="/reports" class="nav" active-class="on"><Icon name="flag" /><span>{{ t('Reported problems') }}</span></RouterLink>
-        <RouterLink to="/plugins" class="nav" active-class="on"><Icon name="extension" /><span>{{ t('Plugins') }}</span></RouterLink>
-        <RouterLink to="/api" class="nav" active-class="on"><Icon name="code" /><span>{{ t('API') }}</span></RouterLink>
+        <RouterLink to="/dashboard" class="nav" active-class="on" :title="t('Dashboard')"><Icon name="dashboard" /><span>{{ t('Dashboard') }}</span></RouterLink>
+        <RouterLink to="/server" class="nav" :class="{ on: route.name === 'server' }" active-class="on" :title="t('Server settings')"><Icon name="dns" /><span>{{ t('Server settings') }}</span></RouterLink>
+        <RouterLink to="/libraries" class="nav" active-class="on" :title="t('Libraries')"><Icon name="folder" /><span>{{ t('Libraries') }}</span></RouterLink>
+        <RouterLink to="/users" class="nav" active-class="on" :title="t('Users & invites')"><Icon name="people" /><span>{{ t('Users & invites') }}</span></RouterLink>
+        <RouterLink to="/reports" class="nav" active-class="on" :title="t('Reported problems')"><Icon name="flag" /><span>{{ t('Reported problems') }}</span></RouterLink>
+        <RouterLink to="/plugins" class="nav" active-class="on" :title="t('Plugins')"><Icon name="extension" /><span>{{ t('Plugins') }}</span></RouterLink>
       </template>
       <div class="nav-head"></div>
-      <RouterLink to="/settings" class="nav" active-class="on"><Icon name="settings" /><span>{{ t('Settings') }}</span></RouterLink>
+      <RouterLink to="/settings" class="nav" active-class="on" :title="t('Settings')"><Icon name="settings" /><span>{{ t('Settings') }}</span></RouterLink>
     </nav>
     <div v-if="sideOpen" class="scrim" @click="sideOpen = false"></div>
     <main class="main" @click="menuOpen = false">
-      <RouterView :key="route.path" />
+      <RouterView :key="pageKey" />
     </main>
     <!-- Phones: a bar at the bottom instead of the side menu; "Menu" opens the side menu with the rest. -->
     <nav class="tabbar" :aria-label="t('Menu')">
