@@ -6,7 +6,9 @@
 // library filtered to it (?collection=…).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { get, list, picture, session, type Group, type Item } from '../api';
+import { get, list, picture, session, type Group, type Hub, type Item, type Playlist } from '../api';
+import { fmtDur, plTitle } from '../format';
+import PosterRow from '../components/PosterRow.vue';
 import { CARD, cardSize, setCardSize } from '../cardSize';
 import { chipLabel, fromQuery, type Rule } from '../filters';
 import { t } from '../i18n';
@@ -28,7 +30,9 @@ const OLD_SORT: Record<string, string> = { rating: 'critic_rating' };
 
 const route = useRoute();
 const router = useRouter();
-const tab = computed(() => (route.query.tab === 'collections' ? 'collections' : ''));
+// The tabs: recommended rows, the titles themselves (''), collections, playlists with something from here, and the genres as tiles.
+const TABS: [string, string][] = [['recommended', 'Recommended'], ['', 'Library'], ['collections', 'Collections'], ['playlists', 'Playlists'], ['categories', 'Categories']];
+const tab = computed(() => { const v = String(route.query.tab || ''); return TABS.some(x => x[0] === v) ? v : ''; });
 const collection = computed(() => (typeof route.query.collection === 'string' ? route.query.collection : ''));
 const section = computed(() => session.sections.find(s => String(s.id) === props.id));
 const kept = (() => { try { return JSON.parse(localStorage.getItem('vue-lib:' + props.id) || '{}'); } catch { return {}; } })();
@@ -284,7 +288,7 @@ function touchEnd(e: TouchEvent) { if (scrubbing) e.preventDefault(); scrubEnd()
 // (While the kept filters are being put into the address, the page waits for them.)
 onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true }); window.addEventListener('keydown', onKey);
-  if (tab.value) loadGroups(); else if (!restoring) loadPage(0);
+  if (tab.value) loadTab(tab.value); else if (!restoring) loadPage(0);
 });
 onBeforeUnmount(() => { io.disconnect(); window.removeEventListener('scroll', onScroll); window.removeEventListener('keydown', onKey); cancelAnimationFrame(raf); scrubEnd(); });
 
@@ -303,10 +307,25 @@ async function loadGroups() {
   try { groups.value = list<Group>(await get(`/library/sections/${props.id}/collections`)); } catch (e) { error.value = (e as Error).message; }
 }
 watch(tab, async v => {
-  if (v) { loadGroups(); return; }
+  if (v) { loadTab(v); return; }
   await nextTick();
   if (!items.value.length) restart();
 });
+// ---- recommended, playlists, categories (each read once per visit)
+const hubs = ref<Hub[] | null>(null);
+const pls = ref<Playlist[] | null>(null);
+interface Cat { title: string, art?: string, thumb?: string, childCount: number }
+const cats = ref<Cat[] | null>(null);
+async function loadTab(v: string) {
+  try {
+    if (v === 'collections') await loadGroups();
+    else if (v === 'recommended' && !hubs.value) hubs.value = list<Hub>(await get(`/hubs/sections/${props.id}`), 'Hub');
+    else if (v === 'playlists' && !pls.value) pls.value = list<Playlist>(await get(`/playlists?section=${props.id}&sort=title`));
+    else if (v === 'categories' && !cats.value) cats.value = list<Cat>(await get(`/library/sections/${props.id}/categories`));
+  } catch (e) { error.value = (e as Error).message; }
+}
+const catImg = (c: Cat) => picture(c.art || c.thumb, 480);
+const openCat = (c: Cat) => router.push({ query: { 'f.genre': c.title } });
 const openGroup = (g: Group) => router.push({ query: { collection: g.title } });
 const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: left(g), total: g.childCount }) : t('All seen'));
 </script>
@@ -334,11 +353,35 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
         </div>
       </div>
       <div v-if="!collection" class="tabs flat">
-        <button :class="{ on: !tab }" @click="router.replace({ query: keptQuery() })">{{ t('Library') }}</button>
-        <button :class="{ on: tab }" @click="router.replace({ query: { tab: 'collections' } })">{{ t('Collections') }}</button>
+        <button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="router.replace({ query: k ? { tab: k } : keptQuery() })">{{ t(l) }}</button>
       </div>
       <p v-if="error" class="err">{{ error }}</p>
-      <template v-if="tab">
+      <template v-if="tab === 'recommended'">
+        <div v-if="hubs === null" class="grid"><div v-for="n in 8" :key="n" class="card ph"><div class="poster skel"></div></div></div>
+        <template v-else-if="hubs.length"><PosterRow v-for="h in hubs" :key="h.title" :title="t(h.title)" :items="h.Metadata || []" /></template>
+        <p v-else class="empty">{{ t('Nothing to recommend yet. Rows appear once the library has titles.') }}</p>
+      </template>
+      <template v-else-if="tab === 'playlists'">
+        <div v-if="pls === null" class="skel line"></div>
+        <div v-else-if="pls.length" class="list">
+          <div v-for="pl in pls" :key="pl.id" class="li"><div class="grow">
+            <RouterLink :to="'/playlist/' + pl.id"><b>{{ plTitle(pl) }}</b></RouterLink>
+            <div class="dim">{{ [pl.smart || pl.kind === 'smart' ? t('Smart playlist') : t('Playlist'), t('{n} items', { n: pl.leafCount ?? 0 }), pl.duration ? fmtDur(pl.duration) : ''].filter(Boolean).join(' · ') }}</div>
+          </div></div>
+        </div>
+        <p v-else class="empty">{{ t('No playlists with anything from this library yet.') }}</p>
+      </template>
+      <template v-else-if="tab === 'categories'">
+        <div v-if="cats === null" class="cats"><div v-for="n in 8" :key="n" class="cat skel"></div></div>
+        <div v-else-if="cats.length" class="cats">
+          <button v-for="c in cats" :key="c.title" type="button" class="cat" @click="openCat(c)">
+            <img v-if="c.art || c.thumb" :src="catImg(c)" loading="lazy" alt="">
+            <div>{{ c.title }}<small>{{ t('{n} items', { n: c.childCount }) }}</small></div>
+          </button>
+        </div>
+        <p v-else class="empty">{{ t('No categories yet. They come from the genres of the movies and shows.') }}</p>
+      </template>
+      <template v-else-if="tab === 'collections'">
         <label v-if="groups && groups.length" class="chk gap"><input v-model="hideSeen" type="checkbox"> {{ t('Hide watched') }}</label>
         <div v-if="groups === null" class="grid"><div v-for="n in 12" :key="n" class="card ph"><div class="poster skel"></div></div></div>
         <div v-else-if="groups.length" class="grid">
