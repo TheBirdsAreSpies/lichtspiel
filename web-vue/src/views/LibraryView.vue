@@ -6,12 +6,14 @@
 // library filtered to it (?collection=…).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { get, list, picture, session, type Group, type Hub, type Item, type Playlist } from '../api';
+import { api, get, list, picture, session, type Group, type Hub, type Item, type Playlist } from '../api';
 import { fmtDur, fmtNum, plTitle } from '../format';
 import PosterRow from '../components/PosterRow.vue';
 import { CARD, cardSize, setCardSize } from '../cardSize';
 import { chipLabel, fromQuery, type Rule } from '../filters';
 import { t } from '../i18n';
+import { poke } from '../activity';
+import { toast } from '../toast';
 import AdvancedFilters from '../components/AdvancedFilters.vue';
 import FilterButton from '../components/FilterButton.vue';
 import PosterCard from '../components/PosterCard.vue';
@@ -58,6 +60,9 @@ const extra = computed(() => Object.fromEntries(EXTRA.map(k => [k, typeof route.
 const sortFields = computed(() => (extra.value.type === 'season' || extra.value.type === 'episode' ? [['show', 'TV show'] as [string, string], ...SORT_FIELDS] : SORT_FIELDS));
 const CONTAINERS = ['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'];
 const moreOpen = ref(!!(route.query.from || route.query.to || route.query.container));
+async function scanNow() {
+  try { await api('POST', `/library/sections/${props.id}/refresh`); toast(t('Scanning {name}', { name: section.value?.title || '' })); poke(); } catch (e) { toast((e as Error).message, 6000); }
+}
 function setExtra(k: string, val: string) {
   const q: Record<string, string> = {};
   for (const [key, x] of Object.entries(route.query)) if (typeof x === 'string' && key !== 'tab' && key !== k) q[key] = x;
@@ -364,40 +369,42 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
     <template v-else>
       <div v-if="collection" class="crumbs dim"><RouterLink :to="{ query: { tab: 'collections' } }">{{ section.title }} · {{ t('Collections') }}</RouterLink> ›</div>
       <div class="lib-head">
-        <h1>{{ collection || section.title }} <span v-if="!tab && total !== null" class="dim count" :title="t('{n} shown', { n: total })">{{ pos >= 0 && total > PAGE ? t('{pos} / {total}', { pos: fmtNum(pos + 1), total: fmtNum(total) }) : fmtNum(total) }}</span><span v-if="session.me?.admin && !collection" class="head-more"><SectionMenu :section="section" /></span></h1>
-        <div v-if="!tab" class="lib-bar">
-          <select v-if="section.type === 'show'" :value="extra.type || ''" :aria-label="t('Show')" @change="setExtra('type', ($event.target as HTMLSelectElement).value)">
-            <option value="">{{ t('Shows') }}</option><option value="season">{{ t('Seasons') }}</option><option value="episode">{{ t('Episodes') }}</option>
-          </select>
-          <select v-if="section.type === 'music'" :value="extra.type || ''" :aria-label="t('Show')" @change="setExtra('type', ($event.target as HTMLSelectElement).value)">
-            <option value="">{{ t('Artists') }}</option><option value="album">{{ t('Albums') }}</option><option value="track">{{ t('Songs') }}</option>
-          </select>
-          <input v-model="q" type="search" :placeholder="t('Filter by title')" :aria-label="t('Filter by title')">
-          <select v-model="sortField" :aria-label="t('Sort')" :title="t('Sort')">
-            <option v-for="[v, l] in sortFields" :key="v" :value="v">{{ t(l) }}</option>
-          </select>
-          <button v-if="sortField !== 'random'" class="dirbtn" :title="sortDesc ? t('Descending') : t('Ascending')" :aria-label="sortDesc ? t('Descending') : t('Ascending')" @click="turnSort">{{ sortDesc ? '↓' : '↑' }}</button>
-          <button v-if="(total || 0) > 1" class="dirbtn" :title="t('Pick one at random')" :aria-label="t('Pick one at random')" @click="randomPick">🎲</button>
-          <button v-if="section.type === 'movie' || section.type === 'show'" class="dirbtn" :title="t('Something short')" :aria-label="t('Something short')" @click="short = true">⏱</button>
-          <label class="size" :title="t('Poster size')">
-            <span class="dim small-mark">▮</span>
-            <input type="range" :min="CARD.min" :max="CARD.max" step="10" :value="cardSize" :aria-label="t('Poster size')" @input="setCardSize(Number(($event.target as HTMLInputElement).value))">
-            <span class="dim big-mark">▮</span>
-          </label>
-          <FilterButton :url="`/library/sections/${id}/filters${extra.type ? '?type=' + extra.type : ''}`" :active="active" :remember-key="'vue-libFilter:' + id" :advanced="rules.length" @set="setFilter" @advanced="advancedOpen = true" />
-          <button class="small-dd" :class="{ on: extra.from || extra.to || extra.container }" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">{{ t('More') }} {{ moreOpen ? '▴' : '▾' }}</button>
-          <template v-if="moreOpen">
-            <input :value="extra.from || ''" type="number" min="1800" max="2200" class="year" :placeholder="t('Year from')" :aria-label="t('Year from')" @change="setExtra('from', ($event.target as HTMLInputElement).value.trim())">
-            <input :value="extra.to || ''" type="number" min="1800" max="2200" class="year" :placeholder="t('Year to')" :aria-label="t('Year to')" @change="setExtra('to', ($event.target as HTMLInputElement).value.trim())">
-            <select :value="extra.container || ''" :aria-label="t('File type')" @change="setExtra('container', ($event.target as HTMLSelectElement).value)">
-              <option value="">{{ t('Any file type') }}</option>
-              <option v-for="c in CONTAINERS" :key="c" :value="c">{{ c.toUpperCase() }}</option>
-            </select>
-          </template>
-        </div>
+        <h1>{{ collection || section.title }}<span v-if="session.me?.admin && !collection" class="head-more"><SectionMenu :section="section" /></span></h1>
       </div>
       <div v-if="!collection" class="tabs flat">
         <button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="router.replace({ query: k ? { tab: k } : keptQuery() })">{{ t(l) }}</button>
+      </div>
+      <!-- As the classic app's bar: the controls in a panel; on a phone the ones used less often fold away behind "More". -->
+      <div v-if="!tab" class="bar-tools" :class="{ open: moreOpen }">
+        <select v-if="section.type === 'show'" :value="extra.type || ''" :aria-label="t('Show')" @change="setExtra('type', ($event.target as HTMLSelectElement).value)">
+          <option value="">{{ t('Shows') }}</option><option value="season">{{ t('Seasons') }}</option><option value="episode">{{ t('Episodes') }}</option>
+        </select>
+        <select v-if="section.type === 'music'" :value="extra.type || ''" :aria-label="t('Show')" @change="setExtra('type', ($event.target as HTMLSelectElement).value)">
+          <option value="">{{ t('Artists') }}</option><option value="album">{{ t('Albums') }}</option><option value="track">{{ t('Songs') }}</option>
+        </select>
+        <FilterButton :url="`/library/sections/${id}/filters${extra.type ? '?type=' + extra.type : ''}`" :active="active" :remember-key="'vue-libFilter:' + id" :advanced="rules.length" @set="setFilter" @advanced="advancedOpen = true" />
+        <select v-model="sortField" :aria-label="t('Sort')" :title="t('Sort')">
+          <option v-for="[v, l] in sortFields" :key="v" :value="v">{{ t(l) }}</option>
+        </select>
+        <button v-if="sortField !== 'random'" class="dirbtn" :title="sortDesc ? t('Descending') : t('Ascending')" :aria-label="sortDesc ? t('Descending') : t('Ascending')" @click="turnSort">{{ sortDesc ? '↓' : '↑' }}</button>
+        <button v-if="(total || 0) > 1" class="dirbtn" :title="t('Pick one at random')" :aria-label="t('Pick one at random')" @click="randomPick">🎲</button>
+        <button v-if="section.type === 'movie' || section.type === 'show'" class="dirbtn" :title="t('Something short')" :aria-label="t('Something short')" @click="short = true">⏱</button>
+        <button class="toolsmore" :class="{ on: extra.from || extra.to || extra.container || q }" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">{{ t('More') }} {{ moreOpen ? '▴' : '▾' }}</button>
+        <input :value="extra.from || ''" type="number" min="1800" max="2200" class="year opt" :placeholder="t('Year from')" :aria-label="t('Year from')" @change="setExtra('from', ($event.target as HTMLInputElement).value.trim())">
+        <input :value="extra.to || ''" type="number" min="1800" max="2200" class="year opt" :placeholder="t('Year to')" :aria-label="t('Year to')" @change="setExtra('to', ($event.target as HTMLInputElement).value.trim())">
+        <select :value="extra.container || ''" class="opt" :aria-label="t('File type')" @change="setExtra('container', ($event.target as HTMLSelectElement).value)">
+          <option value="">{{ t('Any file type') }}</option>
+          <option v-for="c in CONTAINERS" :key="c" :value="c">{{ c.toUpperCase() }}</option>
+        </select>
+        <input v-model="q" type="search" class="title-q opt" :placeholder="t('Filter by title')" :aria-label="t('Filter by title')">
+        <span v-if="total !== null" class="count" :title="t('{n} shown', { n: total })">{{ pos >= 0 && total > PAGE ? t('{pos} / {total}', { pos: fmtNum(pos + 1), total: fmtNum(total) }) : total === 1 ? t('1 item') : t('{n} items', { n: fmtNum(total) }) }}</span>
+        <span class="grow"></span>
+        <label class="size" :title="t('Poster size')">
+          <span class="dim small-mark">▮</span>
+          <input type="range" :min="CARD.min" :max="CARD.max" step="10" :value="cardSize" :aria-label="t('Poster size')" @input="setCardSize(Number(($event.target as HTMLInputElement).value))">
+          <span class="dim big-mark">▮</span>
+        </label>
+        <button v-if="session.me?.admin && !collection" class="opt" @click="scanNow">{{ t('Scan now') }}</button>
       </div>
       <p v-if="error" class="err">{{ error }}</p>
       <template v-if="tab === 'recommended'">

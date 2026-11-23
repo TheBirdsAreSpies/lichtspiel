@@ -718,8 +718,20 @@ code.m-delete { color: #e5534b; }
 .card:hover .more, .card:hover .edit, .poster .more:focus-visible, .poster .edit:focus-visible, .poster .more.open { opacity: 1; }
 .card-menu { display: contents; }
 @media (hover: none) { .poster .more, .poster .edit { display: none; } }
-.lib-bar .year { width: 110px; }
-.lib-bar .small-dd.on { border-color: var(--accent); color: var(--accent); }
+/* the library's bar, as the classic app's: one panel with the controls, the poster size and "Scan now" at the right */
+.bar-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 20px; padding: 12px; background: var(--panel); border-radius: 10px; }
+.bar-tools .grow { flex: 1; }
+.bar-tools .year { width: 95px; }
+.bar-tools .title-q { width: 150px; }
+.bar-tools .count { color: var(--dim); font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bar-tools .size input { padding: 0; border: 0; background: none; accent-color: var(--accent); }
+.bar-tools .toolsmore { display: none; }
+.bar-tools .toolsmore.on { border-color: var(--accent); color: var(--accent); }
+@media (max-width: 760px) {
+  .bar-tools { padding: 8px; gap: 8px; margin-bottom: 10px; }
+  .bar-tools .toolsmore { display: inline-flex; }
+  .bar-tools:not(.open) .opt { display: none; }
+}
 /* the library's "⋯" beside its name (owner) */
 .head-more { position: relative; display: inline-block; width: 34px; height: 30px; margin-left: 12px; vertical-align: middle; }
 .head-more .nav-more { opacity: 1; background: var(--panel2); right: 0; font-size: 16px; width: 34px; height: 30px; }
