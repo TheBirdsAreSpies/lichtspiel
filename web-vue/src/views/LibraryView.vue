@@ -451,7 +451,7 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
       <AdvancedFilters v-if="advancedOpen" :rules="rules" :any="rmatch" @close="advancedOpen = false" @apply="setRules" />
       <div ref="gridEl" class="grid" :class="{ 'has-letters': marks.length, picking: picked.size > 0 }">
         <template v-for="(it, i) in items" :key="it ? it.id : 'p' + i">
-          <PosterCard v-if="it" :item="it" :data-i="i" pickable :picked="picked.has(i)" :picking="picked.size > 0" @pick="pick(i, $event)" @changed="refreshPicked([$event])" />
+          <PosterCard v-if="it" :item="it" :data-i="i" :caption="sortField" pickable :picked="picked.has(i)" :picking="picked.size > 0" @pick="pick(i, $event)" @changed="refreshPicked([$event])" />
           <div v-else v-pending class="card ph" :class="{ music: section.type === 'music' }" :data-i="i"><div class="poster skel"></div><div class="t">&nbsp;</div><div class="s">&nbsp;</div></div>
         </template>
         <template v-if="loading && !items.length"><div v-for="n in 12" :key="n" class="card ph" :class="{ music: section.type === 'music' }"><div class="poster skel"></div></div></template>

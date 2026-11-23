@@ -7,7 +7,7 @@ export interface Stream { kind: string, index?: number, codec?: string, language
 export interface Subtitle { key: string, language?: string, title?: string, forced?: boolean, sdh?: boolean, codec?: string, embedded?: boolean, file?: string, offsetMs?: number | null }
 export interface Media {
   id?: number, height?: number, width?: number, size?: number, container?: string, videoCodec?: string, audioCodec?: string,
-  audioChannels?: number, edition?: string, streams?: Stream[], subtitles?: Subtitle[], Part?: { duration?: number }[],
+  audioChannels?: number, bitrate?: number, edition?: string, streams?: Stream[], subtitles?: Subtitle[], Part?: { duration?: number }[],
 }
 export interface Person { key?: string, name?: string, role?: string, thumb?: string, photo?: string, /** In how many titles of the library. */ count?: number }
 export interface Item {
@@ -18,6 +18,8 @@ export interface Item {
   studio?: string, editionTitle?: string, missing?: boolean, librarySectionID?: number, squareThumb?: string, role?: string, favorite?: boolean, watchlist?: boolean, updatedAt?: number,
   /** An album: album, ep, single, live, compilation or soundtrack. */
   releaseType?: string,
+  /** Scores by source ("imdb": 7.4, "metacritic": 67 …), the release day, your stars (0–10) and when it was added and last played (Unix seconds). */
+  scores?: Record<string, number | string>, originallyAvailableAt?: string, userRating?: number, addedAt?: number, lastViewedAt?: number,
   credits?: number[], intro?: { start: number, end: number }, recap?: { start: number, end: number }, loudness?: number,
   /** "What happened so far": the episode before, played from `from` to `to` (ms, its credits). */
   catchUp?: { id: number, from: number, to: number, parentIndex?: number, index?: number, title?: string },

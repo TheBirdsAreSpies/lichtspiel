@@ -4,7 +4,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { get, list, picture, session, type Item } from '../api';
-import { cardLines, isMusic, isPlayable, resumeAt, showSeen } from '../format';
+import { captionFor, cardLines, isMusic, isPlayable, resumeAt, showSeen } from '../format';
 import { t } from '../i18n';
 import Icon from './Icon.vue';
 import EditDetails from './EditDetails.vue';
@@ -13,7 +13,8 @@ import ItemMenu from './ItemMenu.vue';
 // pickable: a circle on the poster selects it (so do Ctrl and Shift with a click, and on a touch screen a tap
 // while something is selected); the page keeps what is selected and says so with picked.
 // plain: without the pencil and the "⋯" (a poster inside a box).
-const props = defineProps<{ item: Item, wide?: boolean, pickable?: boolean, picked?: boolean, picking?: boolean, plain?: boolean, cont?: boolean }>();
+// caption: what the library is sorted by; the line under the title says that value (the score, the length …).
+const props = defineProps<{ item: Item, wide?: boolean, pickable?: boolean, picked?: boolean, picking?: boolean, plain?: boolean, cont?: boolean, caption?: string }>();
 const emit = defineEmits<{ pick: [e: MouseEvent], changed: [id: number], removed: [id: number] }>();
 // After its menu changed something (watched, watchlist, edited): the title as the server has it now.
 const fresh = ref<Item | null>(null);
@@ -34,6 +35,7 @@ function click(e: MouseEvent) {
 const router = useRouter();
 const it = computed(() => fresh.value || props.item);
 const lines = computed(() => cardLines(it.value));
+const cap = computed(() => (props.caption ? captionFor(props.caption, it.value) : null));
 const progress = computed(() => (it.value.viewOffset && it.value.duration ? Math.min(1, it.value.viewOffset / it.value.duration) : 0));
 const unseen = computed(() => (it.value.leafCount ? it.value.leafCount - (it.value.viewedLeafCount || 0) : 0));
 // An episode shows its show's poster in a row of posters; in a wide row its own still.
@@ -59,7 +61,8 @@ function play() {
       <button v-if="isPlayable(it) && !it.missing" class="play" :title="t('Play')" :aria-label="t('Play')" @click.prevent.stop="play"><Icon name="play" /></button>
     </div>
     <div class="t" :title="lines[0]">{{ lines[0] }}</div>
-    <div class="s">{{ lines[1] }}</div>
+    <div v-if="cap" class="s" :title="cap.tip"><b v-if="cap.src" class="src">{{ cap.src }}</b> {{ cap.text }}</div>
+    <div v-else class="s">{{ lines[1] }}</div>
     <EditDetails v-if="editing" :id="it.id" @close="editing = false" @saved="changed" />
   </RouterLink>
 </template>

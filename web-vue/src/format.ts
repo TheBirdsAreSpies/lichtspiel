@@ -95,3 +95,42 @@ export const fmtUptime = (s: number) => { const d = Math.floor(s / 86400), h = M
 /** Round steps for a chart's axis: four even steps of a round size up to at least v (0, 10, 20, 30, 40 for 33.4). */
 const niceMax = (v: number) => { if (!(v > 0)) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; };
 export const niceTop = (v: number) => 4 * niceMax(Math.max(v, 1e-9) / 4);
+
+// ---- what a poster says under its title, by the way the library is sorted (as captionFor() in the classic app)
+export interface Caption { text: string, src?: string, tip?: string }
+const SCORE_SRC: Record<string, string> = { imdb: 'IMDb', tmdb: 'TMDB', rotten_tomatoes: 'RT', metacritic: 'MC' };
+/** "3 days ago", "2 months ago" … for a time in Unix seconds. */
+export function relTime(sec: number): string {
+  const d = Math.round((Date.now() / 1000 - sec) / 86400);
+  const rtf = new Intl.RelativeTimeFormat(lang.value, { numeric: 'auto' });
+  if (d < 1) return rtf.format(0, 'day');
+  if (d < 14) return rtf.format(-d, 'day');
+  if (d < 60) return rtf.format(-Math.round(d / 7), 'week');
+  if (d < 730) return rtf.format(-Math.round(d / 30.4), 'month');
+  return rtf.format(-Math.round(d / 365), 'year');
+}
+const score = (it: Item, from: string[]): Caption | null => {
+  const s = it.scores || {}, k = from.find(x => s[x]);
+  return k ? { src: SCORE_SRC[k], text: String(s[k]).replace('/10', '') } : null;
+};
+const when = (sec?: number): Caption | null => (sec ? { text: relTime(sec), tip: new Date(sec * 1000).toLocaleString(lang.value) } : null);
+/** The line for this sorting; null = the usual one (also when the title has no such value). */
+export function captionFor(field: string, it: Item): Caption | null {
+  const m = it.Media?.[0];
+  const text = (v: unknown): Caption | null => (v || v === 0 ? { text: String(v) } : null);
+  switch (field) {
+    case 'duration': return it.duration ? text(fmtDur(it.duration)) : null;
+    case 'release_date': return it.originallyAvailableAt ? text(new Date(it.originallyAvailableAt).toLocaleDateString(lang.value)) : null;
+    case 'audience_rating': return score(it, ['imdb', 'tmdb']) || (it.rating ? text(fmtNum(it.rating, 1)) : null);
+    case 'critic_rating': return score(it, ['rotten_tomatoes', 'metacritic']);
+    case 'user_rating': return it.userRating ? text('★'.repeat(Math.round(it.userRating / 2))) : null;
+    case 'content_rating': return text(it.contentRating);
+    case 'progress': return it.viewOffset && it.duration ? text(Math.round(100 * it.viewOffset / it.duration) + ' %') : null;
+    case 'view_count': return it.viewCount ? text(t('{n} plays', { n: it.viewCount })) : null;
+    case 'added_at': return when(it.addedAt);
+    case 'last_viewed_at': return when(it.lastViewedAt);
+    case 'resolution': return m?.height ? text(m.height >= 2000 ? '4K' : m.height + 'p') : null;
+    case 'bitrate': return m?.bitrate ? text(t('{n} Mbit/s', { n: fmtNum(m.bitrate / 1000, 1) })) : null;
+    default: return null;
+  }
+}
