@@ -117,9 +117,11 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 /* the menu folded to its icons (wide screens; the ☰ in the top bar) */
 @media (min-width: 761px) {
   .side, .main { transition: width .2s, margin-left .2s; }
-  .nav-small .side { width: 64px; padding: 14px 8px; overflow-x: hidden; }
+  /* The icons keep their place (22 px from the left, which is the middle of 64 px): centred, they jumped to the
+     middle of the still wide menu first and then slid back while it folded. */
+  .nav-small .side { width: 64px; overflow-x: hidden; }
   .nav-small .main { margin-left: 64px; }
-  .nav-small .nav { justify-content: center; gap: 0; padding: 9px 0; }
+  .nav-small .nav { gap: 0; }
   .nav-small .nav span, .nav-small .nav small { display: none; }
   .nav-small .nav-head { font-size: 0; padding: 0; margin: 10px 6px; border-top: 1px solid var(--line); }
 }
