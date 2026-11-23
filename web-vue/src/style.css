@@ -85,6 +85,8 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 /* what the server is doing in the background (activity.ts) */
 .activity { margin-left: auto; display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; font-size: 12.5px; line-height: 1.25; color: var(--dim); background: var(--panel2); border-radius: 14px; padding: 4px 12px; max-width: min(560px, 40vw); max-height: 46px; overflow: hidden; }
 .activity + .who { margin-left: 0; }
+/* the activity takes the free room before it, so it sits at the right beside the dashboard button, as in the classic app */
+.activity ~ .npbtn, .activity ~ .who { margin-left: 0; }
 .activity .txt { overflow-wrap: anywhere; }
 .activity button { flex: 0 0 auto; padding: 1px 10px; margin: 0; }
 .activity .spin { width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: act-spin .9s linear infinite; flex: 0 0 12px; }
