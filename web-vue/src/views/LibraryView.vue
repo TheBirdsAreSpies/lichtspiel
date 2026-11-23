@@ -32,41 +32,58 @@ const rmatch = computed(() => route.query.rmatch === 'any');
 const rules = computed<Rule[]>(() => { try { return rulesText.value ? JSON.parse(rulesText.value) : []; } catch { return []; } });
 const advancedOpen = ref(false);
 const q = ref('');
-const items = ref<Item[]>([]);
+// Every title has its place from the first page on (null until its page is loaded), so the scroll bar is
+// right at once and a letter can jump anywhere; the empty cards near the screen load their page.
+const items = ref<(Item | null)[]>([]);
 const total = ref<number | null>(null);
 const loading = ref(false);
 const error = ref('');
-const sentinel = ref<HTMLElement | null>(null);
+const gridEl = ref<HTMLElement | null>(null);
 let seq = 0;
+const have = new Set<number>(), busy = new Set<number>();
 
-function url(start: number) {
-  const p = new URLSearchParams({ sort: sort.value, start: String(start), size: String(PAGE) });
+/** The filters as a query (without sorting and paging; the letters use it as well). */
+function filterParams() {
+  const p = new URLSearchParams();
   for (const [f, v] of Object.entries(active.value)) p.set(f, v);
   if (q.value.trim()) p.set('q', q.value.trim());
   if (collection.value) p.set('collection', collection.value);
   if (rules.value.length) { p.set('rules', rulesText.value); if (rmatch.value) p.set('rmatch', 'any'); }
+  return p;
+}
+function url(start: number) {
+  const p = filterParams();
+  p.set('sort', sort.value); p.set('start', String(start)); p.set('size', String(PAGE));
   return `/library/sections/${props.id}/all?${p}`;
 }
 
-async function more() {
-  if (loading.value || (total.value !== null && items.value.length >= total.value)) return;
-  loading.value = true;
+async function loadPage(n: number) {
+  if (have.has(n) || busy.has(n)) return;
+  busy.add(n);
   const mine = seq;
+  if (n === 0) loading.value = true;
   try {
-    const j = await get<{ MediaContainer: { totalSize?: number } }>(url(items.value.length));
+    const j = await get<{ MediaContainer: { totalSize?: number } }>(url(n * PAGE));
     if (mine !== seq) return;
-    items.value.push(...list<Item>(j));
-    total.value = j.MediaContainer.totalSize ?? items.value.length;
-  } catch (e) { error.value = (e as Error).message; } finally { if (mine === seq) loading.value = false; }
-  // The page is not full yet: the next part at once.
-  requestAnimationFrame(() => { if (inView()) more(); });
+    const got = list<Item>(j);
+    if (total.value === null) {
+      total.value = j.MediaContainer.totalSize ?? got.length;
+      items.value = new Array<Item | null>(total.value).fill(null);
+      loadLetters();
+    }
+    items.value.splice(n * PAGE, got.length, ...got);
+    have.add(n);
+  } catch (e) { if (mine === seq) error.value = (e as Error).message; } finally {
+    if (mine === seq) { busy.delete(n); if (n === 0) loading.value = false; }
+  }
 }
 
 function restart() {
   seq++; items.value = []; total.value = null; loading.value = false; error.value = '';
+  have.clear(); busy.clear(); marks.value = [];
   // (Not while the collections show: their address has no filters, and the kept ones stay.)
   if (!tab.value) try { localStorage.setItem('vue-lib:' + props.id, JSON.stringify({ sort: sort.value, filters: active.value, rules: rulesText.value, rmatch: rmatch.value })); } catch { /* none */ }
-  more();
+  loadPage(0);
 }
 let typing = 0;
 watch([sort, () => JSON.stringify(active.value), collection, rulesText, rmatch], restart);
@@ -107,16 +124,126 @@ const restoring = !tab.value && !collection.value && !Object.keys(active.value).
 if (restoring) router.replace({ query: asQuery({ filters: saved, rules: kept.rules, rmatch: kept.rmatch }) });
 watch(q, () => { clearTimeout(typing); typing = window.setTimeout(restart, 300); });
 
-const inView = () => { const el = sentinel.value; return !!el && el.getBoundingClientRect().top < innerHeight + 600; };
-let io: IntersectionObserver | null = null;
-function watchEnd() {
-  if (io) io.disconnect();
-  io = new IntersectionObserver(e => { if (e.some(x => x.isIntersecting)) more(); }, { rootMargin: '600px' });
-  if (sentinel.value) io.observe(sentinel.value);
+// Empty cards that come near the screen load their page, unless they are only passed (dragging the scroll bar).
+const near = new Set<Element>();
+const io = new IntersectionObserver(es => {
+  for (const e of es) {
+    if (!e.isIntersecting) { near.delete(e.target); continue; }
+    near.add(e.target);
+    window.setTimeout(() => {
+      if (!near.has(e.target) || !e.target.isConnected) return;
+      near.delete(e.target);
+      loadPage(Math.floor(Number((e.target as HTMLElement).dataset.i) / PAGE));
+    }, 150);
+  }
+}, { rootMargin: '900px' });
+/** v-pending on an empty card: watched while it is there. */
+const vPending = { mounted: (el: Element) => io.observe(el), beforeUnmount: (el: Element) => { io.unobserve(el); near.delete(el); } };
+
+// ---- the letters at the side (sorted by title): a click jumps to the letter's first title; on a phone the
+// finger, resting a moment on the bar, runs down it and the list follows.
+interface Mark { key: string, size: number, ranges: [number, number][] }
+const marks = ref<Mark[]>([]);
+const current = ref('');
+const letterBox = ref<HTMLElement | null>(null);
+async function loadLetters() {
+  if (sort.value !== 'title:asc' || (total.value || 0) <= PAGE / 2) return;
+  const mine = seq;
+  try {
+    const r = await get<{ MediaContainer: { Directory?: { key: string, size: number, start?: number, end?: number }[] } }>(`/library/sections/${props.id}/firstCharacter?${filterParams()}`);
+    if (mine !== seq) return;
+    // A letter can have several runs in the list (Ä/Ö/Ü sort behind Z): one button, all its places.
+    const by = new Map<string, Mark>();
+    let sum = 0;
+    for (const d of r.MediaContainer.Directory || []) {
+      const from = d.start ?? sum, to = d.end ?? sum + d.size;
+      sum += d.size;
+      const m = by.get(d.key) || { key: d.key, size: 0, ranges: [] };
+      m.size += d.size; m.ranges.push([from, to]); by.set(d.key, m);
+    }
+    marks.value = [...by.values()];
+    onScroll();
+  } catch { /* no letters */ }
 }
+const firstOf = (m: Mark) => Math.min(...m.ranges.map(r => r[0]));
+// The letter just chosen stays lit for a moment, whatever is under the top bar.
+let forced = '', forcedAt = 0;
+async function jump(m: Mark) {
+  const i = Math.min(firstOf(m), (total.value || 1) - 1);
+  forced = m.key; forcedAt = Date.now(); current.value = m.key;
+  const at = () => {
+    const el = gridEl.value && gridEl.value.querySelector(`[data-i="${i}"]`);
+    if (!el) return null;
+    const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top')) || 60;
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - top - 12, behavior: 'auto' });
+    return window.scrollY;
+  };
+  const y = at();
+  await loadPage(Math.floor(i / PAGE));
+  await nextTick();
+  // The real cards may be a little taller than the empty ones: line up again, if nobody scrolled meanwhile.
+  if (y !== null && Math.abs(window.scrollY - y) < 3) at();
+}
+// Where you are: the first card under the top bar lights its letter.
+let raf = 0;
+function onScroll() {
+  if (raf || !marks.value.length) return;
+  raf = requestAnimationFrame(() => {
+    raf = 0;
+    if (forced && Date.now() - forcedAt < 800) return;
+    forced = '';
+    const g = gridEl.value; if (!g) return;
+    const r = g.getBoundingClientRect();
+    const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--top')) || 60;
+    const hit = document.elementFromPoint(r.left + 20, Math.max(top + 40, r.top + 20));
+    const card = hit && (hit.closest('[data-i]') as HTMLElement | null);
+    if (!card) return;
+    const i = Number(card.dataset.i);
+    const m = marks.value.find(x => x.ranges.some(([a, b]) => i >= a && i < b));
+    if (m) current.value = m.key;
+  });
+}
+const bubble = ref('');
+const bubbleTop = ref(0);
+let scrubbing = false, holdTimer = 0, holdY = 0, lastY = 0, scrubKey = '';
+function scrubAt(y: number) {
+  bubbleTop.value = Math.round(Math.max(70, Math.min(innerHeight - 170, y - 110)));
+  const box = letterBox.value; if (!box) return;
+  let best: Mark | null = null, dist = Infinity;
+  box.querySelectorAll('button').forEach((b, n) => {
+    const r = b.getBoundingClientRect(), d = Math.abs(y - (r.top + r.height / 2));
+    if (d < dist) { dist = d; best = marks.value[n]; }
+  });
+  const m = best as Mark | null;
+  if (!m || m.key === scrubKey) return;
+  scrubKey = m.key; bubble.value = m.key;
+  jump(m);
+}
+// The bar sits where a thumb scrolls the page, so it only takes the finger after it rests a moment; a finger
+// that moves at once scrolls the page as usual. A tap still jumps to the letter.
+function scrubEnd() { clearTimeout(holdTimer); holdTimer = 0; scrubbing = false; bubble.value = ''; }
+function touchStart(e: TouchEvent) {
+  scrubEnd();
+  if (e.touches.length !== 1 || !marks.value.length) return;
+  holdY = lastY = e.touches[0].clientY;
+  holdTimer = window.setTimeout(() => { holdTimer = 0; scrubbing = true; scrubKey = ''; scrubAt(lastY); }, 180);
+}
+function touchMove(e: TouchEvent) {
+  lastY = e.touches[0].clientY;
+  if (scrubbing) {
+    if (!e.cancelable) { scrubEnd(); return; }
+    e.preventDefault();
+    scrubAt(lastY);
+  } else if (holdTimer && Math.abs(lastY - holdY) > 8) scrubEnd();
+}
+function touchEnd(e: TouchEvent) { if (scrubbing) e.preventDefault(); scrubEnd(); }
+
 // (While the kept filters are being put into the address, the page waits for them.)
-onMounted(() => { if (tab.value) loadGroups(); else { if (!restoring) more(); watchEnd(); } });
-onBeforeUnmount(() => { if (io) io.disconnect(); });
+onMounted(() => {
+  window.addEventListener('scroll', onScroll, { passive: true });
+  if (tab.value) loadGroups(); else if (!restoring) loadPage(0);
+});
+onBeforeUnmount(() => { io.disconnect(); window.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf); scrubEnd(); });
 
 // ---- collections
 const groups = ref<Group[] | null>(null);
@@ -135,7 +262,6 @@ async function loadGroups() {
 watch(tab, async v => {
   if (v) { loadGroups(); return; }
   await nextTick();
-  watchEnd();
   if (!items.value.length) restart();
 });
 const openGroup = (g: Group) => router.push({ query: { collection: g.title } });
@@ -184,12 +310,19 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
         <button v-if="Object.keys(active).length + (rules.length ? 1 : 0) > 1" class="linkbtn" @click="clearFilters">{{ t('Clear filters') }}</button>
       </div>
       <AdvancedFilters v-if="advancedOpen" :rules="rules" :any="rmatch" @close="advancedOpen = false" @apply="setRules" />
-      <div class="grid">
-        <PosterCard v-for="it in items" :key="it.id" :item="it" />
+      <div ref="gridEl" class="grid" :class="{ 'has-letters': marks.length }">
+        <template v-for="(it, i) in items" :key="it ? it.id : 'p' + i">
+          <PosterCard v-if="it" :item="it" :data-i="i" />
+          <div v-else v-pending class="card ph" :data-i="i"><div class="poster skel"></div><div class="t">&nbsp;</div><div class="s">&nbsp;</div></div>
+        </template>
         <template v-if="loading && !items.length"><div v-for="n in 12" :key="n" class="card ph"><div class="poster skel"></div></div></template>
       </div>
       <p v-if="total === 0" class="empty">{{ t('Nothing found.') }}</p>
-      <div ref="sentinel" class="sentinel"></div>
+      <div v-if="marks.length" ref="letterBox" class="letters" :class="{ scrub: !!bubble }"
+        @touchstart.passive="touchStart" @touchmove="touchMove" @touchend="touchEnd" @touchcancel="scrubEnd" @contextmenu="bubble && $event.preventDefault()">
+        <button v-for="m in marks" :key="m.key" :class="{ on: current === m.key }" :title="`${m.key} · ${m.size}`" @click="jump(m)">{{ m.key }}</button>
+      </div>
+      <div v-if="bubble" class="letterbubble" :style="{ top: bubbleTop + 'px' }" aria-hidden="true">{{ bubble }}</div>
       </template>
     </template>
   </div>
