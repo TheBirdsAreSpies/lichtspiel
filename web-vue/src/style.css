@@ -84,6 +84,13 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .menu { position: absolute; right: 0; top: 46px; min-width: 230px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px; box-shadow: 0 12px 30px rgba(0,0,0,.5); }
 .menu-row { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 10px; border: 0; background: none; border-radius: 6px; text-align: left; }
 .menu-row:hover { background: var(--panel2); }
+/* the "⋯" of a title: opens under its button, above the page */
+.menu-wrap { position: relative; display: inline-flex; }
+.item-menu { left: 0; right: auto; top: 50px; z-index: 30; max-height: 70vh; overflow-y: auto; }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+.menu-row.danger-text { color: #ff7a7a; }
+.match-pick { display: flex; gap: 12px; align-items: flex-start; padding: 8px; }
+.match-pick img, .match-pick .initials { width: 46px; height: 68px; object-fit: cover; border-radius: 4px; flex: none; display: flex; align-items: center; justify-content: center; background: var(--panel2); }
 .side { position: fixed; top: var(--top); bottom: 0; left: 0; width: var(--side); padding: 14px 10px; overflow-y: auto; border-right: 1px solid var(--line); background: var(--bg); z-index: 15; }
 .nav { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nav:hover { background: var(--panel); color: var(--text); }

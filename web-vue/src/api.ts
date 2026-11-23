@@ -33,7 +33,7 @@ export interface Hub { hubIdentifier: string, title: string, Metadata?: Item[] }
 export interface Section { id: number, key: string, title: string, type: string, count?: number, videoCount?: number }
 export interface Me {
   id: number, username: string, display_name?: string, full_name?: string, email?: string, two_factor?: boolean, admin: boolean,
-  prefs?: Record<string, string>, can_download?: boolean, allow_transcode?: boolean,
+  prefs?: Record<string, string>, can_download?: boolean, can_delete?: boolean, allow_transcode?: boolean,
 }
 export interface Status { name: string, version: string, build?: string, setup_needed: boolean, mail?: boolean, lan_url?: string }
 export type Container<K extends string, T> = { MediaContainer: { [k in K]?: T[] } & { totalSize?: number, size?: number } };
