@@ -377,7 +377,7 @@ async function load(at) {
     video.src = withTicket(`/video/transcode/${it.id}/stream.mp4?quality=${q}&offset=${at.toFixed(3)}${extra}${noDirect ? '&transcode=1' : ''}`, P.tk);
   }
   addSubtitles();
-  $('#pmethod').textContent = { direct: ' · ' + t('direct play'), remux: ' · ' + t('repackaged'), transcode: ' · ' + t('converting') }[P.method] || '';
+  $('#pmethod').textContent = P.method === 'transcode' ? ' · ' + t('converting') : ''; // only converting is worth a word; direct and repackaged are the usual case
   // A new source starts at the default rate: keep the chosen speed.
   video.defaultPlaybackRate = video.playbackRate = P.speed;
   // (The browser may refuse to start by itself; then the play button is there.)

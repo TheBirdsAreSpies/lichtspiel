@@ -863,7 +863,7 @@ const bufPct = computed(() => (duration.value ? Math.min(100, ((base.value + off
 // The lines move with the controls.
 const bottom = ref<HTMLElement | null>(null);
 watch(idle, () => placeCues());
-const methodName = computed(() => ({ direct: t('direct play'), remux: t('repackaged'), transcode: t('converting') }[method.value]));
+const methodName = computed(() => method.value === 'transcode' ? t('converting') : ''); // only converting is worth a word; direct and repackaged are the usual case
 // A click on the time switches to the time left (kept with the account); while it plays, the top says when it ends.
 const timeLeft = computed(() => pref('timeLeft', '0') === '1');
 const timeText = computed(() => (timeLeft.value && duration.value ? '−' + fmtTime(duration.value - now.value) : `${fmtTime(now.value)} / ${fmtTime(duration.value)}`));
@@ -895,7 +895,7 @@ const endsAt = computed(() => {
       <button class="iconbtn" :title="t('Close (Esc)')" :aria-label="t('Close (Esc)')" @click="close"><Icon name="back" /></button>
       <div>
         <div class="p-title">{{ title }}</div>
-        <div class="dim">{{ subLine }}<span v-if="it"> · {{ methodName }}</span><span v-if="cast.on"> · {{ t('on {device}', { device: cast.device }) }}</span><span v-if="tg.code"> · {{ others.length ? t('together with {names}', { names: others.join(', ') }) : t('together (waiting for others)') }} · <a href="#" @click.prevent="inviting = true">{{ t('Invite more') }}</a></span><span v-if="endsAt"> · {{ endsAt }}</span><span v-if="sleepLine"> · {{ sleepLine }}</span></div>
+        <div class="dim">{{ subLine }}<span v-if="it && methodName"> · {{ methodName }}</span><span v-if="cast.on"> · {{ t('on {device}', { device: cast.device }) }}</span><span v-if="tg.code"> · {{ others.length ? t('together with {names}', { names: others.join(', ') }) : t('together (waiting for others)') }} · <a href="#" @click.prevent="inviting = true">{{ t('Invite more') }}</a></span><span v-if="endsAt"> · {{ endsAt }}</span><span v-if="sleepLine"> · {{ sleepLine }}</span></div>
       </div>
     </div>
     <div v-if="notice" class="p-notice">{{ notice }}</div>

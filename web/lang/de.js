@@ -708,8 +708,6 @@ I18N.add('de', 'Deutsch', {
     'audio': 'Audio',
     'Converting is switched off for your account, so this file may not play here.': 'Umwandeln ist für dein Konto ausgeschaltet, daher läuft diese Datei hier eventuell nicht.',
     'Subtitles {n}': 'Untertitel {n}',
-    'direct play': 'Direktwiedergabe',
-    'repackaged': 'umverpackt',
     'converting': 'wird umgewandelt',
 
     // ---------- playlists
