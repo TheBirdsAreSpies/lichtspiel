@@ -17,6 +17,7 @@ import FilterButton from '../components/FilterButton.vue';
 import PosterCard from '../components/PosterCard.vue';
 import RandomPick from '../components/RandomPick.vue';
 import PickBar from '../components/PickBar.vue';
+import SectionMenu from '../components/SectionMenu.vue';
 
 const props = defineProps<{ id: string }>();
 const PAGE = 60;
@@ -24,7 +25,7 @@ const PAGE = 60;
 const SORT_FIELDS: [string, string][] = [['title', 'Title'], ['year', 'Year'], ['release_date', 'Release date'], ['critic_rating', 'Critic rating'], ['audience_rating', 'Audience rating'],
   ['user_rating', 'Your rating'], ['content_rating', 'Age rating'], ['duration', 'Length'], ['progress', 'Progress'], ['view_count', 'Plays'], ['added_at', 'Date added'],
   ['last_viewed_at', 'Date played'], ['resolution', 'Resolution'], ['bitrate', 'Bitrate'], ['random', 'Random']];
-const SORT_ASC = new Set(['title', 'content_rating', 'random']);
+const SORT_ASC = new Set(['title', 'show', 'content_rating', 'random']);
 // (Older kept choices: rating became the critics' one.)
 const OLD_SORT: Record<string, string> = { rating: 'critic_rating' };
 
@@ -49,6 +50,23 @@ async function randomPick() {
   try { rolled.value = list<Item>(await get(`/library/sections/${props.id}/all?${p}`))[0] || null; } catch (e) { error.value = (e as Error).message; }
 }
 const active = computed(() => fromQuery(route.query));
+// What the library lists (a show library: shows, seasons or episodes), years and the file type, in the address too.
+const EXTRA = ['type', 'from', 'to', 'container'] as const;
+const extra = computed(() => Object.fromEntries(EXTRA.map(k => [k, typeof route.query[k] === 'string' ? String(route.query[k]) : '']).filter(([, x]) => x)) as Record<string, string>);
+const sortFields = computed(() => (extra.value.type === 'season' || extra.value.type === 'episode' ? [['show', 'TV show'] as [string, string], ...SORT_FIELDS] : SORT_FIELDS));
+const CONTAINERS = ['mkv', 'mp4', 'avi', 'mov', 'ts', 'm2ts', 'wmv', 'webm', 'mpg'];
+const moreOpen = ref(!!(route.query.from || route.query.to || route.query.container));
+function setExtra(k: string, val: string) {
+  const q: Record<string, string> = {};
+  for (const [key, x] of Object.entries(route.query)) if (typeof x === 'string' && key !== 'tab' && key !== k) q[key] = x;
+  if (k === 'type') {
+    // Another kind of title: its own filters and sorting.
+    for (const key of Object.keys(q)) if (key.startsWith('f.') || key === 'rules' || key === 'rmatch') delete q[key];
+    sort.value = val === 'season' || val === 'episode' ? 'show:asc' : 'title:asc';
+  }
+  if (val) q[k] = val;
+  router.replace({ query: q });
+}
 // The advanced filters (rules) in the address: ?rules=[{field, op, value}…]&rmatch=any.
 const rulesText = computed(() => (typeof route.query.rules === 'string' ? route.query.rules : ''));
 const rmatch = computed(() => route.query.rmatch === 'any');
@@ -72,11 +90,16 @@ function filterParams() {
   if (q.value.trim()) p.set('q', q.value.trim());
   if (collection.value) p.set('collection', collection.value);
   if (rules.value.length) { p.set('rules', rulesText.value); if (rmatch.value) p.set('rmatch', 'any'); }
+  const e = extra.value;
+  if (e.type) p.set('type', e.type);
+  if (e.from) p.set('year>', e.from);
+  if (e.to) p.set('year<', e.to);
+  if (e.container) p.set('container', e.container);
   return p;
 }
 function url(start: number) {
   const p = filterParams();
-  p.set('sort', sort.value); p.set('start', String(start)); p.set('size', String(PAGE));
+  p.set('sort', sort.value.replace(/^show:/, 'episode_order:')); p.set('start', String(start)); p.set('size', String(PAGE));
   return `/library/sections/${props.id}/all?${p}`;
 }
 
@@ -129,11 +152,11 @@ function restart() {
   seq++; items.value = []; total.value = null; loading.value = false; error.value = '';
   have.clear(); busy.clear(); marks.value = [];
   // (Not while the collections show: their address has no filters, and the kept ones stay.)
-  if (!tab.value) try { localStorage.setItem('vue-lib:' + props.id, JSON.stringify({ sort: sort.value, filters: active.value, rules: rulesText.value, rmatch: rmatch.value })); } catch { /* none */ }
+  if (!tab.value) try { localStorage.setItem('vue-lib:' + props.id, JSON.stringify({ sort: sort.value, filters: active.value, rules: rulesText.value, rmatch: rmatch.value, extra: extra.value })); } catch { /* none */ }
   loadPage(0);
 }
 let typing = 0;
-watch([sort, () => JSON.stringify(active.value), collection, rulesText, rmatch], restart);
+watch([sort, () => JSON.stringify(active.value), () => JSON.stringify(extra.value), collection, rulesText, rmatch], restart);
 
 /** Puts a filter on (or takes it off with ''); the collections tab gives way to the titles. */
 function setFilter(f: string, v: string) {
@@ -143,8 +166,8 @@ function setFilter(f: string, v: string) {
   router.replace({ query: q });
 }
 /** Kept filters as an address query (?f.genre=…, the rules). */
-function asQuery(k: { filters?: Record<string, string>, rules?: string, rmatch?: boolean }): Record<string, string> {
-  const q: Record<string, string> = Object.fromEntries(Object.entries(k.filters || {}).map(([f, v]) => ['f.' + f, v]));
+function asQuery(k: { filters?: Record<string, string>, rules?: string, rmatch?: boolean, extra?: Record<string, string> }): Record<string, string> {
+  const q: Record<string, string> = { ...(k.extra || {}), ...Object.fromEntries(Object.entries(k.filters || {}).map(([f, v]) => ['f.' + f, v])) };
   if (k.rules) { q.rules = k.rules; if (k.rmatch) q.rmatch = 'any'; }
   return q;
 }
@@ -154,7 +177,7 @@ function keptQuery(): Record<string, string> {
 }
 function clearFilters() {
   const q: Record<string, string> = {};
-  for (const [k, x] of Object.entries(route.query)) if (typeof x === 'string' && !k.startsWith('f.') && k !== 'rules' && k !== 'rmatch') q[k] = x;
+  for (const [k, x] of Object.entries(route.query)) if (typeof x === 'string' && !k.startsWith('f.') && k !== 'rules' && k !== 'rmatch' && k !== 'from' && k !== 'to' && k !== 'container') q[k] = x;
   router.replace({ query: q });
 }
 /** Applies the advanced filters (none: takes them off). */
@@ -167,8 +190,8 @@ function setRules(list: Rule[], any: boolean) {
 }
 // Opened without a choice: the filters of the last visit come back (an older "unwatched" tick too).
 const saved: Record<string, string> = kept.filters || (kept.unwatched ? { [section.value && section.value.type === 'show' ? 'unwatched_leaves' : 'unwatched']: 'true' } : {});
-const restoring = !tab.value && !collection.value && !Object.keys(active.value).length && !rulesText.value && (Object.keys(saved).length > 0 || !!kept.rules);
-if (restoring) router.replace({ query: asQuery({ filters: saved, rules: kept.rules, rmatch: kept.rmatch }) });
+const restoring = !tab.value && !collection.value && !Object.keys(active.value).length && !rulesText.value && !Object.keys(extra.value).length && (Object.keys(saved).length > 0 || !!kept.rules || Object.keys(kept.extra || {}).length > 0);
+if (restoring) router.replace({ query: asQuery({ filters: saved, rules: kept.rules, rmatch: kept.rmatch, extra: kept.extra }) });
 watch(q, () => { clearTimeout(typing); typing = window.setTimeout(restart, 300); });
 
 // Empty cards that come near the screen load their page, unless they are only passed (dragging the scroll bar).
@@ -336,11 +359,14 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
     <template v-else>
       <div v-if="collection" class="crumbs dim"><RouterLink :to="{ query: { tab: 'collections' } }">{{ section.title }} · {{ t('Collections') }}</RouterLink> ›</div>
       <div class="lib-head">
-        <h1>{{ collection || section.title }} <span v-if="!tab && total !== null" class="dim count">{{ total }}</span></h1>
+        <h1>{{ collection || section.title }} <span v-if="!tab && total !== null" class="dim count">{{ total }}</span><span v-if="session.me?.admin && !collection" class="head-more"><SectionMenu :section="section" /></span></h1>
         <div v-if="!tab" class="lib-bar">
+          <select v-if="section.type === 'show'" :value="extra.type || ''" :aria-label="t('Show')" @change="setExtra('type', ($event.target as HTMLSelectElement).value)">
+            <option value="">{{ t('Shows') }}</option><option value="season">{{ t('Seasons') }}</option><option value="episode">{{ t('Episodes') }}</option>
+          </select>
           <input v-model="q" type="search" :placeholder="t('Filter by title')" :aria-label="t('Filter by title')">
           <select v-model="sortField" :aria-label="t('Sort')" :title="t('Sort')">
-            <option v-for="[v, l] in SORT_FIELDS" :key="v" :value="v">{{ t(l) }}</option>
+            <option v-for="[v, l] in sortFields" :key="v" :value="v">{{ t(l) }}</option>
           </select>
           <button v-if="sortField !== 'random'" class="dirbtn" :title="sortDesc ? t('Descending') : t('Ascending')" :aria-label="sortDesc ? t('Descending') : t('Ascending')" @click="turnSort">{{ sortDesc ? '↓' : '↑' }}</button>
           <button v-if="(total || 0) > 1" class="dirbtn" :title="t('Pick one at random')" :aria-label="t('Pick one at random')" @click="randomPick">🎲</button>
@@ -349,7 +375,16 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
             <input type="range" :min="CARD.min" :max="CARD.max" step="10" :value="cardSize" :aria-label="t('Poster size')" @input="setCardSize(Number(($event.target as HTMLInputElement).value))">
             <span class="dim big-mark">▮</span>
           </label>
-          <FilterButton :url="`/library/sections/${id}/filters`" :active="active" :remember-key="'vue-libFilter:' + id" :advanced="rules.length" @set="setFilter" @advanced="advancedOpen = true" />
+          <FilterButton :url="`/library/sections/${id}/filters${extra.type ? '?type=' + extra.type : ''}`" :active="active" :remember-key="'vue-libFilter:' + id" :advanced="rules.length" @set="setFilter" @advanced="advancedOpen = true" />
+          <button class="small-dd" :class="{ on: extra.from || extra.to || extra.container }" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">{{ t('More') }} {{ moreOpen ? '▴' : '▾' }}</button>
+          <template v-if="moreOpen">
+            <input :value="extra.from || ''" type="number" min="1800" max="2200" class="year" :placeholder="t('Year from')" :aria-label="t('Year from')" @change="setExtra('from', ($event.target as HTMLInputElement).value.trim())">
+            <input :value="extra.to || ''" type="number" min="1800" max="2200" class="year" :placeholder="t('Year to')" :aria-label="t('Year to')" @change="setExtra('to', ($event.target as HTMLInputElement).value.trim())">
+            <select :value="extra.container || ''" :aria-label="t('File type')" @change="setExtra('container', ($event.target as HTMLSelectElement).value)">
+              <option value="">{{ t('Any file type') }}</option>
+              <option v-for="c in CONTAINERS" :key="c" :value="c">{{ c.toUpperCase() }}</option>
+            </select>
+          </template>
         </div>
       </div>
       <div v-if="!collection" class="tabs flat">

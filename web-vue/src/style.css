@@ -670,3 +670,8 @@ code.m-delete { color: #e5534b; }
 .card:hover .more, .card:hover .edit, .poster .more:focus-visible, .poster .edit:focus-visible, .poster .more.open { opacity: 1; }
 .card-menu { display: contents; }
 @media (hover: none) { .poster .more, .poster .edit { display: none; } }
+.lib-bar .year { width: 110px; }
+.lib-bar .small-dd.on { border-color: var(--accent); color: var(--accent); }
+/* the library's "⋯" beside its name (owner) */
+.head-more { position: relative; display: inline-block; width: 34px; height: 30px; margin-left: 12px; vertical-align: middle; }
+.head-more .nav-more { opacity: 1; background: var(--panel2); right: 0; font-size: 16px; width: 34px; height: 30px; }
