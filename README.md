@@ -4,6 +4,8 @@
 anywhere Docker runs (a Synology or other NAS, a Linux server, a Raspberry Pi; images for Intel/AMD and
 ARM), or as a single program on Windows or Linux.
 
+![A walk through the web app: home, a library, a movie, a show, the player, playlists and the light theme](docs/images/tour.gif)
+
 ## What it does
 
 - **Movies and TV shows kept apart**, with shows grouped show → season → episode from the file names.
@@ -65,8 +67,19 @@ users, plugins) is **optional**: start the server with `--console` to get it. Cl
 **Open web app**, a poster, a menu entry or a card in it opens that page in the browser. The
 Docker version has no window; you just use the web app.
 
-Pictures of the web app pages are in `shots/web-*.png` (made by the self-test with a real
-browser), and the status window is in `shots/now.png`.
+| | |
+|---|---|
+| ![Home with Continue Watching](docs/images/home.webp) | ![A movie library](docs/images/movies.webp) |
+| ![A movie's page](docs/images/movie.webp) | ![A show with its episodes](docs/images/show.webp) |
+| ![The player](docs/images/player.webp) | ![Playlists and smart playlists](docs/images/playlists.webp) |
+| ![The dashboard for admins](docs/images/dashboard.webp) | ![A movie's page in the light theme](docs/images/movie-light.webp) |
+
+The pictures show free films: public-domain classics, the Blender open movies (© Blender
+Foundation, CC BY) and *Pioneer One* (CC BY-NC-SA); posters and plots come from Wikipedia,
+Wikidata and TVmaze, as Lichtspiel fetches them without a TMDB key.
+
+The self-test also takes pictures of the pages (`shots/web-*.png`, with a real browser), and
+the status window is in `shots/now.png`.
 
 ## Quick start
 
