@@ -651,9 +651,11 @@ code.m-delete { color: #e5534b; }
 .media-panel { margin-top: 20px; padding: 16px 18px; grid-template-columns: 150px 1fr; gap: 4px 12px; font-size: 14px; }
 .media-panel > div:nth-child(odd) { color: var(--dim); }
 .media-panel .break { word-break: break-all; }
-.stars button { background: none; border: 0; padding: 0 1px; font-size: 26px; line-height: 1; color: var(--line); cursor: pointer; }
+/* an empty star: the text colour, faded, so it shows on every theme and over a backdrop */
+.stars { --star-off: color-mix(in srgb, var(--text) 40%, transparent); }
+.stars button { background: none; border: 0; padding: 0 1px; font-size: 26px; line-height: 1; color: var(--star-off); cursor: pointer; }
 .stars button.on { color: var(--accent); }
-.stars button.half { background: linear-gradient(90deg, var(--accent) 50%, var(--line) 50%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.stars button.half { background: linear-gradient(90deg, var(--accent) 50%, var(--star-off) 50%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .stars .clear { font-size: 13px; color: var(--dim); margin-left: 8px; }
 .links { margin-top: 8px; }
 .links a { color: var(--text); }
