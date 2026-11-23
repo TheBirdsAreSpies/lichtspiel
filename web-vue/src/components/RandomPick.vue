@@ -29,7 +29,7 @@ function open() { emit('close'); router.push('/item/' + it.value.id); }
 <template>
   <Modal :title="t('At random')" wide @close="emit('close')">
     <div class="pickone" @click.capture="($event.target as Element).closest('a') && emit('close')">
-      <PosterCard :item="it" />
+      <PosterCard :item="it" plain />
       <div>
         <h3>{{ name }}</h3>
         <div v-if="facts" class="dim">{{ facts }}</div>

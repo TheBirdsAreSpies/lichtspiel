@@ -1,17 +1,30 @@
 <script setup lang="ts">
 // A poster in a row or grid: a link to the title, with how far it was watched, how many episodes are
 // left, a tick once watched and a play button (for what plays itself).
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { picture, type Item } from '../api';
+import { get, list, picture, session, type Item } from '../api';
 import { cardLines, isPlayable, resumeAt, showSeen } from '../format';
 import { t } from '../i18n';
 import Icon from './Icon.vue';
+import EditDetails from './EditDetails.vue';
+import ItemMenu from './ItemMenu.vue';
 
 // pickable: a circle on the poster selects it (so do Ctrl and Shift with a click, and on a touch screen a tap
 // while something is selected); the page keeps what is selected and says so with picked.
-const props = defineProps<{ item: Item, wide?: boolean, pickable?: boolean, picked?: boolean, picking?: boolean }>();
-const emit = defineEmits<{ pick: [e: MouseEvent] }>();
+// plain: without the pencil and the "⋯" (a poster inside a box).
+const props = defineProps<{ item: Item, wide?: boolean, pickable?: boolean, picked?: boolean, picking?: boolean, plain?: boolean }>();
+const emit = defineEmits<{ pick: [e: MouseEvent], changed: [id: number] }>();
+// After its menu changed something (watched, watchlist, edited): the title as the server has it now.
+const fresh = ref<Item | null>(null);
+watch(() => props.item, () => { fresh.value = null; });
+async function changed() {
+  try { const f = list<Item>(await get('/library/metadata/' + props.item.id))[0]; if (f) fresh.value = { ...props.item, ...f }; } catch { /* keep it */ }
+  emit('changed', props.item.id);
+}
+const editing = ref(false);
+const selectMe = () => emit('pick', new MouseEvent('click'));
+const admin = computed(() => !!session.me?.admin && !props.plain && ['movie', 'show', 'season', 'episode'].includes(props.item.type));
 function click(e: MouseEvent) {
   if (!props.pickable) return;
   const touchPicking = props.picking && matchMedia('(hover: none)').matches;
@@ -19,7 +32,7 @@ function click(e: MouseEvent) {
   e.preventDefault(); e.stopPropagation(); emit('pick', e);
 }
 const router = useRouter();
-const it = computed(() => props.item);
+const it = computed(() => fresh.value || props.item);
 const lines = computed(() => cardLines(it.value));
 const progress = computed(() => (it.value.viewOffset && it.value.duration ? Math.min(1, it.value.viewOffset / it.value.duration) : 0));
 const unseen = computed(() => (it.value.leafCount ? it.value.leafCount - (it.value.viewedLeafCount || 0) : 0));
@@ -40,9 +53,12 @@ function play() {
       <span v-if="unseen > 0" class="badge">{{ unseen }}</span>
       <span v-if="pickable" class="pick" role="checkbox" :aria-checked="!!picked" :title="t('Select')" :aria-label="t('Select')" @click.prevent.stop="emit('pick', $event)"></span>
       <span v-if="showSeen(it)" class="seen" :title="t('Watched')"><Icon name="check" /></span>
+      <button v-if="admin" type="button" class="edit" :title="t('Edit details')" :aria-label="t('Edit details')" @click.prevent.stop="editing = true"><Icon name="edit" /></button>
+      <ItemMenu v-if="!plain && ['movie', 'show', 'season', 'episode'].includes(it.type)" :item="it" card :selectable="pickable" @changed="changed" @select="selectMe" />
       <button v-if="isPlayable(it) && !it.missing" class="play" :title="t('Play')" :aria-label="t('Play')" @click.prevent.stop="play"><Icon name="play" /></button>
     </div>
     <div class="t" :title="lines[0]">{{ lines[0] }}</div>
     <div class="s">{{ lines[1] }}</div>
+    <EditDetails v-if="editing" :id="it.id" @close="editing = false" @saved="changed" />
   </RouterLink>
 </template>

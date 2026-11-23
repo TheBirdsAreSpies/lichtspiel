@@ -660,3 +660,13 @@ code.m-delete { color: #e5534b; }
 .cat:hover img { filter: brightness(.75); }
 .cat div { position: absolute; color: #fff; left: 12px; bottom: 10px; right: 12px; font-weight: 700; font-size: 18px; text-shadow: 0 1px 4px #000; }
 .cat small { display: block; font-weight: 400; font-size: 12px; opacity: .85; }
+
+/* a poster's pencil (owner) and "⋯", shown on hover as in the classic app */
+.poster .more, .poster .edit { position: absolute; bottom: 10px; z-index: 2; width: 30px; height: 30px; padding: 0; margin: 0; border-radius: 50%; border: 0; background: rgba(0,0,0,.6); color: #fff; opacity: 0; transition: opacity .15s; display: flex; align-items: center; justify-content: center; }
+.poster .more { right: 6px; font-size: 18px; line-height: 1; transform: rotate(90deg); }
+.poster .edit { left: 6px; }
+.poster .edit svg { width: 16px; height: 16px; }
+.poster .more:hover, .poster .edit:hover, .poster .more.open { background: var(--accent); }
+.card:hover .more, .card:hover .edit, .poster .more:focus-visible, .poster .edit:focus-visible, .poster .more.open { opacity: 1; }
+.card-menu { display: contents; }
+@media (hover: none) { .poster .more, .poster .edit { display: none; } }

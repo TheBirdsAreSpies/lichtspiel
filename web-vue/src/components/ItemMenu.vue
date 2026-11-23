@@ -6,15 +6,18 @@ import { computed, onBeforeUnmount, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, get, list, session, type Item } from '../api';
 import { poke } from '../activity';
-import { fmtDateTime, fmtDur, fmtNum, fmtSize, isPlayable, seasonTitle } from '../format';
+import { fmtDateTime, fmtDur, fmtNum, fmtSize, isPlayable, isWatched, seasonTitle } from '../format';
+import AddToDialog from './AddToDialog.vue';
 import { t } from '../i18n';
 import { toast } from '../toast';
 import Icon from './Icon.vue';
 import Modal from './Modal.vue';
 import AccessDialog from './AccessDialog.vue';
 
-const props = defineProps<{ item: Item }>();
-const emit = defineEmits<{ changed: [] }>();
+// card: the menu of a poster (its small "⋯", the menu put on the page so the card does not cut it off),
+// with what the title's page has as buttons first: select, watchlist, add to …, watched or not.
+const props = defineProps<{ item: Item, card?: boolean, selectable?: boolean }>();
+const emit = defineEmits<{ changed: [], select: [] }>();
 const router = useRouter();
 // (The page's item has more than the Item type says: the match, the optimized copy, every stream.)
 type Any = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -32,18 +35,33 @@ const name = computed(() => {
 const open = ref(false);
 const btn = ref<HTMLElement | null>(null);
 const outside = (e: Event) => { if (btn.value && !btn.value.parentElement!.contains(e.target as Node)) open.value = false; };
+const at = ref({ left: 0, top: 0 });
 function toggle() {
   open.value = !open.value;
+  if (open.value && props.card && btn.value) {
+    // Below the button where there is room, else above it; kept inside the window.
+    const b = btn.value.getBoundingClientRect(), w = 240, h = 420;
+    at.value = { left: Math.max(8, Math.min(innerWidth - w - 8, b.right - w)), top: b.bottom + h < innerHeight ? b.bottom + 4 : Math.max(8, b.top - h) };
+  }
   if (open.value) setTimeout(() => document.addEventListener('click', outside), 0); else document.removeEventListener('click', outside);
 }
 onBeforeUnmount(() => document.removeEventListener('click', outside));
-type Box = '' | 'share' | 'match' | 'optimize' | 'access' | 'history' | 'info' | 'delete' | 'unmatch';
+type Box = '' | 'addto' | 'share' | 'match' | 'optimize' | 'access' | 'history' | 'info' | 'delete' | 'unmatch';
 const box = ref<Box>('');
 function pick(b: Box | (() => void)) {
   open.value = false; document.removeEventListener('click', outside);
   if (typeof b === 'function') b(); else { box.value = b; if (b === 'match') search(); if (b === 'history') loadHistory(); }
 }
 const fail = (e: unknown) => toast((e as Error).message, 6000);
+
+// ---- a poster's own entries
+async function watchlist() {
+  try { await api('PUT', `/api/items/${it.value.id}/watchlist`, { watchlist: !it.value.watchlist }); toast(it.value.watchlist ? t('Removed from watchlist') : t('Added to watchlist')); emit('changed'); } catch (e) { fail(e); }
+}
+async function markWatched(watched: boolean) {
+  try { await api('POST', `/:/${watched ? 'scrobble' : 'unscrobble'}?key=${it.value.id}`); toast(watched ? t('Marked as watched') : t('Marked as unwatched')); emit('changed'); } catch (e) { fail(e); }
+}
+const started = computed(() => !isWatched(it.value) && ((it.value.viewOffset || 0) > 0 || (it.value.viewedLeafCount || 0) > 0));
 
 // ---- the owner's tools without a box
 async function refresh() {
@@ -171,9 +189,19 @@ async function remove() {
 </script>
 
 <template>
-  <span class="menu-wrap">
-    <button ref="btn" class="iconbtn round" :title="t('More')" :aria-label="t('More')" aria-haspopup="menu" :aria-expanded="open" @click="toggle"><Icon name="more" /></button>
-    <div v-if="open" class="menu item-menu" role="menu">
+  <span class="menu-wrap" :class="{ 'card-menu': card }">
+    <button v-if="card" ref="btn" type="button" class="more" :class="{ open }" :title="t('More')" :aria-label="t('More')" aria-haspopup="menu" :aria-expanded="open" @click.prevent.stop="toggle">⋯</button>
+    <button v-else ref="btn" class="iconbtn round" :title="t('More')" :aria-label="t('More')" aria-haspopup="menu" :aria-expanded="open" @click="toggle"><Icon name="more" /></button>
+    <Teleport to="body" :disabled="!card">
+    <div v-if="open" class="menu item-menu" :class="{ 'side-menu': card }" role="menu" :style="card ? { left: at.left + 'px', top: at.top + 'px' } : undefined">
+      <template v-if="card">
+        <button v-if="selectable" class="menu-row" role="menuitem" @click="pick(() => emit('select'))">{{ t('Select') }}</button>
+        <button v-if="it.type !== 'clip'" class="menu-row" role="menuitem" @click="pick(watchlist)">{{ it.watchlist ? t('Remove from watchlist') : t('Add to watchlist') }}</button>
+        <button class="menu-row" role="menuitem" @click="pick('addto')">{{ t('Add to …') }}</button>
+        <button class="menu-row" role="menuitem" @click="pick(() => markWatched(!isWatched(it)))">{{ isWatched(it) ? t('Mark as unwatched') : t('Mark as watched') }}</button>
+        <button v-if="started" class="menu-row" role="menuitem" @click="pick(() => markWatched(false))">{{ t('Mark as unwatched') }}</button>
+        <hr>
+      </template>
       <button class="menu-row" role="menuitem" @click="share">{{ t('Share') }}</button>
       <template v-if="admin">
         <hr>
@@ -195,6 +223,8 @@ async function remove() {
         <button class="menu-row danger-text" role="menuitem" @click="typed = ''; pick('delete')">{{ t('Delete…') }}</button>
       </template>
     </div>
+    </Teleport>
+    <AddToDialog v-if="box === 'addto'" :item="it" @close="box = ''" @changed="emit('changed')" />
 
     <Modal v-if="box === 'share'" :title="t('Share “{title}”', { title: name })" @close="box = ''">
       <p class="dim">{{ t('Anyone with an account on this server who may see this library can open it.') }}</p>
