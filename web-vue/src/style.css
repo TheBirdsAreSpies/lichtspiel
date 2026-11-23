@@ -293,7 +293,7 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .p-bottom { bottom: 0; background: linear-gradient(0deg, rgba(0,0,0,.8), transparent); padding-top: 50px; }
 .p-controls { display: flex; align-items: center; gap: 6px; }
 .p-controls .time { font-variant-numeric: tabular-nums; margin-left: 8px; font-size: 14px; }
-.vol { width: 90px; accent-color: #fff; }
+.vol { width: 90px; accent-color: #fff; padding: 0; margin: 0 4px; border: 0; border-radius: 0; background: none; cursor: pointer; }
 .seek { position: relative; height: 18px; display: flex; align-items: center; }
 .seek-buf { position: absolute; left: 0; height: 4px; background: rgba(255,255,255,.35); border-radius: 2px; pointer-events: none; }
 .seek input { -webkit-appearance: none; appearance: none; width: 100%; margin: 0; height: 4px; padding: 0; border: 0; border-radius: 2px; cursor: pointer; position: relative;
