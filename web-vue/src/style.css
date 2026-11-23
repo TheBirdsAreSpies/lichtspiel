@@ -634,6 +634,8 @@ code.m-delete { color: #e5534b; }
 .score b { font-size: 17px; }
 .stars { display: inline-flex; align-items: center; gap: 2px; margin-top: 12px; }
 .actions .stars { margin: 0 0 0 8px; }
+/* a title's page: the big buttons as pills, as in the classic app */
+.detail .actions button.big, .detail .actions .btn.big { border-radius: 999px; padding: 10px 22px; }
 /* the file under the buttons of a title's page (MediaPanel.vue), as in the classic app */
 .media-panel { margin-top: 20px; padding: 16px 18px; grid-template-columns: 150px 1fr; gap: 4px 12px; font-size: 14px; }
 .media-panel > div:nth-child(odd) { color: var(--dim); }

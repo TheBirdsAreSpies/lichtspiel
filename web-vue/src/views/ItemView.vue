@@ -7,11 +7,7 @@ import { api, get, list, picture, session, type Hub, type Item, type Person } fr
 import { fmtDur, fmtSize, fmtTime, isPlayable, isWatched, RELEASES, releaseName, resumeAt, seasonTitle } from '../format';
 import { playAll, smartShuffle } from '../queue';
 import { lang, t } from '../i18n';
-import AddToDialog from '../components/AddToDialog.vue';
 import EditDetails from '../components/EditDetails.vue';
-import DownloadDialog from '../components/DownloadDialog.vue';
-import TogetherDialog from '../components/TogetherDialog.vue';
-import ReportDialog from '../components/ReportDialog.vue';
 import ItemMenu from '../components/ItemMenu.vue';
 import ScoreBadges from '../components/ScoreBadges.vue';
 import MediaPanel from '../components/MediaPanel.vue';
@@ -30,11 +26,7 @@ const episodes = ref<Item[]>([]);
 const top = ref<Item | null>(null);
 const related = ref<Hub[]>([]);
 const error = ref('');
-const adding = ref(false);
 const editing = ref(false);
-const downloading = ref(false);
-const together = ref(false);
-const reporting = ref(false);
 
 async function load() {
   error.value = '';
@@ -246,10 +238,6 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
             <button class="iconbtn round" :class="{ on: isWatched(it) }" :title="isWatched(it) ? t('Mark as unwatched') : t('Mark as watched')" @click="toggleWatched"><Icon name="check" /></button>
             <button class="iconbtn round" :class="{ on: it.favorite }" :title="it.favorite ? t('Remove from favorites') : t('Add to favorites')" @click="toggleFavorite"><Icon :name="it.favorite ? 'heart' : 'heartOff'" /></button>
             <button class="iconbtn round" :class="{ on: it.watchlist }" :title="it.watchlist ? t('Remove from watchlist') : t('Add to watchlist')" @click="toggleWatchlist"><Icon :name="it.watchlist ? 'mark' : 'markOff'" /></button>
-            <button v-if="it.type !== 'clip'" class="iconbtn round" :title="t('Add to …')" :aria-label="t('Add to …')" @click="adding = true"><Icon name="playlistAdd" /></button>
-            <button v-if="isPlayable(it) || it.type === 'show' || it.type === 'season'" class="iconbtn round" :title="t('Watch together')" :aria-label="t('Watch together')" @click="together = true"><Icon name="people" /></button>
-            <button v-if="session.me?.can_download && it.type !== 'clip'" class="iconbtn round" :title="t('Download…')" :aria-label="t('Download…')" @click="downloading = true"><Icon name="download" /></button>
-            <button v-if="it.type !== 'clip'" class="iconbtn round" :title="t('Report a problem')" :aria-label="t('Report a problem')" @click="reporting = true"><Icon name="flag" /></button>
             <button v-if="session.me?.admin && it.type !== 'clip'" class="iconbtn round" :title="t('Edit details')" :aria-label="t('Edit details')" @click="editing = true"><Icon name="edit" /></button>
             <ItemMenu v-if="it.type !== 'clip'" :item="it" @changed="load" />
             <button v-if="theme.playing" class="iconbtn round" :title="theme.muted ? t('Theme music on') : t('Mute theme music')" :aria-label="theme.muted ? t('Theme music on') : t('Mute theme music')" @click="toggleThemeMute"><Icon :name="theme.muted ? 'mute' : 'vol'" /></button>
@@ -312,10 +300,6 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
         </div>
       </template>
       <PosterRow v-for="h in related" :key="h.hubIdentifier + h.title" :title="t(h.title)" :items="h.Metadata || []" />
-      <AddToDialog v-if="adding" :item="it" @close="adding = false" @changed="load" />
-      <DownloadDialog v-if="downloading" :item="it" @close="downloading = false" />
-      <TogetherDialog v-if="together" :item="it" @close="together = false" />
-      <ReportDialog v-if="reporting" :item="it" @close="reporting = false" />
       <EditDetails v-if="editing" :id="it.id" @close="editing = false" @saved="load" />
       <Modal v-if="watchingOnline" :title="watchingOnline.name || t('Trailer')" wide @close="watchingOnline = null">
         <div class="yt"><iframe :src="`https://www.youtube-nocookie.com/embed/${encodeURIComponent(watchingOnline.key)}?autoplay=1&rel=0`" :title="watchingOnline.name || 'Trailer'"

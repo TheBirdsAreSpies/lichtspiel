@@ -9,6 +9,8 @@ import { poke } from '../activity';
 import { fmtDateTime, fmtDur, fmtNum, fmtSize, isPlayable, isWatched, seasonTitle } from '../format';
 import AddToDialog from './AddToDialog.vue';
 import TogetherDialog from './TogetherDialog.vue';
+import DownloadDialog from './DownloadDialog.vue';
+import ReportDialog from './ReportDialog.vue';
 import { addToQueue } from '../queue';
 import { t } from '../i18n';
 import { toast } from '../toast';
@@ -49,7 +51,7 @@ function toggle() {
   if (open.value) setTimeout(() => document.addEventListener('click', outside), 0); else document.removeEventListener('click', outside);
 }
 onBeforeUnmount(() => document.removeEventListener('click', outside));
-type Box = '' | 'addto' | 'together' | 'share' | 'match' | 'optimize' | 'access' | 'history' | 'info' | 'delete' | 'unmatch';
+type Box = '' | 'addto' | 'together' | 'download' | 'report' | 'share' | 'match' | 'optimize' | 'access' | 'history' | 'info' | 'delete' | 'unmatch';
 const box = ref<Box>('');
 function pick(b: Box | (() => void)) {
   open.value = false; document.removeEventListener('click', outside);
@@ -210,18 +212,19 @@ async function remove() {
     <button v-else ref="btn" class="iconbtn round" :title="t('More')" :aria-label="t('More')" aria-haspopup="menu" :aria-expanded="open" @click="toggle"><Icon name="more" /></button>
     <Teleport to="body" :disabled="!card">
     <div v-if="open" class="menu item-menu" :class="{ 'side-menu': card }" role="menu" :style="card ? { left: at.left + 'px', top: at.top + 'px' } : undefined">
-      <template v-if="card">
-        <button v-if="selectable" class="menu-row" role="menuitem" @click="pick(() => emit('select'))">{{ t('Select') }}</button>
-        <button v-if="isPlayable(it) || it.type === 'show' || it.type === 'season'" class="menu-row" role="menuitem" @click="pick('together')">{{ t('Watch together') }}</button>
-        <button v-if="cont" class="menu-row" role="menuitem" @click="pick(uncontinue)">{{ t('Remove from Continue Watching') }}</button>
-        <button v-if="it.type !== 'clip'" class="menu-row" role="menuitem" @click="pick(watchlist)">{{ it.watchlist ? t('Remove from watchlist') : t('Add to watchlist') }}</button>
-        <button class="menu-row" role="menuitem" @click="pick('addto')">{{ t('Add to …') }}</button>
-        <button class="menu-row" role="menuitem" @click="pick(() => markWatched(!isWatched(it)))">{{ isWatched(it) ? t('Mark as unwatched') : t('Mark as watched') }}</button>
-        <button v-if="started" class="menu-row" role="menuitem" @click="pick(() => markWatched(false))">{{ t('Mark as unwatched') }}</button>
+      <!-- In the order of the classic app's menu, on a poster and on a title's page alike. -->
+      <template v-if="card && selectable">
+        <button class="menu-row" role="menuitem" @click="pick(() => emit('select'))">{{ t('Select') }}</button>
         <hr>
       </template>
+      <button v-if="isPlayable(it) || it.type === 'show' || it.type === 'season'" class="menu-row" role="menuitem" @click="pick('together')">{{ t('Watch together') }}</button>
       <button class="menu-row" role="menuitem" @click="share">{{ t('Share') }}</button>
       <button v-if="it.type !== 'clip' && !it.missing" class="menu-row" role="menuitem" @click="pick(() => addToQueue(it))">{{ t('Add to queue') }}</button>
+      <button v-if="cont" class="menu-row" role="menuitem" @click="pick(uncontinue)">{{ t('Remove from Continue Watching') }}</button>
+      <button v-if="it.type !== 'clip'" class="menu-row" role="menuitem" @click="pick(watchlist)">{{ it.watchlist ? t('Remove from watchlist') : t('Add to watchlist') }}</button>
+      <button class="menu-row" role="menuitem" @click="pick('addto')">{{ t('Add to …') }}</button>
+      <button class="menu-row" role="menuitem" @click="pick(() => markWatched(!isWatched(it)))">{{ isWatched(it) ? t('Mark as unwatched') : t('Mark as watched') }}</button>
+      <button v-if="started" class="menu-row" role="menuitem" @click="pick(() => markWatched(false))">{{ t('Mark as unwatched') }}</button>
       <template v-if="admin">
         <hr>
         <button class="menu-row" role="menuitem" @click="pick(refresh)">{{ t('Refresh metadata') }}</button>
@@ -232,10 +235,12 @@ async function remove() {
         <button class="menu-row" role="menuitem" @click="pick('optimize')">{{ t('Optimize…') }}</button>
         <button v-if="it.type === 'show'" class="menu-row" role="menuitem" @click="pick(cutTheme)">{{ t('Cut theme music') }}</button>
         <button v-if="(it.Media || []).length > 1" class="menu-row" role="menuitem" @click="pick(split)">{{ t('Split the merged versions') }}</button>
-        <button v-if="it.librarySectionID" class="menu-row" role="menuitem" @click="pick('access')">{{ t('Grant access…') }}</button>
       </template>
+      <button v-if="session.me?.can_download && it.type !== 'clip'" class="menu-row" role="menuitem" @click="pick('download')">{{ t('Download…') }}</button>
+      <button v-if="admin && it.librarySectionID" class="menu-row" role="menuitem" @click="pick('access')">{{ t('Grant access…') }}</button>
       <hr>
       <button class="menu-row" role="menuitem" @click="pick('history')">{{ t('View play history') }}</button>
+      <button v-if="it.type !== 'clip'" class="menu-row" role="menuitem" @click="pick('report')">{{ t('Report a problem') }}</button>
       <button v-if="isPlayable(it)" class="menu-row" role="menuitem" @click="pick('info')">{{ t('Media info') }}</button>
       <template v-if="deletable">
         <hr>
@@ -245,6 +250,8 @@ async function remove() {
     </Teleport>
     <TogetherDialog v-if="box === 'together'" :item="it" @close="box = ''" />
     <AddToDialog v-if="box === 'addto'" :item="it" @close="box = ''" @changed="emit('changed')" />
+    <DownloadDialog v-if="box === 'download'" :item="it" @close="box = ''" />
+    <ReportDialog v-if="box === 'report'" :item="it" @close="box = ''" />
 
     <Modal v-if="box === 'share'" :title="t('Share “{title}”', { title: name })" @close="box = ''">
       <p class="dim">{{ t('Anyone with an account on this server who may see this library can open it.') }}</p>
