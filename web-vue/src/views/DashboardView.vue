@@ -237,10 +237,10 @@ const what = (it: HistItem) => (it.type === 'episode' && it.grandparentTitle ? `
           <tr v-for="u in d.users" :key="u.id">
             <td><b :title="u.username">{{ shownName(u) }}</b><span v-if="u.admin" class="tag">{{ t('Admin') }}</span></td>
             <td><span class="status" :class="u.active ? 'on' : 'off'"><i></i>{{ u.active ? t('active') : t('away') }}</span></td>
-            <td class="dim nowrap">{{ u.last_seen ? fmtAgo(u.last_seen, d.now) : t('not since the start') }}</td>
+            <td class="dim">{{ u.last_seen ? fmtAgo(u.last_seen, d.now) : t('not since the start') }}</td>
             <td class="dim">{{ u.client || '–' }}</td><td class="dim">{{ u.ip || '–' }}</td>
             <td>{{ u.playing || '–' }}</td><td class="nowrap">{{ u.out_bps ? fmtBits(u.out_bps) : '–' }}</td>
-            <td class="dim nowrap">{{ u.last_play ? fmtDateTime(u.last_play) : '–' }}</td>
+            <td class="dim">{{ u.last_play ? fmtDateTime(u.last_play) : '–' }}</td>
           </tr>
         </table>
       </div>

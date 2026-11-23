@@ -61,7 +61,11 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
   <div v-if="framed" class="frame" :class="{ 'side-open': sideOpen }">
     <header class="top">
       <button class="iconbtn burger" :aria-label="t('Menu')" @click="sideOpen = !sideOpen"><Icon name="menu" /></button>
-      <RouterLink to="/" class="brand">{{ serverName }}</RouterLink>
+      <RouterLink to="/" class="brand">
+        <!-- The light beam of the classic app's logo. -->
+        <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="beam"><stop offset="0" style="stop-color: var(--accent)" stop-opacity=".95" /><stop offset="1" style="stop-color: var(--accent)" stop-opacity=".15" /></linearGradient></defs><path d="M4.5 16 27 4.5v23z" fill="url(#beam)" /><circle cx="4.5" cy="16" r="3.5" style="fill: var(--accent)" /><rect x="27.5" y="3.5" width="3.2" height="25" rx="1.6" style="fill: var(--accent)" /></svg>
+        <span>{{ serverName }}</span>
+      </RouterLink>
       <form class="search" role="search" @submit.prevent="search(true)">
         <Icon name="search" />
         <input v-model="query" type="search" :placeholder="t('Search')" :aria-label="t('Search')" @input="search()">
