@@ -8,6 +8,7 @@ import { api, get, list, session, type Item } from '../api';
 import { poke } from '../activity';
 import { fmtDateTime, fmtDur, fmtNum, fmtSize, isPlayable, isWatched, seasonTitle } from '../format';
 import AddToDialog from './AddToDialog.vue';
+import TogetherDialog from './TogetherDialog.vue';
 import { addToQueue } from '../queue';
 import { t } from '../i18n';
 import { toast } from '../toast';
@@ -48,7 +49,7 @@ function toggle() {
   if (open.value) setTimeout(() => document.addEventListener('click', outside), 0); else document.removeEventListener('click', outside);
 }
 onBeforeUnmount(() => document.removeEventListener('click', outside));
-type Box = '' | 'addto' | 'share' | 'match' | 'optimize' | 'access' | 'history' | 'info' | 'delete' | 'unmatch';
+type Box = '' | 'addto' | 'together' | 'share' | 'match' | 'optimize' | 'access' | 'history' | 'info' | 'delete' | 'unmatch';
 const box = ref<Box>('');
 function pick(b: Box | (() => void)) {
   open.value = false; document.removeEventListener('click', outside);
@@ -201,6 +202,7 @@ async function remove() {
     <div v-if="open" class="menu item-menu" :class="{ 'side-menu': card }" role="menu" :style="card ? { left: at.left + 'px', top: at.top + 'px' } : undefined">
       <template v-if="card">
         <button v-if="selectable" class="menu-row" role="menuitem" @click="pick(() => emit('select'))">{{ t('Select') }}</button>
+        <button v-if="isPlayable(it) || it.type === 'show' || it.type === 'season'" class="menu-row" role="menuitem" @click="pick('together')">{{ t('Watch together') }}</button>
         <button v-if="cont" class="menu-row" role="menuitem" @click="pick(uncontinue)">{{ t('Remove from Continue Watching') }}</button>
         <button v-if="it.type !== 'clip'" class="menu-row" role="menuitem" @click="pick(watchlist)">{{ it.watchlist ? t('Remove from watchlist') : t('Add to watchlist') }}</button>
         <button class="menu-row" role="menuitem" @click="pick('addto')">{{ t('Add to …') }}</button>
@@ -231,6 +233,7 @@ async function remove() {
       </template>
     </div>
     </Teleport>
+    <TogetherDialog v-if="box === 'together'" :item="it" @close="box = ''" />
     <AddToDialog v-if="box === 'addto'" :item="it" @close="box = ''" @changed="emit('changed')" />
 
     <Modal v-if="box === 'share'" :title="t('Share “{title}”', { title: name })" @close="box = ''">
