@@ -88,7 +88,7 @@ const PLACES: [string, string][] = [['sidebar', 'The left menu (a page of its ow
     <p class="dim">
       {{ t('Plugins add features: fill in movie details, send notifications, react to playback, add their own API actions. Put each plugin in its own folder inside ') }}<code>{{ folder }}</code>{{ t(' with a ') }}<code>plugin.json</code>{{ t(' file, then press Reload, or upload the folder as a .zip. Any language works (Python, shell, Node …).') }}
     </p>
-    <div class="actions">
+    <div class="actions page-actions">
       <button @click="reload">{{ t('Reload plugins') }}</button>
       <label class="btn" :class="{ disabled: uploading }">{{ t('Upload plugin (.zip)') }}<input type="file" accept=".zip,application/zip" hidden :disabled="uploading" @change="upload"></label>
       <span v-if="uploading" class="dim">{{ t('Installing…') }}</span>

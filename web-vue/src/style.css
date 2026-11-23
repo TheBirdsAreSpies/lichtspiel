@@ -148,6 +148,8 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .spot-text h1 { font-size: 40px; }
 .clamp { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+/* a page's buttons under its title: room before the boxes below */
+.page-actions { margin-bottom: 22px; }
 
 /* ---------- library */
 .lib-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
