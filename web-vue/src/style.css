@@ -585,10 +585,23 @@ code.m-delete { color: #e5534b; }
 .links a:hover { color: var(--accent); }
 .yt { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; overflow: hidden; }
 .yt iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-.tab-left { margin-left: 6px; font-size: 11px; color: var(--accent); font-weight: 700; }
 
+/* a show's seasons as pills (the chosen one filled, the episodes left to see beside), its episodes as cards */
+.stabs { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px; margin: -2px 0 18px; }
+.stabs button { flex: 0 0 auto; border-radius: 999px; padding: 6px 16px; white-space: nowrap; display: inline-flex; align-items: center; gap: 7px; transition: background .2s, border-color .2s, color .2s; }
+.stabs button small { font-size: 11px; font-weight: 700; background: var(--accent); color: var(--accent-text); border-radius: 9px; padding: 0 6px; line-height: 16px; }
+.stabs button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.stabs button.on small { background: var(--accent-text); color: var(--accent); }
+.eps { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 24px 18px; }
+.eps .card { width: auto; }
+.eps .poster { aspect-ratio: 16 / 9; cursor: pointer; }
+.eps .card.missing .poster { cursor: default; }
+.eps .card .t { display: block; }
+.eps .card .t:hover { color: var(--accent); }
+.eps .ep-plot { font-size: 13px; }
+.normal { font-weight: 400; }
 /* a season's episodes: the old ones stay dimmed while the next season loads, then the new ones come in one after the other */
-.episodes { transition: opacity .15s; }
-.episodes.loading { opacity: .45; pointer-events: none; }
+.eps { transition: opacity .15s; }
+.eps.loading { opacity: .45; pointer-events: none; }
 @keyframes pop-in { from { opacity: 0; transform: translateY(10px); } }
-.stagger .ep:nth-child(-n+12) { animation: pop-in .3s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 35ms); }
+.stagger > :nth-child(-n+12) { animation: pop-in .3s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 35ms); }

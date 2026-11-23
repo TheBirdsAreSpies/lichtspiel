@@ -241,25 +241,30 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
       </div>
 
       <template v-if="it.type === 'show' && kids.length">
-        <div class="tabs">
-          <button v-for="s in kids" :key="s.id" :class="{ on: season && season.id === s.id }" @click="season = s">{{ seasonTitle(s.title) }}<small v-if="s.leafCount && (s.viewedLeafCount || 0) > 0 && (s.viewedLeafCount || 0) < s.leafCount" class="tab-left" :title="t('{n} not seen', { n: s.leafCount - (s.viewedLeafCount || 0) })">{{ s.leafCount - (s.viewedLeafCount || 0) }}</small></button>
+        <!-- Several seasons: tabs as pills, the one shown filled; only one: the heading says whose episodes these are. -->
+        <h2 v-if="kids.length > 1" class="gap-top">{{ t('Seasons') }}</h2>
+        <h2 v-else class="gap-top">{{ t('Episodes') }} <span class="dim normal">· {{ seasonTitle(kids[0].title) }}</span></h2>
+        <div v-if="kids.length > 1" class="stabs" role="tablist">
+          <button v-for="s in kids" :key="s.id" type="button" role="tab" :aria-selected="!!season && season.id === s.id" :class="{ on: season && season.id === s.id }" @click="season = s">
+            {{ seasonTitle(s.title) }}<small v-if="s.leafCount && (s.viewedLeafCount || 0) > 0 && (s.viewedLeafCount || 0) < s.leafCount" :title="t('{n} not seen', { n: s.leafCount - (s.viewedLeafCount || 0) })">{{ s.leafCount - (s.viewedLeafCount || 0) }}</small>
+          </button>
         </div>
       </template>
-      <div v-if="(it.type === 'show' && episodes.length) || (it.type === 'season' && kids.length)" :key="it.type === 'show' ? epsShown : it.id" class="episodes stagger" :class="{ loading: epsLoading }">
-        <div v-for="(e, i) in (it.type === 'show' ? episodes : kids)" :key="e.id" class="ep" :class="{ missing: e.missing }" :style="{ '--i': i }">
-          <RouterLink :to="'/item/' + e.id" class="ep-thumb">
-            <img v-if="e.thumb" :src="picture(e.thumb, 400)" loading="lazy" alt="">
+      <h2 v-else-if="it.type === 'season' && kids.length" class="gap-top">{{ t('Episodes') }}</h2>
+      <!-- The episodes as cards: the still (a click plays), its number and name, the length, the plot. -->
+      <div v-if="(it.type === 'show' && episodes.length) || (it.type === 'season' && kids.length)" :key="it.type === 'show' ? epsShown : it.id" class="eps stagger" :class="{ loading: epsLoading }">
+        <div v-for="(e, i) in (it.type === 'show' ? episodes : kids)" :key="e.id" class="card ep-card" :class="{ watched: !!e.viewCount, missing: e.missing }" :style="{ '--i': i }">
+          <div class="poster" @click="!e.missing && play(e, resumeAt(e))">
+            <img v-if="e.thumb" :src="picture(e.thumb, 480)" loading="lazy" alt="" @load="($event.target as HTMLElement).classList.add('in')">
             <div v-if="e.viewOffset && e.duration" class="bar"><i :style="{ width: Math.min(100, e.viewOffset / e.duration * 100) + '%' }"></i></div>
-          </RouterLink>
-          <div class="grow">
-            <RouterLink :to="'/item/' + e.id"><b>{{ e.index ? `${e.index}. ${e.title}` : e.title }}</b></RouterLink>
-            <div class="dim">{{ [e.missing ? t('Unavailable') : '', fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', resumeAt(e) ? t('stopped at {time}', { time: fmtTime(resumeAt(e)) }) : ''].filter(Boolean).join(' · ') }}</div>
-            <p v-if="e.summary" class="ep-plot">{{ e.summary }}</p>
+            <span v-if="e.viewCount" class="seen" :title="t('Watched')"><Icon name="check" /></span>
+            <button v-if="!e.missing" class="play" :title="t('Play')" :aria-label="t('Play')" @click.stop="play(e, resumeAt(e))"><Icon name="play" /></button>
           </div>
-          <button v-if="!e.missing" class="iconbtn round" :aria-label="t('Play')" @click="play(e, resumeAt(e))"><Icon name="play" /></button>
+          <RouterLink :to="'/item/' + e.id" class="t" :title="e.title">{{ e.index ? `${e.index}. ${e.title}` : e.title }}</RouterLink>
+          <div class="s">{{ [e.missing ? t('Unavailable') : '', fmtDur(e.duration), resumeAt(e) ? t('stopped at {time}', { time: fmtTime(resumeAt(e)) }) : ''].filter(Boolean).join(' · ') }}</div>
+          <p v-if="e.summary" class="ep-plot">{{ e.summary }}</p>
         </div>
       </div>
-
       <section v-if="cast.length" class="row">
         <div class="row-head"><h2>{{ t('Cast') }}</h2></div>
         <div class="strip">
