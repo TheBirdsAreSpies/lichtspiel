@@ -516,6 +516,8 @@ function drawChrome() {
     '-',
     { label: t('Switch user'), run: switchUser },
     { label: t('Sign in a device'), run: () => linkDialog() },
+    // Back to the Vue web app, the usual one (see the script at the top of index.html).
+    { label: t('New web app'), run: () => { try { localStorage.removeItem('webApp'); } catch (e) { /* storage blocked */ } location.href = '/vue/' + location.hash; } },
     { label: t('Sign out'), run: async () => { if (await sure(t('Sign out on this device?'), { ok: t('Sign out') })) switchUser(); } },
   ]);
   who.append(name, gear);

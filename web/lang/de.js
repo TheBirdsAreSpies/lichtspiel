@@ -1944,6 +1944,7 @@ I18N.add('de', 'Deutsch', {
     'Menu': 'Menü',
     // ---------- the Vue web app (web-vue/, at /vue/)
     'Classic web app': 'Klassische Web-App',
+    'New web app': 'Neue Web-App',
     'Position': 'Position',
     'This video can’t be played here.': 'Dieses Video kann hier nicht abgespielt werden.',
     '▶ Resume': '▶ Fortsetzen',

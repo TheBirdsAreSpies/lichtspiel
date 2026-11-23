@@ -67,6 +67,11 @@ async function out() {
   await signOut();
   router.push({ name: 'login' });
 }
+// The classic web app, kept as the choice in this browser (until "New web app" there); this page goes along.
+function toClassic() {
+  try { localStorage.setItem('webApp', 'classic'); } catch { /* storage blocked: the classic app sends one back here */ }
+  window.location.href = '/' + window.location.hash;
+}
 // Signing out asks first; switching user goes straight to the sign-in (with the home profiles).
 const askOut = ref(false);
 // The look, as under Settings → Account (kept with the account).
@@ -148,7 +153,7 @@ const playingLabel =computed(() => (activity.playing ? t('Dashboard · {n} playi
           <hr>
           <RouterLink class="menu-row" to="/settings" @click="menuOpen = false">{{ t('Settings') }}</RouterLink>
           <RouterLink class="menu-row" to="/settings/devices" @click="menuOpen = false">{{ t('Sign in a device') }}</RouterLink>
-          <a class="menu-row" href="/">{{ t('Classic web app') }}</a>
+          <a class="menu-row" href="/" @click.prevent="toClassic">{{ t('Classic web app') }}</a>
           <hr>
           <button class="menu-row" role="menuitem" @click="menuOpen = false; out()">{{ t('Switch user') }}</button>
           <button class="menu-row" role="menuitem" @click="menuOpen = false; askOut = true">{{ t('Sign out') }}</button>

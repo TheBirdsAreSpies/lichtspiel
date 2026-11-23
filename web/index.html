@@ -7,7 +7,11 @@
 <link rel="icon" href="/favicon.ico">
 <script>
 // Dark or light before the first paint (no flash): the choice kept in this browser ("dark", "light" or "system").
+// Before that: the Vue web app (/vue/) is the usual one; this classic one opens only where it was chosen in this
+// browser (the Vue app's "Classic web app"; "New web app" in the menu here goes back). The address after #
+// goes along, so links to a title, an invite or a password reset open the same page there.
 (function () {
+  try { if (localStorage.getItem('webApp') !== 'classic') { location.replace('/vue/' + location.hash); return; } } catch (e) { /* storage blocked: stay here */ }
   var d = document.documentElement, mq = window.matchMedia ? matchMedia('(prefers-color-scheme: light)') : null;
   var apply = function () {
     var c = 'system'; try { c = localStorage.getItem('theme') || 'system'; } catch (e) { /* storage blocked */ }

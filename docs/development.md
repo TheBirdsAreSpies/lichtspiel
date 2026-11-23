@@ -34,6 +34,9 @@ Some server tests need ffmpeg on the PATH and skip themselves without it.
 ### The Vue web app
 
 `web-vue/` is a second web app next to `web/`, served at `/vue/` (hash addresses: `/vue/#/item/12`).
+It is the usual one: the inline script at the top of `web/index.html` sends `/` on to `/vue/` with the same
+`#…` address (so links to titles, invites and resets made for `/#/…` open there), unless `webApp` is
+`classic` in localStorage (set by the Vue app's "Classic web app", removed by "New web app" in the classic menu).
 It talks to the same JSON API and keeps the sign-in under the same keys as `web/`, so both share it.
 So far it has signing in (password, two-step code, home profiles, first setup, with the phone by a code,
 a forgotten password, invites; and signing in another device, `#/link/CODE`), home, libraries with
