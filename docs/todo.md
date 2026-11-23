@@ -41,10 +41,6 @@ and conventions are in [development.md](development.md).
 
 Collected on 2026-11-22.
 
-### Vue web app (`web-vue/`, branch `feat/vue-frontend`)
-
-- **Still missing there** (only in `web/` so far): the API page, the calendar and the statistics.
-
 ### Server
 
 - **Convert ahead:** for a title that only plays converted (Chromecast, on the road), the server

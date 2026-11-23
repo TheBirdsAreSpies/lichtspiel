@@ -109,6 +109,7 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .row-arrows { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
 .row:hover .row-arrows { opacity: 1; }
+.row-more { font-size: 14px; font-weight: 400; margin-left: 10px; }
 .strip { display: flex; gap: 16px; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 6px; scrollbar-width: thin; }
 .strip > * { scroll-snap-align: start; }
 .sentinel { height: 1px; }
@@ -488,3 +489,21 @@ svg.viz rect.hov { fill: rgba(255, 255, 255, .04); }
 .ranked li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); counter-increment: r; min-width: 0; }
 .ranked li::before { content: counter(r); color: var(--dim); width: 18px; text-align: right; font-size: 13px; }
 .ranked li img { width: 30px; height: 45px; object-fit: cover; border-radius: 3px; background: var(--panel2); }
+
+/* the API page */
+.api-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+.api-tools input { width: 260px; }
+.actions.inline { display: inline-flex; gap: 6px; margin: 0 0 0 8px; vertical-align: middle; }
+.apigroup { padding: 12px 18px; }
+.apigroup summary { cursor: pointer; font-size: 16px; list-style: none; display: flex; gap: 6px; align-items: center; }
+.apigroup summary::-webkit-details-marker { display: none; }
+.apigroup summary::before { content: "\25B8"; color: var(--dim); transition: transform .15s; display: inline-block; }
+.apigroup[open] summary::before { transform: rotate(90deg); }
+.apigroup table { margin-top: 10px; }
+.apigroup td code { overflow-wrap: anywhere; }
+.apigroup .api-m { width: 70px; }
+.apigroup .api-p { width: 36%; }
+code.m-get { color: #6cb6ff; }
+code.m-post { color: #55c773; }
+code.m-put, code.m-patch { color: var(--accent); }
+code.m-delete { color: #e5534b; }

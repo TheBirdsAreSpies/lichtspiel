@@ -97,6 +97,7 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
       <RouterLink to="/" class="nav" exact-active-class="on"><Icon name="home" /><span>{{ t('Home') }}</span></RouterLink>
       <RouterLink to="/watchlist" class="nav" active-class="on"><Icon name="mark" /><span>{{ t('Watchlist') }}</span></RouterLink>
       <RouterLink to="/playlists" class="nav" :class="{ on: route.name === 'playlist' }" active-class="on"><Icon name="playlist" /><span>{{ t('Playlists') }}</span></RouterLink>
+      <RouterLink to="/stats" class="nav" active-class="on"><Icon name="chart" /><span>{{ t('Statistics') }}</span></RouterLink>
       <RouterLink v-if="session.me && session.me.can_download" to="/downloads" class="nav" active-class="on"><Icon name="download" /><span>{{ t('Downloads') }}</span><small v-if="dl.busy" class="nav-count" :title="t('{n} being converted', { n: dl.busy })">{{ dl.busy }}</small></RouterLink>
       <div class="nav-head">{{ t('Libraries') }}</div>
       <RouterLink v-for="s in session.sections" :key="s.id" :to="'/library/' + s.id" class="nav" active-class="on">
@@ -114,6 +115,7 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
         <RouterLink to="/users" class="nav" active-class="on"><Icon name="people" /><span>{{ t('Users & invites') }}</span></RouterLink>
         <RouterLink to="/reports" class="nav" active-class="on"><Icon name="flag" /><span>{{ t('Reported problems') }}</span></RouterLink>
         <RouterLink to="/plugins" class="nav" active-class="on"><Icon name="extension" /><span>{{ t('Plugins') }}</span></RouterLink>
+        <RouterLink to="/api" class="nav" active-class="on"><Icon name="code" /><span>{{ t('API') }}</span></RouterLink>
       </template>
       <div class="nav-head"></div>
       <RouterLink to="/settings" class="nav" active-class="on"><Icon name="settings" /><span>{{ t('Settings') }}</span></RouterLink>

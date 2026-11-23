@@ -52,10 +52,9 @@ phone, tablet, smart-TV browser). There you browse Movies and TV Shows, play vid
 playlists and smart playlists, invite people, switch plugins on and off and change settings.
 Nothing needs installing on the devices you watch on.
 
-A second, newer web app built with **Vue** is at `http://<server>:8484/vue/` (in the works: so
-far signing in, home, libraries with their filters and collections, a title's page, people, search,
-the player, the watchlist, playlists and your own settings; everything else is still in the web app
-above). Both share the sign-in.
+A second, newer web app built with **Vue** is at `http://<server>:8484/vue/` (in the works: it
+has every page of the web app above, from the player and playlists to the dashboard, statistics and
+the server's settings). Both share the sign-in.
 
 There is also an **app** for Windows, Android, macOS, iPhone and iPad (Flutter, English
 and German): see [clients/lichtspiel/README.md](clients/lichtspiel/README.md).

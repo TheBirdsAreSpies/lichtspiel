@@ -65,7 +65,7 @@ export const kindName = (k: string) => ({ manual: t('normal'), smart: t('smart')
 export const plTitle = (pl: Playlist) => (pl.default ? t(pl.title) : pl.title);
 
 // ---- numbers of the dashboard
-const hour12 = () => { const f = pref('timeFormat', 'auto'); return f === '12' ? true : f === '24' ? false : undefined; };
+export const hour12 = () => { const f = pref('timeFormat', 'auto'); return f === '12' ? true : f === '24' ? false : undefined; };
 /** A date and time as the language writes it (unix seconds). */
 export const fmtDateTime = (sec?: number) => (sec ? new Date(sec * 1000).toLocaleString(lang.value, { hour12: hour12() }) : '');
 export const fmtDate = (sec?: number) => (sec ? new Date(sec * 1000).toLocaleDateString(lang.value) : '');

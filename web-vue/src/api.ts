@@ -116,6 +116,8 @@ export async function ticket(q = ''): Promise<string> {
   if (!q) pictureTicket.value = r.ticket;
   return r.ticket;
 }
+/** A new sign-in token (rotated): the tickets of the old one are asked for again. */
+export function renewTickets() { tickets.clear(); ticket().catch(() => {}); }
 setInterval(() => { if (session.me) ticket().catch(() => {}); }, 5 * 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && session.me) ticket().catch(() => {}); });
 

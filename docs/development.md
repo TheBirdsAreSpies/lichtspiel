@@ -45,8 +45,9 @@ Trakt, watchlist feed; saved under the classic app's names, so both use them), t
 watchlist, downloads (`#/downloads`; the button on an item's page), Chromecast in the player (`web-vue/src/cast.ts`), watching together (`#/together/<code>`, `web-vue/src/together.ts`), the server's settings for the owner
 (`#/server/<tab>`, the rows as data in `web-vue/src/serverSettings.ts`, with Maintenance), the dashboard, the libraries (adding, folders, scans, the import from the old server and the sync with Plex), users and invites and the plugins for the owner (`#/dashboard`, `#/libraries`, `#/users`, `#/plugins`;
 the charts are `web-vue/src/components/LineChart.vue` and `BarChart.vue`), the plugins' own panels
-(Settings → Account, or a page in the left menu: `web-vue/src/components/PluginPanel.vue`), and playlists (smart ones with their rules; playing one goes on through it: `web-vue/src/queue.ts`); the rest is still
-only in `web/` (see [todo.md](todo.md)). For the owner, the top bar shows what the server is doing in the background (scans, jobs, details: `web-vue/src/activity.ts`).
+(Settings → Account, or a page in the left menu: `web-vue/src/components/PluginPanel.vue`), playlists (smart ones with their rules; playing one goes on through it: `web-vue/src/queue.ts`), the statistics
+(`#/stats`, for everyone; the times of day are `web-vue/src/components/HeatChart.vue`), the calendar (`#/calendar`, and the
+"Coming soon" row on home: `web-vue/src/coming.ts`) and the API page for the owner (`#/api`): every page of `web/`. For the owner, the top bar shows what the server is doing in the background (scans, jobs, details: `web-vue/src/activity.ts`).
 
 - `build.rs` puts every file of `web-vue/dist` into the program (`VUE_FILES`, served by `vue_file` in
   `src/server/http.rs`). Build the Vue app first, then the server. Without a build `/vue/` says how

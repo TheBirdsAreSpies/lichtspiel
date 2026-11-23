@@ -1301,6 +1301,7 @@ I18N.add('de', 'Deutsch', {
     'Everything this app does goes through this JSON API, so other apps and scripts can do the same. ': 'Alles, was diese App tut, läuft über diese JSON-API – andere Apps und Skripte können also dasselbe. ',
     'Your token: ': 'Dein Token: ',
     'Show': 'Anzeigen',
+    'Hide': 'Verbergen',
     'Rotate token': 'Token erneuern',
     'Rotate and sign out everywhere else': 'Erneuern und überall sonst abmelden',
     'Name for the new token (e.g. "backup script")': 'Name für den neuen Token (z. B. „Backup-Skript“)',

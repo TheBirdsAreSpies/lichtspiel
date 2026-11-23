@@ -1,19 +1,29 @@
 <script setup lang="ts">
 // Home: a banner for what to go on with, then the server's rows (GET /hubs): continue watching, the
-// watchlist, recently added …
+// watchlist, coming soon (from its own address: /hubs is also read by Plex apps), recently added …
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { get, list, picture, session, type Hub, type Item } from '../api';
+import { loadComing, type Coming } from '../coming';
 import { resumeAt } from '../format';
 import { t } from '../i18n';
+import ComingRow from '../components/ComingRow.vue';
 import PosterRow from '../components/PosterRow.vue';
 
 const router = useRouter();
 const hubs = ref<Hub[] | null>(null);
 const error = ref('');
+const coming = ref<Coming[]>([]);
 
 onMounted(async () => {
+  loadComing(30).then(r => { coming.value = r.entries; }).catch(() => {});
   try { hubs.value = list<Hub>(await get('/hubs'), 'Hub'); } catch (e) { error.value = (e as Error).message; }
+});
+// Coming soon joins the rows after continue watching and the watchlist.
+const comingAt = computed(() => {
+  const all = hubs.value || [];
+  const at = all.findIndex(h => !['continueWatching', 'watchlist'].includes(h.hubIdentifier));
+  return at < 0 ? all.length : at;
 });
 
 // The banner: the first title to go on with, else the newest one added.
@@ -62,7 +72,11 @@ const wideRow = (h: Hub) => h.hubIdentifier === 'continueWatching';
           </div>
         </div>
       </section>
-      <PosterRow v-for="h in hubs" :key="h.hubIdentifier" :title="t(h.title)" :items="h.Metadata || []" :wide="wideRow(h)" />
+      <template v-for="(h, i) in hubs" :key="h.hubIdentifier">
+        <ComingRow v-if="i === comingAt" :entries="coming" />
+        <PosterRow :title="t(h.title)" :items="h.Metadata || []" :wide="wideRow(h)" />
+      </template>
+      <ComingRow v-if="comingAt >= hubs.length" :entries="coming" />
       <p v-if="!hubs.length && session.sections.length" class="empty">{{ t('Nothing here yet. Libraries are still being scanned, or they are empty.') }}</p>
     </template>
   </div>
