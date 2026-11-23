@@ -8,7 +8,7 @@ import { lang, packs, setLang, t } from './i18n';
 import Icon from './components/Icon.vue';
 import { loadPanels, panels } from './plugins';
 import { dl, loadDlCount } from './downloads';
-import { toastState } from './toast';
+import { toastRun, toastState } from './toast';
 import { cardSize } from './cardSize';
 import { checkInvites, declineInvite, invites } from './together';
 import { activity, cancelJob, poke } from './activity';
@@ -164,7 +164,7 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
   </div>
   <!-- (Keyed by the address: the next episode is a new player.) -->
   <RouterView v-else :key="route.path" />
-  <div v-if="toastState.text" :key="toastState.n" class="toast" role="status">{{ toastState.text }}</div>
+  <div v-if="toastState.text" :key="toastState.n" class="toast" role="status">{{ toastState.text }}<button v-if="toastState.action" class="small toast-act" @click="toastRun">{{ toastState.action.label }}</button></div>
   <Modal v-if="invites.shown" :title="t('Watch together')" @close="invites.shown = null">
     <p>{{ t('{by} asks you to watch “{title}” together.', { by: invites.shown.by, title: invites.shown.title }) }}</p>
     <p v-if="invites.shown.members.some(n => n !== invites.shown!.by)" class="dim">{{ t('Also there: {names}', { names: invites.shown.members.filter(n => n !== invites.shown!.by).join(', ') }) }}</p>

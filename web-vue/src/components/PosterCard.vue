@@ -8,7 +8,16 @@ import { cardLines, isPlayable, resumeAt, showSeen } from '../format';
 import { t } from '../i18n';
 import Icon from './Icon.vue';
 
-const props = defineProps<{ item: Item, wide?: boolean }>();
+// pickable: a circle on the poster selects it (so do Ctrl and Shift with a click, and on a touch screen a tap
+// while something is selected); the page keeps what is selected and says so with picked.
+const props = defineProps<{ item: Item, wide?: boolean, pickable?: boolean, picked?: boolean, picking?: boolean }>();
+const emit = defineEmits<{ pick: [e: MouseEvent] }>();
+function click(e: MouseEvent) {
+  if (!props.pickable) return;
+  const touchPicking = props.picking && matchMedia('(hover: none)').matches;
+  if (!touchPicking && !e.ctrlKey && !e.metaKey && !e.shiftKey) return;
+  e.preventDefault(); e.stopPropagation(); emit('pick', e);
+}
 const router = useRouter();
 const it = computed(() => props.item);
 const lines = computed(() => cardLines(it.value));
@@ -24,11 +33,12 @@ function play() {
 </script>
 
 <template>
-  <RouterLink :to="'/item/' + it.id" class="card" :class="{ wide, watched: showSeen(it), missing: it.missing }">
+  <RouterLink :to="'/item/' + it.id" class="card" :class="{ wide, watched: showSeen(it), missing: it.missing, picked }" @click.capture="click">
     <div class="poster">
       <img v-if="src" :src="src" :srcset="srcset" sizes="(max-width:760px) 34vw, 180px" loading="lazy" alt="" @load="($event.target as HTMLElement).classList.add('in')">
       <div v-if="progress > 0" class="bar"><i :style="{ width: progress * 100 + '%' }"></i></div>
       <span v-if="unseen > 0" class="badge">{{ unseen }}</span>
+      <span v-if="pickable" class="pick" role="checkbox" :aria-checked="!!picked" :title="t('Select')" :aria-label="t('Select')" @click.prevent.stop="emit('pick', $event)"></span>
       <span v-if="showSeen(it)" class="seen" :title="t('Watched')"><Icon name="check" /></span>
       <button v-if="isPlayable(it) && !it.missing" class="play" :title="t('Play')" :aria-label="t('Play')" @click.prevent.stop="play"><Icon name="play" /></button>
     </div>

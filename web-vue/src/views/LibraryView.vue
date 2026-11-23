@@ -14,6 +14,7 @@ import AdvancedFilters from '../components/AdvancedFilters.vue';
 import FilterButton from '../components/FilterButton.vue';
 import PosterCard from '../components/PosterCard.vue';
 import RandomPick from '../components/RandomPick.vue';
+import PickBar from '../components/PickBar.vue';
 
 const props = defineProps<{ id: string }>();
 const PAGE = 60;
@@ -37,11 +38,11 @@ const sortDesc = computed(() => sort.value.endsWith(':desc'));
 function turnSort() { sort.value = sortField.value + ':' + (sortDesc.value ? 'asc' : 'desc'); }
 
 // The dice: one title at random from what the filters leave.
-const picked = ref<Item | null>(null);
+const rolled = ref<Item | null>(null);
 async function randomPick() {
   if (!total.value) return;
   const p = filterParams(); p.set('sort', sort.value); p.set('start', String(Math.floor(Math.random() * total.value))); p.set('size', '1');
-  try { picked.value = list<Item>(await get(`/library/sections/${props.id}/all?${p}`))[0] || null; } catch (e) { error.value = (e as Error).message; }
+  try { rolled.value = list<Item>(await get(`/library/sections/${props.id}/all?${p}`))[0] || null; } catch (e) { error.value = (e as Error).message; }
 }
 const active = computed(() => fromQuery(route.query));
 // The advanced filters (rules) in the address: ?rules=[{field, op, value}…]&rmatch=any.
@@ -96,7 +97,31 @@ async function loadPage(n: number) {
   }
 }
 
+// ---- selecting titles (the circle on a poster, Ctrl or Shift with a click): the bar at the bottom acts on them.
+const picked = ref(new Set<number>());
+let lastPick = -1;
+function pick(i: number, e: MouseEvent) {
+  const s = new Set(picked.value);
+  if (e.shiftKey && lastPick >= 0) { for (let k = Math.min(lastPick, i); k <= Math.max(lastPick, i); k++) if (items.value[k]) s.add(k); }
+  else if (s.has(i)) s.delete(i); else s.add(i);
+  lastPick = i; picked.value = s;
+}
+const pickedItems = computed(() => [...picked.value].sort((a, b) => a - b).map(i => items.value[i]).filter((x): x is Item => !!x));
+function clearPicks() { picked.value = new Set(); lastPick = -1; }
+function pickAll() { picked.value = new Set(items.value.map((x, i) => (x ? i : -1)).filter(i => i >= 0)); }
+// Titles that changed (watched, edited, merged): read again where they are; none given: the whole list.
+async function refreshPicked(ids: number[]) {
+  if (!ids.length) { restart(); return; }
+  for (const id of ids) {
+    const i = items.value.findIndex(x => x && x.id === id);
+    if (i < 0) continue;
+    try { const fresh = list<Item>(await get('/library/metadata/' + id))[0]; if (fresh) items.value.splice(i, 1, { ...items.value[i], ...fresh }); } catch { /* keep it */ }
+  }
+}
+const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && picked.value.size) clearPicks(); };
+
 function restart() {
+  clearPicks();
   seq++; items.value = []; total.value = null; loading.value = false; error.value = '';
   have.clear(); busy.clear(); marks.value = [];
   // (Not while the collections show: their address has no filters, and the kept ones stay.)
@@ -258,10 +283,10 @@ function touchEnd(e: TouchEvent) { if (scrubbing) e.preventDefault(); scrubEnd()
 
 // (While the kept filters are being put into the address, the page waits for them.)
 onMounted(() => {
-  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('scroll', onScroll, { passive: true }); window.addEventListener('keydown', onKey);
   if (tab.value) loadGroups(); else if (!restoring) loadPage(0);
 });
-onBeforeUnmount(() => { io.disconnect(); window.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf); scrubEnd(); });
+onBeforeUnmount(() => { io.disconnect(); window.removeEventListener('scroll', onScroll); window.removeEventListener('keydown', onKey); cancelAnimationFrame(raf); scrubEnd(); });
 
 // ---- collections
 const groups = ref<Group[] | null>(null);
@@ -334,15 +359,16 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
         <button v-if="rules.length" class="chip" :title="t('Advanced filters')" @click="advancedOpen = true">{{ t('Advanced filters ({n})', { n: rules.length }) }}</button>
         <button v-if="Object.keys(active).length + (rules.length ? 1 : 0) > 1" class="linkbtn" @click="clearFilters">{{ t('Clear filters') }}</button>
       </div>
-      <RandomPick v-if="picked" :item="picked" @close="picked = null" @again="randomPick" />
+      <RandomPick v-if="rolled" :item="rolled" @close="rolled = null" @again="randomPick" />
       <AdvancedFilters v-if="advancedOpen" :rules="rules" :any="rmatch" @close="advancedOpen = false" @apply="setRules" />
-      <div ref="gridEl" class="grid" :class="{ 'has-letters': marks.length }">
+      <div ref="gridEl" class="grid" :class="{ 'has-letters': marks.length, picking: picked.size > 0 }">
         <template v-for="(it, i) in items" :key="it ? it.id : 'p' + i">
-          <PosterCard v-if="it" :item="it" :data-i="i" />
+          <PosterCard v-if="it" :item="it" :data-i="i" pickable :picked="picked.has(i)" :picking="picked.size > 0" @pick="pick(i, $event)" />
           <div v-else v-pending class="card ph" :data-i="i"><div class="poster skel"></div><div class="t">&nbsp;</div><div class="s">&nbsp;</div></div>
         </template>
         <template v-if="loading && !items.length"><div v-for="n in 12" :key="n" class="card ph"><div class="poster skel"></div></div></template>
       </div>
+      <PickBar v-if="pickedItems.length" :items="pickedItems" @clear="clearPicks" @all="pickAll" @changed="refreshPicked" />
       <p v-if="total === 0" class="empty">{{ t('Nothing found.') }}</p>
       <div v-if="marks.length" ref="letterBox" class="letters" :class="{ scrub: !!bubble }"
         @touchstart.passive="touchStart" @touchmove="touchMove" @touchend="touchEnd" @touchcancel="scrubEnd" @contextmenu="bubble && $event.preventDefault()">

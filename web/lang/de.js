@@ -1458,6 +1458,7 @@ I18N.add('de', 'Deutsch', {
     'Media info': 'Medieninfo',
     'Version': 'Version',
     'Merge into one…': 'Zusammenführen…',
+    'Merge {n} titles into one with several versions?': '{n} Titel zu einem mit mehreren Versionen zusammenführen?',
     'Merge into one': 'Zu einem zusammenführen',
     'Merge': 'Zusammenführen',
     'Split the merged versions': 'Zusammengeführte Versionen trennen',

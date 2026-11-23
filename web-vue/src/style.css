@@ -638,3 +638,17 @@ code.m-delete { color: #e5534b; }
 .pickone h3 { margin: 0 0 4px; }
 .pick-sum { display: -webkit-box; -webkit-line-clamp: 7; line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden; }
 @media (max-width: 760px) { .pickone { flex-direction: column; align-items: center; } }
+
+/* selecting posters: a circle on hover (always while something is selected), the bar at the bottom */
+.poster .pick { position: absolute; top: 6px; left: 6px; z-index: 2; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,.35); opacity: 0; transition: opacity .15s; cursor: pointer; color: #fff; font-size: 14px; font-weight: 800; line-height: 20px; text-align: center; }
+.poster .pick:hover { border-color: var(--accent); }
+.card:hover .pick, .grid.picking .pick { opacity: 1; }
+.card.picked .pick { background: var(--accent); border-color: var(--accent); }
+.card.picked .pick::after { content: "\2713"; }
+.card.picked .poster { outline: 3px solid var(--accent); }
+.pickbar { position: fixed; bottom: 22px; left: calc(50% + var(--side, 120px)); transform: translateX(-50%); z-index: 35; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.5); max-width: calc(100vw - 300px); }
+.pickbar b { margin-right: 4px; white-space: nowrap; }
+.pickbar select.small { padding: 5px 8px; }
+.pick-menu { top: auto; bottom: 40px; right: 0; z-index: 40; }
+.toast-act { margin: 0 0 0 14px; }
+@media (max-width: 760px) { .pickbar { left: 50%; bottom: 76px; max-width: calc(100vw - 24px); } }
