@@ -152,7 +152,8 @@ const where = computed(() => {
         </div>
       </section>
       <div v-if="shown.length" class="actions"><button class="primary" :disabled="saving" @click="save">{{ t('Save settings') }}</button></div>
-      <p v-if="tab === 'general' && !query.trim()" class="dim">{{ t('Data folder on the server: ') }}<code>{{ r.data_dir }}</code></p>
+      <!-- (Not in the Docker image: there it is always /config inside the container, not the folder on the disk.) -->
+      <p v-if="tab === 'general' && !query.trim() && r.data_dir !== '/config'" class="dim">{{ t('Data folder on the server: ') }}<code>{{ r.data_dir }}</code></p>
     </template>
     <div v-else-if="!error" class="skel line"></div>
     <AskDialog v-if="mailAsk" :title="t('Send the test mail to')" :value="session.me?.email || ''" :ok="t('Send')" @done="testMail" />
