@@ -1,18 +1,21 @@
 <script setup lang="ts">
 // A row of posters that scrolls sideways, with arrow buttons for a mouse.
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import type { Item } from '../api';
 import { t } from '../i18n';
 import Icon from './Icon.vue';
 import PosterCard from './PosterCard.vue';
 
-defineProps<{ title: string, items: Item[], wide?: boolean }>();
+// cont: the Continue Watching row (a title can be taken off it, from its menu).
+const props = defineProps<{ title: string, items: Item[], wide?: boolean, cont?: boolean }>();
+const gone = ref(new Set<number>());
+const shown = computed(() => props.items.filter(i => !gone.value.has(i.id)));
 const strip = ref<HTMLElement | null>(null);
 const page = (dir: number) => { const el = strip.value; if (el) el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: 'smooth' }); };
 </script>
 
 <template>
-  <section v-if="items.length" class="row">
+  <section v-if="shown.length" class="row">
     <div class="row-head">
       <h2>{{ title }}</h2>
       <span class="row-arrows">
@@ -21,7 +24,7 @@ const page = (dir: number) => { const el = strip.value; if (el) el.scrollBy({ le
       </span>
     </div>
     <div ref="strip" class="strip">
-      <PosterCard v-for="it in items" :key="it.id" :item="it" :wide="wide" />
+      <PosterCard v-for="it in shown" :key="it.id" :item="it" :wide="wide" :cont="cont" @removed="gone = new Set([...gone, $event])" />
     </div>
   </section>
 </template>

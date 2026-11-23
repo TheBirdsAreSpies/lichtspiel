@@ -16,8 +16,9 @@ import AccessDialog from './AccessDialog.vue';
 
 // card: the menu of a poster (its small "⋯", the menu put on the page so the card does not cut it off),
 // with what the title's page has as buttons first: select, watchlist, add to …, watched or not.
-const props = defineProps<{ item: Item, card?: boolean, selectable?: boolean }>();
-const emit = defineEmits<{ changed: [], select: [] }>();
+// cont: on the Continue Watching row (it can be taken off there).
+const props = defineProps<{ item: Item, card?: boolean, selectable?: boolean, cont?: boolean }>();
+const emit = defineEmits<{ changed: [], select: [], removed: [] }>();
 const router = useRouter();
 // (The page's item has more than the Item type says: the match, the optimized copy, every stream.)
 type Any = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -60,6 +61,9 @@ async function watchlist() {
 }
 async function markWatched(watched: boolean) {
   try { await api('POST', `/:/${watched ? 'scrobble' : 'unscrobble'}?key=${it.value.id}`); toast(watched ? t('Marked as watched') : t('Marked as unwatched')); emit('changed'); } catch (e) { fail(e); }
+}
+async function uncontinue() {
+  try { await api('POST', '/api/continue/remove', { ids: [it.value.id] }); toast(t('Removed from Continue Watching')); emit('removed'); } catch (e) { fail(e); }
 }
 const started = computed(() => !isWatched(it.value) && ((it.value.viewOffset || 0) > 0 || (it.value.viewedLeafCount || 0) > 0));
 
@@ -196,6 +200,7 @@ async function remove() {
     <div v-if="open" class="menu item-menu" :class="{ 'side-menu': card }" role="menu" :style="card ? { left: at.left + 'px', top: at.top + 'px' } : undefined">
       <template v-if="card">
         <button v-if="selectable" class="menu-row" role="menuitem" @click="pick(() => emit('select'))">{{ t('Select') }}</button>
+        <button v-if="cont" class="menu-row" role="menuitem" @click="pick(uncontinue)">{{ t('Remove from Continue Watching') }}</button>
         <button v-if="it.type !== 'clip'" class="menu-row" role="menuitem" @click="pick(watchlist)">{{ it.watchlist ? t('Remove from watchlist') : t('Add to watchlist') }}</button>
         <button class="menu-row" role="menuitem" @click="pick('addto')">{{ t('Add to …') }}</button>
         <button class="menu-row" role="menuitem" @click="pick(() => markWatched(!isWatched(it)))">{{ isWatched(it) ? t('Mark as unwatched') : t('Mark as watched') }}</button>

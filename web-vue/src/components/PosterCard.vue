@@ -13,8 +13,8 @@ import ItemMenu from './ItemMenu.vue';
 // pickable: a circle on the poster selects it (so do Ctrl and Shift with a click, and on a touch screen a tap
 // while something is selected); the page keeps what is selected and says so with picked.
 // plain: without the pencil and the "⋯" (a poster inside a box).
-const props = defineProps<{ item: Item, wide?: boolean, pickable?: boolean, picked?: boolean, picking?: boolean, plain?: boolean }>();
-const emit = defineEmits<{ pick: [e: MouseEvent], changed: [id: number] }>();
+const props = defineProps<{ item: Item, wide?: boolean, pickable?: boolean, picked?: boolean, picking?: boolean, plain?: boolean, cont?: boolean }>();
+const emit = defineEmits<{ pick: [e: MouseEvent], changed: [id: number], removed: [id: number] }>();
 // After its menu changed something (watched, watchlist, edited): the title as the server has it now.
 const fresh = ref<Item | null>(null);
 watch(() => props.item, () => { fresh.value = null; });
@@ -54,7 +54,7 @@ function play() {
       <span v-if="pickable" class="pick" role="checkbox" :aria-checked="!!picked" :title="t('Select')" :aria-label="t('Select')" @click.prevent.stop="emit('pick', $event)"></span>
       <span v-if="showSeen(it)" class="seen" :title="t('Watched')"><Icon name="check" /></span>
       <button v-if="admin" type="button" class="edit" :title="t('Edit details')" :aria-label="t('Edit details')" @click.prevent.stop="editing = true"><Icon name="edit" /></button>
-      <ItemMenu v-if="!plain && ['movie', 'show', 'season', 'episode'].includes(it.type)" :item="it" card :selectable="pickable" @changed="changed" @select="selectMe" />
+      <ItemMenu v-if="!plain && ['movie', 'show', 'season', 'episode'].includes(it.type)" :item="it" card :selectable="pickable" :cont="cont" @changed="changed" @removed="emit('removed', props.item.id)" @select="selectMe" />
       <button v-if="isPlayable(it) && !it.missing" class="play" :title="t('Play')" :aria-label="t('Play')" @click.prevent.stop="play"><Icon name="play" /></button>
     </div>
     <div class="t" :title="lines[0]">{{ lines[0] }}</div>
