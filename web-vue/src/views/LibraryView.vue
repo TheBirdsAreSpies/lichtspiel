@@ -83,7 +83,6 @@ const q = ref('');
 // right at once and a letter can jump anywhere; the empty cards near the screen load their page.
 const items = ref<(Item | null)[]>([]);
 const total = ref<number | null>(null);
-const loading = ref(false);
 const error = ref('');
 const gridEl = ref<HTMLElement | null>(null);
 let seq = 0;
@@ -113,7 +112,6 @@ async function loadPage(n: number) {
   if (have.has(n) || busy.has(n)) return;
   busy.add(n);
   const mine = seq;
-  if (n === 0) loading.value = true;
   try {
     const j = await get<{ MediaContainer: { totalSize?: number } }>(url(n * PAGE));
     if (mine !== seq) return;
@@ -126,7 +124,7 @@ async function loadPage(n: number) {
     items.value.splice(n * PAGE, got.length, ...got);
     have.add(n);
   } catch (e) { if (mine === seq) error.value = (e as Error).message; } finally {
-    if (mine === seq) { busy.delete(n); if (n === 0) loading.value = false; }
+    if (mine === seq) busy.delete(n);
   }
 }
 
@@ -155,7 +153,7 @@ const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && picked.value.siz
 
 function restart() {
   clearPicks();
-  seq++; items.value = []; total.value = null; loading.value = false; error.value = '';
+  seq++; items.value = []; total.value = null; error.value = '';
   have.clear(); busy.clear(); marks.value = []; pos.value = -1;
   // (Not while the collections show: their address has no filters, and the kept ones stay.)
   if (!tab.value) try { localStorage.setItem('vue-lib:' + props.id, JSON.stringify({ sort: sort.value, filters: active.value, rules: rulesText.value, rmatch: rmatch.value, extra: extra.value })); } catch { /* none */ }
@@ -473,9 +471,8 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
       <div ref="gridEl" class="grid" :class="{ 'has-letters': marks.length, picking: picked.size > 0 }">
         <template v-for="(it, i) in items" :key="it ? it.id : 'p' + i">
           <PosterCard v-if="it" :item="it" :data-i="i" :caption="sortField" pickable :picked="picked.has(i)" :picking="picked.size > 0" @pick="pick(i, $event)" @changed="refreshPicked([$event])" />
-          <div v-else v-pending class="card ph" :class="{ music: section.type === 'music' }" :data-i="i"><div class="poster skel"></div><div class="t">&nbsp;</div><div class="s">&nbsp;</div></div>
+          <div v-else v-pending class="card ph" :class="{ music: section.type === 'music' }" :data-i="i"><div class="poster"></div><div class="t">&nbsp;</div><div class="s">&nbsp;</div></div>
         </template>
-        <template v-if="loading && !items.length"><div v-for="n in 12" :key="n" class="card ph" :class="{ music: section.type === 'music' }"><div class="poster skel"></div></div></template>
       </div>
       <PickBar v-if="pickedItems.length" :items="pickedItems" @clear="clearPicks" @all="pickAll" @changed="refreshPicked" />
       <p v-if="total === 0" class="empty">{{ t('Nothing found.') }}</p>

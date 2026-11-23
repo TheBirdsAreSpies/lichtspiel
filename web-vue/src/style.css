@@ -184,6 +184,8 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .skel.line.short { width: 160px; }
 .card.ph { width: var(--card); }
 .grid .card.ph { width: auto; }
+/* a library's titles not loaded yet: quiet empty cards, as in the classic app; the posters fade in over them */
+.card.ph .poster:not(.skel) { background: var(--panel); }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
 /* ---------- home banner (SpotBanner.vue, as spotlight() in the classic app): edge to edge, the backdrop fading into the page */
