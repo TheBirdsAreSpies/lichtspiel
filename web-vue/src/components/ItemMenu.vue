@@ -53,7 +53,17 @@ type Box = '' | 'addto' | 'together' | 'share' | 'match' | 'optimize' | 'access'
 const box = ref<Box>('');
 function pick(b: Box | (() => void)) {
   open.value = false; document.removeEventListener('click', outside);
-  if (typeof b === 'function') b(); else { box.value = b; if (b === 'match') search(); if (b === 'history') loadHistory(); }
+  if (typeof b === 'function') b(); else { box.value = b; if (b === 'match') search(); if (b === 'history') loadHistory(); if (b === 'info') loadDecision(); }
+}
+// How this browser would play it (Media info): the file as it is, repackaged, or converted, and why.
+const decision = ref('');
+async function loadDecision() {
+  decision.value = '…';
+  try {
+    const d = await get<{ method: string, reasons?: string[] }>(`/library/metadata/${it.value.id}/decision`);
+    const words: Record<string, string> = { direct: t('Plays the original file directly'), remux: t('Repackaged on the fly (picture untouched)'), transcode: t('Converted on the fly') };
+    decision.value = (words[d.method] || d.method) + ((d.reasons || []).length ? ' — ' + (d.reasons || []).map(x => t(x)).join('; ') : '');
+  } catch { decision.value = ''; }
 }
 const fail = (e: unknown) => toast((e as Error).message, 6000);
 
@@ -319,7 +329,8 @@ async function remove() {
     <Modal v-if="box === 'info'" :title="t('Media info')" wide @close="box = ''">
       <p v-if="!media" class="dim">{{ t('This entry has no video file') }}</p>
       <template v-else>
-        <div class="kv"><template v-for="[k, v] in fileRows" :key="k"><div class="dim">{{ k }}</div><div class="break">{{ v }}</div></template></div>
+        <div class="kv"><template v-for="[k, v] in fileRows" :key="k"><div class="dim">{{ k }}</div><div class="break">{{ v }}</div></template>
+          <template v-if="decision"><div class="dim">{{ t('In your browser') }}</div><div>{{ decision }}</div></template></div>
         <p v-if="media.probed === false" class="dim">{{ t('The file has not been read with ffprobe yet — use Analyze.') }}</p>
         <template v-for="s in (media.streams || [])" :key="s.kind + s.index">
           <h3 class="gap-top">{{ t(STREAM[s.kind] || s.kind) }} #{{ s.index }}<template v-if="s.default"> · {{ t('default') }}</template></h3>

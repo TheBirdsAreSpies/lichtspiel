@@ -19,6 +19,7 @@ import { api, get, list, picture, pref, savePref, session, ticket, withTicket, t
 import { fmtClock, fmtNum, fmtTime, langName, lang2, resumeAt } from '../format';
 import { t } from '../i18n';
 import Icon from '../components/Icon.vue';
+import { toast } from '../toast';
 import { nextInQueue, queue, saveQueue, upQueue, watching } from '../queue';
 import { tg, tgLeave, tgSend, type Room } from '../together';
 import Modal from '../components/Modal.vue';
@@ -30,6 +31,24 @@ const route = useRoute();
 const router = useRouter();
 const video = ref<HTMLVideoElement | null>(null);
 const box = ref<HTMLElement | null>(null);
+
+// Before a movie started from its beginning (not together, not on a TV): the pre-roll videos the owner set
+// (Server settings → Library → Before a movie), each until its end, "Next video" or "Skip" ("Skip all").
+// They play in a video of their own over the film's, which waits.
+const pre = ref<{ url: string, several: boolean } | null>(null);
+const preVideo = ref<HTMLVideoElement | null>(null);
+let preDone: ((go: boolean) => void) | null = null;
+let gone = false; // the player was left (also while a pre-roll played)
+function preEnd(go: boolean) { const d = preDone; preDone = null; pre.value = null; if (d) d(go); }
+async function playPrerolls() {
+  let urls: string[] = [];
+  try { urls = (await get<{ urls?: string[] }>('/api/preroll')).urls || []; } catch { return; }
+  for (const url of urls) {
+    const go = await new Promise<boolean>(done => { preDone = done; pre.value = { url, several: urls.length > 1 }; });
+    if (!go) return;
+  }
+}
+watch(preVideo, el => { if (el) el.play().catch(() => preEnd(true)); });
 const it = ref<Item | null>(null);
 const error = ref('');
 const method = ref<'direct' | 'remux' | 'transcode'>('direct');
@@ -110,6 +129,7 @@ async function load(at: number) {
   const noDirect = pref('directPlay', '1') === '0' && m === 'direct' && d.allowed;
   if (noDirect) m = 'transcode';
   method.value = m;
+  if (!d.allowed) say(t('Converting is switched off for your account, so this file may not play here.'));
   if (casting) { await toTv(i, m, at, q, extra, noDirect, p, d.start); return; }
   levelVolume();
   if (m === 'direct') {
@@ -211,6 +231,7 @@ function addSubtitles() {
     el.addEventListener('load', () => {
       if (shift > 0 && el.track.cues) for (const c of Array.from(el.track.cues)) { c.startTime = Math.max(0, c.startTime - shift); c.endTime = Math.max(0, c.endTime - shift); }
     }, { once: true });
+    el.addEventListener('error', () => { if (i === sub.value) say(t('This subtitle can’t be shown here.')); }, { once: true });
     v.append(el);
   });
   showSub();
@@ -473,7 +494,7 @@ function setVolume(x: number) {
 function toggleMute() { if (cast.on) { castMute(); return; } const v = video.value; if (v) v.muted = !v.muted; }
 function toggleFull() {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  else if (box.value) box.value.requestFullscreen().catch(() => {});
+  else if (box.value) box.value.requestFullscreen().catch(() => say(t('Full screen is not available here.')));
 }
 
 function report(state: 'playing' | 'paused' | 'stopped', ms = Math.floor(now.value * 1000)) {
@@ -541,13 +562,15 @@ function ended() {
   if (catchUp) { catchUpDone(); return; }
   // The next part of a split movie.
   if (split.value && part.value < parts.value.length - 1) { load(partStart(part.value + 1)); return; }
+  // Stopped well before its end (the connection dropped): not counted as watched; the place is kept.
+  if (!cast.on && duration.value && duration.value - now.value > 60) { report('paused'); say(t('The video stopped before its end. Your place was saved.')); return; }
   finish();
 }
 // The end, or "Skip credits" (which counts as watched to the end): what comes next, or close.
 // (Cancelled during the credits, the box comes again at the very end.)
 async function finish() {
   if (!done) { done = true; await report('stopped', Math.floor(duration.value * 1000)); }
-  if (sleep.value && sleep.value.end) { sleep.value = null; close(); return; } // the sleep timer stops here
+  if (sleep.value && sleep.value.end) { sleep.value = null; close(); toast(t('Sleep timer: stopped after this title. Good night!'), 8000); return; } // the sleep timer stops here
   const next = await following();
   if (!next) { close(); return; }
   if (!route.query.queue) upNext.value = next;
@@ -601,7 +624,8 @@ function sleepCheck() {
 }
 function sleepWake() { if (sleepVol !== null && sleep.value) { sleep.value = null; sleepFade(1); say(t('Sleep timer off')); } }
 
-// Picture in picture (P).
+// Picture in picture (P); its button only where the browser has it.
+const pipOk = !!(document as Document & { pictureInPictureEnabled?: boolean }).pictureInPictureEnabled;
 function togglePip() {
   const v = video.value; if (!v || !document.pictureInPictureEnabled) return;
   if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
@@ -682,7 +706,7 @@ onMounted(async () => {
   v.addEventListener('canplay', () => { waiting.value = false; });
   v.addEventListener('volumechange', () => { if (cast.on) return; muted.value = v.muted; volume.value = v.volume; });
   v.addEventListener('ended', ended);
-  v.addEventListener('error', () => { if (v.src) { waiting.value = false; error.value = t('This video can’t be played here.'); } });
+  v.addEventListener('error', () => { if (v.src) { waiting.value = false; error.value = t('This video could not be played. Try a lower quality in ⚙.'); } });
   document.addEventListener('keydown', key);
   document.addEventListener('fullscreenchange', onFull);
   for (const ev of INPUT) document.addEventListener(ev, someone, { passive: true, capture: true });
@@ -692,6 +716,8 @@ onMounted(async () => {
     it.value = list<Item>(await get('/library/metadata/' + props.id))[0] || null;
     if (!it.value) { error.value = t('Not found'); return; }
     chooseTracks();
+    if (it.value.type === 'movie' && !(Number(route.query.t) > 0) && !tg.code && !cast.on && !catchUp) { waiting.value = false; await playPrerolls(); waiting.value = true; }
+    if (gone) return;
     await load(Number(route.query.t) || 0);
     if (route.query.paused) { if (cast.on) castPause(); else v.pause(); }
     if (tg.code) {
@@ -709,6 +735,7 @@ onMounted(async () => {
   } catch (e) { error.value = (e as Error).message; waiting.value = false; }
 });
 onBeforeUnmount(() => {
+  gone = true; preEnd(false);
   clearInterval(timer); clearTimeout(idleTimer); clearTimeout(noticeTimer); clearTimeout(freshTimer); clearInterval(countdown); clearTimeout(stillTimer);
   for (const ev of INPUT) document.removeEventListener(ev, someone, { capture: true });
   for (const ev of INPUT) document.removeEventListener(ev, sleepWake, { capture: true });
@@ -744,6 +771,11 @@ const endsAt = computed(() => {
 <template>
   <div ref="box" class="player" :class="{ idle }" :style="cueStyle" @mousemove="wake" @click.self="toggle">
     <video ref="video" playsinline @click="toggle"></video>
+    <div v-if="pre" class="p-preroll">
+      <video ref="preVideo" :key="pre.url" :src="pre.url" playsinline @ended="preEnd(true)" @error="preEnd(true)"></video>
+      <button v-if="pre.several" class="p-pre-next" @click.stop="preEnd(true)">{{ t('Next video') }}</button>
+      <button class="primary p-pre-skip" @click.stop="preEnd(false)">{{ pre.several ? t('Skip all') : t('Skip') }}</button>
+    </div>
     <div v-if="cast.on" class="p-cast" @click="toggle"><Icon name="cast" /><div>{{ t('Playing on {device}', { device: cast.device }) }}</div></div>
     <div v-if="waiting && !error" class="spinner" aria-hidden="true"></div>
     <div v-if="error || stopped" class="p-msg">
@@ -752,7 +784,7 @@ const endsAt = computed(() => {
       <button class="primary" @click="close">{{ t('Back') }}</button>
     </div>
     <div class="p-top">
-      <button class="iconbtn" :aria-label="t('Back')" @click="close"><Icon name="back" /></button>
+      <button class="iconbtn" :title="t('Close (Esc)')" :aria-label="t('Close (Esc)')" @click="close"><Icon name="back" /></button>
       <div>
         <div class="p-title">{{ title }}</div>
         <div class="dim">{{ subLine }}<span v-if="it"> · {{ methodName }}</span><span v-if="cast.on"> · {{ t('on {device}', { device: cast.device }) }}</span><span v-if="tg.code"> · {{ others.length ? t('together with {names}', { names: others.join(', ') }) : t('together (waiting for others)') }} · <a href="#" @click.prevent="inviting = true">{{ t('Invite more') }}</a></span><span v-if="endsAt"> · {{ endsAt }}</span><span v-if="sleepLine"> · {{ sleepLine }}</span></div>
@@ -807,11 +839,12 @@ const endsAt = computed(() => {
       </div>
       <div class="p-controls">
         <button class="iconbtn" :aria-label="paused ? t('Play') : t('Pause')" @click="toggle"><Icon :name="paused ? 'play' : 'pause'" /></button>
-        <button class="iconbtn" :aria-label="t('Back 10 seconds')" @click="skip(-10)"><Icon name="rew" /></button>
-        <button class="iconbtn" :aria-label="t('Forward 30 seconds')" @click="skip(30)"><Icon name="fwd" /></button>
+        <button class="iconbtn" :title="t('Back 10 seconds (←)')" :aria-label="t('Back 10 seconds (←)')" @click="skip(-10)"><Icon name="rew" /></button>
+        <button class="iconbtn" :title="t('Forward 30 seconds (→)')" :aria-label="t('Forward 30 seconds (→)')" @click="skip(30)"><Icon name="fwd" /></button>
+        <button v-if="hasNext" class="iconbtn" :title="t('Next (N)')" :aria-label="t('Next (N)')" @click="finish()"><Icon name="next" /></button>
         <button class="iconbtn" :aria-label="muted ? t('Sound on') : t('Mute')" @click="toggleMute"><Icon :name="muted || volume === 0 ? 'mute' : 'vol'" /></button>
         <input class="vol" type="range" min="0" max="1" step="0.05" :value="muted ? 0 : volume" :aria-label="t('Volume')" @input="setVolume(Number(($event.target as HTMLInputElement).value))">
-        <button class="time" :title="t('Time left')" @click="savePref('timeLeft', timeLeft ? '0' : '1').catch(() => {})">{{ timeText }}</button>
+        <button class="time" :title="t('Click: show time left')" @click="savePref('timeLeft', timeLeft ? '0' : '1').catch(() => {})">{{ timeText }}</button>
         <span class="grow"></span>
         <div v-if="chapters.length > 1" class="p-menu-wrap">
           <button class="iconbtn label" :class="{ on: menu === 'chapters' }" @click="menu = menu === 'chapters' ? '' : 'chapters'">{{ t('Chapters') }}</button>
@@ -826,7 +859,7 @@ const endsAt = computed(() => {
           </div>
         </div>
         <div class="p-menu-wrap">
-          <button v-if="subs.length" class="iconbtn" :class="{ on: sub >= 0 || burn !== null || menu === 'subs' }" :aria-label="t('Subtitles')" @click="menu = menu === 'subs' ? '' : 'subs'"><Icon name="cc" /></button>
+          <button v-if="subs.length" class="iconbtn" :class="{ on: sub >= 0 || burn !== null || menu === 'subs' }" :title="t('Subtitles (C)')" :aria-label="t('Subtitles (C)')" @click="menu = menu === 'subs' ? '' : 'subs'"><Icon name="cc" /></button>
           <div v-if="menu === 'subs'" class="p-menu">
             <button :class="{ on: sub < 0 && burn === null }" @click="setSub(-1)">{{ t('Off') }}</button>
             <button v-for="(s, i) in subs" :key="i" :class="{ on: sub === i || burn === i }" :disabled="part > 0 && !isPicture(s)" @click="setSub(i)">
@@ -873,7 +906,8 @@ const endsAt = computed(() => {
           </div>
         </div>
         <button v-if="cast.available" class="iconbtn" :class="{ on: cast.on }" :title="t('Play on a TV (Chromecast)')" :aria-label="t('Play on a TV (Chromecast)')" @click="castPick"><Icon name="cast" /></button>
-        <button class="iconbtn" :aria-label="t('Full screen')" @click="toggleFull"><Icon :name="full ? 'exitfull' : 'full'" /></button>
+        <button v-if="pipOk" class="iconbtn" :title="t('Picture in picture (P)')" :aria-label="t('Picture in picture (P)')" @click="togglePip"><Icon name="pip" /></button>
+        <button class="iconbtn" :title="full ? t('Leave full screen') : t('Full screen')" :aria-label="full ? t('Leave full screen') : t('Full screen')" @click="toggleFull"><Icon :name="full ? 'exitfull' : 'full'" /></button>
       </div>
     </div>
   </div>
