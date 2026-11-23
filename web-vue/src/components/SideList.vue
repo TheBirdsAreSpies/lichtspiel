@@ -22,8 +22,9 @@ function toggleMore() {
   moreKept.value = !moreOpen.value;
   try { localStorage.setItem('vue-navMore', moreKept.value ? '1' : '0'); } catch { /* none */ }
 }
-// The number beside a library: its shows, or its videos.
-const count = (s?: Section) => (!s ? '' : s.type === 'show' ? (s.count ? t('{n} shows', { n: s.count }) : '') : s.videoCount ?? s.count ?? '');
+// The number beside a library: its shows, or its videos (only the number, so the name has room; what it counts is its tooltip).
+const count = (s?: Section) => (!s ? '' : s.type === 'show' ? (s.count || '') : s.videoCount ?? s.count ?? '');
+const countTip = (s?: Section) => (s?.type === 'show' && s.count ? t('{n} shows', { n: s.count }) : undefined);
 
 // ---- the heading's menu
 const headOpen = ref(false);
@@ -96,14 +97,14 @@ const groupOf = (e: NavEntry) => (e.hidden ? off.value : pinned.value);
   </template>
   <template v-else>
     <div v-for="e in pinned" :key="e.key" class="nav-item" :class="{ admin: true }">
-      <RouterLink :to="e.to" class="nav" :class="{ on: isOn(e) }" :title="e.title"><Icon :name="e.icon" /><span>{{ e.title }}</span><small v-if="count(e.sec)" class="nav-num">{{ count(e.sec) }}</small></RouterLink>
+      <RouterLink :to="e.to" class="nav" :class="{ on: isOn(e) }" :title="e.title"><Icon :name="e.icon" /><span>{{ e.title }}</span><small v-if="count(e.sec)" class="nav-num" :title="countTip(e.sec)">{{ count(e.sec) }}</small></RouterLink>
       <SectionMenu :section="e.sec" :nav-key="e.key" />
     </div>
     <template v-if="off.length">
       <a href="#" class="nav morehead" :title="t('More')" @click.prevent="toggleMore"><Icon name="more" /><span>{{ t('More') }}</span><small class="nav-num">{{ (moreOpen ? '▾ ' : '▸ ') + off.length }}</small></a>
       <template v-if="moreOpen">
         <div v-for="e in off" :key="e.key" class="nav-item" :class="{ admin: true }">
-          <RouterLink :to="e.to" class="nav" :class="{ on: isOn(e) }" :title="e.title"><Icon :name="e.icon" /><span>{{ e.title }}</span><small v-if="count(e.sec)" class="nav-num">{{ count(e.sec) }}</small></RouterLink>
+          <RouterLink :to="e.to" class="nav" :class="{ on: isOn(e) }" :title="e.title"><Icon :name="e.icon" /><span>{{ e.title }}</span><small v-if="count(e.sec)" class="nav-num" :title="countTip(e.sec)">{{ count(e.sec) }}</small></RouterLink>
           <SectionMenu :section="e.sec" :nav-key="e.key" />
         </div>
       </template>

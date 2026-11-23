@@ -2079,7 +2079,7 @@ const navIcon = e => e.sec ? ({ movie: 'movie', show: 'tv', music: 'music', arti
 function navLink(e) {
   const s = e.sec;
   return h('a', { href: '#/' + e.nav, 'data-nav': e.nav, title: e.title },
-    icon(navIcon(e)), h('span', {}, e.title), s ? h('small', {}, s.type === 'show' ? t('{n} shows', { n: s.count }) : s.videoCount) : null,
+    icon(navIcon(e)), h('span', {}, e.title), s ? h('small', s.type === 'show' ? { title: t('{n} shows', { n: s.count }) } : {}, s.type === 'show' ? s.count : s.videoCount) : null,
     moreBtn(t('More'), b => s ? sectionMenu(s, b) : openMenu(b, [{ label: e.hidden ? t('Pin') : t('Unpin'), run: () => setPinned(e.key, e.hidden) }])));
 }
 function drawNav() {
