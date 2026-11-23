@@ -12,6 +12,7 @@ import { addToQueue, playAll, smartShuffle } from '../queue';
 import { toast } from '../toast';
 import AskDialog from './AskDialog.vue';
 import EditDetails from './EditDetails.vue';
+import BulkEdit from './BulkEdit.vue';
 import Modal from './Modal.vue';
 
 const props = defineProps<{ items: Item[] }>();
@@ -20,6 +21,7 @@ const router = useRouter();
 const pls = ref<Playlist[]>([]);
 const asking = ref(false);
 const editing = ref<number | null>(null);
+const bulk = ref(false);
 const merging = ref(false);
 const more = ref(false);
 const ids = () => props.items.map(i => i.id);
@@ -93,7 +95,7 @@ const merge = () => run(async () => {
       <option v-for="p in pls" :key="p.id" :value="p.id">{{ p.title }}</option>
       <option value="new">{{ t('New playlist…') }}</option>
     </select>
-    <button v-if="session.me?.admin && items.length === 1" class="small" @click="editing = items[0].id">{{ t('Edit') }}</button>
+    <button v-if="session.me?.admin" class="small" @click="items.length === 1 ? (editing = items[0].id) : (bulk = true)">{{ t('Edit') }}</button>
     <span class="menu-wrap">
       <button class="small" :title="t('More')" :aria-label="t('More')" :aria-expanded="more" @click="more = !more">⋯</button>
       <div v-if="more" class="menu pick-menu" role="menu">
@@ -111,6 +113,7 @@ const merge = () => run(async () => {
     </span>
     <AskDialog v-if="asking" :title="t('Name of the new playlist')" :ok="t('Add')" @done="newPlaylist" />
     <EditDetails v-if="editing" :id="editing" @close="editing = null" @saved="emit('changed', ids()); editing = null" />
+    <BulkEdit v-if="bulk" :ids="ids()" @close="bulk = false" @saved="emit('changed', ids()); emit('clear')" />
     <Modal v-if="merging" :title="t('Merge into one…')" @close="merging = false">
       <p>{{ t('Merge {n} titles into one with several versions?', { n: items.length }) }}</p>
       <ul><li v-for="it in items" :key="it.id">{{ it.title }}<span v-if="it.year" class="dim"> ({{ it.year }})</span></li></ul>
