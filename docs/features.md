@@ -92,7 +92,7 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
 - **Playlists** — your own (hand-picked, drag order), **smart playlists** (rules such as
   "genre is Comedy AND year ≥ 2000 AND not watched, newest first, max 50") and six **default
   playlists** the server keeps up to date (Continue Watching, Recently Added Movies, Recently
-  Added Episodes, Unwatched Movies, Favorites, Top Rated). Playlists can be filtered (kind,
+  Added Episodes, Unwatched Movies (in random order, new every hour), Favorites, Top Rated). Playlists can be filtered (kind,
   owner, title, size, shared, pinned) and sorted (title, last changed, size, length …); the
   contents of any playlist can be filtered and sorted again. Both the playlists and the contents
   of one can be shown as a list or as posters (kept per browser).

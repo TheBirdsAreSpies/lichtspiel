@@ -145,6 +145,11 @@ impl Db {
             self.settings.server_name = crate::server::APP_NAME.into();
         }
         self.ensure_default_playlists();
+        // "Unwatched Movies" used to go from A to Z, so the home page always showed the same first titles;
+        // now it is in random order (a new one every hour). A sort the owner chose stays.
+        for p in self.playlists.iter_mut().filter(|p| p.default_key.as_deref() == Some("unwatched_movies")) {
+            if let Some(q) = p.query.as_mut().filter(|q| q.sort == "title") { q.sort = "random".into(); }
+        }
     }
 
     pub fn new_id(&mut self) -> u64 {
@@ -349,7 +354,8 @@ impl Db {
                         rule("kind", "is", Value::from("movie")),
                         rule("watched", "is", Value::Bool(false)),
                     ],
-                    sort: "title".into(),
+                    // Random (a new order every hour), so the home page shows something else each time.
+                    sort: "random".into(),
                     limit: None,
                     sections: vec![],
                 },
