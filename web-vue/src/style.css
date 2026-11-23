@@ -65,7 +65,7 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 /* ---------- frame */
 .top {
   position: fixed; inset: 0 0 auto 0; height: var(--top); z-index: 20; display: flex; align-items: center; gap: 14px;
-  padding: 0 18px; background: rgba(16,17,20,.88); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line);
+  padding: 0 18px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line);
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; width: calc(var(--side) - 30px); min-width: 0; }
 .brand svg { width: 22px; height: 22px; flex: none; }
