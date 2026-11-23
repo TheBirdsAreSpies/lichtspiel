@@ -125,6 +125,15 @@ const where = computed(() => {
               </template>
               <p class="dim">{{ t('Converting with: ') + (tc.hw_in_use === 'none' ? t('the processor (software)') : tc.hw_in_use) }}</p>
             </div>
+            <div v-else-if="x.kind === 'info' && x.what === 'helper'" class="form-wide">
+              <p v-if="!tc.helper" class="dim">{{ t('No transcode helper is set: this server converts.') }}</p>
+              <template v-else-if="tc.helper.ok">
+                <p class="ok">{{ t('Transcode helper {address}: reachable, converting with {hw}', { address: tc.helper.address, hw: tc.helper.hw === 'none' ? t('the processor (software)') : tc.helper.hw || '' }) }}</p>
+                <p class="dim">{{ tc.helper.ffmpeg_version }}</p>
+                <p v-if="!tc.helper.same_version" class="err">{{ t('The helper runs another version of Lichtspiel ({version}); update it, so both make the same command lines.', { version: tc.helper.version || '?' }) }}</p>
+              </template>
+              <p v-else class="err">{{ t('Transcode helper {address}: {error}. This server converts until it is back.', { address: tc.helper.address, error: tc.helper.error || '' }) }}</p>
+            </div>
             <template v-else-if="x.kind === 'button'">
               <span></span>
               <div class="val">

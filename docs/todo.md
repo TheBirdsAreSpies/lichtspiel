@@ -9,6 +9,10 @@ and conventions are in [development.md](development.md).
 - [ ] **NAS:** the dashboard shows "hw" for a converted video (Jellyfin's ffmpeg,
   `jellyfin-ffmpeg7`, since 2026-11-20), and a converted video plays. If it fails, going back is
   one commit (the old `apt-get install` line in the `Dockerfile`).
+- [ ] **Transcode helper:** the Windows PC (RTX 3070, a current ffmpeg) as helper for the NAS: the
+  settings page says "reachable, converting with nvenc", a converted video plays in the browser
+  (HLS) and in an app (MP4 stream), the dashboard says "on the transcode helper", and with the
+  helper switched off the NAS converts again. Tried so far only on one computer, with the processor.
 - [ ] **Relay:** Lichtspiel on the relay computer is updated, and remote access still works.
 - [ ] **macOS app:** an `https://` address that only speaks http falls back to http on the home
   network, and does **not** fall back when the server is reached from outside.

@@ -37,6 +37,11 @@ pub(super) fn routes(app: &Arc<App>, ctx: &Ctx, m: &str, segs: &[&str]) -> Optio
             r.add_header(crate::server::header("Cache-Control", "no-cache"));
             return r;
         }
+        // The transcode helper reads the video it converts (a key per stream, see playback::helper).
+        ("GET", ["helper", "source", token]) => {
+            let Some(path) = crate::playback::helper::source_path(token) else { return fail(404, "Not found") };
+            return crate::api::handlers::serve_file(Path::new(&path), "application/octet-stream", ctx.range.as_deref(), false);
+        }
         ("GET", ["identity"]) => {
             let db = app.db.lock().unwrap();
             return ok(json!({"MediaContainer": {"machineIdentifier": db.machine_id, "version": VERSION, "friendlyName": crate::server::display_name(&db.settings)}}));

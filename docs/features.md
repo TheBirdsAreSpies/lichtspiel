@@ -274,7 +274,9 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   encoders work; hardware acceleration automatic, off, VAAPI, Quick Sync or NVIDIA, with a choice
   of graphics device; quality or speed first; separate limits for conversions on the graphics chip
   and on the processor; folders for live conversions and converted downloads; and a switch that
-  turns conversion off. Per browser: a default quality, *play smaller videos in original quality*
+  turns conversion off. A **transcode helper** (another computer with a strong graphics chip,
+  `lichtspiel --transcode-helper`) can do the conversions for playback instead of the server:
+  [install.md](install.md#a-transcode-helper-on-another-computer). Per browser: a default quality, *play smaller videos in original quality*
   and *direct play* on or off. **Optimized versions** made with **Optimize** are listed under
   **Maintenance**, where they can be deleted.
 - **Maintenance** — scheduled tasks run only inside a maintenance window (**Settings → Scheduled

@@ -142,7 +142,14 @@ fn main() {
         return;
     }
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("lichtspiel {}\n\n  --data DIR         where the library, settings and plugins are kept (default ./data, or LICHTSPIEL_DATA)\n  --port N           port to listen on (default 8484 or the one saved in Settings, or LICHTSPIEL_PORT)\n  --bind ADDR        address to listen on (default 0.0.0.0)\n  --console          also open the optional desktop status window\n  --no-browser       don't open the web app in the browser on first start\n  --screenshot FILE  draw the status window, save it as PNG and exit\n  --reset-2fa NAME   switch off the two-step sign-in of a user (when the phone is lost) and exit\n  --self-test FILE   test every feature, write the results as JSON and exit", server::VERSION);
+        println!("lichtspiel {}\n\n  --data DIR         where the library, settings and plugins are kept (default ./data, or LICHTSPIEL_DATA)\n  --port N           port to listen on (default 8484 or the one saved in Settings, or LICHTSPIEL_PORT)\n  --bind ADDR        address to listen on (default 0.0.0.0)\n  --console          also open the optional desktop status window\n  --no-browser       don't open the web app in the browser on first start\n  --screenshot FILE  draw the status window, save it as PNG and exit\n  --reset-2fa NAME   switch off the two-step sign-in of a user (when the phone is lost) and exit\n  --self-test FILE   test every feature, write the results as JSON and exit
+
+  --transcode-helper convert video for a Lichtspiel server on this computer (see docs/install.md):
+    --helper-secret S  the secret the server is given too (at least 8 characters)
+    --helper-listen A  address and port to listen on (default 0.0.0.0:8486)
+    --ffmpeg PATH      ffmpeg to use (default ffmpeg on the PATH)
+    --hw auto|none|vaapi|qsv|nvenc, --hw-device D   the graphics chip to convert with
+    --helper-dir DIR   work folder for converted parts (default in the temp folder)", server::VERSION);
         return;
     }
     // `--relay`: the helper for reaching a home server from outside (runs on a computer on the internet).
@@ -151,6 +158,19 @@ fn main() {
         let tunnel = arg_value(&args, "--relay-tunnel").or_else(|| env("RELAY_TUNNEL")).unwrap_or_else(|| "0.0.0.0:8485".into());
         let secret = arg_value(&args, "--relay-secret").or_else(|| env("RELAY_SECRET")).unwrap_or_default();
         if let Err(e) = connect::relay::run_relay(&public, &tunnel, &secret) { eprintln!("{e}"); std::process::exit(1); }
+        return;
+    }
+    // `--transcode-helper`: converts video for a Lichtspiel server (runs on a computer with a strong graphics chip).
+    if args.iter().any(|a| a == "--transcode-helper") {
+        let o = playback::helper::HelperOptions {
+            listen: arg_value(&args, "--helper-listen").or_else(|| env("HELPER_LISTEN")).unwrap_or_else(|| format!("0.0.0.0:{}", playback::helper::DEFAULT_PORT)),
+            secret: arg_value(&args, "--helper-secret").or_else(|| env("HELPER_SECRET")).unwrap_or_default(),
+            ffmpeg: arg_value(&args, "--ffmpeg").or_else(|| env("FFMPEG")).unwrap_or_else(|| "ffmpeg".into()),
+            hw: arg_value(&args, "--hw").or_else(|| env("HW")).unwrap_or_else(|| "auto".into()),
+            hw_device: arg_value(&args, "--hw-device").or_else(|| env("HW_DEVICE")).unwrap_or_default(),
+            dir: arg_value(&args, "--helper-dir").or_else(|| env("HELPER_DIR")).map(PathBuf::from).unwrap_or_else(|| std::env::temp_dir().join("lichtspiel-helper")),
+        };
+        if let Err(e) = playback::helper::run(o) { eprintln!("{e}"); std::process::exit(1); }
         return;
     }
     if let Some(out) = arg_value(&args, "--self-test") {

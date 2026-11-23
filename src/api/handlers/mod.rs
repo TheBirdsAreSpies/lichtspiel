@@ -11,7 +11,7 @@ use crate::playback::transcode::{self, Method};
 use serde_json::{json, Value};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdout, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tiny_http::{Response, StatusCode};

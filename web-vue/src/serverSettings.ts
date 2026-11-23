@@ -13,6 +13,8 @@ export interface SettingsReply {
 export interface Transcoder {
   ffmpeg_found: boolean, ffmpeg_version?: string, hardware_encoders: string[], hardware_working?: string[], render_device?: boolean,
   hw_in_use: string, devices?: { value: string, name: string, backend: string }[],
+  /** The transcode helper, when one is set: whether it answers and what it converts with, or what is wrong. */
+  helper?: { address: string, ok: boolean, hw?: string, version?: string, ffmpeg_version?: string, same_version?: boolean, error?: string } | null,
 }
 
 export type Opt = [string | number, string, Record<string, string | number>?];
@@ -21,7 +23,7 @@ export type Row =
   | { k: string, label: string, kind: 'select', opts: Opt[] | ((r: SettingsReply, tc: Transcoder) => Opt[]), help?: string, params?: (r: SettingsReply) => Record<string, string | number> }
   | { kind: 'head', label: string }
   | { kind: 'note', label: string }
-  | { kind: 'info', what: 'lan' | 'you' | 'transcoder' }
+  | { kind: 'info', what: 'lan' | 'you' | 'transcoder' | 'helper' }
   | { kind: 'button', what: 'mail' | 'imdb', label: string, help?: string };
 
 const n = (list: number[], none: string, label?: string): Opt[] => [[0, none], ...list.map(x => [x, label || String(x), label ? { n: x } : undefined] as Opt)];
@@ -148,6 +150,11 @@ export const ROWS: Record<string, Row[]> = {
     { k: 'segmented_transcoder_timeout_seconds', label: 'Segmented transcoder timeout (seconds)', kind: 'number' },
     { k: 'ffmpeg', label: 'ffmpeg program', kind: 'text' },
     { k: 'ffprobe', label: 'ffprobe program', kind: 'text' },
+    { kind: 'head', label: 'Transcode helper' },
+    { kind: 'info', what: 'helper' },
+    { k: 'transcode_helper', label: 'Transcode helper (address)', kind: 'text', help: 'Another computer that converts video for playback with its graphics chip, so this server does not have to: start “lichtspiel --transcode-helper --helper-secret …” there and enter its address, e.g. http://192.168.1.50:8486. Empty = this server converts; when the helper can’t be reached, this server converts too.' },
+    { k: 'transcode_helper_secret', label: 'Transcode helper (secret)', kind: 'password', help: 'The secret given to the helper with --helper-secret (at least 8 characters).' },
+    { k: 'transcode_helper_source', label: 'Address of this server for the helper', kind: 'text', help: 'Where the helper reads the videos from, e.g. http://192.168.1.10:8484. Empty = found by itself. Set it when the helper can’t reach this server that way (Docker with another port, a proxy).' },
   ],
 };
 

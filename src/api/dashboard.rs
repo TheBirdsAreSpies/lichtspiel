@@ -161,6 +161,8 @@ fn now_playing(app: &Arc<App>, db: &Db) -> Vec<Value> {
     let seen = app.stats.seen.lock().unwrap().clone();
     // Converted pictures are made by the hardware when it works (see transcode::effective_hw).
     let hw = by.values().any(|e| e.method == "transcode") && matches!(crate::playback::transcode::effective_hw(&db.settings).as_str(), "vaapi" | "qsv" | "nvenc");
+    // Streams converted on the transcode helper: its graphics chip (as it said last).
+    let helper_hw = crate::playback::helper::last_known().is_some_and(|h| matches!(h.hw.as_str(), "vaapi" | "qsv" | "nvenc"));
     by.into_values()
         .map(|e| {
             let it = db.items.get(&e.item);
@@ -186,6 +188,7 @@ fn now_playing(app: &Arc<App>, db: &Db) -> Vec<Value> {
             o["source"] = json!(m.map(|f| json!({"container": f.container, "height": f.video().map(|v| v.height), "video_codec": f.video().map(|v| v.codec.clone()), "bitrate": f.bitrate})));
             // Picture and sound: what the file has and what is sent (as the transcoder does it).
             let transcode = e.method == "transcode";
+            let on_helper = transcode && crate::playback::helper::serving(e.user, e.item);
             let direct = e.method == "direct";
             o["video"] = json!(m.and_then(|f| f.video()).map(|v| json!({
                 "height": v.height, "codec": v.codec, "profile": v.profile,
@@ -193,7 +196,8 @@ fn now_playing(app: &Arc<App>, db: &Db) -> Vec<Value> {
                 "action": if transcode { "transcode" } else { "copy" },
                 "out_codec": if transcode { "h264".to_string() } else { v.codec.clone() },
                 "out_height": if transcode && e.height > 0 { e.height.min(v.height.max(1)) } else { v.height },
-                "hw": transcode && hw,
+                "hw": transcode && if on_helper { helper_hw } else { hw },
+                "helper": on_helper,
             })));
             o["audio"] = json!(m.and_then(|f| {
                 let tracks: Vec<_> = f.streams.iter().filter(|s| s.kind == "audio").collect();

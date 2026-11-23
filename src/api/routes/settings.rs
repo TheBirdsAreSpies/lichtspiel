@@ -88,6 +88,7 @@ pub(super) fn routes(app: &Arc<App>, ctx: &Ctx, user: &db::User, m: &str, segs: 
             if !admin { return need_admin(); }
             let mut v = transcode::detect(&app.settings());
             v["active_transcodes"] = json!(app.active_transcodes());
+            v["helper"] = crate::playback::helper::report(&app.settings());
             ok(v)
         }
         ("GET", ["api", "browse"]) => {

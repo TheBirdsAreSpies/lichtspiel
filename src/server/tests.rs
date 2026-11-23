@@ -306,6 +306,8 @@ fn every_route_needs_sign_in_and_every_admin_route_needs_an_admin() {
         ("POST", "/api/password/forgot"), ("GET", "/api/password/reset/{code}"), ("POST", "/api/password/reset/{code}"),
         // A plugin's own key instead of a sign-in (it is refused without it, see the test of reads_library).
         ("GET", "/api/plugins/{id}/library"), ("GET", "/api/plugins/{id}/history"),
+        // The transcode helper reads a video with a key made for that one stream (see playback::helper).
+        ("GET", "/helper/source/{token}"),
     ];
     for open in OPEN {
         assert!(crate::api::routes::ROUTES.iter().any(|r| (r.0, r.1) == *open), "{open:?} is on the open list but not in ROUTES");

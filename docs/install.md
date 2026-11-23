@@ -137,3 +137,36 @@ Data goes to a `data` folder next to where you start it. Options:
 | `--self-test <file.json>` | | builds test videos, runs every feature, writes a report |
 | `--screenshot <file.png>` | | draws the status window and saves a picture |
 
+## A transcode helper on another computer
+
+A NAS without a strong graphics chip can leave converting to another computer at home, for example a
+Windows PC with an NVIDIA card. That computer runs the same Lichtspiel program as a **transcode
+helper**: the server sends it each conversion for playback, the helper reads the video from the
+server over the network (no shared folders or drive letters needed), converts it with its own ffmpeg
+and graphics chip and sends the result back. Only conversions go there; a video that is only
+repackaged (direct stream) stays on the server, as does everything else (scans, preview pictures,
+intro and credits detection).
+
+1. On the helper computer, install a current **ffmpeg** (`winget install Gyan.FFmpeg`). An old one
+   (such as the 4.2 that comes with ImageMagick) may not be able to use a new graphics card.
+2. Copy `lichtspiel-server.exe` there and start it, with a secret of your own:
+
+   ```
+   lichtspiel-server.exe --transcode-helper --helper-secret "a long secret"
+   ```
+
+   It listens on port 8486 (`--helper-listen 0.0.0.0:8486`), finds the graphics chip by itself
+   (`--hw auto|none|vaapi|qsv|nvenc`, `--hw-device 1` for the second card) and prints the address to
+   enter. Allow the port in the Windows firewall for the home network. `--ffmpeg C:\pathfmpeg.exe`
+   if ffmpeg is not on the PATH. The same works on Linux and macOS (`LICHTSPIEL_HELPER_SECRET` …
+   as environment variables).
+3. On the server: **Settings → Transcoder → Transcode helper**, enter its address
+   (`http://192.168.1.50:8486`) and the secret. The page then says whether the helper answers and
+   what it converts with; the dashboard marks streams converted there.
+
+When the helper is off or can't be reached, the server converts itself again (it asks again after
+10 seconds). The helper reads the video at the address its requests come from and the server's
+port; if that does not work (Docker with another port mapping, a reverse proxy), enter the address
+under **Address of this server for the helper**. Keep the helper in the home network only: whoever
+knows the secret can make it run ffmpeg. Use the same Lichtspiel version on both; the settings page
+warns when they differ.

@@ -1,6 +1,7 @@
 //! Playback: progress and sessions, direct play with seeking, transcoding (progressive MP4 and HLS) and subtitles.
 
 use super::*;
+use crate::playback::helper;
 
 /// Progress from a player. Passing the watched point (by default the earlier of
 /// 90 % and the first credits marker) counts one viewing and
@@ -224,8 +225,8 @@ pub fn parse_range(r: &str, size: u64) -> Option<(u64, u64)> {
 
 /// Kills ffmpeg when the player goes away.
 struct ChildStream {
-    child: Child,
-    out: ChildStdout,
+    child: helper::Runner,
+    out: Box<dyn Read + Send>,
     app: Arc<App>,
     key: String,
     user: u64,
@@ -299,12 +300,24 @@ pub fn progressive(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     let settings = app.settings();
     let offset = ctx.param("offset").and_then(|o| o.parse::<f64>().ok()).unwrap_or(0.0).max(0.0);
     let args = transcode::progressive_args(&settings, &f, &d, &req, offset);
-    let child = Command::new(&settings.ffmpeg).args(&args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return fail(500, &format!("ffmpeg could not be started ({e}). Install ffmpeg or set its path in the settings.")),
+    // A conversion goes to the transcode helper when one is set and answers (made for its hardware).
+    let on_helper = helper::usable(&settings).filter(|_| helper::converts(&args)).and_then(|h| {
+        let args = transcode::progressive_args(&helper::settings_for(&settings, &h), &f, &d, &req, offset);
+        helper::start_pipe(&settings, &h, *app.port.lock().unwrap(), &f.path, &args, (user.id, it.id))
+            .map_err(|e| elog!("transcode helper: {e}; converting here")).ok()
+    });
+    let (child, out) = match on_helper {
+        Some((job, out)) => (helper::Runner::Helper(job), out),
+        None => {
+            let child = Command::new(&settings.ffmpeg).args(&args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
+            let mut child = match child {
+                Ok(c) => c,
+                Err(e) => return fail(500, &format!("ffmpeg could not be started ({e}). Install ffmpeg or set its path in the settings.")),
+            };
+            let out = child.stdout.take().unwrap();
+            (helper::Runner::Local(child), Box::new(out) as Box<dyn Read + Send>)
+        }
     };
-    let out = child.stdout.take().unwrap();
     let key = db::random_hex(8);
     let method = format!("{:?}", d.method).to_lowercase();
     app.progressive.lock().unwrap().insert(key.clone(), Playing { user_id: user.id, item_id: it.id, offset_ms: (offset * 1000.0) as u64, state: "playing".into(), method: method.clone(), updated: Instant::now(), client: "browser".into(), height: d.height, audio: req.audio_stream, viewer: ctx.viewer(), session_at: 0, watched_ms: 0 });
@@ -356,9 +369,18 @@ pub fn hls_start(app: &Arc<App>, ctx: &Ctx, user: &User, iid: &str) -> Resp {
     }
     let offset = ctx.param("offset").and_then(|o| o.parse::<f64>().ok()).unwrap_or(0.0).max(0.0);
     let args = transcode::hls_args(&settings, &f, &d, &req, offset, &dir.to_string_lossy().replace('\\', "/"));
-    let child = match Command::new(&settings.ffmpeg).args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
-        Ok(c) => c,
-        Err(e) => return fail(500, &format!("ffmpeg could not be started ({e}). Install ffmpeg or set its path in the settings.")),
+    // A conversion goes to the transcode helper when one is set and answers; it writes into its own folder.
+    let on_helper = helper::usable(&settings).filter(|_| helper::converts(&args)).and_then(|h| {
+        let args = transcode::hls_args(&helper::settings_for(&settings, &h), &f, &d, &req, offset, helper::DIR);
+        helper::start_hls(&settings, &h, *app.port.lock().unwrap(), &f.path, &args, (user.id, it.id))
+            .map_err(|e| elog!("transcode helper: {e}; converting here")).ok()
+    });
+    let child = match on_helper {
+        Some(job) => helper::Runner::Helper(job),
+        None => match Command::new(&settings.ffmpeg).args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+            Ok(c) => helper::Runner::Local(c),
+            Err(e) => return fail(500, &format!("ffmpeg could not be started ({e}). Install ffmpeg or set its path in the settings.")),
+        },
     };
     app.hls.lock().unwrap().insert(sid.clone(), HlsSession { id: sid.clone(), item_id: it.id, user_id: user.id, dir, child, last_access: Instant::now(), started_at: now(), method: d.method.clone(), height: d.height, audio: req.audio_stream, viewer: ctx.viewer() });
     let v = ctx.viewer();
@@ -383,13 +405,22 @@ pub fn hls_file(app: &Arc<App>, sid: &str, file: &str) -> Resp {
     let timeout = Duration::from_secs(app.settings().segmented_transcoder_timeout_seconds.max(5));
     let start = Instant::now();
     loop {
-        let (dir, finished) = {
+        let (dir, finished, on_helper) = {
             let mut map = app.hls.lock().unwrap();
             let Some(s) = map.get_mut(sid) else { return fail(404, "This stream has ended") };
             s.last_access = Instant::now();
             let finished = matches!(s.child.try_wait(), Ok(Some(_)));
-            (s.dir.clone(), finished)
+            (s.dir.clone(), finished, s.child.helper())
         };
+        // Converted on the helper: it waits for the file itself, and this server passes it on.
+        if let Some(job) = on_helper {
+            let (code, _, body) = job.fetch(file, timeout);
+            if let Some(s) = app.hls.lock().unwrap().get_mut(sid) { s.last_access = Instant::now(); }
+            if code == 200 { return bytes(200, if file == "index.m3u8" { "application/vnd.apple.mpegurl" } else { "video/mp2t" }, body); }
+            let why = serde_json::from_slice::<Value>(&body).ok().and_then(|v| v["ffmpeg"].as_str().filter(|s| !s.is_empty()).map(String::from));
+            if let Some(w) = &why { elog!("transcode helper: ffmpeg said: {w}"); }
+            return fail(code, "The transcoder did not write this part in time");
+        }
         let index = std::fs::read_to_string(dir.join("index.m3u8")).unwrap_or_default();
         let ready = if file == "index.m3u8" { index.contains(".ts") } else { index.lines().any(|l| l.trim() == file) };
         if ready || (finished && dir.join(file).exists()) {

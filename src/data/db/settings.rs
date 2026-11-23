@@ -159,6 +159,22 @@ pub struct Settings {
     pub relay_server: String,
     #[serde(default)]
     pub relay_secret: String,
+    /// Transcode helper: address of another computer running `lichtspiel --transcode-helper`
+    /// (e.g. http://192.168.1.50:8486) that converts video for playback with its ffmpeg and graphics
+    /// chip. Empty = this server converts. When the helper can't be reached, this server converts.
+    #[serde(default)]
+    pub transcode_helper: String,
+    /// The secret given to the helper with --helper-secret.
+    #[serde(default)]
+    pub transcode_helper_secret: String,
+    /// The address of this server as the helper reaches it (e.g. http://192.168.1.10:8484), where it
+    /// reads the video. Empty = the address the helper sees this server's requests come from, with this port.
+    #[serde(default)]
+    pub transcode_helper_source: String,
+    /// Not saved: set on the settings a helper converts with. `hw_accel` is then the method the helper
+    /// tested already, and `hdr_tone_mapping` already says whether the helper's ffmpeg can tone map.
+    #[serde(skip)]
+    pub on_helper: bool,
     /// Answer apps that search the home network for servers (GDM).
     #[serde(default = "yes")]
     pub gdm_enabled: bool,
@@ -456,6 +472,10 @@ impl Default for Settings {
             http_redirect_port: 0,
             relay_server: String::new(),
             relay_secret: String::new(),
+            transcode_helper: String::new(),
+            transcode_helper_secret: String::new(),
+            transcode_helper_source: String::new(),
+            on_helper: false,
             gdm_enabled: true,
             maintenance_start_hour: maint_start(),
             maintenance_end_hour: maint_end(),

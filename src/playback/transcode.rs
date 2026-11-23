@@ -114,7 +114,7 @@ fn is_hdr_picture(v: &crate::data::db::Stream) -> bool {
 }
 
 /// ffmpeg can tone map: it has the zscale (libzimg) and tonemap filters. Looked up once per ffmpeg.
-fn can_tonemap(ffmpeg: &str) -> bool {
+pub(crate) fn can_tonemap(ffmpeg: &str) -> bool {
     use std::sync::{Mutex, OnceLock};
     #[cfg(test)]
     { let _ = ffmpeg; return true; }
@@ -267,8 +267,8 @@ pub fn effective_hw(settings: &Settings) -> String {
     use std::sync::{Mutex, OnceLock};
     static CACHE: OnceLock<Mutex<std::collections::HashMap<String, String>>> = OnceLock::new();
     let want = settings.hw_accel.as_str();
-    if want == "none" {
-        return "none".into();
+    if want == "none" || settings.on_helper {
+        return want.into();
     }
     // (The tests run on machines without such hardware: they look at the command lines only.)
     #[cfg(test)]
@@ -356,7 +356,7 @@ fn video_args(settings: &Settings, d: &Decision, method: &Method, quality: u32, 
         return (pre, out);
     }
     let kb = d.bitrate_kbps.max(300);
-    let tm = if d.hdr && settings.hdr_tone_mapping && can_tonemap(&settings.ffmpeg) { TONEMAP } else { "" };
+    let tm = if d.hdr && settings.hdr_tone_mapping && (settings.on_helper || can_tonemap(&settings.ffmpeg)) { TONEMAP } else { "" };
     if !tm.is_empty() {
         out.extend([s("-colorspace"), s("bt709"), s("-color_primaries"), s("bt709"), s("-color_trc"), s("bt709")]);
     }

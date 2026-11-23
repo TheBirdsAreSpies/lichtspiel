@@ -38,7 +38,6 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Child;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -88,7 +87,8 @@ pub struct HlsSession {
     pub item_id: u64,
     pub user_id: u64,
     pub dir: PathBuf,
-    pub child: Child,
+    /// ffmpeg here, or the conversion on the transcode helper.
+    pub child: crate::playback::helper::Runner,
     pub last_access: Instant,
     pub started_at: u64,
     pub method: Method,

@@ -204,7 +204,7 @@ function videoLine(v) {
   if (!v) return null;
   const from = `${resName(v.height)} (${[codecName(v.codec), v.profile, v.hdr ? 'HDR' : ''].filter(Boolean).join(' ')})`;
   return v.action === 'transcode'
-    ? [from, ' → ', h('span', {}, `${resName(v.out_height)} (${codecName(v.out_codec)}) — ${t('Transcode')}${v.hw ? ' (hw)' : ''}`)]
+    ? [from, ' → ', h('span', {}, `${resName(v.out_height)} (${codecName(v.out_codec)}) — ${t('Transcode')}${v.hw ? ' (hw)' : ''}${v.helper ? ' · ' + t('on the transcode helper') : ''}`)]
     : [from, h('span', { class: 'to' }, ' — ' + t('Direct'))];
 }
 function audioLine(a) {

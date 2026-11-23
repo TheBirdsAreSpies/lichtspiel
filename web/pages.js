@@ -1361,6 +1361,15 @@ async function settingsPage(tab, qs) {
       inp('max_cpu_transcodes', t('Maximum simultaneous video transcodes with the processor (0 = no limit)'), 'number'),
       inp('hls_segment_seconds', t('HLS segment length (seconds)'), 'number'), inp('segmented_transcoder_timeout_seconds', t('Segmented transcoder timeout (seconds)'), 'number'),
       inp('ffmpeg', t('ffmpeg program')), inp('ffprobe', t('ffprobe program')),
+      h('h3', {}, t('Transcode helper')),
+      !tc.helper ? h('p', { class: 'dim' }, t('No transcode helper is set: this server converts.'))
+        : tc.helper.ok ? [h('p', { class: 'ok' }, t('Transcode helper {address}: reachable, converting with {hw}', { address: tc.helper.address, hw: tc.helper.hw === 'none' ? t('the processor (software)') : tc.helper.hw })),
+          h('p', { class: 'dim' }, tc.helper.ffmpeg_version || ''),
+          tc.helper.same_version ? null : h('p', { class: 'err' }, t('The helper runs another version of Lichtspiel ({version}); update it, so both make the same command lines.', { version: tc.helper.version || '?' }))]
+        : h('p', { class: 'err' }, t('Transcode helper {address}: {error}. This server converts until it is back.', { address: tc.helper.address, error: tc.helper.error })),
+      inp('transcode_helper', t('Transcode helper (address)'), 'text', t('Another computer that converts video for playback with its graphics chip, so this server does not have to: start “lichtspiel --transcode-helper --helper-secret …” there and enter its address, e.g. http://192.168.1.50:8486. Empty = this server converts; when the helper can’t be reached, this server converts too.')),
+      inp('transcode_helper_secret', t('Transcode helper (secret)'), 'password', t('The secret given to the helper with --helper-secret (at least 8 characters).')),
+      inp('transcode_helper_source', t('Address of this server for the helper'), 'text', t('Where the helper reads the videos from, e.g. http://192.168.1.10:8484. Empty = found by itself. Set it when the helper can’t reach this server that way (Docker with another port, a proxy).')),
     ],
   };
   // Without ffmpeg these do nothing: they are switched off and say why.

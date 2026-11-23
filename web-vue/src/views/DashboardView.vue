@@ -12,7 +12,7 @@ import LineChart, { type Series } from '../components/LineChart.vue';
 import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
 
-interface Video { height?: number, codec?: string, profile?: string, hdr?: boolean, action?: string, out_height?: number, out_codec?: string, hw?: boolean }
+interface Video { height?: number, codec?: string, profile?: string, hdr?: boolean, action?: string, out_height?: number, out_codec?: string, hw?: boolean, /** Converted on the transcode helper. */ helper?: boolean }
 interface Audio { language?: string, title?: string, codec?: string, channels?: number, action?: string, out_codec?: string, out_channels?: number }
 interface Playing {
   id: number, type: string, title?: string, grandparentTitle?: string, parentIndex?: number, index?: number, year?: number, thumb?: string,
@@ -65,7 +65,7 @@ const methodLabel = (p: Playing) => (p.method === 'transcode' ? t('Transcode') +
 function videoLine(v?: Video): [string, string, boolean] | null {
   if (!v) return null;
   const from = `${resName(v.height)} (${[codecName(v.codec), v.profile, v.hdr ? 'HDR' : ''].filter(Boolean).join(' ')})`;
-  return v.action === 'transcode' ? [from, ` → ${resName(v.out_height)} (${codecName(v.out_codec)}) — ${t('Transcode')}${v.hw ? ' (hw)' : ''}`, false] : [from, ' — ' + t('Direct'), true];
+  return v.action === 'transcode' ? [from, ` → ${resName(v.out_height)} (${codecName(v.out_codec)}) — ${t('Transcode')}${v.hw ? ' (hw)' : ''}${v.helper ? ' · ' + t('on the transcode helper') : ''}`, false] : [from, ' — ' + t('Direct'), true];
 }
 function audioLine(a?: Audio): [string, string, boolean] | null {
   if (!a) return null;
