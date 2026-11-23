@@ -2,17 +2,15 @@
 // Home: a banner for what to go on with, then the server's rows (GET /hubs): continue watching, the
 // watchlist, coming soon (from its own address: /hubs is also read by Plex apps), recently added …
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
-import { get, list, picture, pref, savePref, session, type Hub, type Item } from '../api';
+import { get, list, pref, savePref, session, type Hub, type Item } from '../api';
 import Modal from '../components/Modal.vue';
 import ShortDialog from '../components/ShortDialog.vue';
 import { loadComing, type Coming } from '../coming';
-import { resumeAt } from '../format';
 import { t } from '../i18n';
 import ComingRow from '../components/ComingRow.vue';
 import PosterRow from '../components/PosterRow.vue';
+import SpotBanner, { type Spot } from '../components/SpotBanner.vue';
 
-const router = useRouter();
 const hubs = ref<Hub[] | null>(null);
 const error = ref('');
 const coming = ref<Coming[]>([]);
@@ -56,25 +54,26 @@ function saveLayout(reset = false) {
   layout.value = readLayout();
 }
 
-// The banner: the first title to go on with, else the newest one added.
-const spot = computed<Item | null>(() => {
-  if (!layout.value.banner) return null;
+// The banner: where you left off first, then what is new; one title per show; at most five (as in the classic app).
+const spots = computed<Spot[]>(() => {
+  if (!layout.value.banner) return [];
   const all = hubs.value || [];
-  const pick = (id: string) => all.find(h => h.hubIdentifier === id && (h.Metadata || []).length);
-  const hub = pick('continueWatching') || all.find(h => (h.Metadata || []).length);
-  return hub ? (hub.Metadata as Item[])[0] : null;
+  const of = (id: string) => ((all.find(h => h.hubIdentifier === id) || {}).Metadata || []) as Item[];
+  const pool = [...of('continueWatching').slice(0, 2), ...of('recentlyAddedMovies').slice(0, 4), ...of('recentlyAddedEpisodes').slice(0, 3)];
+  // Nothing new and nothing started: whatever the other rows hold.
+  if (!pool.length) for (const h of all) pool.push(...((h.Metadata || []) as Item[]).slice(0, 3));
+  const seen = new Set<string>(), out: Spot[] = [];
+  for (const it of pool) {
+    if (!it || it.missing || !['movie', 'show', 'season', 'episode'].includes(it.type)) continue;
+    const key = String(it.grandparentRatingKey || (it.type === 'season' ? it.parentRatingKey : null) || it.id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const hub = all.find(h => (h.Metadata || []).includes(it));
+    out.push({ it, label: hub ? t(hub.title) : '' });
+    if (out.length >= 5) break;
+  }
+  return out;
 });
-const spotArt = computed(() => {
-  const it = spot.value;
-  if (!it) return '';
-  const id = it.type === 'episode' ? it.grandparentRatingKey : it.id;
-  return picture(`/library/metadata/${id}/art`);
-});
-const spotTitle = computed(() => (spot.value ? (spot.value.type === 'episode' ? spot.value.grandparentTitle : spot.value.title) : ''));
-function playSpot() {
-  const it = spot.value;
-  if (it) router.push({ name: 'play', params: { id: it.id }, query: { t: String(Math.floor(resumeAt(it))) } });
-}
 const wideRow = (h: Hub) => h.hubIdentifier === 'continueWatching';
 </script>
 
@@ -91,19 +90,8 @@ const wideRow = (h: Hub) => h.hubIdentifier === 'continueWatching';
         <p>{{ session.me?.admin ? t('No libraries yet. Add your movie and TV show folders to get started.') : t('The owner has not shared any libraries with you yet.') }}</p>
         <RouterLink v-if="session.me?.admin" to="/libraries" class="btn primary">{{ t('Add a library') }}</RouterLink>
       </div>
-      <section v-if="spot" class="spot">
-        <img :src="spotArt" alt="" class="spot-art" @error="($event.target as HTMLElement).remove()">
-        <div class="spot-text">
-          <h1>{{ spotTitle }}</h1>
-          <p v-if="spot.type === 'episode'" class="dim">{{ t('S{n}', { n: spot.parentIndex || 0 }) }} {{ t('E{n}', { n: spot.index || 0 }) }} · {{ spot.title }}</p>
-          <p v-if="spot.summary" class="plot clamp">{{ spot.summary }}</p>
-          <div class="actions">
-            <button class="primary big" @click="playSpot">{{ resumeAt(spot) ? t('▶ Resume') : t('▶ Play') }}</button>
-            <RouterLink class="btn big" :to="'/item/' + spot.id">{{ t('More info') }}</RouterLink>
-          </div>
-        </div>
-      </section>
-      <h1 v-if="!spot && session.sections.length">{{ t('Home') }}</h1>
+      <SpotBanner v-if="spots.length" :spots="spots" />
+      <h1 v-if="!spots.length && session.sections.length">{{ t('Home') }}</h1>
       <template v-for="x in rows" :key="x.id">
         <ComingRow v-if="!x.hub" :entries="coming" />
         <PosterRow v-else :title="x.title" :items="x.hub.Metadata || []" :wide="wideRow(x.hub)" :cont="x.id === 'continueWatching'">
