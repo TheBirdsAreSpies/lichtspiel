@@ -150,3 +150,11 @@ export const ROWS: Record<string, Row[]> = {
     { k: 'ffprobe', label: 'ffprobe program', kind: 'text' },
   ],
 };
+
+/** How many server settings match a search, per tab (the personal settings' search points to them). */
+export function serverMatches(q: string, tr: (s: string) => string): [string, string, number][] {
+  const n = q.trim().toLowerCase();
+  if (!n) return [];
+  const text = (x: Row) => [x.kind !== 'info' ? tr(x.label) : '', 'help' in x && x.help ? tr(x.help) : ''].join(' ').toLowerCase();
+  return TABS.filter(([k]) => ROWS[k]).map(([k, l]) => [k, l, ROWS[k].filter(x => x.kind !== 'info' && text(x).includes(n)).length] as [string, string, number]).filter(x => x[2] > 0);
+}

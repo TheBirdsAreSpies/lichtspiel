@@ -750,3 +750,5 @@ input.num { width: 100px; }
 .merge-row { display: flex; margin: 6px 0; }
 .only-phone { display: none; }
 @media (max-width: 760px) { .only-phone { display: flex; } }
+.settings .tabs .set-search { margin-left: auto; }
+.set-found .li { text-decoration: none; color: inherit; }

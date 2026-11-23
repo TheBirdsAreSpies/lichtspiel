@@ -3,6 +3,7 @@
 // a search goes through every tab. Save sends them all (PUT /api/settings). Maintenance and the API (tokens,
 // every address) have their own panels. The page stays while the tabs change (App.vue keys it by name).
 import { computed, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { api, get, session } from '../api';
 import { lang, t } from '../i18n';
 import { NEEDS_FFMPEG, ROWS, TABS, type Opt, type Row, type SettingsReply, type Transcoder } from '../serverSettings';
@@ -25,7 +26,9 @@ async function load() {
 }
 load();
 
-const query = ref('');
+// (Opened from the personal settings' search: ?q=… searches at once.)
+const route = useRoute();
+const query = ref(typeof route.query.q === 'string' ? route.query.q : '');
 type Field = Exclude<Row, { kind: 'head' | 'note' | 'info' | 'button' }>;
 const isField = (x: Row): x is Field => 'k' in x;
 const text = (x: Row) => [x.kind !== 'info' ? t(x.label) : '', 'help' in x && x.help ? t(x.help) : ''].join(' ').toLowerCase();
