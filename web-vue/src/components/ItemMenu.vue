@@ -8,6 +8,7 @@ import { api, get, list, session, type Item } from '../api';
 import { poke } from '../activity';
 import { fmtDateTime, fmtDur, fmtNum, fmtSize, isPlayable, isWatched, seasonTitle } from '../format';
 import AddToDialog from './AddToDialog.vue';
+import { addToQueue } from '../queue';
 import { t } from '../i18n';
 import { toast } from '../toast';
 import Icon from './Icon.vue';
@@ -208,6 +209,7 @@ async function remove() {
         <hr>
       </template>
       <button class="menu-row" role="menuitem" @click="share">{{ t('Share') }}</button>
+      <button v-if="it.type !== 'clip' && !it.missing" class="menu-row" role="menuitem" @click="pick(() => addToQueue(it))">{{ t('Add to queue') }}</button>
       <template v-if="admin">
         <hr>
         <button class="menu-row" role="menuitem" @click="pick(refresh)">{{ t('Refresh metadata') }}</button>

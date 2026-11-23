@@ -3,7 +3,9 @@
 // (the player opens with ?queue=1 only when it comes from here).
 import { reactive } from 'vue';
 import type { Router } from 'vue-router';
-import type { Item } from './api';
+import { get, list, type Item } from './api';
+import { t } from './i18n';
+import { toast } from './toast';
 import { resumeAt } from './format';
 
 export const queue = reactive({ items: [] as Item[] });
@@ -40,3 +42,24 @@ export function smartShuffle(items: Item[]): Item[] {
   }
   return out;
 }
+
+// ---- "Add to queue": what plays after whatever is playing now, one after the other. Kept in this browser
+// under the classic app's key ("queue"), so both apps share it. The player takes from it after a playlist's
+// rest and before the next episode.
+export type Queued = Pick<Item, 'id' | 'type' | 'title' | 'grandparentTitle' | 'parentIndex' | 'index' | 'thumb' | 'duration'>;
+export const upQueue = reactive({ list: ((): Queued[] => { try { return JSON.parse(localStorage.getItem('queue') || '[]'); } catch { return []; } })() });
+export function saveQueue() { try { localStorage.setItem('queue', JSON.stringify(upQueue.list)); } catch { /* private window */ } }
+// (Another tab changed it.)
+window.addEventListener('storage', e => { if (e.key === 'queue') { try { upQueue.list = JSON.parse(e.newValue || '[]'); } catch { upQueue.list = []; } } });
+
+/** Adds a title (a show or season: all its episodes) to the end of the queue; says how many. */
+export async function addToQueue(it: Item) {
+  const leaves = ['movie', 'episode', 'clip', 'track'].includes(it.type) ? [it]
+    : list<Item>(await get(`/library/metadata/${it.id}/allLeaves`).catch(() => null));
+  const ok = leaves.filter(x => !x.missing);
+  if (!ok.length) { toast(t('Nothing to add')); return; }
+  upQueue.list.push(...ok.map(x => ({ id: x.id, type: x.type, title: x.title, grandparentTitle: x.grandparentTitle, parentIndex: x.parentIndex, index: x.index, thumb: x.thumb, duration: x.duration })));
+  saveQueue();
+  toast(ok.length === 1 ? t('Added to the queue') : t('{n} episodes added to the queue', { n: ok.length }));
+}
+export const queueTitle = (x: Queued) => (x.type === 'episode' ? `${x.grandparentTitle || ''} · ${t('S{n}', { n: x.parentIndex || 0 })}${t('E{n}', { n: x.index || 0 })} ${x.title}` : x.title);

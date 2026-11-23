@@ -15,6 +15,7 @@ import { activity, cancelJob, poke } from './activity';
 import Modal from './components/Modal.vue';
 import { applyLook } from './look';
 import SideList from './components/SideList.vue';
+import QueueChip from './components/QueueChip.vue';
 import ActivityPanel from './components/ActivityPanel.vue';
 
 const route = useRoute();
@@ -111,6 +112,7 @@ const playingLabel = computed(() => (activity.playing ? t('Dashboard · {n} play
         :title="playingLabel" :aria-label="playingLabel">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-8 6 16 3-8h4" /></svg><b v-if="activity.playing">{{ activity.playing }}</b>
       </RouterLink>
+      <QueueChip />
       <div class="who">
         <button class="userbtn" aria-haspopup="menu" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
           <span class="av">{{ (name[0] || '?').toUpperCase() }}</span><span class="nm">{{ name }}</span>

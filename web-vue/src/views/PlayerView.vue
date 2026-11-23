@@ -19,7 +19,7 @@ import { api, get, list, picture, pref, savePref, session, ticket, withTicket, t
 import { fmtClock, fmtNum, fmtTime, langName, lang2, resumeAt } from '../format';
 import { t } from '../i18n';
 import Icon from '../components/Icon.vue';
-import { nextInQueue, queue, watching } from '../queue';
+import { nextInQueue, queue, saveQueue, upQueue, watching } from '../queue';
 import { tg, tgLeave, tgSend, type Room } from '../together';
 import Modal from '../components/Modal.vue';
 import TogetherPeople from '../components/TogetherPeople.vue';
@@ -335,7 +335,7 @@ function setQuality(v: string) {
 }
 // Whether the next episode (or what comes next in a playlist) plays by itself after a countdown.
 const autoNext = computed(() => pref('autoNext', '1') !== '0');
-const hasNext = computed(() => !!it.value && (it.value.type === 'episode' || !!route.query.queue));
+const hasNext = computed(() => !!it.value && (it.value.type === 'episode' || !!route.query.queue || upQueue.list.length > 0));
 
 // Speed (⚙, or < and >): kept with the account, like in the classic app.
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -403,7 +403,7 @@ const skipBtn = computed<{ label: string, to: number } | null>(() => {
   if (catchUp) return { label: t('On to the episode ▸'), to: -2 };
   for (const [m, label] of [[intro.value, 'Skip intro'], [recap.value, 'Skip recap']] as const) if (m && n >= m[0] && n < m[1] - 1) return { label: t(label), to: m[1] };
   if (d && credits.value.some(c => n >= c) && n < d - 3) {
-    const nxt = route.query.queue ? queue.items[0] : upNext.value;
+    const nxt = (route.query.queue ? queue.items[0] : null) || (upQueue.list[0] as Item | undefined) || (route.query.queue ? null : upNext.value);
     return { label: !nxt ? t('Skip credits') : nxt.type === 'episode' ? t('Next episode ▸') : t('Play next ▸'), to: -1 };
   }
   return null;
@@ -498,13 +498,18 @@ async function nextEpisode(): Promise<Item | null> {
 let done = false; // the end was reported already (not again when leaving)
 // What comes next: the playlist's next, or the next episode (not after a playlist's end).
 async function following(): Promise<Item | null> {
-  if (route.query.queue) return queue.items[0] || null;
+  // (A playlist's rest, then "Add to queue", then the next episode.)
+  if (route.query.queue && queue.items[0]) return queue.items[0];
+  if (upQueue.list[0]) return upQueue.list[0] as Item;
+  if (route.query.queue) return null;
   return upNext.value || await nextEpisode().catch(() => null);
 }
 function playNext() {
   hideNext();
   const fromQueue = route.query.queue ? nextInQueue() : null;
   if (fromQueue) { router.replace({ name: 'play', params: { id: fromQueue.id }, query: { t: String(Math.floor(resumeAt(fromQueue))), queue: '1' } }); return; }
+  const queued = upQueue.list.shift();
+  if (queued) { saveQueue(); router.replace({ name: 'play', params: { id: queued.id }, query: { t: '0' } }); return; }
   const next = route.query.queue ? null : upNext.value;
   if (next) router.replace({ name: 'play', params: { id: next.id }, query: { t: '0' } });
   else close();

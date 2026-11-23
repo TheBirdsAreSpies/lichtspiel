@@ -718,3 +718,10 @@ code.m-delete { color: #e5534b; }
 .edit-row.over-top { border-top-color: var(--accent); }
 .edit-row.over-bottom { border-bottom-color: var(--accent); }
 .nav-small .navhead-more, .nav-small .navhint, .nav-small .edit-row, .nav-small .edit-sep { display: none; }
+
+/* "Queue (n)" at the top and its list */
+.qchip { margin: 0; white-space: nowrap; }
+.qlist { max-height: 55vh; overflow: auto; }
+.qlist .li { display: flex; align-items: center; gap: 10px; }
+.qlist img { width: 88px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; flex: none; }
+.qlist .li button { margin: 0; }

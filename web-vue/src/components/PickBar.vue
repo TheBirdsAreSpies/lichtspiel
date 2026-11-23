@@ -8,7 +8,7 @@ import { api, get, list, session, type Item, type Playlist } from '../api';
 import { poke } from '../activity';
 import { isPlayable } from '../format';
 import { t } from '../i18n';
-import { playAll, smartShuffle } from '../queue';
+import { addToQueue, playAll, smartShuffle } from '../queue';
 import { toast } from '../toast';
 import AskDialog from './AskDialog.vue';
 import EditDetails from './EditDetails.vue';
@@ -98,6 +98,7 @@ const merge = () => run(async () => {
       <button class="small" :title="t('More')" :aria-label="t('More')" :aria-expanded="more" @click="more = !more">⋯</button>
       <div v-if="more" class="menu pick-menu" role="menu">
         <button class="menu-row" role="menuitem" @click="play(true)">{{ t('Shuffle') }}</button>
+        <button class="menu-row" role="menuitem" @click="run(async () => { for (const it of items) await addToQueue(it); })">{{ t('Add to queue') }}</button>
         <template v-if="session.me?.admin">
           <hr>
           <button v-if="canMerge()" class="menu-row" role="menuitem" @click="more = false; merging = true">{{ t('Merge into one…') }}</button>
