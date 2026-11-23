@@ -3,7 +3,7 @@
 // who is signed in. Signed out, and in the player, only the page itself.
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { session, signOut, savePref } from './api';
+import { session, signOut, savePref, type Section } from './api';
 import { lang, packs, setLang, t } from './i18n';
 import Icon from './components/Icon.vue';
 import { loadPanels, panels } from './plugins';
@@ -55,6 +55,8 @@ async function out() {
 // The tooltip of the activity at the top: every line, with the file a scan is on.
 const activityTitle = () => activity.lines.map(l => l.text + (l.title ? '\n' + l.title : '')).join('\n') || activity.last;
 const playingLabel = computed(() => (activity.playing ? t('Dashboard · {n} playing now', { n: activity.playing }) : t('Dashboard · nothing is playing')));
+// The number beside a library in the menu: its shows, or its videos.
+const sectionCount = (s: Section) => (s.type === 'show' ? (s.count ? t('{n} shows', { n: s.count }) : '') : s.videoCount ?? s.count ?? '');
 const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', photo: 'photo' }[type] || 'folder');
 </script>
 
@@ -111,7 +113,7 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
       <RouterLink v-if="session.me && session.me.can_download" to="/downloads" class="nav" active-class="on"><Icon name="download" /><span>{{ t('Downloads') }}</span><small v-if="dl.busy" class="nav-count" :title="t('{n} being converted', { n: dl.busy })">{{ dl.busy }}</small></RouterLink>
       <div class="nav-head">{{ t('Libraries') }}</div>
       <RouterLink v-for="s in session.sections" :key="s.id" :to="'/library/' + s.id" class="nav" active-class="on">
-        <Icon :name="icon(s.type)" /><span>{{ s.title }}</span>
+        <Icon :name="icon(s.type)" /><span>{{ s.title }}</span><small v-if="sectionCount(s)" class="nav-num">{{ sectionCount(s) }}</small>
       </RouterLink>
       <template v-if="panels.list.some(p => p.sidebar)">
         <div class="nav-head"></div>

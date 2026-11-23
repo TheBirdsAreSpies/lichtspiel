@@ -30,7 +30,7 @@ export interface Playlist {
 /** A collection or category of a library (GET /library/sections/{id}/collections). */
 export interface Group { title: string, thumb?: string, childCount: number, viewedLeafCount?: number }
 export interface Hub { hubIdentifier: string, title: string, Metadata?: Item[] }
-export interface Section { id: number, key: string, title: string, type: string, count?: number }
+export interface Section { id: number, key: string, title: string, type: string, count?: number, videoCount?: number }
 export interface Me {
   id: number, username: string, display_name?: string, full_name?: string, email?: string, two_factor?: boolean, admin: boolean,
   prefs?: Record<string, string>, can_download?: boolean, allow_transcode?: boolean,
