@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The frame around every page: the left menu (home and the libraries), the top bar with the search and
 // who is signed in. Signed out, and in the player, only the page itself.
-import { computed, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { pref, session, signOut, savePref } from './api';
 import { lang, packs, setLang, t } from './i18n';
@@ -17,6 +17,8 @@ import { applyLook } from './look';
 import SideList from './components/SideList.vue';
 import QueueChip from './components/QueueChip.vue';
 import ActivityPanel from './components/ActivityPanel.vue';
+import { playing } from './pip';
+const PlayerView = defineAsyncComponent(() => import('./views/PlayerView.vue'));
 
 const route = useRoute();
 const router = useRouter();
@@ -77,7 +79,17 @@ const actOpen = ref(false);
 const activityTitle = () => activity.lines.map(l => l.text + (l.title ? '\n' + l.title : '')).join('\n') || activity.last;
 // A page with tabs in its address stays while they change (no new loading); any other address is a new page.
 const pageKey = computed(() => (route.name === 'server' || route.name === 'settings' ? String(route.name) : route.path));
-const playingLabel = computed(() => (activity.playing ? t('Dashboard · {n} playing now', { n: activity.playing }) : t('Dashboard · nothing is playing')));
+// The player: what /play/:id names. Leaving that page with picture in picture on keeps it (hidden, the
+// video in the small window); otherwise leaving ends it. Coming back to the same title shows it again as it is.
+watch(() => route.fullPath, () => {
+  if (route.name === 'play') {
+    const id = String(route.params.id);
+    if (!(playing.small && playing.id === id)) playing.query = { ...route.query };
+    playing.id = id; playing.small = false;
+  } else if (playing.id && document.pictureInPictureElement) playing.small = true;
+  else { playing.id = ''; playing.small = false; }
+}, { immediate: true });
+const playingLabel =computed(() => (activity.playing ? t('Dashboard · {n} playing now', { n: activity.playing }) : t('Dashboard · nothing is playing')));
 </script>
 
 <template>
@@ -172,8 +184,9 @@ const playingLabel = computed(() => (activity.playing ? t('Dashboard · {n} play
       <button type="button" :class="{ on: sideOpen }" :aria-expanded="sideOpen" @click="sideOpen = !sideOpen"><Icon name="menu" /><span>{{ t('Menu') }}</span></button>
     </nav>
   </div>
-  <!-- (Keyed by the address: the next episode is a new player.) -->
   <RouterView v-else :key="route.path" />
+  <!-- (Keyed by the title: the next episode is a new player.) -->
+  <PlayerView v-if="playing.id && session.me" :id="playing.id" :key="playing.id" :query="playing.query" />
   <div v-if="toastState.text" :key="toastState.n" class="toast" role="status">{{ toastState.text }}<button v-if="toastState.action" class="small toast-act" @click="toastRun">{{ toastState.action.label }}</button></div>
   <Modal v-if="invites.shown" :title="t('Watch together')" @close="invites.shown = null">
     <p>{{ t('{by} asks you to watch “{title}” together.', { by: invites.shown.by, title: invites.shown.title }) }}</p>

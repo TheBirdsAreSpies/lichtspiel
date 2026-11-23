@@ -14,7 +14,8 @@
 // The owner can move a subtitle's timing (subtitle menu). "What happened so far" (?until=…&then=…) plays
 // the end of the episode before without saving anything, then goes on to the episode.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter, type LocationQuery } from 'vue-router';
+import { playing } from '../pip';
 import { api, get, list, picture, pref, savePref, session, ticket, withTicket, type Container, type Item, type Stream, type Subtitle } from '../api';
 import { fmtClock, fmtNum, fmtTime, langName, lang2, resumeAt } from '../format';
 import { t } from '../i18n';
@@ -26,9 +27,16 @@ import Modal from '../components/Modal.vue';
 import TogetherPeople from '../components/TogetherPeople.vue';
 import { cast, castHooks, castLoad, castMute, castPause, castPick, castSeek, castStop, castToggle, castUrl, castVolume, initCast } from '../cast';
 
-const props = defineProps<{ id: string }>();
-const route = useRoute();
+const props = defineProps<{ id: string, query: LocationQuery }>();
+// The address the player was opened with (kept while it plays on in the small window on other pages).
+const route = { query: props.query };
 const router = useRouter();
+// The next title: a new address, or while only the small window shows, a new player there.
+function goPlay(item: string | number, query: LocationQuery) {
+  const id = String(item);
+  if (playing.small) { playing.query = query; playing.id = id; return; }
+  router.replace({ name: 'play', params: { id }, query });
+}
 const video = ref<HTMLVideoElement | null>(null);
 const box = ref<HTMLElement | null>(null);
 
@@ -249,7 +257,7 @@ async function tgPoll() {
   if (st.seq <= tg.seq) return;
   tg.seq = st.seq; tg.quiet = Date.now() + 2000;
   // Another title: its own player, from where the room is.
-  if (st.item !== it.value.id) { router.replace({ path: '/play/' + st.item, query: { t: String(st.position / 1000), together: '1', ...(st.paused ? { paused: '1' } : {}) } }); return; }
+  if (st.item !== it.value.id) { goPlay(st.item, { t: String(st.position / 1000), together: '1', ...(st.paused ? { paused: '1' } : {}) }); return; }
   const want = st.position / 1000;
   if (Math.abs(now.value - want) > 2) seek(want);
   const v = video.value;
@@ -600,11 +608,11 @@ async function following(): Promise<Item | null> {
 function playNext() {
   hideNext();
   const fromQueue = route.query.queue ? nextInQueue() : null;
-  if (fromQueue) { router.replace({ name: 'play', params: { id: fromQueue.id }, query: { t: String(Math.floor(resumeAt(fromQueue))), queue: '1' } }); return; }
+  if (fromQueue) { goPlay(fromQueue.id, { t: String(Math.floor(resumeAt(fromQueue))), queue: '1' }); return; }
   const queued = upQueue.list.shift();
-  if (queued) { saveQueue(); router.replace({ name: 'play', params: { id: queued.id }, query: { t: '0' } }); return; }
+  if (queued) { saveQueue(); goPlay(queued.id, { t: '0' }); return; }
   const next = route.query.queue ? null : upNext.value;
-  if (next) router.replace({ name: 'play', params: { id: next.id }, query: { t: '0' } });
+  if (next) goPlay(next.id, { t: '0' });
   else close();
 }
 // The box at the end: "Up next" with a countdown (none when it doesn't play by itself), or "Are you still watching?".
@@ -653,7 +661,7 @@ let caughtUp = false;
 function catchUpDone() {
   if (!catchUp || caughtUp) return;
   caughtUp = true;
-  router.replace({ name: 'play', params: { id: catchUp.then }, query: { t: String(Math.floor(catchUp.at)) } });
+  goPlay(catchUp.then, { t: String(Math.floor(catchUp.at)) });
 }
 watch(now, n => { if (catchUp && n >= catchUp.until && !waiting.value) catchUpDone(); });
 
@@ -700,8 +708,12 @@ function sleepWake() { if (sleepVol !== null && sleep.value) { sleep.value = nul
 const pipOk = !!(document as Document & { pictureInPictureEnabled?: boolean }).pictureInPictureEnabled;
 function togglePip() {
   const v = video.value; if (!v || !document.pictureInPictureEnabled) return;
-  if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
-  else v.requestPictureInPicture().catch(e => say((e as Error).message));
+  if (document.pictureInPictureElement) { document.exitPictureInPicture().catch(() => {}); return; }
+  // The video goes to the small window and the big player steps aside (back to the page before).
+  v.requestPictureInPicture().then(() => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    menu.value = ''; close();
+  }).catch(e => say((e as Error).message));
 }
 // The list of keyboard shortcuts (?, or ⚙ → Keyboard shortcuts).
 const showKeys = ref(false);
@@ -731,7 +743,7 @@ function wake() {
   idleTimer = window.setTimeout(() => { if (!paused.value && !menu.value && pending.value === null) idle.value = true; }, 3000);
 }
 function key(e: KeyboardEvent) {
-  if (e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement).tagName === 'INPUT' && (e.target as HTMLInputElement).type !== 'range') return;
+  if (playing.small || e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement).tagName === 'INPUT' && (e.target as HTMLInputElement).type !== 'range') return;
   const v = video.value; if (!v) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (k === 'Escape') {
@@ -779,6 +791,15 @@ onMounted(async () => {
   v.addEventListener('canplay', () => { waiting.value = false; });
   v.addEventListener('volumechange', () => { if (cast.on) return; muted.value = v.muted; volume.value = v.volume; });
   v.addEventListener('ended', ended);
+  // The small window closed while only it showed: ✕ (the browser pauses the video just after) ends playing,
+  // "back to tab" brings the big player back.
+  v.addEventListener('leavepictureinpicture', () => {
+    if (!playing.small) return;
+    window.setTimeout(() => {
+      if (gone || !playing.small) return;
+      if (v.paused) { playing.id = ''; playing.small = false; } else router.push({ name: 'play', params: { id: props.id } });
+    }, 300);
+  });
   v.addEventListener('error', () => { if (v.src) { waiting.value = false; error.value = t('This video could not be played. Try a lower quality in ⚙.'); } });
   document.addEventListener('keydown', key);
   document.addEventListener('fullscreenchange', onFull);
@@ -794,6 +815,12 @@ onMounted(async () => {
     if (gone) return;
     await load(Number(route.query.t) || 0);
     if (route.query.paused) { if (cast.on) castPause(); else v.pause(); }
+    // The next title while only the small window showed: into the small window too. The browser may refuse
+    // that without a click; then the big player comes back with it.
+    if (playing.small && !gone) {
+      const toSmall = () => { v.requestPictureInPicture().catch(() => { if (!gone && playing.small) router.push({ name: 'play', params: { id: props.id } }); }); };
+      if (v.readyState >= 1) toSmall(); else v.addEventListener('loadedmetadata', toSmall, { once: true });
+    }
     if (tg.code) {
       // In a room: a title started here (the next episode …) goes to the others; one from the room was said already.
       if (!route.query.together) { tg.quiet = 0; tgSend(Number(route.query.t) || 0, false, { item: it.value.id }); }
@@ -816,7 +843,7 @@ onBeforeUnmount(() => {
   clearInterval(sleepTimer); sleepFade(1); clearInterval(tgTimer);
   // Leaving the player (not going on to the next episode) ends the sleep timer.
   // (the TV too; going on to the next episode, it plays that one)
-  if (!router.currentRoute.value.path.startsWith('/play/')) { watching.sleep = null; castStop(); tgLeave(); }
+  if (!playing.id) { watching.sleep = null; castStop(); tgLeave(); }
   if (castHooks.started === castStarted) { castHooks.started = castHooks.ended = castHooks.finished = castHooks.failed = undefined; }
   if (sound) sound.ctx.close().catch(() => {});
   document.removeEventListener('keydown', key);
@@ -824,6 +851,7 @@ onBeforeUnmount(() => {
   if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
   if (it.value && !stopped.value && !done) report('stopped');
   const v = video.value;
+  if (v && document.pictureInPictureElement === v) document.exitPictureInPicture().catch(() => {});
   if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 });
@@ -846,7 +874,7 @@ const endsAt = computed(() => {
 </script>
 
 <template>
-  <div ref="box" class="player" :class="{ idle }" :style="cueStyle" @mousemove="wake" @click.self="toggle">
+  <div ref="box" class="player" :class="{ idle, small: playing.small }" :style="cueStyle" @mousemove="wake" @click.self="toggle">
     <video ref="video" playsinline :poster="cover" @click="toggle"></video>
     <div v-if="lyrics && lyricsOn" ref="lyricsBox" class="p-lyrics" :class="{ sync: lyrics.synced }" @click.self="toggle">
       <p v-for="(x, n) in lyrics.lines" :key="n" :class="{ now: n === lyricLine }" @click="lyrics.synced && x.t !== undefined && seek(x.t / 1000)">{{ x.text || ' ' }}</p>

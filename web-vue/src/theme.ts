@@ -3,6 +3,7 @@
 // the button on the page (kept in this browser, "themeMuted", the classic app's keys).
 import { reactive } from 'vue';
 import { pref, ticket, withTicket } from './api';
+import { playing } from './pip';
 
 const VOLUME = 0.5, FADE_MS = 2000;
 export const theme = reactive({ playing: false, muted: (() => { try { return localStorage.getItem('themeMuted') === '1'; } catch { return false; } })() });
@@ -18,9 +19,10 @@ function fade(a: HTMLAudioElement) {
   step();
 }
 
-/** Starts the theme of an item's page (once per page: a second call for the same id does nothing). */
+/** Starts the theme of an item's page (once per page: a second call for the same id does nothing; none while
+ *  a video plays in the small picture-in-picture window). */
 export async function startTheme(id: string) {
-  if (pref('themeMusic', '1') !== '1' || forId === id) return;
+  if (pref('themeMusic', '1') !== '1' || forId === id || playing.id) return;
   stopTheme();
   forId = id;
   const tk = await ticket('item=' + id).catch(() => '');

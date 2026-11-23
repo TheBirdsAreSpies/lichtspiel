@@ -62,7 +62,9 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   while it fades switches it off; it lasts over the episodes that follow, in the app too) and
   **Night mode** (loud parts quieter, voices clearer: a compressor in the browser or in the app's
   player, so it works on any video, also played directly, and changes at once; it is remembered
-  and follows the account); picture in picture and full screen (double click). During the credits it offers
+  and follows the account); picture in picture (the video goes to a small window in the corner and the
+  page before comes back, so one can look around while it plays; ✕ on the window stops, "back to tab"
+  brings the big player back) and full screen (double click). During the credits it offers
   **Skip credits** / **Next episode**; at the end the next episode (or what is queued) starts
   after a 10-second countdown. Keyboard: Space/K, ←/→ (Shift: 1 min), ↑/↓, M, F, P, C, N, 0–9,
   < > — **?** lists them all. Media keys and the lock screen work too. `#/play/<id>?t=90` is a

@@ -33,7 +33,9 @@ export const router = createRouter({
     { path: '/watchlist', name: 'watchlist', component: () => import('./views/WatchlistView.vue') },
     { path: '/playlists', name: 'playlists', component: () => import('./views/PlaylistsView.vue') },
     { path: '/playlist/:id', name: 'playlist', component: () => import('./views/PlaylistView.vue'), props: true },
-    { path: '/play/:id', name: 'play', component: () => import('./views/PlayerView.vue'), props: true, meta: { bare: true } },
+    // The player itself is shown by App.vue (from pip.ts), so it can stay while its page is left with
+    // picture in picture on; the page is only the address.
+    { path: '/play/:id', name: 'play', component: { render: () => null }, meta: { bare: true } },
     { path: '/:rest(.*)', name: 'notfound', component: () => import('./views/NotFoundView.vue') },
   ],
   scrollBehavior: (_to, _from, saved) => saved || { top: 0 },
