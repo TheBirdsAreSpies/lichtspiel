@@ -234,6 +234,10 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .detail { position: relative; display: flex; gap: 32px; align-items: flex-start; margin-top: 30px; }
 .detail .poster { width: 240px; flex: none; aspect-ratio: 2 / 3; border-radius: var(--radius); overflow: hidden; background: var(--panel2); position: relative; box-shadow: 0 16px 40px rgba(0,0,0,.5); }
 .detail .poster.playable { cursor: pointer; }
+/* as in the classic app: a playable poster darkens under the mouse, with a line in the accent colour */
+.detail .poster img { transition: filter .15s; }
+.detail .poster.playable:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
+.detail .poster.playable:hover img { filter: brightness(.4); }
 .detail .info { flex: 1; min-width: 0; max-width: 820px; }
 .tagline { font-style: italic; color: var(--dim); }
 .plot { max-width: 760px; }
