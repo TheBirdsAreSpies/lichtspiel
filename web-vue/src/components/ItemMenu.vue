@@ -56,7 +56,7 @@ const fail = (e: unknown) => toast((e as Error).message, 6000);
 
 // ---- a poster's own entries
 async function watchlist() {
-  try { await api('PUT', `/api/items/${it.value.id}/watchlist`, { watchlist: !it.value.watchlist }); toast(it.value.watchlist ? t('Removed from watchlist') : t('Added to watchlist')); emit('changed'); } catch (e) { fail(e); }
+  try { await api('PUT', `/api/items/${it.value.id}/watchlist`, { watchlist: !it.value.watchlist }); toast(it.value.watchlist ? t('Removed from your watchlist') : t('Added to your watchlist')); emit('changed'); } catch (e) { fail(e); }
 }
 async function markWatched(watched: boolean) {
   try { await api('POST', `/:/${watched ? 'scrobble' : 'unscrobble'}?key=${it.value.id}`); toast(watched ? t('Marked as watched') : t('Marked as unwatched')); emit('changed'); } catch (e) { fail(e); }
