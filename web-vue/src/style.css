@@ -125,7 +125,12 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
   background: rgba(0,0,0,.6); color: #fff; justify-content: center; opacity: 0; transition: opacity .15s; padding: 0; }
 .card:hover .play, .detail .poster.playable:hover .play { opacity: 1; }
 .poster .play:hover { background: var(--accent); }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card), 1fr)); gap: 22px 16px; }
+/* (--card-grid: the poster size chosen with the slider in a library; phones keep their own.) */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid, var(--card)), 1fr)); gap: 22px 16px; }
+.size { display: inline-flex; align-items: center; gap: 6px; }
+.size input { width: 110px; }
+.size .small-mark { font-size: 11px; }
+.size .big-mark { font-size: 18px; }
 .grid .card { width: auto; }
 .row { margin: 26px 0; }
 .row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
@@ -461,7 +466,8 @@ input.color { width: 60px; height: 38px; padding: 2px; }
   .ep-thumb { width: 130px; }
   .ep .ep-plot { display: none; }
   .row-arrows, .vol { display: none; }
-  .grid { gap: 16px 10px; }
+  .grid { gap: 16px 10px; grid-template-columns: repeat(auto-fill, minmax(var(--card), 1fr)); }
+  .size { display: none; }
   .grid.has-letters { padding-right: 16px; }
   .letters { right: 0; top: calc(var(--top) + 8px); bottom: calc(66px + env(safe-area-inset-bottom)); height: auto; max-height: none; transform: none; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
   .letters button { padding: 0 6px; font-size: 10px; touch-action: pan-y; }

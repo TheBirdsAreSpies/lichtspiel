@@ -9,6 +9,7 @@ import Icon from './components/Icon.vue';
 import { loadPanels, panels } from './plugins';
 import { dl, loadDlCount } from './downloads';
 import { toastState } from './toast';
+import { cardSize } from './cardSize';
 import { checkInvites, declineInvite, invites } from './together';
 import { activity, cancelJob, poke } from './activity';
 import Modal from './components/Modal.vue';
@@ -71,7 +72,7 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
 </script>
 
 <template>
-  <div v-if="framed" class="frame" :class="{ 'side-open': sideOpen, 'nav-small': navSmall }">
+  <div v-if="framed" class="frame" :class="{ 'side-open': sideOpen, 'nav-small': navSmall }" :style="{ '--card-grid': cardSize + 'px' }">
     <header class="top">
       <button class="iconbtn burger" :aria-label="t('Menu')" :title="navSmall ? t('Expand the menu') : t('Collapse the menu to its icons')" @click="burger"><Icon name="menu" /></button>
       <RouterLink to="/" class="brand">

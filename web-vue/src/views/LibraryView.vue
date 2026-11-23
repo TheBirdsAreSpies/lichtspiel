@@ -7,6 +7,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { get, list, picture, session, type Group, type Item } from '../api';
+import { CARD, cardSize, setCardSize } from '../cardSize';
 import { chipLabel, fromQuery, type Rule } from '../filters';
 import { t } from '../i18n';
 import AdvancedFilters from '../components/AdvancedFilters.vue';
@@ -280,6 +281,11 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
           <select v-model="sort" :aria-label="t('Sort')">
             <option v-for="[v, l] in SORTS" :key="v" :value="v">{{ t(l) }}</option>
           </select>
+          <label class="size" :title="t('Poster size')">
+            <span class="dim small-mark">▮</span>
+            <input type="range" :min="CARD.min" :max="CARD.max" step="10" :value="cardSize" :aria-label="t('Poster size')" @input="setCardSize(Number(($event.target as HTMLInputElement).value))">
+            <span class="dim big-mark">▮</span>
+          </label>
           <FilterButton :url="`/library/sections/${id}/filters`" :active="active" :remember-key="'vue-libFilter:' + id" :advanced="rules.length" @set="setFilter" @advanced="advancedOpen = true" />
         </div>
       </div>
