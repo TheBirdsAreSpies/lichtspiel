@@ -111,6 +111,9 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .poster img.in, .detail .poster img { opacity: 1; }
 .card:hover .poster { outline: 2px solid var(--accent); outline-offset: -2px; }
 .card.missing .poster img { filter: grayscale(1) brightness(.6); }
+/* a watched title: darker, as in the classic app (light again under the mouse) */
+.card.watched .poster::before { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,.45), rgba(0,0,0,.2) 40%, rgba(0,0,0,.2)); pointer-events: none; transition: opacity .15s; }
+.card.watched:hover .poster::before { opacity: 0; }
 .card .t { margin-top: 6px; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .s { color: var(--dim); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0,0,0,.6); }
