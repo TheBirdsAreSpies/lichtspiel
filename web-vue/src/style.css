@@ -344,7 +344,7 @@ a.person:hover b { color: var(--accent); }
 .note { margin-top: 24px; }
 
 /* ---------- settings */
-.settings { max-width: 900px; }
+.settings { max-width: 1200px; }
 /* (Many tabs with long names: on a wide screen they go on in a second line instead of off the edge; a phone swipes them.) */
 @media (min-width: 761px) { .settings .tabs { flex-wrap: wrap; overflow: visible; row-gap: 6px; } }
 .admin-link { margin-left: auto; font-size: 14px; padding: 6px 12px; white-space: nowrap; }
