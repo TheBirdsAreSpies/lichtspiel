@@ -745,3 +745,8 @@ input.num { width: 100px; }
 .p-pre-skip, .p-pre-next { position: absolute; right: 24px; z-index: 7; }
 .p-pre-skip { bottom: 90px; }
 .p-pre-next { bottom: 134px; }
+.poster .gone { position: absolute; top: 6px; right: 6px; z-index: 2; background: rgba(0,0,0,.7); color: #ff7a7a; border-radius: 50%; padding: 3px; display: flex; }
+.poster .gone svg { width: 16px; height: 16px; }
+.merge-row { display: flex; margin: 6px 0; }
+.only-phone { display: none; }
+@media (max-width: 760px) { .only-phone { display: flex; } }

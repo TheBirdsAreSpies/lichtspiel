@@ -118,6 +118,7 @@ const playingLabel = computed(() => (activity.playing ? t('Dashboard · {n} play
           <span class="av">{{ (name[0] || '?').toUpperCase() }}</span><span class="nm">{{ name }}</span>
         </button>
         <div v-if="menuOpen" class="menu" role="menu" @click.stop>
+          <div class="menu-row dim only-phone">{{ t('Signed in as {name}', { name }) }}</div>
           <label class="menu-row">
             {{ t('Language') }}
             <select :value="lang" @change="chooseLang(($event.target as HTMLSelectElement).value)">

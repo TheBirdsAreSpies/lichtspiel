@@ -51,6 +51,7 @@ function play() {
       <img v-if="src" :src="src" :srcset="srcset" sizes="(max-width:760px) 34vw, 180px" loading="lazy" alt="" @load="($event.target as HTMLElement).classList.add('in')">
       <div v-if="progress > 0" class="bar"><i :style="{ width: progress * 100 + '%' }"></i></div>
       <span v-if="unseen > 0" class="badge">{{ unseen }}</span>
+      <span v-if="it.missing" class="gone" :title="t('The file is gone from disk; the item is in the library’s trash')" :aria-label="t('Unavailable')"><Icon name="close" /></span>
       <span v-if="pickable" class="pick" role="checkbox" :aria-checked="!!picked" :title="t('Select')" :aria-label="t('Select')" @click.prevent.stop="emit('pick', $event)"></span>
       <span v-if="showSeen(it)" class="seen" :title="t('Watched')"><Icon name="check" /></span>
       <button v-if="admin" type="button" class="edit" :title="t('Edit details')" :aria-label="t('Edit details')" @click.prevent.stop="editing = true"><Icon name="edit" /></button>

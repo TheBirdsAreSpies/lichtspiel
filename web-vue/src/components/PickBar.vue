@@ -23,6 +23,7 @@ const asking = ref(false);
 const editing = ref<number | null>(null);
 const bulk = ref(false);
 const merging = ref(false);
+const mainAt = ref(0); // the title that stays with its details
 const more = ref(false);
 const ids = () => props.items.map(i => i.id);
 onMounted(async () => { try { pls.value = list<Playlist>(await get('/playlists?kind=manual&owner=me&sort=title')); } catch { /* the menu has only "New" */ } });
@@ -77,7 +78,8 @@ const each = (path: (it: Item) => string, msg: (n: number) => string) => run(asy
 const canMerge = () => props.items.length > 1 && props.items.every(x => x.type === props.items[0].type && (x.type === 'movie' || x.type === 'episode'));
 const merge = () => run(async () => {
   merging.value = false;
-  const r = await api<{ merged: number }>('POST', '/api/merge', { ids: ids() });
+  const all = ids(), keep = all[mainAt.value] ?? all[0];
+  const r = await api<{ merged: number }>('POST', '/api/merge', { ids: [keep, ...all.filter(x => x !== keep)] });
   toast(t('{n} merged into one', { n: r.merged + 1 })); emit('changed', []); emit('clear');
 });
 </script>
@@ -103,7 +105,7 @@ const merge = () => run(async () => {
         <button class="menu-row" role="menuitem" @click="run(async () => { for (const it of items) await addToQueue(it); })">{{ t('Add to queue') }}</button>
         <template v-if="session.me?.admin">
           <hr>
-          <button v-if="canMerge()" class="menu-row" role="menuitem" @click="more = false; merging = true">{{ t('Merge into one…') }}</button>
+          <button v-if="canMerge()" class="menu-row" role="menuitem" @click="more = false; mainAt = 0; merging = true">{{ t('Merge into one…') }}</button>
           <button class="menu-row" role="menuitem" @click="each(it => `/library/metadata/${it.id}/refresh`, n => t('Downloading details for {n} titles', { n }))">{{ t('Refresh metadata') }}</button>
           <button class="menu-row" role="menuitem" @click="each(it => `/library/metadata/${it.id}/analyze`, () => t('Analyzing — progress is shown at the top'))">{{ t('Analyze') }}</button>
         </template>
@@ -114,9 +116,9 @@ const merge = () => run(async () => {
     <AskDialog v-if="asking" :title="t('Name of the new playlist')" :ok="t('Add')" @done="newPlaylist" />
     <EditDetails v-if="editing" :id="editing" @close="editing = null" @saved="emit('changed', ids()); editing = null" />
     <BulkEdit v-if="bulk" :ids="ids()" @close="bulk = false" @saved="emit('changed', ids()); emit('clear')" />
-    <Modal v-if="merging" :title="t('Merge into one…')" @close="merging = false">
-      <p>{{ t('Merge {n} titles into one with several versions?', { n: items.length }) }}</p>
-      <ul><li v-for="it in items" :key="it.id">{{ it.title }}<span v-if="it.year" class="dim"> ({{ it.year }})</span></li></ul>
+    <Modal v-if="merging" :title="t('Merge into one')" @close="merging = false">
+      <p class="dim">{{ t('The one you pick stays with its details. The others are left out of the lists and offered on its page as other versions to play. Taking them apart again is possible.') }}</p>
+      <label v-for="(it, i) in items" :key="it.id" class="chk merge-row"><input v-model="mainAt" type="radio" name="mainitem" :value="i"> {{ it.title }}<span v-if="it.year" class="dim"> ({{ it.year }})</span></label>
       <template #actions><button class="primary" @click="merge">{{ t('Merge') }}</button><button @click="merging = false">{{ t('Cancel') }}</button></template>
     </Modal>
   </div>

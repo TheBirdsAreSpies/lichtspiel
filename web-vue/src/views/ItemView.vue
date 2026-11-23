@@ -273,6 +273,7 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
             <div v-else class="initials">{{ initials(p.name) }}</div>
             <b>{{ p.name }}</b>
             <div v-if="p.role" class="dim">{{ p.role }}</div>
+            <div v-if="(p.count || 0) > 1" class="dim">{{ t('{n} in this library', { n: p.count || 0 }) }}</div>
           </RouterLink>
         </div>
       </section>

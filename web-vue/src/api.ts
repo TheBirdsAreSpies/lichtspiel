@@ -9,7 +9,7 @@ export interface Media {
   id?: number, height?: number, width?: number, size?: number, container?: string, videoCodec?: string, audioCodec?: string,
   audioChannels?: number, edition?: string, streams?: Stream[], subtitles?: Subtitle[], Part?: { duration?: number }[],
 }
-export interface Person { key?: string, name?: string, role?: string, thumb?: string, photo?: string }
+export interface Person { key?: string, name?: string, role?: string, thumb?: string, photo?: string, /** In how many titles of the library. */ count?: number }
 export interface Item {
   id: number, type: string, title: string, ratingKey?: string, year?: number, thumb?: string, summary?: string, tagline?: string,
   duration?: number, viewOffset?: number, viewCount?: number, leafCount?: number, viewedLeafCount?: number,
