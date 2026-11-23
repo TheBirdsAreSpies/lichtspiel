@@ -733,3 +733,6 @@ code.m-delete { color: #e5534b; }
 .picktimes input { width: 80px; }
 .picklist { display: flex; flex-wrap: wrap; gap: 14px; max-height: 60vh; overflow: auto; }
 .picklist .card { width: 140px; }
+.check-row { margin: 8px 0; }
+.check-row .hint { margin: 2px 0 0 22px; }
+input.num { width: 100px; }

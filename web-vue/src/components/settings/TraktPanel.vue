@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Settings → Trakt: connect your Trakt account (a code to type in at trakt.tv/activate), sync now,
-// disconnect. The server's Trakt app and the sync settings are for admins, in the classic web app.
+// disconnect. For admins also the server's Trakt app (its Client ID and Secret) and what is synced how often.
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { api, get, session } from '../../api';
 import { lang, t } from '../../i18n';
@@ -9,7 +9,9 @@ import Modal from '../Modal.vue';
 interface Report { error?: string, at?: number, pulled_watched?: number, pulled_ratings?: number, pulled_watchlist?: number,
   pushed_watched?: number, pushed_ratings?: number, pushed_watchlist?: number }
 interface Trakt { configured: boolean, connected: boolean, name?: string, last_sent?: string, last_sync?: number, sync_enabled?: boolean,
-  syncing?: boolean, report?: Report | null, app_url?: string, redirect_uri?: string }
+  syncing?: boolean, report?: Report | null, app_url?: string, redirect_uri?: string,
+  client_id?: string, client_secret_hint?: string, interval_minutes?: number, scrobble?: boolean, send_marked_watched?: boolean,
+  sync_watched?: boolean, sync_ratings?: boolean, sync_watchlist?: boolean }
 
 const p = ref<Trakt | null>(null);
 const error = ref('');
@@ -18,9 +20,20 @@ const code = ref<{ code: string, url: string, interval: number } | null>(null);
 const disconnecting = ref(false);
 let timer = 0, poll = 0;
 
+// ---- for admins
+const clientId = ref(''), secret = ref(''), every = ref(60);
+const CHECKS: [keyof Trakt, string, string][] = [
+  ['scrobble', 'Show "watching now" and add finished titles to the history', ''],
+  ['send_marked_watched', 'Send titles marked as watched by hand', ''],
+  ['sync_enabled', 'Sync automatically', 'Everyone who is connected is brought in step with Trakt regularly. Nothing is removed on either side.'],
+  ['sync_watched', 'Sync watched titles', ''], ['sync_ratings', 'Sync ratings', ''], ['sync_watchlist', 'Sync the watchlist', ''],
+];
+const put = (body: Record<string, unknown>) => act(async () => { await api('PUT', '/api/trakt', body); note.value = t('Saved'); await load(); });
+
 async function load() {
   clearTimeout(timer);
   try { p.value = await get<Trakt>('/api/trakt'); } catch (e) { error.value = (e as Error).message; return; }
+  clientId.value = p.value.client_id || ''; secret.value = ''; every.value = p.value.interval_minutes || 60;
   if (p.value.syncing) timer = window.setTimeout(load, 3000);
 }
 onMounted(load);
@@ -61,7 +74,7 @@ function summary(r?: Report | null) {
     <p v-if="error" class="err">{{ error }}</p>
     <div v-if="!p && !error" class="skel line"></div>
     <template v-else-if="p">
-      <p v-if="!p.configured">{{ t('Trakt is not set up yet') }}. {{ session.me?.admin ? t('Set up the Trakt app in the classic web app (Settings → Account).') : t('An admin needs to create a Trakt app first.') }}</p>
+      <p v-if="!p.configured">{{ t('Trakt is not set up yet') }}. {{ session.me?.admin ? t('Create a Trakt app at {url} (redirect URI {redirect}) and enter its Client ID and Client Secret below.', { url: p.app_url || '', redirect: p.redirect_uri || '' }) : t('An admin needs to create a Trakt app first.') }}</p>
       <template v-else-if="!p.connected">
         <p>{{ t('Not connected. Connect your Trakt account and what you watch here shows up on Trakt.') }}</p>
         <div class="actions"><button class="primary" @click="connect">{{ t('Connect Trakt') }}</button></div>
@@ -80,7 +93,24 @@ function summary(r?: Report | null) {
         </div>
       </template>
       <p v-if="note" class="dim">{{ note }}</p>
-      <p v-if="session.me?.admin && p.configured" class="dim small"><a class="link" href="/#/settings/account">{{ t('The Trakt app and the sync settings are in the classic web app.') }} ↗</a></p>
+      <template v-if="session.me?.admin">
+        <h3>{{ t('For admins') }}</h3>
+        <div class="form">
+          <label for="tr-id">{{ t('Client ID') }}</label><input id="tr-id" v-model="clientId" autocomplete="off">
+          <label for="tr-secret">{{ t('Client Secret') }}</label><input id="tr-secret" v-model="secret" type="password" autocomplete="new-password" :placeholder="p.client_secret_hint ? t('kept ({hint})', { hint: p.client_secret_hint }) : ''">
+        </div>
+        <div class="actions"><button @click="put({ client_id: clientId, client_secret: secret })">{{ t('Save') }}</button></div>
+        <template v-if="p.configured">
+          <div v-for="[k, label, hint] in CHECKS" :key="k" class="check-row">
+            <label class="chk"><input type="checkbox" :checked="!!p[k]" @change="put({ [k]: ($event.target as HTMLInputElement).checked })"> {{ t(label) }}</label>
+            <p v-if="hint" class="dim hint">{{ t(hint) }}</p>
+          </div>
+          <div class="form gap-top">
+            <label for="tr-every">{{ t('Sync every (minutes)') }}</label><input id="tr-every" v-model.number="every" type="number" min="10" max="1440" class="num">
+          </div>
+          <div class="actions"><button @click="put({ interval_minutes: every })">{{ t('Save') }}</button></div>
+        </template>
+      </template>
     </template>
 
     <Modal v-if="code" :title="t('Connect Trakt')" @close="cancel">
