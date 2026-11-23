@@ -34,7 +34,7 @@ export const router = createRouter({
     { path: '/playlists', name: 'playlists', component: () => import('./views/PlaylistsView.vue') },
     { path: '/playlist/:id', name: 'playlist', component: () => import('./views/PlaylistView.vue'), props: true },
     { path: '/play/:id', name: 'play', component: () => import('./views/PlayerView.vue'), props: true, meta: { bare: true } },
-    { path: '/:rest(.*)', redirect: '/' },
+    { path: '/:rest(.*)', name: 'notfound', component: () => import('./views/NotFoundView.vue') },
   ],
   scrollBehavior: (_to, _from, saved) => saved || { top: 0 },
 });

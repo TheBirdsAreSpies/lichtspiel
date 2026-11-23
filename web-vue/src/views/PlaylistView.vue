@@ -9,6 +9,7 @@ import { api, get, list, picture, type Item, type Playlist } from '../api';
 import { fmtDur, fmtTime, kindName, plTitle, resumeAt } from '../format';
 import { t } from '../i18n';
 import { playAll, smartShuffle } from '../queue';
+import PosterCard from '../components/PosterCard.vue';
 import AskDialog from '../components/AskDialog.vue';
 import Icon from '../components/Icon.vue';
 import Modal from '../components/Modal.vue';
@@ -100,6 +101,9 @@ async function playEvery(shuffle: boolean) {
 }
 // ▶ on a row plays on with the rows after it.
 const playFrom = (i: number) => playAll(router, items.value.slice(i));
+// "Show as": a list or posters, kept in this browser (the classic app's key).
+const posters = ref((() => { try { return localStorage.getItem('playlistView') === 'grid'; } catch { return false; } })());
+function setView(v: string) { posters.value = v === 'grid'; try { localStorage.setItem('playlistView', v); } catch { /* none */ } }
 
 async function act(f: () => Promise<unknown>) {
   try { await f(); } catch (e) { error.value = (e as Error).message; }
@@ -156,10 +160,25 @@ const rowInfo = (it: Item) => [it.type === 'track' ? it.parentTitle : null, it.y
           <option value="">{{ t('Watched or not') }}</option><option value="unwatched">{{ t('Unwatched') }}</option><option value="watched">{{ t('Watched') }}</option>
         </select>
         <input v-model="q" type="search" :placeholder="t('Filter by title')" :aria-label="t('Filter by title')">
+        <select :value="posters ? 'grid' : 'list'" :title="t('Show as')" :aria-label="t('Show as')" @change="setView(($event.target as HTMLSelectElement).value)">
+          <option value="list">{{ t('List') }}</option><option value="grid">{{ t('Posters') }}</option>
+        </select>
         <span class="grow"></span>
         <span v-if="total !== null" class="dim">{{ t('{shown} of {all} items · {length}', { shown: total, all: pl.leafCount, length: fmtDur(pl.duration) }) }}</span>
       </div>
-      <div class="episodes">
+      <div v-if="posters" class="grid">
+        <div v-for="(it, i) in items" :key="it.id">
+          <PosterCard :item="it" />
+          <div v-if="reorder || (manual && editable)" class="pl-tools">
+            <template v-if="reorder">
+              <button class="small" :disabled="i === 0" :title="t('Move up')" :aria-label="t('Move up')" @click="move(i, -1)">←</button>
+              <button class="small" :disabled="i === items.length - 1" :title="t('Move down')" :aria-label="t('Move down')" @click="move(i, 1)">→</button>
+            </template>
+            <button v-if="manual && editable" class="small danger" @click="removeItem(it)">{{ t('Remove') }}</button>
+          </div>
+        </div>
+      </div>
+      <div v-else class="episodes">
         <div v-for="(it, i) in items" :key="it.id" class="ep li">
           <RouterLink :to="'/item/' + it.id" class="li-thumb"><img v-if="thumb(it)" :src="thumb(it)" loading="lazy" alt=""></RouterLink>
           <div class="grow">

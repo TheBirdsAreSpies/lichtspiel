@@ -7,7 +7,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { get, list, picture, session, type Group, type Hub, type Item, type Playlist } from '../api';
-import { fmtDur, plTitle } from '../format';
+import { fmtDur, fmtNum, plTitle } from '../format';
 import PosterRow from '../components/PosterRow.vue';
 import { CARD, cardSize, setCardSize } from '../cardSize';
 import { chipLabel, fromQuery, type Rule } from '../filters';
@@ -152,7 +152,7 @@ const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && picked.value.siz
 function restart() {
   clearPicks();
   seq++; items.value = []; total.value = null; loading.value = false; error.value = '';
-  have.clear(); busy.clear(); marks.value = [];
+  have.clear(); busy.clear(); marks.value = []; pos.value = -1;
   // (Not while the collections show: their address has no filters, and the kept ones stay.)
   if (!tab.value) try { localStorage.setItem('vue-lib:' + props.id, JSON.stringify({ sort: sort.value, filters: active.value, rules: rulesText.value, rmatch: rmatch.value, extra: extra.value })); } catch { /* none */ }
   loadPage(0);
@@ -258,8 +258,10 @@ async function jump(m: Mark) {
 }
 // Where you are: the first card under the top bar lights its letter.
 let raf = 0;
+// (Also the place in the list beside the count: the first card under the top bar.)
+const pos = ref(-1);
 function onScroll() {
-  if (raf || !marks.value.length) return;
+  if (raf) return;
   raf = requestAnimationFrame(() => {
     raf = 0;
     if (forced && Date.now() - forcedAt < 800) return;
@@ -271,6 +273,7 @@ function onScroll() {
     const card = hit && (hit.closest('[data-i]') as HTMLElement | null);
     if (!card) return;
     const i = Number(card.dataset.i);
+    pos.value = window.scrollY > 40 ? i : -1;
     const m = marks.value.find(x => x.ranges.some(([a, b]) => i >= a && i < b));
     if (m) current.value = m.key;
   });
@@ -361,7 +364,7 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
     <template v-else>
       <div v-if="collection" class="crumbs dim"><RouterLink :to="{ query: { tab: 'collections' } }">{{ section.title }} · {{ t('Collections') }}</RouterLink> ›</div>
       <div class="lib-head">
-        <h1>{{ collection || section.title }} <span v-if="!tab && total !== null" class="dim count">{{ total }}</span><span v-if="session.me?.admin && !collection" class="head-more"><SectionMenu :section="section" /></span></h1>
+        <h1>{{ collection || section.title }} <span v-if="!tab && total !== null" class="dim count" :title="t('{n} shown', { n: total })">{{ pos >= 0 && total > PAGE ? t('{pos} / {total}', { pos: fmtNum(pos + 1), total: fmtNum(total) }) : fmtNum(total) }}</span><span v-if="session.me?.admin && !collection" class="head-more"><SectionMenu :section="section" /></span></h1>
         <div v-if="!tab" class="lib-bar">
           <select v-if="section.type === 'show'" :value="extra.type || ''" :aria-label="t('Show')" @change="setExtra('type', ($event.target as HTMLSelectElement).value)">
             <option value="">{{ t('Shows') }}</option><option value="season">{{ t('Seasons') }}</option><option value="episode">{{ t('Episodes') }}</option>

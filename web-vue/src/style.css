@@ -736,3 +736,5 @@ code.m-delete { color: #e5534b; }
 .check-row { margin: 8px 0; }
 .check-row .hint { margin: 2px 0 0 22px; }
 input.num { width: 100px; }
+.pl-tools { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.pl-tools button { margin: 0; }
