@@ -1467,6 +1467,7 @@ I18N.add('de', 'Deutsch', {
     'Collection: {name}': 'Sammlung: {name}',
     'Hide watched': 'Gesehene ausblenden',
     '{n} of {total} not seen': '{n} von {total} nicht gesehen',
+    '{n} not seen': '{n} nicht gesehen',
     'All seen': 'Alle gesehen',
     '+ Add entry': '+ Eintrag hinzufügen',
     'New collection…': 'Neue Sammlung …',

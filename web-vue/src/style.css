@@ -566,3 +566,29 @@ code.m-get { color: #6cb6ff; }
 code.m-post { color: #55c773; }
 code.m-put, code.m-patch { color: var(--accent); }
 code.m-delete { color: #e5534b; }
+
+/* a title's page: the scores of review sites, your own stars, links, the online trailer */
+.scores { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.score { display: inline-flex; align-items: center; gap: 10px; background: var(--panel2); border-radius: 8px; padding: 6px 12px; color: inherit; }
+.score .mark { display: flex; flex: none; }
+.score .mark svg { height: 26px; width: auto; display: block; }
+.score .num { display: flex; flex-direction: column; line-height: 1.2; }
+.score .num span { font-size: 12px; color: var(--dim); }
+.score b { font-size: 17px; }
+.stars { display: inline-flex; align-items: center; gap: 2px; margin-top: 12px; }
+.stars button { background: none; border: 0; padding: 0 1px; font-size: 26px; line-height: 1; color: #3a4048; cursor: pointer; }
+.stars button.on { color: var(--accent); }
+.stars button.half { background: linear-gradient(90deg, var(--accent) 50%, #3a4048 50%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.stars .clear { font-size: 13px; color: var(--dim); margin-left: 8px; }
+.links { margin-top: 8px; }
+.links a { color: var(--text); }
+.links a:hover { color: var(--accent); }
+.yt { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; overflow: hidden; }
+.yt iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.tab-left { margin-left: 6px; font-size: 11px; color: var(--accent); font-weight: 700; }
+
+/* a season's episodes: the old ones stay dimmed while the next season loads, then the new ones come in one after the other */
+.episodes { transition: opacity .15s; }
+.episodes.loading { opacity: .45; pointer-events: none; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(10px); } }
+.stagger .ep:nth-child(-n+12) { animation: pop-in .3s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 35ms); }

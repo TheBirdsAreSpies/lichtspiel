@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A movie, show, season or episode: backdrop, poster, details, play / resume, watched, favorite and
 // watchlist; a show's seasons with their episodes, a season's episodes, the cast and related rows.
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, get, list, picture, session, type Hub, type Item, type Person } from '../api';
 import { fmtDur, fmtSize, fmtTime, isPlayable, isWatched, resumeAt, seasonTitle } from '../format';
@@ -12,6 +12,10 @@ import DownloadDialog from '../components/DownloadDialog.vue';
 import TogetherDialog from '../components/TogetherDialog.vue';
 import ReportDialog from '../components/ReportDialog.vue';
 import ItemMenu from '../components/ItemMenu.vue';
+import ScoreBadges from '../components/ScoreBadges.vue';
+import StarRating from '../components/StarRating.vue';
+import Modal from '../components/Modal.vue';
+import { startTheme, stopTheme, theme, toggleThemeMute } from '../theme';
 import Icon from '../components/Icon.vue';
 import PosterRow from '../components/PosterRow.vue';
 
@@ -41,6 +45,7 @@ async function load() {
       topId ? get('/library/metadata/' + topId).then(j => list<Item>(j)[0] || null).catch(() => null) : Promise.resolve(null),
     ]);
     it.value = item; kids.value = k; top.value = tp;
+    startTheme(String(item.id));
     // A show opens on the first season with something left to watch.
     if (item.type === 'show' && k.length && !season.value) season.value = k.find(s => !isWatched(s) && (s.index || 0) > 0) || k.find(s => (s.index || 0) > 0) || k[0];
     if (item.type === 'movie' || item.type === 'show') {
@@ -49,12 +54,61 @@ async function load() {
   } catch (e) { error.value = (e as Error).message; }
 }
 watch(() => props.id, () => { season.value = null; related.value = []; load(); }, { immediate: true });
+onBeforeUnmount(stopTheme);
+// Another season: its episodes take the place of the shown ones once they are there (the old ones stay,
+// dimmed, meanwhile, so nothing jumps); seasons seen once on this page come at once.
+const seasonEps = new Map<number, Item[]>();
+const epsLoading = ref(false);
+const epsShown = ref(0); // which season the list shows (its key: a new list fades in)
+watch(() => props.id, () => seasonEps.clear());
 watch(season, async s => {
-  episodes.value = [];
-  if (s) episodes.value = list<Item>(await get(`/library/metadata/${s.id}/children`).catch(() => null));
+  if (!s) { episodes.value = []; return; }
+  let eps = seasonEps.get(s.id);
+  if (!eps) {
+    epsLoading.value = true;
+    eps = list<Item>(await get(`/library/metadata/${s.id}/children`).catch(() => null));
+    if (season.value !== s) return; // another season was chosen meanwhile
+    seasonEps.set(s.id, eps);
+  }
+  epsLoading.value = false;
+  episodes.value = eps;
+  epsShown.value = s.id;
 });
+// Watched or not changed: the seasons are asked again.
+watch(kids, () => seasonEps.clear());
 
 const x = computed(() => (it.value && it.value.extra) || {});
+// (What the page's item has besides the Item type: scores, links, trailers, the state of the match.)
+type Any = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+const xa = computed<Any>(() => x.value as Any);
+const topX = computed<Any>(() => ((top.value && top.value.extra) || {}) as Any);
+const ratings = computed(() => xa.value.ratings || (it.value && it.value.type === 'season' ? topX.value.ratings : null));
+const matchable = computed(() => !!it.value && (it.value.type === 'movie' || it.value.type === 'show'));
+// Without a plot, the owner learns why: no match yet, none found, or removed by hand.
+const unmatchedNote = computed(() => {
+  if (!it.value || it.value.summary || !session.me?.admin || !matchable.value || xa.value.metadata_source) return '';
+  return xa.value.unmatched_by_hand ? t('The match was removed — use "Match" to pick one, or "Refresh metadata" to look again.')
+    : xa.value.metadata_status === 'unmatched' ? t('No details were found online for this title — use "Match" to pick the right one.') : t('Details are being looked up online…');
+});
+// The title on other sites.
+const links = computed(() => {
+  const i = it.value; if (!i) return [] as [string, string][];
+  const ids: Any = xa.value.ids || topX.value.ids || {};
+  return ([ids.imdb ? ['IMDb', 'https://www.imdb.com/title/' + ids.imdb] : null, ids.tmdb ? ['TMDB', 'https://www.themoviedb.org/' + (i.type === 'movie' ? 'movie' : 'tv') + '/' + ids.tmdb] : null,
+    i.type === 'movie' && (ids.tmdb || ids.imdb) ? ['Letterboxd', ids.tmdb ? 'https://letterboxd.com/tmdb/' + ids.tmdb : 'https://letterboxd.com/imdb/' + ids.imdb] : null,
+    ids.tvmaze ? ['TVmaze', 'https://www.tvmaze.com/shows/' + ids.tvmaze] : null, ids.anilist ? ['AniList', 'https://anilist.co/anime/' + ids.anilist] : null,
+    ids.mal ? ['MyAnimeList', 'https://myanimelist.net/anime/' + ids.mal] : null, ids.wikipedia ? ['Wikipedia', ids.wikipedia] : null,
+    ids.wikidata ? ['Wikidata', 'https://www.wikidata.org/wiki/' + ids.wikidata] : null].filter(Boolean)) as [string, string][];
+});
+// A trailer file next to the movie first, else the first online trailer (played from YouTube in a box).
+interface Online { key: string, name?: string, site?: string }
+const localTrailer = computed(() => ((it.value as Any | null)?.Extras || []).find((e: Any) => e.extraType === 'trailer') as Item | undefined);
+const onlineTrailer = computed<Online | null>(() => (matchable.value ? ((xa.value.trailers || []) as Online[]).find(v => v && v.key) || null : null));
+const watchingOnline = ref<Online | null>(null);
+function playTrailer() {
+  if (localTrailer.value) play(localTrailer.value, 0); else if (onlineTrailer.value) { stopTheme(); watchingOnline.value = onlineTrailer.value; }
+}
+const released = computed(() => (xa.value.originally_available ? new Date(xa.value.originally_available).toLocaleDateString(lang.value) : ''));
 const cast = computed<Person[]>(() => x.value.cast || (it.value && it.value.type !== 'movie' && top.value && top.value.extra ? top.value.extra.cast || [] : []));
 const art = computed(() => (it.value ? picture(`/library/metadata/${it.value.type === 'episode' ? it.value.grandparentRatingKey : it.value.id}/art?v=${it.value.updatedAt || 0}`) : ''));
 const heading = computed(() => {
@@ -64,7 +118,7 @@ const heading = computed(() => {
 const facts = computed(() => {
   const i = it.value; if (!i) return '';
   return [i.year, i.editionTitle, i.type === 'episode' ? t('Season {n}', { n: i.parentIndex || 0 }) : null, fmtDur(i.duration), i.contentRating,
-    i.rating ? `★ ${i.rating.toLocaleString(lang.value)}` : null,
+    i.rating && !Object.keys(ratings.value || {}).length ? `★ ${i.rating.toLocaleString(lang.value)}` : null,
     i.leafCount ? t('{seen}/{all} watched', { seen: i.viewedLeafCount || 0, all: i.leafCount }) : null].filter(Boolean).join(' · ');
 });
 const crew = computed(() => ([[t('Directed by'), x.value.directors], [t('Written by'), x.value.writers], [t('Created by'), x.value.creators]] as [string, string[] | undefined][])
@@ -141,17 +195,22 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
         <div class="info">
           <h1>{{ heading }}</h1>
           <div class="dim">{{ facts }}</div>
+          <ScoreBadges :ratings="ratings" />
           <p v-if="it.tagline" class="tagline">{{ it.tagline }}</p>
           <p v-if="it.summary" class="plot">{{ it.summary }}</p>
+          <p v-else-if="unmatchedNote" class="dim">{{ unmatchedNote }}</p>
           <div v-if="it.genres && it.genres.length"><span v-for="g in it.genres" :key="g" class="tag">{{ g }}</span></div>
-          <div v-if="crew.length || it.studio || collections.length" class="kv">
+          <div v-if="crew.length || it.studio || collections.length || released || (xa.original_title && xa.original_title !== it.title)" class="kv">
             <template v-for="[k, v] in crew" :key="k"><div class="dim">{{ k }}</div><div>{{ v.join(', ') }}</div></template>
             <template v-if="it.studio"><div class="dim">{{ it.type === 'show' ? t('Network') : t('Studio') }}</div><div>{{ it.studio }}</div></template>
+            <template v-if="xa.original_title && xa.original_title !== it.title"><div class="dim">{{ t('Original title') }}</div><div>{{ xa.original_title }}</div></template>
+            <template v-if="released"><div class="dim">{{ it.type === 'movie' ? t('Released') : t('First aired') }}</div><div>{{ released }}</div></template>
             <template v-if="collections.length && it.librarySectionID">
               <div class="dim">{{ t('Collections') }}</div>
               <div><template v-for="(c, i) in collections" :key="c"><template v-if="i">, </template><RouterLink :to="{ path: '/library/' + it.librarySectionID, query: { collection: c } }" class="link">{{ c }}</RouterLink></template></div>
             </template>
           </div>
+          <div v-if="links.length" class="dim links">{{ t('More: ') }}<template v-for="([n, u], i) in links" :key="n"><template v-if="i"> · </template><a :href="u" target="_blank" rel="noopener">{{ n }}</a></template></div>
           <div class="actions">
             <button v-if="isPlayable(it) && it.missing" class="big" disabled>{{ t('Unavailable') }}</button>
             <template v-else-if="isPlayable(it)">
@@ -165,6 +224,7 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
               </select>
             </template>
             <button v-else-if="it.leafCount" class="primary big" @click="playNext">{{ t('▶ Play next episode') }}</button>
+            <button v-if="localTrailer || onlineTrailer" class="big" @click="playTrailer">{{ t('▶ Trailer') }}</button>
             <button class="iconbtn round" :class="{ on: isWatched(it) }" :title="isWatched(it) ? t('Mark as unwatched') : t('Mark as watched')" @click="toggleWatched"><Icon name="check" /></button>
             <button class="iconbtn round" :class="{ on: it.favorite }" :title="it.favorite ? t('Remove from favorites') : t('Add to favorites')" @click="toggleFavorite"><Icon :name="it.favorite ? 'heart' : 'heartOff'" /></button>
             <button class="iconbtn round" :class="{ on: it.watchlist }" :title="it.watchlist ? t('Remove from watchlist') : t('Add to watchlist')" @click="toggleWatchlist"><Icon :name="it.watchlist ? 'mark' : 'markOff'" /></button>
@@ -174,17 +234,19 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
             <button v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" class="iconbtn round" :title="t('Report a problem')" :aria-label="t('Report a problem')" @click="reporting = true"><Icon name="flag" /></button>
             <button v-if="session.me?.admin && it.type !== 'clip'" class="iconbtn round" :title="t('Edit details')" :aria-label="t('Edit details')" @click="editing = true"><Icon name="edit" /></button>
             <ItemMenu v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" :item="it" @changed="load" />
+            <button v-if="theme.playing" class="iconbtn round" :title="theme.muted ? t('Theme music on') : t('Mute theme music')" :aria-label="theme.muted ? t('Theme music on') : t('Mute theme music')" @click="toggleThemeMute"><Icon :name="theme.muted ? 'mute' : 'vol'" /></button>
           </div>
+          <StarRating v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" :id="it.id" :key="it.id" :rating="(it as Any).userRating" />
         </div>
       </div>
 
       <template v-if="it.type === 'show' && kids.length">
         <div class="tabs">
-          <button v-for="s in kids" :key="s.id" :class="{ on: season && season.id === s.id }" @click="season = s">{{ seasonTitle(s.title) }}</button>
+          <button v-for="s in kids" :key="s.id" :class="{ on: season && season.id === s.id }" @click="season = s">{{ seasonTitle(s.title) }}<small v-if="s.leafCount && (s.viewedLeafCount || 0) > 0 && (s.viewedLeafCount || 0) < s.leafCount" class="tab-left" :title="t('{n} not seen', { n: s.leafCount - (s.viewedLeafCount || 0) })">{{ s.leafCount - (s.viewedLeafCount || 0) }}</small></button>
         </div>
       </template>
-      <div v-if="(it.type === 'show' && episodes.length) || (it.type === 'season' && kids.length)" class="episodes">
-        <div v-for="e in (it.type === 'show' ? episodes : kids)" :key="e.id" class="ep" :class="{ missing: e.missing }">
+      <div v-if="(it.type === 'show' && episodes.length) || (it.type === 'season' && kids.length)" :key="it.type === 'show' ? epsShown : it.id" class="episodes stagger" :class="{ loading: epsLoading }">
+        <div v-for="(e, i) in (it.type === 'show' ? episodes : kids)" :key="e.id" class="ep" :class="{ missing: e.missing }" :style="{ '--i': i }">
           <RouterLink :to="'/item/' + e.id" class="ep-thumb">
             <img v-if="e.thumb" :src="picture(e.thumb, 400)" loading="lazy" alt="">
             <div v-if="e.viewOffset && e.duration" class="bar"><i :style="{ width: Math.min(100, e.viewOffset / e.duration * 100) + '%' }"></i></div>
@@ -215,6 +277,11 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
       <TogetherDialog v-if="together" :item="it" @close="together = false" />
       <ReportDialog v-if="reporting" :item="it" @close="reporting = false" />
       <EditDetails v-if="editing" :id="it.id" @close="editing = false" @saved="load" />
+      <Modal v-if="watchingOnline" :title="watchingOnline.name || t('Trailer')" wide @close="watchingOnline = null">
+        <div class="yt"><iframe :src="`https://www.youtube-nocookie.com/embed/${encodeURIComponent(watchingOnline.key)}?autoplay=1&rel=0`" :title="watchingOnline.name || 'Trailer'"
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+        <p class="dim small">{{ t('Online video from {site}', { site: watchingOnline.site || 'YouTube' }) }}</p>
+      </Modal>
     </template>
   </div>
 </template>
