@@ -157,8 +157,11 @@ intro and credits detection).
 
    It listens on port 8486 (`--helper-listen 0.0.0.0:8486`), finds the graphics chip by itself
    (`--hw auto|none|vaapi|qsv|nvenc`, `--hw-device 1` for the second card) and prints the address to
-   enter. Allow the port in the Windows firewall for the home network. `--ffmpeg C:\pathfmpeg.exe`
-   if ffmpeg is not on the PATH. The same works on Linux and macOS (`LICHTSPIEL_HELPER_SECRET` …
+   enter. Allow the port in the Windows firewall for the home network. `--ffmpeg C:\path\to\ffmpeg.exe`
+   if ffmpeg is not on the PATH. Check with `ffmpeg -version` in a new window which one Windows
+   finds: the system PATH comes before the user's, so an old ffmpeg there (ImageMagick, another
+   program) wins over the new one. Move the new ffmpeg's folder to the top of the system PATH, or
+   give it with `--ffmpeg`. The same works on Linux and macOS (`LICHTSPIEL_HELPER_SECRET` …
    as environment variables).
 3. On the server: **Settings → Transcoder → Transcode helper**, enter its address
    (`http://192.168.1.50:8486`) and the secret. The page then says whether the helper answers and
