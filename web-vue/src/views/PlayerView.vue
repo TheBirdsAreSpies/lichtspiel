@@ -510,7 +510,29 @@ function hover(e: MouseEvent) {
     pre.src = src;
   }, 120);
 }
-function unhover() { tip.value = null; still.value = ''; stillWant = null; clearTimeout(stillTimer); }
+function unhover() { if (pending.value !== null) return; tip.value = null; still.value = ''; stillWant = null; clearTimeout(stillTimer); }
+// Click or drag anywhere on the bar (as in the classic player): the bar follows the pointer, the video
+// seeks when it is let go.
+const barTime = (e: PointerEvent) => {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * duration.value;
+};
+function barDown(e: PointerEvent) {
+  if (e.button || !duration.value) return;
+  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  pending.value = barTime(e); wake();
+}
+function barMove(e: PointerEvent) {
+  hover(e);
+  if (pending.value !== null) { pending.value = barTime(e); wake(); }
+}
+function barUp(e: PointerEvent) {
+  if (pending.value === null) return;
+  const to = barTime(e);
+  pending.value = null;
+  seek(to); wake();
+}
+function barCancel() { pending.value = null; unhover(); }
 
 function seek(to: number) {
   const v = video.value; if (!v) return;
@@ -706,7 +728,7 @@ function close() {
 function wake() {
   idle.value = false;
   clearTimeout(idleTimer);
-  idleTimer = window.setTimeout(() => { if (!paused.value && !menu.value) idle.value = true; }, 3000);
+  idleTimer = window.setTimeout(() => { if (!paused.value && !menu.value && pending.value === null) idle.value = true; }, 3000);
 }
 function key(e: KeyboardEvent) {
   if (e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement).tagName === 'INPUT' && (e.target as HTMLInputElement).type !== 'range') return;
@@ -806,7 +828,9 @@ onBeforeUnmount(() => {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 });
 
-const pct = computed(() => (duration.value ? (now.value / duration.value) * 100 : 0));
+// While the seek bar is pressed it shows where the pointer is (the seek waiting to happen), else the video.
+const pending = ref<number | null>(null);
+const pct = computed(() => (duration.value ? Math.min(100, ((pending.value ?? now.value) / duration.value) * 100) : 0));
 const bufPct = computed(() => (duration.value ? Math.min(100, ((base.value + offset.value + buffered.value) / duration.value) * 100) : 0));
 // The lines move with the controls.
 const bottom = ref<HTMLElement | null>(null);
@@ -882,16 +906,19 @@ const endsAt = computed(() => {
     </div>
     <button v-if="skipBtn && !nextBox && !error && !stopped" class="p-skip" :class="{ shown: skipFresh || !idle }" @click.stop="doSkip">{{ skipBtn.label }}</button>
     <div ref="bottom" class="p-bottom" @click.stop>
-      <div class="seek" @mousemove="hover" @mouseleave="unhover">
-        <div class="seek-buf" :style="{ width: bufPct + '%' }"></div>
+      <div class="seek" :class="{ drag: pending !== null }" role="slider" :aria-label="t('Position')" aria-valuemin="0" :aria-valuemax="Math.round(duration)"
+        :aria-valuenow="Math.round(pending ?? now)" :aria-valuetext="fmtTime(pending ?? now)"
+        @pointerdown="barDown" @pointermove="barMove" @pointerup="barUp" @pointercancel="barCancel" @pointerleave="unhover">
+        <div class="rail"></div>
+        <div class="buf" :style="{ width: bufPct + '%' }"></div>
+        <div class="fill" :style="{ width: pct + '%' }"></div>
         <div class="marks">
           <div v-for="c in chapters.length > 1 ? chapters.slice(1) : []" :key="'c' + c.at" class="mark chap" :style="{ left: at(c.at) + '%' }"></div>
           <div v-for="c in credits" :key="'e' + c" class="mark" :style="{ left: at(c) + '%' }"></div>
           <template v-for="m in [intro, recap]" :key="m ? 'i' + m[0] : ''"><div v-if="m" class="mark span" :style="{ left: at(m[0]) + '%', width: Math.max(0.3, at(m[1]) - at(m[0])) + '%' }"></div></template>
         </div>
+        <div class="knob" :style="{ left: pct + '%' }"></div>
         <div v-if="tip" class="seek-tip" :style="{ left: tip.x + 'px' }"><img v-if="still" :src="still" alt=""><span>{{ tip.text }}</span></div>
-        <input type="range" min="0" :max="duration || 1" step="1" :value="now" :aria-label="t('Position')"
-          :style="{ '--p': pct + '%' }" @change="seek(Number(($event.target as HTMLInputElement).value))">
       </div>
       <div class="p-controls">
         <button class="iconbtn" :aria-label="paused ? t('Play') : t('Pause')" @click="toggle"><Icon :name="paused ? 'play' : 'pause'" /></button>
