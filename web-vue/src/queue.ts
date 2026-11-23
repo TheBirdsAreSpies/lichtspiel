@@ -62,4 +62,4 @@ export async function addToQueue(it: Item) {
   saveQueue();
   toast(ok.length === 1 ? t('Added to the queue') : t('{n} episodes added to the queue', { n: ok.length }));
 }
-export const queueTitle = (x: Queued) => (x.type === 'episode' ? `${x.grandparentTitle || ''} · ${t('S{n}', { n: x.parentIndex || 0 })}${t('E{n}', { n: x.index || 0 })} ${x.title}` : x.title);
+export const queueTitle = (x: Queued) => (x.type === 'episode' ? `${x.grandparentTitle || ''} · ${t('S{n}', { n: x.parentIndex || 0 })}${t('E{n}', { n: x.index || 0 })} ${x.title}` : x.type === 'track' ? `${x.grandparentTitle || ''} · ${x.title}` : x.title);

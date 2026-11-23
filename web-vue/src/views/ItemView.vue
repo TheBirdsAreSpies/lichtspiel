@@ -4,7 +4,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api, get, list, picture, session, type Hub, type Item, type Person } from '../api';
-import { fmtDur, fmtSize, fmtTime, isPlayable, isWatched, resumeAt, seasonTitle } from '../format';
+import { fmtDur, fmtSize, fmtTime, isPlayable, isWatched, RELEASES, releaseName, resumeAt, seasonTitle } from '../format';
+import { playAll, smartShuffle } from '../queue';
 import { lang, t } from '../i18n';
 import AddToDialog from '../components/AddToDialog.vue';
 import EditDetails from '../components/EditDetails.vue';
@@ -41,7 +42,7 @@ async function load() {
     if (!item) { error.value = t('Not found'); return; }
     const topId = item.grandparentRatingKey || (item.type === 'season' ? item.parentRatingKey : null);
     const [k, tp] = await Promise.all([
-      ['show', 'season'].includes(item.type) ? get(`/library/metadata/${item.id}/children`).then(j => list<Item>(j)) : Promise.resolve([] as Item[]),
+      ['show', 'season', 'artist', 'album'].includes(item.type) ? get(`/library/metadata/${item.id}/children`).then(j => list<Item>(j)) : Promise.resolve([] as Item[]),
       topId ? get('/library/metadata/' + topId).then(j => list<Item>(j)[0] || null).catch(() => null) : Promise.resolve(null),
     ]);
     it.value = item; kids.value = k; top.value = tp;
@@ -172,6 +173,16 @@ async function toggleWatchlist() {
   await api('PUT', `/api/items/${i.id}/watchlist`, { watchlist: !i.watchlist });
   i.watchlist = !i.watchlist;
 }
+// An artist or album: all its songs, one after the other (shuffled: not the same artist twice in a row).
+async function playMusic(shuffle: boolean) {
+  const i = it.value; if (!i) return;
+  const songs = list<Item>(await get(`/library/metadata/${i.id}/allLeaves`).catch(() => null));
+  if (songs.length) playAll(router, shuffle ? smartShuffle(songs) : songs);
+}
+const isMusicGroup = computed(() => !!it.value && (it.value.type === 'artist' || it.value.type === 'album'));
+// An artist's albums by their kind (albums, EPs, singles …); an album's songs, each playing on with the rest.
+const releases = computed(() => (it.value && it.value.type === 'artist' ? RELEASES.map(r => [r, kids.value.filter(k => (k.releaseType || 'album') === r)] as [string, Item[]]).filter(([, of]) => of.length) : []));
+const playSong = (i: number) => playAll(router, kids.value.slice(i));
 // The collections it is in, each a link to its library filtered to it.
 const collections = computed(() => (x.value.collections || []).filter(Boolean));
 const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('');
@@ -223,20 +234,24 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
                 <option v-for="(m, i) in versions" :key="i" :value="i">{{ versionName(m) }}</option>
               </select>
             </template>
+            <template v-else-if="it.leafCount && isMusicGroup">
+              <button class="primary big" @click="playMusic(false)">{{ t('▶ Play') }}</button>
+              <button class="big" :title="t('Random order; the same show or artist does not come twice in a row while others are left')" @click="playMusic(true)">{{ t('Shuffle') }}</button>
+            </template>
             <button v-else-if="it.leafCount" class="primary big" @click="playNext">{{ t('▶ Play next episode') }}</button>
             <button v-if="localTrailer || onlineTrailer" class="big" @click="playTrailer">{{ t('▶ Trailer') }}</button>
             <button class="iconbtn round" :class="{ on: isWatched(it) }" :title="isWatched(it) ? t('Mark as unwatched') : t('Mark as watched')" @click="toggleWatched"><Icon name="check" /></button>
             <button class="iconbtn round" :class="{ on: it.favorite }" :title="it.favorite ? t('Remove from favorites') : t('Add to favorites')" @click="toggleFavorite"><Icon :name="it.favorite ? 'heart' : 'heartOff'" /></button>
             <button class="iconbtn round" :class="{ on: it.watchlist }" :title="it.watchlist ? t('Remove from watchlist') : t('Add to watchlist')" @click="toggleWatchlist"><Icon :name="it.watchlist ? 'mark' : 'markOff'" /></button>
-            <button v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" class="iconbtn round" :title="t('Add to …')" :aria-label="t('Add to …')" @click="adding = true"><Icon name="playlistAdd" /></button>
-            <button v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" class="iconbtn round" :title="t('Watch together')" :aria-label="t('Watch together')" @click="together = true"><Icon name="people" /></button>
-            <button v-if="session.me?.can_download && ['movie', 'show', 'season', 'episode'].includes(it.type)" class="iconbtn round" :title="t('Download…')" :aria-label="t('Download…')" @click="downloading = true"><Icon name="download" /></button>
-            <button v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" class="iconbtn round" :title="t('Report a problem')" :aria-label="t('Report a problem')" @click="reporting = true"><Icon name="flag" /></button>
+            <button v-if="it.type !== 'clip'" class="iconbtn round" :title="t('Add to …')" :aria-label="t('Add to …')" @click="adding = true"><Icon name="playlistAdd" /></button>
+            <button v-if="isPlayable(it) || it.type === 'show' || it.type === 'season'" class="iconbtn round" :title="t('Watch together')" :aria-label="t('Watch together')" @click="together = true"><Icon name="people" /></button>
+            <button v-if="session.me?.can_download && it.type !== 'clip'" class="iconbtn round" :title="t('Download…')" :aria-label="t('Download…')" @click="downloading = true"><Icon name="download" /></button>
+            <button v-if="it.type !== 'clip'" class="iconbtn round" :title="t('Report a problem')" :aria-label="t('Report a problem')" @click="reporting = true"><Icon name="flag" /></button>
             <button v-if="session.me?.admin && it.type !== 'clip'" class="iconbtn round" :title="t('Edit details')" :aria-label="t('Edit details')" @click="editing = true"><Icon name="edit" /></button>
-            <ItemMenu v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" :item="it" @changed="load" />
+            <ItemMenu v-if="it.type !== 'clip'" :item="it" @changed="load" />
             <button v-if="theme.playing" class="iconbtn round" :title="theme.muted ? t('Theme music on') : t('Mute theme music')" :aria-label="theme.muted ? t('Theme music on') : t('Mute theme music')" @click="toggleThemeMute"><Icon :name="theme.muted ? 'mute' : 'vol'" /></button>
           </div>
-          <StarRating v-if="['movie', 'show', 'season', 'episode'].includes(it.type)" :id="it.id" :key="it.id" :rating="(it as Any).userRating" />
+          <StarRating :id="it.id" :key="it.id" :rating="(it as Any).userRating" />
         </div>
       </div>
 
@@ -277,6 +292,21 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
           </RouterLink>
         </div>
       </section>
+      <PosterRow v-for="[r, of] in releases" :key="r" :title="releaseName(r, true)" :items="of" />
+      <template v-if="it.type === 'album' && kids.length">
+        <h2 class="gap-top">{{ t('Songs') }}</h2>
+        <div class="episodes songs">
+          <div v-for="(e, i) in kids" :key="e.id" class="ep li" :class="{ missing: e.missing }">
+            <div class="grow">
+              <RouterLink :to="'/item/' + e.id"><b>{{ e.index ? `${e.index}. ${e.title}` : e.title }}</b></RouterLink>
+              <div class="dim">{{ [e.missing ? t('Unavailable') : '', fmtDur(e.duration), e.viewCount ? t('✓ watched') : '', resumeAt(e) ? t('stopped at {time}', { time: fmtTime(resumeAt(e)) }) : ''].filter(Boolean).join(' · ') }}</div>
+              <div v-if="e.summary" class="ep-plot">{{ e.summary }}</div>
+            </div>
+            <span v-if="e.missing" class="gone-ico" :title="t('The file is gone from disk; the item is in the library’s trash')"><Icon name="close" /></span>
+            <button v-else class="primary small" :title="t('Play')" :aria-label="t('Play')" @click="playSong(i)">▶</button>
+          </div>
+        </div>
+      </template>
       <PosterRow v-for="h in related" :key="h.hubIdentifier + h.title" :title="t(h.title)" :items="h.Metadata || []" />
       <AddToDialog v-if="adding" :item="it" @close="adding = false" @changed="load" />
       <DownloadDialog v-if="downloading" :item="it" @close="downloading = false" />

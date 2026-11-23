@@ -128,6 +128,7 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 .card .poster { position: relative; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; background: var(--panel2); }
 .card.wide { width: calc(var(--card) * 1.75); }
 .card.wide .poster { aspect-ratio: 16 / 9; }
+.card.music .poster { aspect-ratio: 1; }
 .poster img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .3s; }
 .poster img.in, .detail .poster img { opacity: 1; }
 .card:hover .poster { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -752,3 +753,16 @@ input.num { width: 100px; }
 @media (max-width: 760px) { .only-phone { display: flex; } }
 .settings .tabs .set-search { margin-left: auto; }
 .set-found .li { text-decoration: none; color: inherit; }
+
+/* An album's songs: one gone from disk is marked red. */
+.li.missing .dim { color: #ff7a7a; }
+.gone-ico { color: #ff7a7a; display: inline-flex; width: 28px; height: 28px; }
+.gone-ico svg { width: 100%; height: 100%; }
+
+/* The words of a song over its cover: the line sung now lit and kept in the middle (a click on one jumps there). */
+.p-lyrics { position: absolute; inset: 0; overflow-y: auto; padding: 30vh 8vw; background: rgba(0,0,0,.85); text-align: center; scroll-behavior: smooth;
+  -webkit-mask-image: linear-gradient(transparent, #000 14%, #000 80%, transparent); mask-image: linear-gradient(transparent, #000 14%, #000 80%, transparent); }
+.p-lyrics p { margin: 0 0 .5em; font-size: clamp(18px, 3.2vw, 34px); font-weight: 600; line-height: 1.35; color: rgba(255,255,255,.4); transition: color .25s, transform .25s; min-height: 1em; }
+.p-lyrics.sync p { cursor: pointer; }
+.p-lyrics p.now { color: #fff; transform: scale(1.04); }
+.p-lyrics:not(.sync) p { color: rgba(255,255,255,.85); }

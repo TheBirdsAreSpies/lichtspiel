@@ -4,7 +4,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { get, list, picture, session, type Item } from '../api';
-import { cardLines, isPlayable, resumeAt, showSeen } from '../format';
+import { cardLines, isMusic, isPlayable, resumeAt, showSeen } from '../format';
 import { t } from '../i18n';
 import Icon from './Icon.vue';
 import EditDetails from './EditDetails.vue';
@@ -24,7 +24,7 @@ async function changed() {
 }
 const editing = ref(false);
 const selectMe = () => emit('pick', new MouseEvent('click'));
-const admin = computed(() => !!session.me?.admin && !props.plain && ['movie', 'show', 'season', 'episode'].includes(props.item.type));
+const admin = computed(() => !!session.me?.admin && !props.plain && props.item.type !== 'clip');
 function click(e: MouseEvent) {
   if (!props.pickable) return;
   const touchPicking = props.picking && matchMedia('(hover: none)').matches;
@@ -46,7 +46,7 @@ function play() {
 </script>
 
 <template>
-  <RouterLink :to="'/item/' + it.id" class="card" :class="{ wide, watched: showSeen(it), missing: it.missing, picked }" @click.capture="click">
+  <RouterLink :to="'/item/' + it.id" class="card" :class="{ wide, music: isMusic(it), watched: showSeen(it), missing: it.missing, picked }" @click.capture="click">
     <div class="poster">
       <img v-if="src" :src="src" :srcset="srcset" sizes="(max-width:760px) 34vw, 180px" loading="lazy" alt="" @load="($event.target as HTMLElement).classList.add('in')">
       <div v-if="progress > 0" class="bar"><i :style="{ width: progress * 100 + '%' }"></i></div>
@@ -55,7 +55,7 @@ function play() {
       <span v-if="pickable" class="pick" role="checkbox" :aria-checked="!!picked" :title="t('Select')" :aria-label="t('Select')" @click.prevent.stop="emit('pick', $event)"></span>
       <span v-if="showSeen(it)" class="seen" :title="t('Watched')"><Icon name="check" /></span>
       <button v-if="admin" type="button" class="edit" :title="t('Edit details')" :aria-label="t('Edit details')" @click.prevent.stop="editing = true"><Icon name="edit" /></button>
-      <ItemMenu v-if="!plain && ['movie', 'show', 'season', 'episode'].includes(it.type)" :item="it" card :selectable="pickable" :cont="cont" @changed="changed" @removed="emit('removed', props.item.id)" @select="selectMe" />
+      <ItemMenu v-if="!plain && it.type !== 'clip'" :item="it" card :selectable="pickable" :cont="cont" @changed="changed" @removed="emit('removed', props.item.id)" @select="selectMe" />
       <button v-if="isPlayable(it) && !it.missing" class="play" :title="t('Play')" :aria-label="t('Play')" @click.prevent.stop="play"><Icon name="play" /></button>
     </div>
     <div class="t" :title="lines[0]">{{ lines[0] }}</div>

@@ -16,6 +16,8 @@ export interface Item {
   index?: number, parentIndex?: number, parentTitle?: string, grandparentTitle?: string, parentRatingKey?: string,
   grandparentRatingKey?: string, grandparentThumb?: string, genres?: string[], contentRating?: string, rating?: number,
   studio?: string, editionTitle?: string, missing?: boolean, librarySectionID?: number, squareThumb?: string, role?: string, favorite?: boolean, watchlist?: boolean, updatedAt?: number,
+  /** An album: album, ep, single, live, compilation or soundtrack. */
+  releaseType?: string,
   credits?: number[], intro?: { start: number, end: number }, recap?: { start: number, end: number }, loudness?: number,
   /** "What happened so far": the episode before, played from `from` to `to` (ms, its credits). */
   catchUp?: { id: number, from: number, to: number, parentIndex?: number, index?: number, title?: string },

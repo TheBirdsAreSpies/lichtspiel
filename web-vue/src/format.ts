@@ -32,7 +32,14 @@ export const resumeAt = (it: Item) => ((it.viewOffset || 0) >= 1000 ? (it.viewOf
 
 export const seasonTitle = (s?: string) => (/^(Season \d+|Specials)$/.test(s || '') ? t(s || '') : s || '');
 
-export const isPlayable = (it: Item) => ['movie', 'episode', 'clip'].includes(it.type);
+export const isPlayable = (it: Item) => ['movie', 'episode', 'video', 'clip', 'track'].includes(it.type);
+/** Artists, albums and songs: square covers. */
+export const isMusic = (it: Item) => ['artist', 'album', 'track'].includes(it.type);
+
+/** The kinds of an album, in the order an artist's page lists them. */
+export const RELEASES = ['album', 'ep', 'single', 'live', 'compilation', 'soundtrack'];
+export const releaseName = (r: string, plural = false) => ({ album: plural ? t('Albums') : t('Album'), ep: plural ? t('EPs') : t('EP'), single: plural ? t('Singles') : t('Single'),
+  live: plural ? t('Live albums') : t('Live'), compilation: plural ? t('Compilations') : t('Compilation'), soundtrack: plural ? t('Soundtracks') : t('Soundtrack') } as Record<string, string>)[r] || r;
 
 /** Whether a poster shows the watched mark: watched, and of a kind chosen under Settings → Playback. */
 export const showSeen = (it: Item) => {
@@ -56,6 +63,9 @@ export function cardLines(it: Item): [string, string] {
   if (it.type === 'episode') return [it.grandparentTitle || it.title, `${t('S{n}', { n: it.parentIndex || 0 })} ${t('E{n}', { n: it.index || 0 })} · ${it.title}`];
   if (it.type === 'season') return [seasonTitle(it.title), it.parentTitle || ''];
   if (it.type === 'show') return [it.title, t('{n} episodes', { n: it.leafCount || 0 })];
+  if (it.type === 'artist') return [it.title, t('{n} songs', { n: it.leafCount || 0 })];
+  if (it.type === 'album') return [it.title, [it.parentTitle, it.year, it.releaseType && it.releaseType !== 'album' ? releaseName(it.releaseType) : ''].filter(Boolean).join(' · ')];
+  if (it.type === 'track') return [it.title, [it.grandparentTitle, it.parentTitle].filter(Boolean).join(' · ')];
   return [it.title, [it.year, it.editionTitle].filter(Boolean).join(' · ')];
 }
 

@@ -369,6 +369,9 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
           <select v-if="section.type === 'show'" :value="extra.type || ''" :aria-label="t('Show')" @change="setExtra('type', ($event.target as HTMLSelectElement).value)">
             <option value="">{{ t('Shows') }}</option><option value="season">{{ t('Seasons') }}</option><option value="episode">{{ t('Episodes') }}</option>
           </select>
+          <select v-if="section.type === 'music'" :value="extra.type || ''" :aria-label="t('Show')" @change="setExtra('type', ($event.target as HTMLSelectElement).value)">
+            <option value="">{{ t('Artists') }}</option><option value="album">{{ t('Albums') }}</option><option value="track">{{ t('Songs') }}</option>
+          </select>
           <input v-model="q" type="search" :placeholder="t('Filter by title')" :aria-label="t('Filter by title')">
           <select v-model="sortField" :aria-label="t('Sort')" :title="t('Sort')">
             <option v-for="[v, l] in sortFields" :key="v" :value="v">{{ t(l) }}</option>
@@ -449,9 +452,9 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
       <div ref="gridEl" class="grid" :class="{ 'has-letters': marks.length, picking: picked.size > 0 }">
         <template v-for="(it, i) in items" :key="it ? it.id : 'p' + i">
           <PosterCard v-if="it" :item="it" :data-i="i" pickable :picked="picked.has(i)" :picking="picked.size > 0" @pick="pick(i, $event)" @changed="refreshPicked([$event])" />
-          <div v-else v-pending class="card ph" :data-i="i"><div class="poster skel"></div><div class="t">&nbsp;</div><div class="s">&nbsp;</div></div>
+          <div v-else v-pending class="card ph" :class="{ music: section.type === 'music' }" :data-i="i"><div class="poster skel"></div><div class="t">&nbsp;</div><div class="s">&nbsp;</div></div>
         </template>
-        <template v-if="loading && !items.length"><div v-for="n in 12" :key="n" class="card ph"><div class="poster skel"></div></div></template>
+        <template v-if="loading && !items.length"><div v-for="n in 12" :key="n" class="card ph" :class="{ music: section.type === 'music' }"><div class="poster skel"></div></div></template>
       </div>
       <PickBar v-if="pickedItems.length" :items="pickedItems" @clear="clearPicks" @all="pickAll" @changed="refreshPicked" />
       <p v-if="total === 0" class="empty">{{ t('Nothing found.') }}</p>

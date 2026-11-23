@@ -6,7 +6,7 @@ import { get, list, type Item } from '../api';
 import { t } from '../i18n';
 import PosterCard from '../components/PosterCard.vue';
 
-const KINDS: Record<string, string> = { movie: 'Movies', show: 'Shows', season: 'Seasons', episode: 'Episodes' };
+const KINDS: Record<string, string> = { movie: 'Movies', show: 'Shows', season: 'Seasons', episode: 'Episodes', artist: 'Artists', album: 'Albums', track: 'Songs', clip: 'Videos', photo: 'Photos', collection: 'Collections' };
 const route = useRoute();
 const q = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''));
 const results = ref<Item[] | null>(null);

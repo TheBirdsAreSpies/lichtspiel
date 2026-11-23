@@ -92,8 +92,56 @@ const partStart = (n: number) => parts.value.slice(0, n).reduce((a, b) => a + b,
 const title = computed(() => (it.value ? (it.value.type === 'episode' ? it.value.grandparentTitle : it.value.title) : ''));
 const subLine = computed(() => {
   const i = it.value; if (!i) return '';
-  return i.type === 'episode' ? `${catchUp ? t('What happened so far') + ' · ' : ''}${t('S{n}', { n: i.parentIndex || 0 })}${t('E{n}', { n: i.index || 0 })} · ${i.title}` : i.year ? String(i.year) : '';
+  return i.type === 'episode' ? `${catchUp ? t('What happened so far') + ' · ' : ''}${t('S{n}', { n: i.parentIndex || 0 })}${t('E{n}', { n: i.index || 0 })} · ${i.title}`
+    : i.type === 'track' ? [i.grandparentTitle, i.parentTitle].filter(Boolean).join(' · ') : i.year ? String(i.year) : '';
 });
+// A song has no picture: its cover stays on the screen.
+const cover = computed(() => (it.value && it.value.type === 'track' ? picture(it.value.thumb) || undefined : undefined));
+
+// ---- the words of a song: lines that follow the music (an .lrc file, t in ms) or just the text
+interface Lyrics { synced?: boolean, lines: { t?: number, text?: string }[] }
+const lyrics = ref<Lyrics | null>(null);
+const lyricsOn = ref((() => { try { return localStorage.getItem('lyricsOn') !== '0'; } catch { return true; } })());
+const lyricsBox = ref<HTMLElement | null>(null);
+function loadLyrics(i: Item) {
+  lyrics.value = null;
+  if (i.type !== 'track') return;
+  get<Lyrics>(`/library/metadata/${i.id}/lyrics`).then(l => { if (it.value === i && l.lines && l.lines.length) lyrics.value = l; }).catch(() => { /* a song without words */ });
+}
+function toggleLyrics() {
+  if (!lyrics.value) { say(t('No lyrics for this song')); return; }
+  lyricsOn.value = !lyricsOn.value;
+  try { localStorage.setItem('lyricsOn', lyricsOn.value ? '1' : '0'); } catch { /* private window */ }
+}
+// The line sung now, kept in the middle.
+const lyricLine = computed(() => {
+  const l = lyrics.value; if (!l || !l.synced) return -1;
+  const ms = now.value * 1000;
+  let cur = -1;
+  l.lines.forEach((x, n) => { if (x.t !== undefined && x.t <= ms) cur = n; });
+  return cur;
+});
+watch([lyricLine, lyricsOn], () => {
+  setTimeout(() => {
+    const box = lyricsBox.value, p = box && lyricLine.value >= 0 ? box.children[lyricLine.value] as HTMLElement | undefined : undefined;
+    if (box && p) box.scrollTop = p.offsetTop - box.clientHeight / 2 + p.clientHeight / 2;
+  }, 0);
+});
+
+// ---- the system's media keys and lock screen
+function mediaSession(i: Item) {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    const art = i.type === 'episode' && i.grandparentThumb ? i.grandparentThumb : i.thumb;
+    navigator.mediaSession.metadata = new MediaMetadata({ title: i.title,
+      artist: i.type === 'episode' ? `${i.grandparentTitle} · ${t('S{n}', { n: i.parentIndex || 0 })}${t('E{n}', { n: i.index || 0 })}` : i.type === 'track' ? (i.grandparentTitle || '') : (i.year ? String(i.year) : ''),
+      album: i.type === 'track' ? (i.parentTitle || '') : '', artwork: art ? [{ src: new URL(picture(art), location.href).href, sizes: '300x450', type: 'image/jpeg' }] : [] });
+    const on = (a: MediaSessionAction, f: MediaSessionActionHandler) => { try { navigator.mediaSession.setActionHandler(a, f); } catch { /* not offered by this browser */ } };
+    on('play', () => { if (paused.value) toggle(); }); on('pause', () => { if (!paused.value) toggle(); });
+    on('seekbackward', () => skip(-10)); on('seekforward', () => skip(30));
+    on('seekto', d => { if (typeof d.seekTime === 'number') seek(d.seekTime); }); on('nexttrack', () => { if (hasNext.value) finish(); });
+  } catch { /* older browser */ }
+}
 const subName = (s: Subtitle, i: number) => [s.language ? langName(s.language) : '', s.title, s.forced ? t('forced') : '', s.sdh ? 'SDH' : '', !s.language && s.file ? s.file : ''].filter(Boolean).join(' · ') || t('Subtitles {n}', { n: i + 1 });
 const audioName = (a: Stream) => [a.language ? langName(a.language) : '', String(a.codec || '').toUpperCase(), a.channels === 6 ? '5.1' : a.channels === 8 ? '7.1' : a.channels === 2 ? t('Stereo') : '', a.title || ''].filter(Boolean).join(' · ');
 
@@ -356,7 +404,7 @@ function setQuality(v: string) {
 }
 // Whether the next episode (or what comes next in a playlist) plays by itself after a countdown.
 const autoNext = computed(() => pref('autoNext', '1') !== '0');
-const hasNext = computed(() => !!it.value && (it.value.type === 'episode' || !!route.query.queue || upQueue.list.length > 0));
+const hasNext = computed(() => !!it.value && (it.value.type === 'episode' || !!route.query.queue || upQueue.list.length > 0 || (it.value.type === 'track' && !!upNext.value)));
 
 // Speed (⚙, or < and >): kept with the account, like in the classic app.
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -509,10 +557,12 @@ function report(state: 'playing' | 'paused' | 'stopped', ms = Math.floor(now.val
 // Not started from a playlist: what was left of one is forgotten.
 if (!route.query.queue) queue.items = [];
 
-// After an episode: the next one in its season, then the first of the next season.
+// After an episode: the next one in its season, then the first of the next season. After a song: the next on its album.
 async function nextEpisode(): Promise<Item | null> {
-  const i = it.value; if (!i || i.type !== 'episode' || !i.grandparentRatingKey) return null;
-  const all = list<Item>(await get(`/library/metadata/${i.grandparentRatingKey}/allLeaves`).catch(() => null));
+  const i = it.value; if (!i) return null;
+  const from = i.type === 'episode' ? i.grandparentRatingKey : i.type === 'track' ? i.parentRatingKey : null;
+  if (!from) return null;
+  const all = list<Item>(await get(`/library/metadata/${from}/allLeaves`).catch(() => null));
   const at = all.findIndex(e => e.id === i.id);
   return at >= 0 ? all.slice(at + 1).find(e => !e.missing) || null : null;
 }
@@ -634,7 +684,7 @@ function togglePip() {
 // The list of keyboard shortcuts (?, or ⚙ → Keyboard shortcuts).
 const showKeys = ref(false);
 const KEYS = [['Space / K', 'Play or pause'], ['← / J', 'Back 10 seconds'], ['→ / L', 'Forward 30 seconds'], ['Shift + ← / →', '1 minute back / forward'],
-  ['↑ / ↓', 'Louder / quieter'], ['M', 'Mute'], ['F', 'Full screen'], ['P', 'Picture in picture'], ['C', 'Subtitles on / off'], ['N', 'Next'],
+  ['↑ / ↓', 'Louder / quieter'], ['M', 'Mute'], ['F', 'Full screen'], ['P', 'Picture in picture'], ['C', 'Subtitles on / off'], ['Y', 'Lyrics on / off'], ['N', 'Next'],
   ['< / >', 'Slower / faster'], ['0 … 9', 'Jump to 0 % … 90 %'], ['Home / End', 'Start / near the end'], ['?', 'This list'], ['Esc', 'Close']];
 // "Shift + ← / →" → keys in boxes, the words between them plain.
 const keyParts = (k: string) => k.split(' ').map(x => ({ x, kbd: !['/', '+', '…'].includes(x) }));
@@ -680,6 +730,7 @@ function key(e: KeyboardEvent) {
   else if (k === 'f') toggleFull();
   else if (k === 'p') togglePip();
   else if (k === 'c') toggleSubs();
+  else if (k === 'y') toggleLyrics();
   else if (k === 'n') { if (hasNext.value) finish(); }
   else if (k === 'Home') seek(0);
   else if (k === 'End') seek(duration.value - 15);
@@ -716,6 +767,7 @@ onMounted(async () => {
     it.value = list<Item>(await get('/library/metadata/' + props.id))[0] || null;
     if (!it.value) { error.value = t('Not found'); return; }
     chooseTracks();
+    loadLyrics(it.value); mediaSession(it.value);
     if (it.value.type === 'movie' && !(Number(route.query.t) > 0) && !tg.code && !cast.on && !catchUp) { waiting.value = false; await playPrerolls(); waiting.value = true; }
     if (gone) return;
     await load(Number(route.query.t) || 0);
@@ -747,6 +799,7 @@ onBeforeUnmount(() => {
   if (sound) sound.ctx.close().catch(() => {});
   document.removeEventListener('keydown', key);
   document.removeEventListener('fullscreenchange', onFull);
+  if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
   if (it.value && !stopped.value && !done) report('stopped');
   const v = video.value;
   if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
@@ -770,7 +823,10 @@ const endsAt = computed(() => {
 
 <template>
   <div ref="box" class="player" :class="{ idle }" :style="cueStyle" @mousemove="wake" @click.self="toggle">
-    <video ref="video" playsinline @click="toggle"></video>
+    <video ref="video" playsinline :poster="cover" @click="toggle"></video>
+    <div v-if="lyrics && lyricsOn" ref="lyricsBox" class="p-lyrics" :class="{ sync: lyrics.synced }" @click.self="toggle">
+      <p v-for="(x, n) in lyrics.lines" :key="n" :class="{ now: n === lyricLine }" @click="lyrics.synced && x.t !== undefined && seek(x.t / 1000)">{{ x.text || ' ' }}</p>
+    </div>
     <div v-if="pre" class="p-preroll">
       <video ref="preVideo" :key="pre.url" :src="pre.url" playsinline @ended="preEnd(true)" @error="preEnd(true)"></video>
       <button v-if="pre.several" class="p-pre-next" @click.stop="preEnd(true)">{{ t('Next video') }}</button>
@@ -859,6 +915,7 @@ const endsAt = computed(() => {
           </div>
         </div>
         <div class="p-menu-wrap">
+          <button v-if="lyrics" class="iconbtn" :class="{ on: lyricsOn }" :title="t('Lyrics (Y)')" :aria-label="t('Lyrics (Y)')" @click="toggleLyrics"><Icon name="lyrics" /></button>
           <button v-if="subs.length" class="iconbtn" :class="{ on: sub >= 0 || burn !== null || menu === 'subs' }" :title="t('Subtitles (C)')" :aria-label="t('Subtitles (C)')" @click="menu = menu === 'subs' ? '' : 'subs'"><Icon name="cc" /></button>
           <div v-if="menu === 'subs'" class="p-menu">
             <button :class="{ on: sub < 0 && burn === null }" @click="setSub(-1)">{{ t('Off') }}</button>
