@@ -615,3 +615,18 @@ code.m-delete { color: #e5534b; }
 @media (hover: none) { .nav-more { opacity: 1; } .nav-item.admin .nav-num { visibility: hidden; } }
 .nav-small .nav-more { display: none; }
 .side-menu { position: fixed; right: auto; z-index: 60; }
+
+/* the bar at the top opens what the server does in the background */
+.activity { cursor: pointer; }
+.activity:hover, .activity.open { color: var(--text); }
+.actpanel { position: fixed; top: 60px; right: 18px; width: min(460px, 92vw); max-height: calc(100vh - 80px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; z-index: 40; box-shadow: 0 8px 30px rgba(0,0,0,.45); font-size: 13px; }
+.actpanel .close { position: absolute; top: 8px; right: 8px; }
+.actpanel .actsec { margin-bottom: 14px; }
+.actpanel .actsec:last-child { margin-bottom: 0; }
+.actpanel h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+.actpanel ul { margin: 4px 0 0; padding-left: 18px; }
+.actpanel li { margin: 2px 0; overflow-wrap: anywhere; }
+.actpanel .row-c { display: flex; gap: 10px; align-items: center; }
+.actpanel .gap { margin-top: 6px; }
+.actpanel .pbar { display: inline-block; width: 80px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.actpanel .pbar i { display: block; height: 100%; background: var(--accent); }

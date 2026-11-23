@@ -14,6 +14,7 @@ import { checkInvites, declineInvite, invites } from './together';
 import { activity, cancelJob, poke } from './activity';
 import Modal from './components/Modal.vue';
 import SectionMenu from './components/SectionMenu.vue';
+import ActivityPanel from './components/ActivityPanel.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -63,6 +64,8 @@ async function out() {
   router.push({ name: 'login' });
 }
 // The tooltip of the activity at the top: every line, with the file a scan is on.
+// A click on the bar opens what runs, what waits and what is planned (ActivityPanel).
+const actOpen = ref(false);
 const activityTitle = () => activity.lines.map(l => l.text + (l.title ? '\n' + l.title : '')).join('\n') || activity.last;
 // A page with tabs in its address stays while they change (no new loading); any other address is a new page.
 const pageKey = computed(() => (route.name === 'server' || route.name === 'settings' ? String(route.name) : route.path));
@@ -85,16 +88,17 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
         <Icon name="search" />
         <input v-model="query" type="search" :placeholder="t('Search')" :aria-label="t('Search')" @input="search()">
       </form>
-      <div v-if="activity.busy || activity.last" class="activity" :title="activityTitle()">
+      <div v-if="activity.busy || activity.last" class="activity" :class="{ open: actOpen }" :title="actOpen ? '' : activityTitle()" role="button" tabindex="0" :aria-expanded="actOpen" @click="!($event.target as Element).closest('button') && (actOpen = !actOpen)" @keydown.enter.self="actOpen = !actOpen">
         <template v-if="activity.busy">
           <span class="spin"></span>
           <template v-for="(l, i) in activity.lines" :key="i">
             <span class="txt">{{ l.text }}</span><span v-if="l.pct !== undefined" class="pbar"><i :style="{ width: l.pct + '%' }"></i></span>
           </template>
-          <button v-if="activity.canCancel" class="small" @click="cancelJob">{{ t('Cancel') }}</button>
+          <button v-if="activity.canCancel" class="small" @click.stop="cancelJob">{{ t('Cancel') }}</button>
         </template>
         <span v-else class="txt">{{ activity.last }}</span>
       </div>
+      <ActivityPanel v-if="actOpen" @close="actOpen = false" />
       <!-- The owner's way to the dashboard, with how many play now (also on phones, where the activity is hidden). -->
       <RouterLink v-if="session.me && session.me.admin" to="/dashboard" class="npbtn" :class="{ live: (activity.playing || 0) > 0 }" active-class="on"
         :title="playingLabel" :aria-label="playingLabel">
