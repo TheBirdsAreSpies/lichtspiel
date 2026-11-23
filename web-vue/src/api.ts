@@ -34,6 +34,8 @@ export interface Section { id: number, key: string, title: string, type: string,
 export interface Me {
   id: number, username: string, display_name?: string, full_name?: string, email?: string, two_factor?: boolean, admin: boolean,
   prefs?: Record<string, string>, can_download?: boolean, can_delete?: boolean, allow_transcode?: boolean,
+  /** The left menu as this person arranged it (nav.ts). */
+  sidebar?: { order?: string[], hidden?: string[] },
 }
 export interface Status { name: string, version: string, build?: string, setup_needed: boolean, mail?: boolean, lan_url?: string }
 export type Container<K extends string, T> = { MediaContainer: { [k in K]?: T[] } & { totalSize?: number, size?: number } };

@@ -3,17 +3,17 @@
 // who is signed in. Signed out, and in the player, only the page itself.
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { session, signOut, savePref, type Section } from './api';
+import { session, signOut, savePref } from './api';
 import { lang, packs, setLang, t } from './i18n';
 import Icon from './components/Icon.vue';
-import { loadPanels, panels } from './plugins';
+import { loadPanels } from './plugins';
 import { dl, loadDlCount } from './downloads';
 import { toastRun, toastState } from './toast';
 import { cardSize } from './cardSize';
 import { checkInvites, declineInvite, invites } from './together';
 import { activity, cancelJob, poke } from './activity';
 import Modal from './components/Modal.vue';
-import SectionMenu from './components/SectionMenu.vue';
+import SideList from './components/SideList.vue';
 import ActivityPanel from './components/ActivityPanel.vue';
 
 const route = useRoute();
@@ -70,9 +70,6 @@ const activityTitle = () => activity.lines.map(l => l.text + (l.title ? '\n' + l
 // A page with tabs in its address stays while they change (no new loading); any other address is a new page.
 const pageKey = computed(() => (route.name === 'server' || route.name === 'settings' ? String(route.name) : route.path));
 const playingLabel = computed(() => (activity.playing ? t('Dashboard · {n} playing now', { n: activity.playing }) : t('Dashboard · nothing is playing')));
-// The number beside a library in the menu: its shows, or its videos.
-const sectionCount = (s: Section) => (s.type === 'show' ? (s.count ? t('{n} shows', { n: s.count }) : '') : s.videoCount ?? s.count ?? '');
-const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', photo: 'photo' }[type] || 'folder');
 </script>
 
 <template>
@@ -124,20 +121,8 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
     <nav class="side" :aria-label="t('Libraries')">
       <RouterLink to="/" class="nav" exact-active-class="on" :title="t('Home')"><Icon name="home" /><span>{{ t('Home') }}</span></RouterLink>
       <RouterLink to="/watchlist" class="nav" active-class="on" :title="t('Watchlist')"><Icon name="mark" /><span>{{ t('Watchlist') }}</span></RouterLink>
-      <RouterLink to="/playlists" class="nav" :class="{ on: route.name === 'playlist' }" active-class="on" :title="t('Playlists')"><Icon name="playlist" /><span>{{ t('Playlists') }}</span></RouterLink>
-      <RouterLink to="/stats" class="nav" active-class="on" :title="t('Statistics')"><Icon name="chart" /><span>{{ t('Statistics') }}</span></RouterLink>
       <RouterLink v-if="session.me && session.me.can_download" to="/downloads" class="nav" active-class="on" :title="t('Downloads')"><Icon name="download" /><span>{{ t('Downloads') }}</span><small v-if="dl.busy" class="nav-count" :title="t('{n} being converted', { n: dl.busy })">{{ dl.busy }}</small></RouterLink>
-      <div class="nav-head">{{ t('Libraries') }}</div>
-      <div v-for="s in session.sections" :key="s.id" class="nav-item" :class="{ admin: session.me && session.me.admin }">
-        <RouterLink :to="'/library/' + s.id" class="nav" active-class="on" :title="s.title">
-          <Icon :name="icon(s.type)" /><span>{{ s.title }}</span><small v-if="sectionCount(s)" class="nav-num">{{ sectionCount(s) }}</small>
-        </RouterLink>
-        <SectionMenu v-if="session.me && session.me.admin" :section="s" />
-      </div>
-      <template v-if="panels.list.some(p => p.sidebar)">
-        <div class="nav-head"></div>
-        <RouterLink v-for="p in panels.list.filter(x => x.sidebar)" :key="p.id" :to="'/plugin/' + p.id" class="nav" active-class="on" :title="p.name"><Icon name="extension" /><span>{{ p.name }}</span></RouterLink>
-      </template>
+      <SideList />
       <template v-if="session.me && session.me.admin">
         <div class="nav-head">{{ t('Server') }}</div>
         <RouterLink to="/dashboard" class="nav" active-class="on" :title="t('Dashboard')"><Icon name="dashboard" /><span>{{ t('Dashboard') }}</span></RouterLink>

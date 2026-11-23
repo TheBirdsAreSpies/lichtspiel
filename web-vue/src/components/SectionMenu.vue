@@ -2,7 +2,8 @@
 // The "⋯" beside a library in the left menu (owner), as in the classic app: scan its files, its details again,
 // analysis, who may see it, and the libraries page for its name, folders, trash and removal. The menu is put
 // on the page itself (the left menu scrolls and would cut it off).
-import { nextTick, onBeforeUnmount, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
+import { navList, setPinned } from '../nav';
 import { useRouter } from 'vue-router';
 import { api, get, list, session, type Section } from '../api';
 import { poke } from '../activity';
@@ -10,7 +11,10 @@ import { t } from '../i18n';
 import { toast } from '../toast';
 import AccessDialog from './AccessDialog.vue';
 
-const props = defineProps<{ section: Section }>();
+// section: a library (its tools, for the owner); navKey: an entry of the left menu (pin or unpin it, for everyone).
+const props = defineProps<{ section?: Section, navKey?: string }>();
+const admin = computed(() => !!session.me?.admin && !!props.section);
+const navEntry = computed(() => navList.value.find(e => e.key === (props.navKey || (props.section ? 's' + props.section.id : ''))));
 const router = useRouter();
 const open = ref(false);
 const at = ref({ left: 0, top: 0 });
@@ -44,7 +48,7 @@ async function run(what: () => Promise<void>) {
   close();
   try { await what(); } catch (e) { toast((e as Error).message, 6000); }
 }
-const s = () => props.section;
+const s = () => props.section!;
 const scan = () => run(async () => {
   await api('POST', `/library/sections/${s().id}/refresh`);
   toast(t('Scanning {name}', { name: s().title })); poke();
@@ -64,6 +68,7 @@ const analyze = (deep: boolean) => run(async () => {
   <button ref="btn" type="button" class="nav-more" :class="{ open }" :title="t('More')" :aria-label="t('More')" aria-haspopup="menu" :aria-expanded="open" @click.prevent.stop="toggle">⋯</button>
   <Teleport to="body">
     <div v-if="open" ref="menu" class="menu side-menu" role="menu" :style="{ left: at.left + 'px', top: at.top + 'px' }">
+      <template v-if="admin">
       <button class="menu-row" role="menuitem" @click="scan">{{ t('Scan library files') }}</button>
       <button class="menu-row" role="menuitem" @click="refreshAll">{{ t('Refresh all metadata') }}</button>
       <button class="menu-row" role="menuitem" @click="analyze(false)">{{ t('Analyze') }}</button>
@@ -71,7 +76,12 @@ const analyze = (deep: boolean) => run(async () => {
       <hr>
       <button class="menu-row" role="menuitem" @click="close(); access = true">{{ t('Grant access…') }}</button>
       <button class="menu-row" role="menuitem" @click="close(); router.push('/libraries')">{{ t('Manage library') }}</button>
+      </template>
+      <template v-if="navEntry">
+        <hr v-if="admin">
+        <button class="menu-row" role="menuitem" @click="close(); setPinned(navEntry.key, navEntry.hidden)">{{ navEntry.hidden ? t('Pin') : t('Unpin') }}</button>
+      </template>
     </div>
   </Teleport>
-  <AccessDialog v-if="access" :section="section.id" @close="access = false" />
+  <AccessDialog v-if="access && section" :section="section.id" @close="access = false" />
 </template>

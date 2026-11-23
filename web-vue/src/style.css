@@ -695,3 +695,26 @@ code.m-delete { color: #e5534b; }
 .home-rows { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
 .home-rows .li { display: flex; align-items: center; gap: 6px; }
 .home-rows .li button { margin: 0; }
+
+/* the left menu's libraries heading with its "⋯", "More", and the rows while the menu is edited */
+.navhead { display: flex; align-items: center; justify-content: space-between; padding-right: 8px; }
+.head-wrap { position: relative; }
+.navhead-more { width: 26px; height: 22px; padding: 0; margin: 0; border: 0; border-radius: 6px; background: none; color: var(--dim); font-weight: 700; letter-spacing: 1px; opacity: 0; }
+.navhead:hover .navhead-more, .navhead-more:focus-visible, .navhead-more[aria-expanded="true"] { opacity: 1; }
+.navhead-more:hover { background: var(--panel2); color: var(--text); }
+.navhead .small { margin: 0; text-transform: none; letter-spacing: 0; }
+.navhead-menu { top: 26px; left: 0; right: auto; z-index: 40; text-transform: none; letter-spacing: 0; font-size: 14px; }
+@media (hover: none) { .navhead-more { opacity: 1; } }
+.morehead { font-size: 13px; }
+.navhint { font-size: 12px; margin: 0 12px 6px; }
+.edit-sep { font-size: 11px; letter-spacing: .06em; color: var(--dim); padding: 10px 12px 4px; }
+.edit-row { display: flex; align-items: center; gap: 4px; padding: 5px 6px 5px 10px; border-top: 2px solid transparent; border-bottom: 2px solid transparent; font-size: 14px; }
+.edit-row .grip { cursor: grab; color: var(--dim); padding: 0 4px; user-select: none; }
+.edit-row .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edit-row.off .n { color: var(--dim); }
+.edit-row button { padding: 1px 6px; font-size: 12px; margin: 0; }
+.edit-row button[disabled] { opacity: .3; cursor: default; }
+.edit-row.drag { opacity: .4; }
+.edit-row.over-top { border-top-color: var(--accent); }
+.edit-row.over-bottom { border-bottom-color: var(--accent); }
+.nav-small .navhead-more, .nav-small .navhint, .nav-small .edit-row, .nav-small .edit-sep { display: none; }
