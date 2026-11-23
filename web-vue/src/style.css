@@ -630,3 +630,11 @@ code.m-delete { color: #e5534b; }
 .actpanel .gap { margin-top: 6px; }
 .actpanel .pbar { display: inline-block; width: 80px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
 .actpanel .pbar i { display: block; height: 100%; background: var(--accent); }
+
+/* a library: the sort direction and the dice beside the sorting; the title picked at random */
+.dirbtn { padding: 6px 10px; font-size: 15px; line-height: 1; background: var(--panel2); }
+.pickone { display: flex; gap: 18px; align-items: flex-start; }
+.pickone .card { width: 160px; flex: none; }
+.pickone h3 { margin: 0 0 4px; }
+.pick-sum { display: -webkit-box; -webkit-line-clamp: 7; line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden; }
+@media (max-width: 760px) { .pickone { flex-direction: column; align-items: center; } }

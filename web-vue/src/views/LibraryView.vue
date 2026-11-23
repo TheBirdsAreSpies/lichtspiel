@@ -13,11 +13,17 @@ import { t } from '../i18n';
 import AdvancedFilters from '../components/AdvancedFilters.vue';
 import FilterButton from '../components/FilterButton.vue';
 import PosterCard from '../components/PosterCard.vue';
+import RandomPick from '../components/RandomPick.vue';
 
 const props = defineProps<{ id: string }>();
 const PAGE = 60;
-const SORTS: [string, string][] = [['title:asc', 'Title'], ['year:desc', 'Year (newest)'], ['year:asc', 'Year (oldest)'], ['added_at:desc', 'Recently added'],
-  ['rating:desc', 'Rating'], ['last_viewed_at:desc', 'Recently watched'], ['random:asc', 'Random']];
+// What to sort by (as the classic app), each with the direction it starts in; the arrow beside turns it.
+const SORT_FIELDS: [string, string][] = [['title', 'Title'], ['year', 'Year'], ['release_date', 'Release date'], ['critic_rating', 'Critic rating'], ['audience_rating', 'Audience rating'],
+  ['user_rating', 'Your rating'], ['content_rating', 'Age rating'], ['duration', 'Length'], ['progress', 'Progress'], ['view_count', 'Plays'], ['added_at', 'Date added'],
+  ['last_viewed_at', 'Date played'], ['resolution', 'Resolution'], ['bitrate', 'Bitrate'], ['random', 'Random']];
+const SORT_ASC = new Set(['title', 'content_rating', 'random']);
+// (Older kept choices: rating became the critics' one.)
+const OLD_SORT: Record<string, string> = { rating: 'critic_rating' };
 
 const route = useRoute();
 const router = useRouter();
@@ -25,7 +31,18 @@ const tab = computed(() => (route.query.tab === 'collections' ? 'collections' : 
 const collection = computed(() => (typeof route.query.collection === 'string' ? route.query.collection : ''));
 const section = computed(() => session.sections.find(s => String(s.id) === props.id));
 const kept = (() => { try { return JSON.parse(localStorage.getItem('vue-lib:' + props.id) || '{}'); } catch { return {}; } })();
-const sort = ref<string>(kept.sort || 'title:asc');
+const sort = ref<string>((() => { const [f, d] = String(kept.sort || 'title:asc').split(':'); const g = OLD_SORT[f] || f; return SORT_FIELDS.some(x => x[0] === g) ? g + ':' + (d || 'asc') : 'title:asc'; })());
+const sortField = computed({ get: () => sort.value.split(':')[0], set: f => { sort.value = f + ':' + (SORT_ASC.has(f) ? 'asc' : 'desc'); } });
+const sortDesc = computed(() => sort.value.endsWith(':desc'));
+function turnSort() { sort.value = sortField.value + ':' + (sortDesc.value ? 'asc' : 'desc'); }
+
+// The dice: one title at random from what the filters leave.
+const picked = ref<Item | null>(null);
+async function randomPick() {
+  if (!total.value) return;
+  const p = filterParams(); p.set('sort', sort.value); p.set('start', String(Math.floor(Math.random() * total.value))); p.set('size', '1');
+  try { picked.value = list<Item>(await get(`/library/sections/${props.id}/all?${p}`))[0] || null; } catch (e) { error.value = (e as Error).message; }
+}
 const active = computed(() => fromQuery(route.query));
 // The advanced filters (rules) in the address: ?rules=[{field, op, value}…]&rmatch=any.
 const rulesText = computed(() => (typeof route.query.rules === 'string' ? route.query.rules : ''));
@@ -278,9 +295,11 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
         <h1>{{ collection || section.title }} <span v-if="!tab && total !== null" class="dim count">{{ total }}</span></h1>
         <div v-if="!tab" class="lib-bar">
           <input v-model="q" type="search" :placeholder="t('Filter by title')" :aria-label="t('Filter by title')">
-          <select v-model="sort" :aria-label="t('Sort')">
-            <option v-for="[v, l] in SORTS" :key="v" :value="v">{{ t(l) }}</option>
+          <select v-model="sortField" :aria-label="t('Sort')" :title="t('Sort')">
+            <option v-for="[v, l] in SORT_FIELDS" :key="v" :value="v">{{ t(l) }}</option>
           </select>
+          <button v-if="sortField !== 'random'" class="dirbtn" :title="sortDesc ? t('Descending') : t('Ascending')" :aria-label="sortDesc ? t('Descending') : t('Ascending')" @click="turnSort">{{ sortDesc ? '↓' : '↑' }}</button>
+          <button v-if="(total || 0) > 1" class="dirbtn" :title="t('Pick one at random')" :aria-label="t('Pick one at random')" @click="randomPick">🎲</button>
           <label class="size" :title="t('Poster size')">
             <span class="dim small-mark">▮</span>
             <input type="range" :min="CARD.min" :max="CARD.max" step="10" :value="cardSize" :aria-label="t('Poster size')" @input="setCardSize(Number(($event.target as HTMLInputElement).value))">
@@ -315,6 +334,7 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
         <button v-if="rules.length" class="chip" :title="t('Advanced filters')" @click="advancedOpen = true">{{ t('Advanced filters ({n})', { n: rules.length }) }}</button>
         <button v-if="Object.keys(active).length + (rules.length ? 1 : 0) > 1" class="linkbtn" @click="clearFilters">{{ t('Clear filters') }}</button>
       </div>
+      <RandomPick v-if="picked" :item="picked" @close="picked = null" @again="randomPick" />
       <AdvancedFilters v-if="advancedOpen" :rules="rules" :any="rmatch" @close="advancedOpen = false" @apply="setRules" />
       <div ref="gridEl" class="grid" :class="{ 'has-letters': marks.length }">
         <template v-for="(it, i) in items" :key="it ? it.id : 'p' + i">
