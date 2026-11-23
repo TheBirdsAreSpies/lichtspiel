@@ -725,3 +725,11 @@ code.m-delete { color: #e5534b; }
 .qlist .li { display: flex; align-items: center; gap: 10px; }
 .qlist img { width: 88px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; flex: none; }
 .qlist .li button { margin: 0; }
+
+/* "Something short": the times to pick, then what fits */
+.h2btn { margin-left: 12px; vertical-align: middle; font-weight: 400; }
+.picktimes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
+.picktimes button { margin: 0; }
+.picktimes input { width: 80px; }
+.picklist { display: flex; flex-wrap: wrap; gap: 14px; max-height: 60vh; overflow: auto; }
+.picklist .card { width: 140px; }

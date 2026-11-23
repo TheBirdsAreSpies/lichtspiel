@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { get, list, picture, pref, savePref, session, type Hub, type Item } from '../api';
 import Modal from '../components/Modal.vue';
+import ShortDialog from '../components/ShortDialog.vue';
 import { loadComing, type Coming } from '../coming';
 import { resumeAt } from '../format';
 import { t } from '../i18n';
@@ -40,6 +41,9 @@ const allRows = computed<RowOf[]>(() => {
   return all.map((x, i) => [x, i] as const).sort((a, b) => pos(a[0].id) - pos(b[0].id) || a[1] - b[1]).map(x => x[0]);
 });
 const rows = computed(() => allRows.value.filter(x => !layout.value.hidden.includes(x.id)));
+// "Something short" sits on the first row it picks from (what you are watching, or the watchlist).
+const shortOn = computed(() => (rows.value.find(x => x.id === 'continueWatching' || x.id === 'watchlist') || { id: '' }).id);
+const short = ref(false);
 
 // ---- customizing
 const editing = ref<{ rows: { id: string, title: string, on: boolean }[], banner: boolean } | null>(null);
@@ -102,10 +106,13 @@ const wideRow = (h: Hub) => h.hubIdentifier === 'continueWatching';
       <h1 v-if="!spot && session.sections.length">{{ t('Home') }}</h1>
       <template v-for="x in rows" :key="x.id">
         <ComingRow v-if="!x.hub" :entries="coming" />
-        <PosterRow v-else :title="x.title" :items="x.hub.Metadata || []" :wide="wideRow(x.hub)" :cont="x.id === 'continueWatching'" />
+        <PosterRow v-else :title="x.title" :items="x.hub.Metadata || []" :wide="wideRow(x.hub)" :cont="x.id === 'continueWatching'">
+          <template v-if="x.id === shortOn" #head><button class="small h2btn" @click="short = true">{{ t('⏱ Something short') }}</button></template>
+        </PosterRow>
       </template>
       <p v-if="hubs.length && !rows.length" class="empty">{{ t('All rows are hidden.') }}</p>
       <div v-if="allRows.length" class="home-edit"><button class="small" @click="startEdit">{{ t('Customize home') }}</button></div>
+      <ShortDialog v-if="short" @close="short = false" />
       <Modal v-if="editing" :title="t('Customize home')" @close="editing = null">
         <label class="chk gap"><input v-model="editing.banner" type="checkbox"> {{ t('Banner at the top') }}</label>
         <div class="dim">{{ t('Rows') }}</div>

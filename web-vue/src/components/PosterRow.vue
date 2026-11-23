@@ -17,7 +17,7 @@ const page = (dir: number) => { const el = strip.value; if (el) el.scrollBy({ le
 <template>
   <section v-if="shown.length" class="row">
     <div class="row-head">
-      <h2>{{ title }}</h2>
+      <h2>{{ title }}<slot name="head" /></h2>
       <span class="row-arrows">
         <button class="iconbtn" :aria-label="t('Back')" @click="page(-1)"><Icon name="left" /></button>
         <button class="iconbtn" :aria-label="t('Next')" @click="page(1)"><Icon name="right" /></button>

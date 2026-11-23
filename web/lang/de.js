@@ -1427,6 +1427,8 @@ I18N.add('de', 'Deutsch', {
     'At random': 'Zufällig ausgewählt',
     '🎲 Another one': '🎲 Noch einmal würfeln',
     'Something short': 'Etwas Kurzes',
+    'How much time do you have? What fits comes from “{name}”, not watched yet, in random order.': 'Wie viel Zeit hast du? Was passt, kommt aus „{name}“, noch nicht gesehen, in zufälliger Reihenfolge.',
+    'Nothing in “{name}” that you have not watched fits into {m} minutes.': 'Nichts Ungesehenes aus „{name}“ passt in {m} Minuten.',
     '⏱ Something short': '⏱ Etwas Kurzes',
     'How much time do you have? What fits comes from what you are watching and from your watchlist.': 'Wie viel Zeit hast du? Was hineinpasst, kommt aus dem, was du gerade schaust, und von deiner Watchlist.',
     'Nothing you are watching or have on your watchlist fits into {m} minutes.': 'Nichts, was du gerade schaust oder auf deiner Watchlist hast, passt in {m} Minuten.',

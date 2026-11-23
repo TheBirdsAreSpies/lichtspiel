@@ -18,6 +18,7 @@ import PosterCard from '../components/PosterCard.vue';
 import RandomPick from '../components/RandomPick.vue';
 import PickBar from '../components/PickBar.vue';
 import SectionMenu from '../components/SectionMenu.vue';
+import ShortDialog from '../components/ShortDialog.vue';
 
 const props = defineProps<{ id: string }>();
 const PAGE = 60;
@@ -44,6 +45,7 @@ function turnSort() { sort.value = sortField.value + ':' + (sortDesc.value ? 'as
 
 // The dice: one title at random from what the filters leave.
 const rolled = ref<Item | null>(null);
+const short = ref(false);
 async function randomPick() {
   if (!total.value) return;
   const p = filterParams(); p.set('sort', sort.value); p.set('start', String(Math.floor(Math.random() * total.value))); p.set('size', '1');
@@ -370,6 +372,7 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
           </select>
           <button v-if="sortField !== 'random'" class="dirbtn" :title="sortDesc ? t('Descending') : t('Ascending')" :aria-label="sortDesc ? t('Descending') : t('Ascending')" @click="turnSort">{{ sortDesc ? '↓' : '↑' }}</button>
           <button v-if="(total || 0) > 1" class="dirbtn" :title="t('Pick one at random')" :aria-label="t('Pick one at random')" @click="randomPick">🎲</button>
+          <button v-if="section.type === 'movie' || section.type === 'show'" class="dirbtn" :title="t('Something short')" :aria-label="t('Something short')" @click="short = true">⏱</button>
           <label class="size" :title="t('Poster size')">
             <span class="dim small-mark">▮</span>
             <input type="range" :min="CARD.min" :max="CARD.max" step="10" :value="cardSize" :aria-label="t('Poster size')" @input="setCardSize(Number(($event.target as HTMLInputElement).value))">
@@ -437,6 +440,7 @@ const unseen = (g: Group) => (left(g) > 0 ? t('{n} of {total} not seen', { n: le
         <button v-if="rules.length" class="chip" :title="t('Advanced filters')" @click="advancedOpen = true">{{ t('Advanced filters ({n})', { n: rules.length }) }}</button>
         <button v-if="Object.keys(active).length + (rules.length ? 1 : 0) > 1" class="linkbtn" @click="clearFilters">{{ t('Clear filters') }}</button>
       </div>
+      <ShortDialog v-if="short" :section="section" @close="short = false" />
       <RandomPick v-if="rolled" :item="rolled" @close="rolled = null" @again="randomPick" />
       <AdvancedFilters v-if="advancedOpen" :rules="rules" :any="rmatch" @close="advancedOpen = false" @apply="setRules" />
       <div ref="gridEl" class="grid" :class="{ 'has-letters': marks.length, picking: picked.size > 0 }">

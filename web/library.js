@@ -269,6 +269,8 @@ async function sectionPage(id, qs) {
     } catch (e) { toast(e.message); }
   };
   const diceBtn = total > 1 ? h('button', { class: 'dirbtn', title: t('Pick one at random'), 'aria-label': t('Pick one at random'), onclick: randomPick }, '🎲') : null;
+  // ----- something short from this library: what is not watched yet and fits into the time there is
+  const shortBtn = sec.type === 'movie' || sec.type === 'show' ? h('button', { class: 'dirbtn', title: t('Something short'), 'aria-label': t('Something short'), onclick: () => shortDialog(sec) }, '⏱') : null;
   // ----- the posters: the first page now, more while scrolling, a jump from the side letters
   const caption = captionFor(sortNow.field);
   const cardOpts = { episodeThumb: st.type === 'episode', caption };
@@ -402,7 +404,7 @@ async function sectionPage(id, qs) {
   const tools = h('div', { class: 'bar-tools' + (optSet ? ' open' : '') },
     sec.type === 'show' ? pick('type', [['', t('Shows')], ['season', t('Seasons')], ['episode', t('Episodes')]]) : null,
     sec.type === 'music' ? pick('type', [['', t('Artists')], ['album', t('Albums')], ['track', t('Songs')]]) : null,
-    filterBtn, sortBtn, dirBtn, diceBtn,
+    filterBtn, sortBtn, dirBtn, diceBtn, shortBtn,
     h('button', { class: 'dd toolsmore' + (optSet ? ' on' : ''), 'aria-expanded': String(optSet), onclick: e => {
       const open = tools.classList.toggle('open'); e.currentTarget.setAttribute('aria-expanded', String(open));
     } }, t('More'), icon('down')),
@@ -547,9 +549,10 @@ function randomDialog(it, again) {
 }
 
 // "Something short": say how much time there is, and get what fits into it from what you are watching
-// (titles begun count with the time left) and from your watchlist.
+// (titles begun count with the time left) and from your watchlist; from a library's page (sec), what in that
+// library is not watched yet and fits, in random order (a show library: its episodes).
 const SHORT_TIMES = [20, 30, 45, 60, 90];
-function shortDialog() {
+function shortDialog(sec) {
   let minutes = Number(store.get('shortMinutes', '30')) || 30;
   const list = h('div', { class: 'picklist' });
   const times = h('div', { class: 'picktimes' });
@@ -564,15 +567,21 @@ function shortDialog() {
     const mine = ++asked;
     list.replaceChildren(h('div', { class: 'dim' }, t('Loading…')));
     try {
-      const items = meta(await GET(`/api/short?minutes=${m}`));
+      let url = `/api/short?minutes=${m}`;
+      if (sec) {
+        const q = new URLSearchParams({ sort: 'random:asc', start: '0', size: '30', 'duration>': '1', 'duration<': String(m), unwatched: 'true' });
+        if (sec.type === 'show') q.set('type', 'episode');
+        url = `/library/sections/${sec.id}/all?${q}`;
+      }
+      const items = meta(await GET(url));
       if (mine !== asked) return;
       const left = it => Math.max(0, (it.duration || 0) - (it.viewOffset || 0));
       list.replaceChildren(...(items.length ? items.map(it => posterCard(it, { caption: x => x.viewOffset ? t('{time} left', { time: fmtDur(left(x)) }) : fmtDur(x.duration) }))
-        : [h('div', { class: 'dim' }, t('Nothing you are watching or have on your watchlist fits into {m} minutes.', { m }))]));
+        : [h('div', { class: 'dim' }, sec ? t('Nothing in “{name}” that you have not watched fits into {m} minutes.', { name: sec.title, m }) : t('Nothing you are watching or have on your watchlist fits into {m} minutes.', { m }))]));
     } catch (e) { if (mine === asked) list.replaceChildren(h('div', { class: 'dim' }, e.message)); }
   };
   const box = modal(t('Something short'), [
-    h('p', { class: 'dim', style: 'margin-top:-6px' }, t('How much time do you have? What fits comes from what you are watching and from your watchlist.')),
+    h('p', { class: 'dim', style: 'margin-top:-6px' }, sec ? t('How much time do you have? What fits comes from “{name}”, not watched yet, in random order.', { name: sec.title }) : t('How much time do you have? What fits comes from what you are watching and from your watchlist.')),
     times, list,
     h('div', { class: 'actions', style: 'margin-bottom:0' }, h('button', { onclick: () => box.remove() }, t('Close')))]);
   closeOnOpen(box);

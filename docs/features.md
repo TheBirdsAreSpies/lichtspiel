@@ -132,6 +132,8 @@ Everything Lichtspiel does, in detail. The short overview is in the [README](../
   get what fits into it, from what you are watching (a title begun counts with the time left,
   the next episode of your shows) and from your watchlist (a show there gives its next unseen
   episode). The app has it on the same row (**Etwas Kurzes**). `GET /api/short?minutes=40`.
+  A library has it too (**⏱** beside the dice): what in that library is not watched yet and fits,
+  in random order (a TV show library: its episodes).
 - **The "⋯" menu** on every poster and on a title's page: **Watch together** (tick people
   registered here, who get the invitation in the app, or send a link; whoever plays, pauses or
   jumps moves everyone), Share, Add to queue, Add to (playlist or collection),
