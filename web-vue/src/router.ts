@@ -1,6 +1,6 @@
 // The pages. Hash addresses (/vue/#/item/12), so the server only has to serve /vue/ itself.
 import { createRouter, createWebHashHistory } from 'vue-router';
-import { session } from './api';
+import { pref, session } from './api';
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -40,11 +40,21 @@ export const router = createRouter({
 });
 
 // Signed out: every page but the sign-in leads there, and back after signing in.
+// "Remember the last page" (Settings → Account): opened without an address, the app goes on where it was left
+// (not into the player or a watch-together room). The page is kept in this browser, "vue-lastPage".
+let first = true;
 router.beforeEach(to => {
+  const wasFirst = first; first = false;
+  if (wasFirst && session.me && to.fullPath === '/' && !location.hash.slice(2) && pref('rememberTab', '0') === '1') {
+    let last = ''; try { last = localStorage.getItem('vue-lastPage') || ''; } catch { /* none */ }
+    if (last && last !== '/' && !last.startsWith('/play') && !last.startsWith('/together')) return last;
+  }
   if (!session.me && !to.meta.open) return { name: 'login', query: to.fullPath !== '/' ? { next: to.fullPath } : {} };
   if (session.me && (to.name === 'login' || to.meta.signedOut)) return { name: 'home' };
   if (to.meta.admin && !(session.me && session.me.admin)) return { name: 'home' };
 });
+
+router.afterEach(to => { if (session.me && !to.meta.open) try { localStorage.setItem('vue-lastPage', to.fullPath); } catch { /* none */ } });
 
 // A part of the app that is no longer there: the server got a new version while this page was open (its
 // files have new names). Loading the page again gets the new version; once a minute at most, so a part

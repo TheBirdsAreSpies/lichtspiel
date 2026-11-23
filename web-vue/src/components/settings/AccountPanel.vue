@@ -2,7 +2,10 @@
 // Settings → Account: name and e-mail address, the language, signing in automatically, the password and
 // two-step sign-in (a code from an authenticator app).
 import { ref } from 'vue';
-import { api, get, savePref, session, type Me } from '../../api';
+import { api, get, pref, savePref, session, type Me } from '../../api';
+import { applyLook } from '../../look';
+import { stopTheme } from '../../theme';
+import { toast } from '../../toast';
 import { lang, packs, setLang, t } from '../../i18n';
 
 const me = session.me!;
@@ -34,6 +37,25 @@ function setKeep(v: boolean) {
     if (v) { localStorage.setItem('token', session.token); sessionStorage.removeItem('token'); }
     else { sessionStorage.setItem('token', session.token); localStorage.removeItem('token'); }
   } catch { /* storage blocked */ }
+}
+
+// ---- how the app looks and behaves, kept with the account (the classic app's settings of the same name)
+const ROWS: { key: string, def: string, label: string, opts: [string, string][], help: string }[] = [
+  { key: 'theme', def: 'system', label: 'Appearance', opts: [['system', 'System'], ['light', 'Light'], ['dark', 'Dark'], ['oled', 'OLED (pure black)']], help: 'Follows the device’s setting. Saved with your account.' },
+  { key: 'accent', def: 'rose', label: 'Accent color', opts: [['rose', 'Rose'], ['amber', 'Amber'], ['blue', 'Blue'], ['green', 'Green'], ['red', 'Red'], ['violet', 'Violet']], help: 'Saved with your account.' },
+  { key: 'timeFormat', def: 'auto', label: 'Time format', opts: [['auto', 'Automatic'], ['24', '24-hour'], ['12', '12-hour']], help: 'Saved with your account.' },
+  { key: 'levelVolume', def: '0', label: 'Level the volume', opts: [['0', 'No'], ['1', 'Yes']], help: 'Quiet and loud videos are brought to a similar loudness. Works for videos the server has measured (Settings → Scheduled tasks).' },
+  { key: 'themeMusic', def: '1', label: 'Play theme music', opts: [['0', 'No'], ['1', 'Yes']], help: 'Plays theme music quietly on a movie’s or show’s page: a theme.mp3 from its folder, or for shows the music cut from the intro. Browsers may need one click on the page first.' },
+  { key: 'themeLoop', def: '1', label: 'Theme music repeats', opts: [['1', 'Over and over'], ['0', 'Once']], help: 'Over and over: until you leave the page or start playing. Once: it stops at its end.' },
+  { key: 'rememberTab', def: '0', label: 'Remember the last page', opts: [['0', 'No'], ['1', 'Yes']], help: 'When the app is opened without an address, it continues where you left off.' },
+];
+const vals = ref<Record<string, string>>(Object.fromEntries(ROWS.map(x => [x.key, pref(x.key, x.def)])));
+async function setRow(key: string, value: string) {
+  vals.value = { ...vals.value, [key]: value };
+  const p = savePref(key, value);
+  if (key === 'theme' || key === 'accent') applyLook();
+  if (key === 'themeMusic' && value !== '1') stopTheme();
+  try { await p; toast(t('Saved')); } catch (e) { toast((e as Error).message); }
 }
 
 // ---- password
@@ -99,6 +121,15 @@ async function disable() {
         </select>
         <p class="dim hint">{{ t('No: you are signed out when the browser is closed.') }}</p>
       </div>
+      <template v-for="row in ROWS" :key="row.key">
+        <label :for="'s-' + row.key">{{ t(row.label) }}</label>
+        <div>
+          <select :id="'s-' + row.key" :value="vals[row.key]" @change="setRow(row.key, ($event.target as HTMLSelectElement).value)">
+            <option v-for="[v, l] in row.opts" :key="v" :value="v">{{ t(l) }}</option>
+          </select>
+          <p class="dim hint">{{ t(row.help) }}</p>
+        </div>
+      </template>
     </div>
   </section>
 

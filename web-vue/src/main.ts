@@ -4,6 +4,7 @@ import { router } from './router';
 import { boot, session, setSignedOutHandler } from './api';
 import { setLang, packs } from './i18n';
 import './style.css';
+import { applyLook } from './look';
 
 setSignedOutHandler(() => { router.push({ name: 'login' }); });
 
@@ -11,5 +12,6 @@ setSignedOutHandler(() => { router.push({ name: 'login' }); });
 boot().finally(() => {
   const saved = session.me && session.me.prefs && session.me.prefs.lang;
   if (saved && packs[saved]) setLang(saved);
+  applyLook();
   createApp(App).use(router).mount('#app');
 });
