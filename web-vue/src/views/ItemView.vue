@@ -14,6 +14,7 @@ import TogetherDialog from '../components/TogetherDialog.vue';
 import ReportDialog from '../components/ReportDialog.vue';
 import ItemMenu from '../components/ItemMenu.vue';
 import ScoreBadges from '../components/ScoreBadges.vue';
+import MediaPanel from '../components/MediaPanel.vue';
 import StarRating from '../components/StarRating.vue';
 import Modal from '../components/Modal.vue';
 import { startTheme, stopTheme, theme, toggleThemeMute } from '../theme';
@@ -136,6 +137,8 @@ watch(() => props.id, id => {
 function setVersion(v: number) { version.value = v; try { localStorage.setItem('version:' + props.id, String(v)); } catch { /* none */ } }
 const versionName = (m: NonNullable<Item['Media']>[number]) => [m.height ? (m.height >= 2000 ? '4K' : m.height + 'p') : '', m.edition, m.size ? fmtSize(m.size) : ''].filter(Boolean).join(' · ');
 // The id that plays for this title: the chosen version's (each version is an item of its own).
+// The file shown under the buttons: the chosen version's.
+const shownMedia = computed(() => { const l = it.value?.Media || []; return l[Math.min(version.value, l.length - 1)] || null; });
 const playId = (item: Item) => {
   const v = versions.value;
   return item === it.value && v && version.value > 0 && version.value < v.length && v[version.value].id ? v[version.value].id! : item.id;
@@ -250,8 +253,9 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
             <button v-if="session.me?.admin && it.type !== 'clip'" class="iconbtn round" :title="t('Edit details')" :aria-label="t('Edit details')" @click="editing = true"><Icon name="edit" /></button>
             <ItemMenu v-if="it.type !== 'clip'" :item="it" @changed="load" />
             <button v-if="theme.playing" class="iconbtn round" :title="theme.muted ? t('Theme music on') : t('Mute theme music')" :aria-label="theme.muted ? t('Theme music on') : t('Mute theme music')" @click="toggleThemeMute"><Icon :name="theme.muted ? 'mute' : 'vol'" /></button>
+            <StarRating :id="it.id" :key="it.id" :rating="(it as Any).userRating" />
           </div>
-          <StarRating :id="it.id" :key="it.id" :rating="(it as Any).userRating" />
+          <MediaPanel v-if="shownMedia && !it.missing" :item="it" :media="shownMedia" :play-id="playId(it)" />
         </div>
       </div>
 
