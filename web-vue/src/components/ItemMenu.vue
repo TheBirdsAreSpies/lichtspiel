@@ -11,6 +11,7 @@ import { t } from '../i18n';
 import { toast } from '../toast';
 import Icon from './Icon.vue';
 import Modal from './Modal.vue';
+import AccessDialog from './AccessDialog.vue';
 
 const props = defineProps<{ item: Item }>();
 const emit = defineEmits<{ changed: [] }>();
@@ -40,7 +41,7 @@ type Box = '' | 'share' | 'match' | 'optimize' | 'access' | 'history' | 'info' |
 const box = ref<Box>('');
 function pick(b: Box | (() => void)) {
   open.value = false; document.removeEventListener('click', outside);
-  if (typeof b === 'function') b(); else { box.value = b; if (b === 'match') search(); if (b === 'access') loadAccess(); if (b === 'history') loadHistory(); }
+  if (typeof b === 'function') b(); else { box.value = b; if (b === 'match') search(); if (b === 'history') loadHistory(); }
 }
 const fail = (e: unknown) => toast((e as Error).message, 6000);
 
@@ -111,30 +112,6 @@ async function optimize() {
 const sureOptDelete = ref(false);
 async function deleteOptimized() {
   try { const r = await api<{ removed: number }>('DELETE', `/library/metadata/${it.value.id}/optimize`); toast(t('{n} optimized version(s) deleted', { n: r.removed })); box.value = ''; sureOptDelete.value = false; emit('changed'); } catch (e) { fail(e); }
-}
-
-// ---- access: who may see the library this is in (access is given per library)
-interface User { id: number, username: string, display_name?: string, admin?: boolean, allowed_sections: number[] | null }
-const users = ref<(User & { on: boolean })[] | null>(null);
-const sid = computed(() => Number(it.value.librarySectionID));
-const sectionName = computed(() => (session.sections.find(s => s.id === sid.value) || { title: '#' + sid.value }).title);
-const may = (u: User) => u.allowed_sections === null || u.allowed_sections.includes(sid.value);
-async function loadAccess() {
-  users.value = null;
-  try {
-    const r = await get<{ users: User[] } | User[]>('/api/users');
-    users.value = (Array.isArray(r) ? r : r.users).filter(u => !u.admin).map(u => ({ ...u, on: may(u) }));
-  } catch (e) { fail(e); box.value = ''; }
-}
-async function saveAccess() {
-  try {
-    for (const u of users.value || []) {
-      if (u.on === may(u)) continue;
-      const now = u.allowed_sections === null ? session.sections.map(s => s.id) : u.allowed_sections;
-      await api('PATCH', '/api/users/' + u.id, { allowed_sections: u.on ? [...new Set([...now, sid.value])] : now.filter(n => n !== sid.value) });
-    }
-    toast(t('Saved')); box.value = '';
-  } catch (e) { fail(e); }
 }
 
 // ---- play history
@@ -280,19 +257,7 @@ async function remove() {
       </template>
     </Modal>
 
-    <Modal v-if="box === 'access'" :title="t('Grant access')" @close="box = ''">
-      <p class="dim">{{ t('Access is given per library: ticked people may see everything in “{name}”, including this title.', { name: sectionName }) }}</p>
-      <div v-if="users === null" class="skel line"></div>
-      <div v-else-if="users.length" class="checks">
-        <label v-for="u in users" :key="u.id"><input v-model="u.on" type="checkbox"> {{ u.display_name || u.username }}</label>
-      </div>
-      <p v-else>{{ t('No other users yet. Invite someone under Users & invites.') }}</p>
-      <template #actions>
-        <button v-if="users && users.length" class="primary" @click="saveAccess">{{ t('Save') }}</button>
-        <button v-else-if="users" class="primary" @click="box = ''; router.push('/users')">{{ t('Users & invites') }}</button>
-        <button @click="box = ''">{{ t('Cancel') }}</button>
-      </template>
-    </Modal>
+    <AccessDialog v-if="box === 'access' && it.librarySectionID" :section="Number(it.librarySectionID)" for-item @close="box = ''" />
 
     <Modal v-if="box === 'history'" :title="t('Play history: {title}', { title: it.title })" @close="box = ''">
       <div v-if="history === null" class="skel line"></div>

@@ -605,3 +605,13 @@ code.m-delete { color: #e5534b; }
 .eps.loading { opacity: .45; pointer-events: none; }
 @keyframes pop-in { from { opacity: 0; transform: translateY(10px); } }
 .stagger > :nth-child(-n+12) { animation: pop-in .3s cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(var(--i, 0) * 35ms); }
+
+/* a library in the left menu: its "⋯" (owner) takes the place of the count while pointed at, and is always there on touch screens */
+.nav-item { position: relative; }
+.nav-more { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--dim); font-weight: 700; letter-spacing: 1px; opacity: 0; }
+.nav-more:hover, .nav-more.open { background: var(--panel2); color: var(--text); }
+.nav-item:hover .nav-more, .nav-more:focus-visible, .nav-more.open { opacity: 1; }
+.nav-item.admin:hover .nav-num, .nav-item.admin:has(.nav-more.open) .nav-num { visibility: hidden; }
+@media (hover: none) { .nav-more { opacity: 1; } .nav-item.admin .nav-num { visibility: hidden; } }
+.nav-small .nav-more { display: none; }
+.side-menu { position: fixed; right: auto; z-index: 60; }

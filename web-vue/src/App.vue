@@ -13,6 +13,7 @@ import { cardSize } from './cardSize';
 import { checkInvites, declineInvite, invites } from './together';
 import { activity, cancelJob, poke } from './activity';
 import Modal from './components/Modal.vue';
+import SectionMenu from './components/SectionMenu.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -123,9 +124,12 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
       <RouterLink to="/stats" class="nav" active-class="on" :title="t('Statistics')"><Icon name="chart" /><span>{{ t('Statistics') }}</span></RouterLink>
       <RouterLink v-if="session.me && session.me.can_download" to="/downloads" class="nav" active-class="on" :title="t('Downloads')"><Icon name="download" /><span>{{ t('Downloads') }}</span><small v-if="dl.busy" class="nav-count" :title="t('{n} being converted', { n: dl.busy })">{{ dl.busy }}</small></RouterLink>
       <div class="nav-head">{{ t('Libraries') }}</div>
-      <RouterLink v-for="s in session.sections" :key="s.id" :to="'/library/' + s.id" class="nav" active-class="on" :title="s.title">
-        <Icon :name="icon(s.type)" /><span>{{ s.title }}</span><small v-if="sectionCount(s)" class="nav-num">{{ sectionCount(s) }}</small>
-      </RouterLink>
+      <div v-for="s in session.sections" :key="s.id" class="nav-item" :class="{ admin: session.me && session.me.admin }">
+        <RouterLink :to="'/library/' + s.id" class="nav" active-class="on" :title="s.title">
+          <Icon :name="icon(s.type)" /><span>{{ s.title }}</span><small v-if="sectionCount(s)" class="nav-num">{{ sectionCount(s) }}</small>
+        </RouterLink>
+        <SectionMenu v-if="session.me && session.me.admin" :section="s" />
+      </div>
       <template v-if="panels.list.some(p => p.sidebar)">
         <div class="nav-head"></div>
         <RouterLink v-for="p in panels.list.filter(x => x.sidebar)" :key="p.id" :to="'/plugin/' + p.id" class="nav" active-class="on" :title="p.name"><Icon name="extension" /><span>{{ p.name }}</span></RouterLink>
