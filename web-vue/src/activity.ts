@@ -10,7 +10,7 @@ import { toast } from './toast';
 interface ScanProgress { name: string, phase?: string, done?: number, total?: number, current?: string }
 interface Status {
   queued: number, done: number, working_on?: number | null, working_title?: string, scanning?: string[], scan_progress?: ScanProgress[],
-  job?: { label: string, done: number, total: number } | null, last?: { message?: string, ok?: boolean } | null,
+  job?: { label: string, done: number, total: number } | null, last?: { message?: string, ok?: boolean } | null, playing?: number,
 }
 export interface Line { text: string, pct?: number, title?: string }
 
@@ -20,6 +20,8 @@ export const activity = reactive({
   /** The last thing finished, shown for a few seconds. */
   last: '',
   canCancel: false,
+  /** How many play right now (the dashboard button at the top); null before the first answer. */
+  playing: null as number | null,
   /** Counts up when something finished (pages that show counts read them again). */
   finished: 0,
 });
@@ -51,6 +53,7 @@ export async function poke() {
   }
   if (st.working_on || st.queued > 0) lines.push({ text: t('Updating details') + (st.working_title ? ': ' + st.working_title : '') + (st.queued > 0 ? ' · ' + t('{n} left', { n: st.queued }) : '') });
   activity.lines = lines;
+  if (typeof st.playing === 'number') activity.playing = st.playing;
   activity.busy = lines.length > 0;
   activity.canCancel = !!st.job || st.queued > 0;
   if ((done >= 0 && st.done > done) || (wasBusy && !activity.busy)) {

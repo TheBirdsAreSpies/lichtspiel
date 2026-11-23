@@ -54,6 +54,7 @@ async function out() {
 }
 // The tooltip of the activity at the top: every line, with the file a scan is on.
 const activityTitle = () => activity.lines.map(l => l.text + (l.title ? '\n' + l.title : '')).join('\n') || activity.last;
+const playingLabel = computed(() => (activity.playing ? t('Dashboard · {n} playing now', { n: activity.playing }) : t('Dashboard · nothing is playing')));
 const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', photo: 'photo' }[type] || 'folder');
 </script>
 
@@ -80,6 +81,11 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
         </template>
         <span v-else class="txt">{{ activity.last }}</span>
       </div>
+      <!-- The owner's way to the dashboard, with how many play now (also on phones, where the activity is hidden). -->
+      <RouterLink v-if="session.me && session.me.admin" to="/dashboard" class="npbtn" :class="{ live: (activity.playing || 0) > 0 }" active-class="on"
+        :title="playingLabel" :aria-label="playingLabel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-8 6 16 3-8h4" /></svg><b v-if="activity.playing">{{ activity.playing }}</b>
+      </RouterLink>
       <div class="who">
         <button class="userbtn" aria-haspopup="menu" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
           <span class="av">{{ (name[0] || '?').toUpperCase() }}</span><span class="nm">{{ name }}</span>
@@ -128,6 +134,13 @@ const icon = (type: string) => ({ movie: 'movie', show: 'tv', artist: 'music', p
     <main class="main" @click="menuOpen = false">
       <RouterView :key="route.path" />
     </main>
+    <!-- Phones: a bar at the bottom instead of the side menu; "Menu" opens the side menu with the rest. -->
+    <nav class="tabbar" :aria-label="t('Menu')">
+      <RouterLink to="/" exact-active-class="on"><Icon name="home" /><span>{{ t('Home') }}</span></RouterLink>
+      <RouterLink to="/watchlist" active-class="on"><Icon name="mark" /><span>{{ t('Watchlist') }}</span></RouterLink>
+      <RouterLink to="/playlists" :class="{ on: route.name === 'playlist' }" active-class="on"><Icon name="playlist" /><span>{{ t('Playlists') }}</span></RouterLink>
+      <button type="button" :class="{ on: sideOpen }" :aria-expanded="sideOpen" @click="sideOpen = !sideOpen"><Icon name="menu" /><span>{{ t('Menu') }}</span></button>
+    </nav>
   </div>
   <!-- (Keyed by the address: the next episode is a new player.) -->
   <RouterView v-else :key="route.path" />
