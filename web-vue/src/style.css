@@ -643,7 +643,8 @@ code.m-delete { color: #e5534b; }
 .score .num span { font-size: 11px; color: var(--dim); letter-spacing: .03em; }
 .score b { font-size: 17px; }
 .stars { display: inline-flex; align-items: center; gap: 2px; margin-top: 12px; }
-.actions .stars { margin: 0 0 0 8px; }
+.rate-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 10px 0; }
+.rate-row .scores, .rate-row .stars { margin: 0; }
 /* a title's page: the big buttons as pills, as in the classic app */
 .detail .actions button.big, .detail .actions .btn.big { border-radius: 999px; padding: 10px 22px; }
 /* the file under the buttons of a title's page (MediaPanel.vue), as in the classic app */

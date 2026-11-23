@@ -201,7 +201,11 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
         <div class="info">
           <h1>{{ heading }}</h1>
           <div class="dim">{{ facts }}</div>
-          <ScoreBadges :ratings="ratings" />
+          <!-- The review sites' scores and your own stars, side by side. -->
+          <div class="rate-row">
+            <ScoreBadges :ratings="ratings" />
+            <StarRating :id="it.id" :key="it.id" :rating="(it as Any).userRating" />
+          </div>
           <p v-if="it.tagline" class="tagline">{{ it.tagline }}</p>
           <p v-if="it.summary" class="plot">{{ it.summary }}</p>
           <p v-else-if="unmatchedNote" class="dim">{{ unmatchedNote }}</p>
@@ -241,7 +245,6 @@ const initials = (n?: string) => (n || '?').split(' ').map(w => w[0]).slice(0, 2
             <button v-if="session.me?.admin && it.type !== 'clip'" class="iconbtn round" :title="t('Edit details')" :aria-label="t('Edit details')" @click="editing = true"><Icon name="edit" /></button>
             <ItemMenu v-if="it.type !== 'clip'" :item="it" @changed="load" />
             <button v-if="theme.playing" class="iconbtn round" :title="theme.muted ? t('Theme music on') : t('Mute theme music')" :aria-label="theme.muted ? t('Theme music on') : t('Mute theme music')" @click="toggleThemeMute"><Icon :name="theme.muted ? 'mute' : 'vol'" /></button>
-            <StarRating :id="it.id" :key="it.id" :rating="(it as Any).userRating" />
           </div>
           <MediaPanel v-if="shownMedia && !it.missing" :item="it" :media="shownMedia" :play-id="playId(it)" />
         </div>
