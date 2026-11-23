@@ -252,6 +252,22 @@ impl Db {
             .values()
             .filter(|i| i.parent_id == Some(parent) && !self.is_version(i))
             .collect();
+        Self::sort_children(&mut v);
+        v
+    }
+
+    /// `children` of every item at once, in one pass through the library: for work on many seasons
+    /// (calling `children` for each would go through the whole library each time).
+    pub fn children_of_all(&self) -> std::collections::HashMap<u64, Vec<&Item>> {
+        let mut map: std::collections::HashMap<u64, Vec<&Item>> = std::collections::HashMap::new();
+        for i in self.items.values() {
+            if let Some(p) = i.parent_id { if !self.is_version(i) { map.entry(p).or_default().push(i); } }
+        }
+        for v in map.values_mut() { Self::sort_children(v); }
+        map
+    }
+
+    fn sort_children(v: &mut [&Item]) {
         // Songs of a double album: disc by disc.
         let disc = |i: &Item| i.extra.get("disc").and_then(|d| d.as_u64()).unwrap_or(0);
         v.sort_by(|a, b| {
@@ -260,7 +276,6 @@ impl Db {
                 .then(a.index.unwrap_or(0).cmp(&b.index.unwrap_or(0)))
                 .then(a.sort_title.cmp(&b.sort_title))
         });
-        v
     }
 
     /// All playable items below an item (a show → its episodes).

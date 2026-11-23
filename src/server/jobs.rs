@@ -206,10 +206,13 @@ impl App {
                 return Err("Intro markers are switched off in Settings (Generate intro video markers: never)".into());
             }
             let mut season_ids: Vec<u64> = vec![];
+            // (One pass through the library for all seasons: a job may start with thousands of them.)
+            let children = db.children_of_all();
+            let kids = |id: u64| children.get(&id).map(|v| v.as_slice()).unwrap_or(&[]);
             for id in ids {
                 let Some(it) = db.items.get(&id) else { continue };
                 match it.kind {
-                    ItemKind::Show => season_ids.extend(db.children(id).iter().filter(|c| c.kind == ItemKind::Season).map(|c| c.id)),
+                    ItemKind::Show => season_ids.extend(kids(id).iter().filter(|c| c.kind == ItemKind::Season).map(|c| c.id)),
                     ItemKind::Season => season_ids.push(id),
                     ItemKind::Episode => season_ids.extend(it.parent_id),
                     _ => {}
@@ -219,7 +222,7 @@ impl App {
             season_ids.retain(|s| seen.insert(*s));
             let mut seasons = vec![];
             for sid in season_ids {
-                let eps: Vec<&Item> = db.children(sid).into_iter().filter(|e| e.kind == ItemKind::Episode && e.file.is_some() && db.intro_on(e)).collect();
+                let eps: Vec<&Item> = kids(sid).iter().copied().filter(|e| e.kind == ItemKind::Episode && e.file.is_some() && db.intro_on(e)).collect();
                 // One episode has nothing to be compared with.
                 if eps.len() < 2 {
                     continue;
@@ -488,7 +491,11 @@ impl App {
         due.sort_by_key(|&(new, added, _)| (new, std::cmp::Reverse(added)));
         let mut seen = std::collections::HashSet::new();
         let mut v: Vec<u64> = due.into_iter().map(|d| d.2).filter(|s| seen.insert(*s)).collect();
-        v.retain(|s| db.children(*s).iter().filter(|e| e.kind == ItemKind::Episode && e.file.is_some()).count() >= 2);
+        // Only seasons with two episodes or more (one has nothing to be compared with). Counted in one pass:
+        // `children` for each season went through the whole library each time, which with thousands of seasons
+        // waiting held the library for many seconds on every look (the activity panel asks every 3 s).
+        let children = db.children_of_all();
+        v.retain(|s| children.get(s).is_some_and(|c| c.iter().filter(|e| e.kind == ItemKind::Episode && e.file.is_some()).count() >= 2));
         v
     }
 
